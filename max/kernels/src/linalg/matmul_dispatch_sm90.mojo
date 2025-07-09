@@ -65,7 +65,6 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,

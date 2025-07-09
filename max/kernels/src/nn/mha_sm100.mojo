@@ -67,7 +67,6 @@ from layout.layout_tensor import (
     cp_async_k_major,
     cp_async_mn_major,
 )
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
