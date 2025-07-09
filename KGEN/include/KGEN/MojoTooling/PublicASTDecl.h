@@ -472,6 +472,9 @@ public:
 
   StringRef getValue() const { return value; }
 
+  /// Return the type of this alias if available.
+  StringRef getType() const { return type; }
+
   /// Return if this alias is global.
   bool isGlobal() const { return isGlobalAlias; }
 
@@ -483,7 +486,8 @@ public:
   ///    "description": string,
   ///    "summary": string,
   ///    "parameters": PublicParameterDecl[],
-  ///    "value": string
+  ///    "value": string,
+  ///    "type": string
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
@@ -507,6 +511,7 @@ private:
 
   SmallVector<PublicParameterDecl> parameters;
   std::string value;
+  std::string type;
   bool isGlobalAlias;
 
   //===----------------------------------------------------------------------===//
