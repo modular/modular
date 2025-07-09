@@ -162,6 +162,43 @@ TEST_COMMANDS = [
         },
         valid=False,
     ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "OpenGVLab/InternVL2-8B",
+            "--vision-config-overrides",
+            '{"max_dynamic_patch": 24}',
+            "--devices",
+            "cpu",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "OpenGVLab/InternVL2-8B",
+                "vision_config_overrides": {"max_dynamic_patch": 24},
+            },
+        },
+        valid=True,
+    ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "OpenGVLab/InternVL2-8B",
+            "--vision-config-overrides",
+            '{"max_dynamic_patch": 12, "custom_field": "test"}',
+            "--devices",
+            "cpu",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "OpenGVLab/InternVL2-8B",
+                "vision_config_overrides": {
+                    "max_dynamic_patch": 12,
+                    "custom_field": "test",
+                },
+            },
+        },
+        valid=True,
+    ),
     # TODO: Add back tests for weight path. Since we call into HF, we need to
     # either mock the HF API or use a real file path.
     # CLITestCommand(
