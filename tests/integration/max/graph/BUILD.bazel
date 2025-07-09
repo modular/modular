@@ -66,9 +66,12 @@ modular_py_test(
 
 # FIXME: GEX-2402 (remove this test and the exclude from above)
 modular_py_test(
-    name = "hann_window",
+    name = "test_hann_window",
     size = "large",
-    srcs = ["test_hann_window.py"],
+    srcs = [
+        "conftest.py",
+        "test_hann_window.py",
+    ],
     data = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:counter_ops",
