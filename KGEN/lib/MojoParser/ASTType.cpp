@@ -100,7 +100,8 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
-    return cast<StructDeclOp>(getDecl(shared)).bindReference();
+    return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
+        .bindReference();
   if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(mlirType))
     return StructMetaType::get(
         LIT::StructType::get(metaType.getSymbol(), metaType.getSignature()));
@@ -162,9 +163,11 @@ bool ASTType::isTypeCheckErrorType() const {
 /// Return the nonmaterializable decorator target for the type, or null if there
 /// is none.
 ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(getDecl(shared)))
-    if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
-      return ASTType(targetMlirType.getValue());
+  if (auto structDecl = getDecl(shared))
+    if (auto structOp =
+            dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation()))
+      if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
+        return ASTType(targetMlirType.getValue());
   return {};
 }
 
@@ -191,11 +194,11 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
 
   // We don't yet have a runtime representation for packages or modules, but
   // when we do, it will not be register-passable.
-  if (isa<FileModuleOp, PackageOp>(decl))
+  if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation()))
     return TypeConvention::MemoryOnly;
 
   // Trait values are generic and therefore use the default specification.
-  if (auto trait = dyn_cast<TraitDeclOp>(decl)) {
+  if (auto trait = dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation())) {
     TypeConvention convention = trait.getConvention();
     if (convention == TypeConvention::Unspecified)
       return genericDefault;
@@ -222,7 +225,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     return convention;
   }
 
-  auto structOp = dyn_cast<StructDeclOp>(decl);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
   assert(structOp && "only one user-defined type so far");
   return structOp.getConvention();
 }
@@ -282,7 +285,7 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
   if (failed(shared.declResolver->resolveBody(*decl, loc)))
     return false;
 
-  auto structOp = dyn_cast<StructDeclOp>(decl);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
   assert(structOp && "only one user-defined type so far");
   return structOp.getDestructorAttr() != TypedAttr();
 }
@@ -526,7 +529,7 @@ static bool isKnownNonStaticMethod(SharedState *diagShared,
     return false;
 
   // Return false for static methods.
-  return !cast<FnOp>(*decl).getIsStatic();
+  return !cast<FnOp>(decl->getIfOperation()).getIsStatic();
 }
 
 /// Pretty print a parameter value.
@@ -900,8 +903,10 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     if (diagShared && structAttr.getValues().size() == 1) {
       ASTDecl *decl = ASTType(structAttr.getType()).getDecl(*diagShared);
       StringRef typeName;
-      if (decl && isa<LIT::StructDeclOp>(*decl))
-        typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
+      if (decl && isa_and_nonnull<LIT::StructDeclOp>(decl->getIfOperation()))
+        typeName = cast<LIT::StructDeclOp>(decl->getIfOperation())
+                       .getDeclName()
+                       .strref();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
           typeName == "DType") {
@@ -999,8 +1004,10 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   if (isa<UnknownAttr>(param) && diagShared) {
     ASTDecl *decl = ASTType(param.getType()).getDecl(*diagShared);
     StringRef typeName;
-    if (decl && isa<LIT::StructDeclOp>(*decl))
-      typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
+    if (decl && isa_and_nonnull<LIT::StructDeclOp>(decl->getIfOperation()))
+      typeName = cast<LIT::StructDeclOp>(decl->getIfOperation())
+                     .getDeclName()
+                     .strref();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral") {
       auto structType = cast<LIT::StructType>(param.getType());
@@ -1038,8 +1045,12 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
                            ASTDecl *typeDecl) {
     // Handle special cases that should be aliased.
     // FIXME(MOCO-367): maintain "typedef" sugar in the type system.
-    if (typeDecl && isa<LIT::StructDeclOp>(*typeDecl) && params.size() == 1 &&
-        cast<LIT::StructDeclOp>(*typeDecl).getDeclName().strref() == "Origin") {
+    if (typeDecl &&
+        isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation()) &&
+        params.size() == 1 &&
+        cast<LIT::StructDeclOp>(typeDecl->getIfOperation())
+                .getDeclName()
+                .strref() == "Origin") {
       // Check to see if we have a Bool with a known constant parameter.
       //   #lit.struct<{value: i1 = 1}>
       if (auto strParam = dyn_cast<LITStructAttr>(params[0])) {
@@ -1064,7 +1075,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     // to this.  In that case we want to avoid printing defaulted parameter
     // values that are the same as their default value.
     if (typeDecl) {
-      TypeSignatureType origSig = cast<StructDeclOp>(*typeDecl).getSignature();
+      TypeSignatureType origSig =
+          cast<StructDeclOp>(typeDecl->getIfOperation()).getSignature();
       PogListAttr paramInfo = origSig.getParamListAttrs();
       assert(paramInfo.size() == params.size() &&
              "Unexpected number of bound params");
@@ -1423,7 +1435,8 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
     }
 
     if (anyBound)
-      return cast<StructDeclOp>(getDecl(shared)).bindReference(newParams);
+      return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
+          .bindReference(newParams);
   }
 
   // Otherwise return it with all parameters replaced.

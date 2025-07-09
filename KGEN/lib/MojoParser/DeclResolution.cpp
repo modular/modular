@@ -145,8 +145,9 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr) {
   auto strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
   if (!strExpr)
     return failure();
-  cast<ASTDeclInterface>(decl).setDeprecationWarningAttr(
-      StringAttr::get(getContext(), strExpr->getValue()));
+  cast<ASTDeclInterface>(decl.getIfOperation())
+      .setDeprecationWarningAttr(
+          StringAttr::get(getContext(), strExpr->getValue()));
   return success();
 }
 
@@ -297,8 +298,8 @@ void Decorators::applyBodyDecorators(
     break;
   }
 
-  cast<ASTDeclInterface>(decl).setDecoratorsAttr(
-      DecoratorsAttr::get(getContext(), decoPValues));
+  cast<ASTDeclInterface>(decl.getIfOperation())
+      .setDecoratorsAttr(DecoratorsAttr::get(getContext(), decoPValues));
 }
 
 //===----------------------------------------------------------------------===//
@@ -318,7 +319,7 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   if (aliasName == kMainSymbolName) {
     if (unmangledName != kMainSymbolName)
       shared.emitError(loc, "only 'main' can be exported as 'main'");
-    if (!isa<FnOp>(decl))
+    if (!isa<FnOp>(decl.getIfOperation()))
       shared.emitError(loc, "exported 'main' must be a function");
     return;
   }
@@ -327,8 +328,9 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
     return;
   }
 
-  llvm::TypeSwitch<ASTDecl &, void>(decl).Case<FnOp, GlobalVarDeclOp>(
-      [aliasName](auto op) { op.setLinkageName(aliasName); });
+  llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
+      .Case<FnOp, GlobalVarDeclOp>(
+          [aliasName](auto op) { op.setLinkageName(aliasName); });
   if (isCExport)
     itf.setCExported();
   else
@@ -402,7 +404,8 @@ static void applyExtern(SMLoc loc, ASTDecl &decl, FnOp func,
     return;
   }
 
-  if (isa<TraitDeclOp, StructDeclOp>(*decl.getParentDecl())) {
+  if (decl.getParentDecl() && llvm::isa_and_nonnull<TraitDeclOp, StructDeclOp>(
+                                  decl.getParentDecl()->getIfOperation())) {
     shared.emitError(node.getLoc(), "@extern cannot be applied to a method");
     return;
   }
@@ -415,8 +418,8 @@ struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
                   StringRef baseName, TypeCheckedFnSignature &tcSignature)
       : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
-        funcOp(cast<FnOp>(decl)), baseName(baseName), tcSignature(tcSignature) {
-  }
+        funcOp(cast_or_null<FnOp>(decl.getIfOperation())), baseName(baseName),
+        tcSignature(tcSignature) {}
 
   /// Apply a function signature decorator.
   LogicalResult applyOne(ExprNode *decorator);
@@ -713,7 +716,8 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
     if (nameDecls.empty())
       continue;
 
-    if (isa<UnresolvedImportOp>(nameDecls.back())) {
+    if (isa_and_nonnull<UnresolvedImportOp>(
+            nameDecls.back()->getIfOperation())) {
       if (failed(shared.getDeclResolver().resolveBody(*nameDecls.back(),
                                                       funcDecl.getLoc()))) {
         shared.emitError(funcDecl.getLoc(), "cannot resolve alias '")
@@ -721,13 +725,14 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
         return {};
       }
     }
-    if (auto aliasOp = dyn_cast<AliasDeclOp>(nameDecls.back()))
+    if (auto aliasOp =
+            dyn_cast_or_null<AliasDeclOp>(nameDecls.back()->getIfOperation()))
       return aliasOp;
 
     shared.emitError(funcDecl.getLoc(), "name '")
         << name << "' cannot be used in '@__llvm_metadata'";
     return {};
-  } while (!isa<FileModuleOp>(parent));
+  } while (!isa_and_nonnull<FileModuleOp>(parent->getIfOperation()));
   return {};
 }
 
@@ -907,11 +912,13 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     for (auto [traitName, entryName] :
          SmallVector<std::pair<StringRef, StringRef>>{
              {"AnyType", "__del__"}, {"Movable", "__moveinit__"}}) {
-      auto traitDecl = cast_or_null<TraitDeclOp>(
-          shared.lookupBuiltinTrait(traitName, &decl, smloc));
+      auto traitDecl = shared.lookupBuiltinTrait(traitName, &decl, smloc);
       if (!traitDecl)
         continue;
-      TraitType trait = traitDecl.bindReference();
+      auto traitDeclOp = cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
+      if (!traitDeclOp)
+        continue;
+      TraitType trait = traitDeclOp.bindReference();
       FailureOr<TypedAttr> entry = getUniqueWitnessForTypeIfConforms(
           shared, type, trait, entryName, smloc);
       // If failed, an error will have been emitted. If empty, the type does not
@@ -952,7 +959,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   if (spelling != MOGGPreElab::Decorators::REGISTER_INTERNAL_FUNCTION)
     return;
 
-  auto func = cast<FnOp>(decl);
+  auto func = cast_or_null<FnOp>(decl.getIfOperation());
   if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
     shared.emitError(decl.getLoc(), "@")
         << spelling << " is only supported on top-level or static functions";
@@ -1005,7 +1012,7 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
 static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
                                           ASTDecl &nestedFnDecl,
                                           SharedState &shared) {
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
   if (shared.diBuilder)
@@ -1030,7 +1037,7 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
 static MLValue emitClosureInstance(ArrayRef<Capture> captures,
                                    ArrayRef<ParamDeclRefAttr> paramCaptures,
                                    ASTDecl &nestedFnDecl, SharedState &shared) {
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   StringAttr fnName = nestedFn.getSourceNameAttr();
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1176,7 +1183,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                    [](ParsedArgument &arg) { return arg.isErroneous; }))
     decl.setErroneous();
 
-  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
+  auto structDecl =
+      dyn_cast_or_null<StructDeclOp>(decl.getParentDecl()->getIfOperation());
   if (isCapturingByDefault(funcOp, structDecl, paramList.paramDeclAttrs))
     fnSignature.effects.setCapturing();
 
@@ -1405,8 +1413,13 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
       emitter.shared.getBuiltinVariadicListType(parentDecl, loc, (bool)refType);
   if (varListType.isTypeCheckErrorType())
     return {};
+  ASTDecl *varListStructDecl = varListType.getDecl(emitter.shared);
+  if (!varListStructDecl) {
+    emitter.emitError(loc, "malformed VariadicListInMem");
+    return {};
+  }
   auto varListStruct =
-      dyn_cast_if_present<StructDeclOp>(varListType.getDecl(emitter.shared));
+      dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
   if (!varListStruct) {
     emitter.emitError(loc, "malformed VariadicListInMem");
     return {};
@@ -1518,7 +1531,8 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
   // If this is a method in a trait, or an extern function, we only allow a
   // "..." as the body.
-  if (isa<TraitDeclOp>(*decl.getParentDecl()) || funcOp.getIsExtern()) {
+  if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()) ||
+      funcOp.getIsExtern()) {
     // Skip any docstring's that might be present.
     ParserBase p(shared, lexer);
     p.parseDocString(decl);
@@ -1673,7 +1687,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
   // We don't support default implementations for trait methods yet. Reject and
   // recover cleanly.
-  if (isa<TraitDeclOp>(*decl.getParentDecl())) {
+  if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation())) {
     shared.emitError(decl.getLoc(),
                      "unexpected function body in trait function "
                      "declaration, use `...`");
@@ -1800,7 +1814,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     ASTDecl &initDecl = *initResult.getIfSuccess().front();
     if (failed(resolveBody(initDecl, decl.loc)))
       return failure();
-    if (auto initDeclOp = dyn_cast<ASTDeclInterface>(initDecl)) {
+    if (auto initDeclOp =
+            dyn_cast_or_null<ASTDeclInterface>(initDecl.getIfOperation())) {
       // Inherit the docstring from the __init__ if it is present.
       if (auto docstring = initDeclOp.getDocStringAttr())
         op.setDocStringAttr(docstring);
@@ -1980,7 +1995,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
           GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
     }
 
-    if (isa<LIT::TraitDeclOp>(parentDecl)) {
+    if (isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
       p.emitError(identifierLoc) << "associated alias declarations in a trait "
                                     "shouldn't have an initializer";
       // Don't add it to attrs, just pretend it has no value.
@@ -1993,7 +2008,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
     }
   } else {
-    if (!isa<LIT::TraitDeclOp>(parentDecl)) {
+    if (!isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
       // Disallow this, because it would create diamond inheritance problems.
       p.emitError(identifierLoc)
           << "only traits may contain an alias without an initializer";
@@ -2077,7 +2092,8 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
         continue;
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
       TraitType canonicalParent =
-          cast<TraitDeclOp>(traitDecl).getCanonicalTrait();
+          cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
+              .getCanonicalTrait();
       for (SymbolRefAttr parent : canonicalParent.getSymbols()) {
         inheritedFrom->try_emplace(parent, std::make_pair(symbol, loc));
         // Any immediate parent that is actually a parent of this `symbol` is no
@@ -2334,7 +2350,7 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
     return {};
   }
   ASTDecl &delDecl = *entries[0];
-  FnOp func = dyn_cast<FnOp>(delDecl);
+  FnOp func = dyn_cast_or_null<FnOp>(delDecl.getIfOperation());
   if (!func) {
     shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
@@ -2352,7 +2368,7 @@ static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
 
   for (ASTDecl *candidate : inits.getIfSuccess()) {
-    FnOp func = dyn_cast<FnOp>(candidate);
+    FnOp func = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
     if (func && func.getSpecialFunctionKind() == specialKind)
       return func.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext());
@@ -2402,11 +2418,11 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
   if (inits.isErroneous())
     return {};
 
-  auto structOp = cast<StructDeclOp>(structDecl);
+  auto structOp = cast_or_null<StructDeclOp>(structDecl.getIfOperation());
   unsigned numFields = std::distance(structOp.getFieldDecls().begin(),
                                      structOp.getFieldDecls().end());
   for (ASTDecl *declaration : inits.getIfSuccess()) {
-    auto func = dyn_cast<FnOp>(declaration);
+    auto func = dyn_cast_or_null<FnOp>(declaration->getIfOperation());
     if (!func)
       continue;
     auto signature = func.getFuncTypeGenerator();
@@ -2453,7 +2469,7 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   // Generate the fieldwise init.
   StructEmitter structEmitter(structDecl);
-  StructDeclOp declOp = cast<StructDeclOp>(structDecl);
+  StructDeclOp declOp = cast_or_null<StructDeclOp>(structDecl.getIfOperation());
   // Generate the copy and memberwise init stubs.
   auto stubs = structEmitter.addMissingValueMemberStubsToStruct();
   if (!stubs) {
@@ -2479,9 +2495,10 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
                                                          bool isImplicit) {
   // Don't add one if we already have one.
   if (FnOp init = findFieldwiseInit(structDecl)) {
-    auto diag = emitError(decoratorLoc, "'")
-                << cast<StructDeclOp>(structDecl).getSymName()
-                << "' has an explicitly declared fieldwise initializer";
+    auto diag =
+        emitError(decoratorLoc, "'")
+        << cast_or_null<StructDeclOp>(structDecl.getIfOperation()).getSymName()
+        << "' has an explicitly declared fieldwise initializer";
     diag.attachNote(init.getLoc()) << "initializer declared here";
     return;
   }
@@ -2494,7 +2511,8 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
 
   // If "implicit", check for validity and set the bit.
   if (isImplicit) {
-    auto fieldsRange = cast<StructDeclOp>(structDecl).getFieldDecls();
+    auto fieldsRange =
+        cast_or_null<StructDeclOp>(structDecl.getIfOperation()).getFieldDecls();
     if (std::distance(fieldsRange.begin(), fieldsRange.end()) != 1) {
       emitError(decoratorLoc,
                 "@fieldwise_init(\"implicit\") is only valid on structs "
@@ -2609,8 +2627,11 @@ static void processRegisterPassableDecorator(
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   auto conformsToTrait = [&](StringRef traitName) {
-    auto trait = dyn_cast_or_null<TraitDeclOp>(
-        shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc()));
+    ASTDecl *traitDecl =
+        shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+    if (!traitDecl)
+      return false;
+    auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
     if (!trait)
       return false;
     return structDecl.doesNominalTypeConformTo(trait.bindReference());
@@ -2721,7 +2742,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
     ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
     SymbolRefArrayAttr immediateParents =
-        cast<TraitDeclOp>(parentDecl).getImmediateParentsAttr();
+        cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
+            .getImmediateParentsAttr();
     ConformanceOp witnessTable =
         b.create<ConformanceOp>(name, parent, immediateParents);
     witnessTable.getBody().push_back(new Block());
@@ -3022,11 +3044,11 @@ void DeclResolver::addParentDeclsToTrait(
     for (auto &[name, declsInParent] : parentDecl.getDeclsInScope()) {
       if (declsInParent.empty())
         continue;
-      if (isa<FnOp>(declsInParent.front())) {
+      if (isa_and_nonnull<FnOp>(declsInParent.front()->getIfOperation())) {
         for (ASTDecl *decl : declsInParent) {
           if (failed(resolveBody(*decl, traitDecl.getLoc())))
             continue;
-          auto func = cast<FnOp>(decl);
+          auto func = cast<FnOp>(decl->getIfOperation());
           if (func.getInheritedFrom())
             continue;
           // Ensure that a function with the same name and signature hasn't
@@ -3051,8 +3073,8 @@ void DeclResolver::addParentDeclsToTrait(
               addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
           finalizeFuncSignature(func, clonedDecl);
         }
-      } else if (auto parentAliasDecl =
-                     dyn_cast<AliasDeclOp>(declsInParent.front())) {
+      } else if (auto parentAliasDecl = dyn_cast<AliasDeclOp>(
+                     declsInParent.front()->getIfOperation())) {
         assert(declsInParent.size() == 1 &&
                "Can't have two aliases with same name.");
         auto &declInParent = *declsInParent.front();
@@ -3091,7 +3113,8 @@ void DeclResolver::addParentDeclsToTrait(
           assert(overrides.size() == 1);
 
           auto override = overrides.front();
-          auto overrideAliasDecl = dyn_cast<AliasDeclOp>(override);
+          auto overrideAliasDecl =
+              dyn_cast_or_null<AliasDeclOp>(override->getIfOperation());
           if (!overrideAliasDecl) {
             auto diag =
                 emitError(override->getLoc(), "invalid redefinition of ")
@@ -3156,15 +3179,16 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     if (decls.empty())
       continue;
-    if (isa<FnOp>(decls.front())) {
+    if (isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
       for (ASTDecl *decl : decls) {
-        auto func = cast<FnOp>(*decl);
+        auto func = cast_or_null<FnOp>(decl->getIfOperation());
         if (failed(resolveBody(*decl, decl->getLoc())))
           return failure();
 
         existingFns.insert({name, func.getSymNameAttr()});
       }
-    } else if (auto alias = dyn_cast<AliasDeclOp>(decls.front())) {
+    } else if (auto alias = dyn_cast_or_null<AliasDeclOp>(
+                   decls.front()->getIfOperation())) {
       if (failed(resolveBody(alias, lexer, *decls.front())))
         return failure();
     }
@@ -3243,10 +3267,11 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
         if (failed(resolveBody(*decl, traitDecl.getLoc())))
           return failure();
 
-        if (auto fn = dyn_cast<FnOp>(decl)) {
+        if (auto fn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
           if (fn.getInheritedFrom())
             continue;
-        } else if (auto alias = dyn_cast<AliasDeclOp>(decl)) {
+        } else if (auto alias =
+                       dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
           // Check if the type is mergeable with the existing alias type.
           if (auto it = existingAliases.find(name);
               it != existingAliases.end()) {

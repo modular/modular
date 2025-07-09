@@ -230,7 +230,7 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
 
 StructEmitter::StructEmitter(ASTDecl &structDecl)
     : FunctionEmitter(structDecl.getShared()), structDecl(structDecl) {
-  structDeclOp = cast<StructDeclOp>(structDecl);
+  structDeclOp = cast<StructDeclOp>(*structDecl.getIfOperation());
 }
 
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
@@ -546,7 +546,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // declresolution do it.
   fnDecl.resolvedness = DeclResolvedness::body;
 
-  auto fn = cast<FnOp>(fnDecl);
+  auto fn = cast<FnOp>(fnDecl.getIfOperation());
 
   // We want to populate a move but the move/copy should be a method!
   SMLoc location = fnDecl.getLoc();
@@ -670,7 +670,7 @@ FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
 }
 
 void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
-  auto fn = cast<FnOp>(fnDecl);
+  auto fn = cast<FnOp>(fnDecl.getIfOperation());
   IREmitter emitter(structDecl, EC_Decorator);
 
   // Point a `builder` at the end of the new copy() FnOp
@@ -709,7 +709,7 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
 
 std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
   auto &shared = structDecl.getShared();
-  auto structOp = cast<StructDeclOp>(structDecl);
+  auto structOp = cast<StructDeclOp>(*structDecl.getIfOperation());
 
   ValueInfo result;
   auto find = [&](StringRef name, SpecialFunctionKind kind,
@@ -725,7 +725,7 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
 
     if (lookupResult.getIfSuccess().size() == 1) {
       ASTDecl *result = lookupResult.getIfSuccess().front();
-      if (auto func = dyn_cast<FnOp>(result))
+      if (auto func = dyn_cast_or_null<FnOp>(result->getIfOperation()))
         if (SpecialFunctionKind(func.getSpecialFnKind()) == kind)
           member = func;
     }

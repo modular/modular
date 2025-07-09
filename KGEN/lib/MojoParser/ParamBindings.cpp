@@ -54,7 +54,8 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
   ParserParameterEvaluator traitAliasReplacer(declResolver.shared);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
-      AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
+      AliasDeclOp traitAlias =
+          dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation());
       if (!traitAlias)
         continue;
       StringAttr nameStringAttr = StringAttr::get(
@@ -100,23 +101,27 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   // TypeSignatureType, as the latter won't contain the full defaults list if
   // any have been bound already (when `type` is partially specified).
   ASTDecl *decl = type.getDecl(declScope.getShared());
-  if (auto structDecl = dyn_cast_or_null<StructDeclOp>(decl)) {
-    paramBindings.defaultPosTypeParams =
-        structDecl.getSignature().getDefaultPosParams();
-    paramBindings.defaultKwTypeParams =
-        structDecl.getSignature().getDefaultKwOnlyParams();
-    llvm::append_range(paramBindings.ctadPogs,
-                       structDecl.getSignature().getParamListAttrs().getPogs());
-    for (auto pog : paramBindings.ctadPogs) {
-      if (pog.getPassingKind() == PassingKind::KwOnly)
-        paramBindings.numKwOnlyCtadParams++;
-      else
-        paramBindings.numPosCtadParams++;
+  if (decl) {
+    if (auto structDecl =
+            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
+      paramBindings.defaultPosTypeParams =
+          structDecl.getSignature().getDefaultPosParams();
+      paramBindings.defaultKwTypeParams =
+          structDecl.getSignature().getDefaultKwOnlyParams();
+      llvm::append_range(
+          paramBindings.ctadPogs,
+          structDecl.getSignature().getParamListAttrs().getPogs());
+      for (auto pog : paramBindings.ctadPogs) {
+        if (pog.getPassingKind() == PassingKind::KwOnly)
+          paramBindings.numKwOnlyCtadParams++;
+        else
+          paramBindings.numPosCtadParams++;
+      }
     }
   }
 
   // When binding a trait function, add the self type bindings.
-  if (isa<TraitDeclOp>(decl)) {
+  if (decl && isa_and_nonnull<TraitDeclOp>(decl->getIfOperation())) {
     auto typeAttr = PValue(type).get();
 
     // The source value be something of trait type like Movable, or it may be

@@ -113,7 +113,7 @@ struct Symbol {
         approximateViewKind(declRef.getApproximateDeclKind()) {
     // Modules/Packages just point to the direct location, they don't have a
     // name in the source code.
-    if (isa<FileModuleOp, PackageOp>(*declRef))
+    if (isa_and_nonnull<FileModuleOp, PackageOp>(declRef.getIfOperation()))
       range = {identifierLoc, identifierLoc};
     else
       range = getRangeForText(identifierLoc, identifier);
@@ -378,7 +378,7 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   if (mainDoc.containsLocation(symbol.range.Start) &&
       mainDoc.containsLocation(symbol.range.End)) {
     // Don't register modules as they don't have a proper location in the file.
-    if (!isa<FileModuleOp>(*declRef))
+    if (!isa_and_nonnull<FileModuleOp>(declRef->getIfOperation()))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;
@@ -1588,10 +1588,12 @@ void MojoDocument::onSemanticTokens(
 /// of a method.
 static bool isSelfArgument(MojoASTDeclRef decl) {
   if (decl.getName() == "self") {
-    auto parentFunc = dyn_cast<FnOp>(decl->getParentDecl());
-    return parentFunc &&
-           isa<StructDeclOp, TraitDeclOp>(parentFunc->getParentOp()) &&
-           !parentFunc.getIsStatic();
+    if (ASTDecl *parentDecl = decl->getParentDecl()) {
+      auto parentFunc = dyn_cast<FnOp>(parentDecl->getIfOperation());
+      return parentFunc &&
+             isa<StructDeclOp, TraitDeclOp>(parentFunc->getParentOp()) &&
+             !parentFunc.getIsStatic();
+    }
   }
   return false;
 }

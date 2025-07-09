@@ -68,7 +68,7 @@ public:
   template <typename... OpTs>
   ASTDecl *getNearestDeclOfType() {
     ASTDecl *cur = this;
-    while (cur && !isa<OpTs...>(*cur))
+    while (cur && !isa_and_nonnull<OpTs...>(cur->getIfOperation()))
       cur = cur->getParentDecl();
     return cur;
   }
@@ -321,53 +321,5 @@ private:
 };
 
 } // namespace M::KGEN::LIT
-
-namespace llvm {
-/// Cast from an (const) ASTDecl & to a Decl operation type.
-template <typename T>
-struct CastInfo<T, M::KGEN::LIT::ASTDecl>
-    : public NullableValueCastFailed<T>,
-      public DefaultDoCastIfPossible<T, M::KGEN::LIT::ASTDecl &,
-                                     CastInfo<T, M::KGEN::LIT::ASTDecl>> {
-  // Provide isPossible here because here we have the const-stripping from
-  // ConstStrippingCast.
-  static bool isPossible(M::KGEN::LIT::ASTDecl &decl) {
-    auto *op = decl.getIfOperation();
-    return op && T::classof(op);
-  }
-  static T doCast(M::KGEN::LIT::ASTDecl &decl) {
-    return T(decl.getIfOperation());
-  }
-};
-template <typename T>
-struct CastInfo<T, const M::KGEN::LIT::ASTDecl>
-    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::ASTDecl,
-                                          CastInfo<T, M::KGEN::LIT::ASTDecl>> {
-};
-
-/// Cast from an (const) ASTDecl * to a Decl operation type.
-template <typename T>
-struct CastInfo<T, M::KGEN::LIT::ASTDecl *>
-    : public NullableValueCastFailed<T>,
-      public DefaultDoCastIfPossible<T, M::KGEN::LIT::ASTDecl *,
-                                     CastInfo<T, M::KGEN::LIT::ASTDecl *>> {
-  // Provide isPossible here because here we have the const-stripping from
-  // ConstStrippingCast.
-  static bool isPossible(M::KGEN::LIT::ASTDecl *decl) {
-    if (!decl)
-      return false;
-    auto *op = decl->getIfOperation();
-    return op && T::classof(op);
-  }
-  static T doCast(M::KGEN::LIT::ASTDecl *decl) {
-    return T(decl->getIfOperation());
-  }
-};
-template <typename T>
-struct CastInfo<T, const M::KGEN::LIT::ASTDecl *>
-    : public ConstStrippingForwardingCast<
-          T, const M::KGEN::LIT::ASTDecl *,
-          CastInfo<T, M::KGEN::LIT::ASTDecl *>> {};
-} // namespace llvm
 
 #endif // KGEN_MOJOPARSER_ASTDECL_H

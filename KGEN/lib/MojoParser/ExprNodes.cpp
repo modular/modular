@@ -583,7 +583,7 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
     return {}; // Sanity check the returned declaration.
   ASTDecl *decl = type.getDecl(emitter.shared);
 
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
   if (!litStruct || litStruct.getParams().size() != 1 ||
       !isa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
           litStruct.getParams()[0].getType())) {
@@ -667,7 +667,7 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
                                           IREmitter &emitter) {
   for (ASTDecl *decl : lookup.getIfSuccess()) {
     // If this contains anything mutable, return false.
-    if (isa<VarDeclOp, GlobalVarDeclOp>(*decl) ||
+    if (isa_and_nonnull<VarDeclOp, GlobalVarDeclOp>(decl->getIfOperation()) ||
         decl->getIfIRValue().getIfLValue())
       return false;
 
@@ -801,8 +801,9 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // Get the raw FileLineColLoc, and fuse with the debug scope of the
     // container if it exists.
     Location varDeclLoc = emitter.shared.diags.translateLocation(loc);
-    if (DebugInfo::DISubprogramAttr varDeclSubprogram = DebugInfo::extractScope(
-            cast<mlir::FunctionOpInterface>(scopeToInsert))) {
+    if (DebugInfo::DISubprogramAttr varDeclSubprogram =
+            DebugInfo::extractScope(cast_or_null<mlir::FunctionOpInterface>(
+                scopeToInsert->getIfOperation()))) {
       varDeclLoc = mlir::FusedLoc::get(emitter.getContext(), {varDeclLoc},
                                        varDeclSubprogram);
     }
@@ -831,21 +832,25 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
     if (!failureDecls.empty()) {
       // Reject unqualified struct field references.
-      if (auto fieldOp = dyn_cast<StructFieldOp>(failureDecls[0])) {
+      if (auto fieldOp = dyn_cast_or_null<StructFieldOp>(
+              failureDecls[0]->getIfOperation())) {
         emitter.emitError(loc, "cannot access instance field '")
             << spelling << "' directly; did you mean 'self.'?"
             << expr->getRange() << FixIt::insertBeforeToken(loc, "self.");
         return {};
         // Rejected unqualified struct method references.
-      } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
+      } else if (failureDecls[0]->getParentDecl() &&
+                 isa_and_nonnull<StructDeclOp>(
+                     failureDecls[0]->getParentDecl()->getIfOperation())) {
         const char *replacement = "self.";
         // References to static methods can always use capital Self.
-        if (auto firstCandidate = dyn_cast<FnOp>(failureDecls[0]))
+        if (auto firstCandidate =
+                dyn_cast_or_null<FnOp>(failureDecls[0]->getIfOperation()))
           if (firstCandidate.getIsStatic())
             replacement = "Self.";
 
         // References /from/ static methods can only use capital Self.
-        if (auto curFn = dyn_cast<FnOp>(lookupScope))
+        if (auto curFn = dyn_cast_or_null<FnOp>(lookupScope.getIfOperation()))
           if (curFn.getIsStatic())
             replacement = "Self.";
 
@@ -857,7 +862,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     }
 
     auto diag = emitter.emitError(loc) << expr->getRange();
-    if (auto structDecl = dyn_cast<StructDeclOp>(lookupScope))
+    if (auto structDecl =
+            dyn_cast_or_null<StructDeclOp>(lookupScope.getIfOperation()))
       diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
     else
       diag << "use of unknown declaration '" << spelling << "'";
@@ -867,7 +873,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   emitter.shared.notifyListenerOnRef(decls, spelling, expr);
 
   // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<FnOp>(decls[0])) {
+  if (auto firstCandidate =
+          dyn_cast_or_null<FnOp>(decls[0]->getIfOperation())) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
         spelling, decls, ParamBindings(emitter.getDeclScope()), expr,
@@ -881,7 +888,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // If the referenced decl is deprecated, emit a deprecation warning.
   // Overloaded declarations like functions can't be handled here. They are
   // handled when overload sets are resolved to a deprecated entry.
-  if (auto declItf = dyn_cast<ASTDeclInterface>(decl)) {
+  if (auto declItf =
+          dyn_cast_or_null<ASTDeclInterface>(decl.getIfOperation())) {
     if (StringAttr warning = declItf.getDeprecationWarningAttr()) {
       auto diag = emitter.emitWarning(loc, warning.getValue())
                   << expr->getRange();
@@ -891,20 +899,20 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
 
   // Aliases form a PValue.
-  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
+  if (auto param = dyn_cast_or_null<AliasDeclOp>(decl.getIfOperation())) {
     PValue result =
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
     return emitter.emitCResult(result.get(), expr, dest);
   }
 
   // If this is a type declaration, return it as a type.
-  if (auto structOp = dyn_cast<StructDeclOp>(decl))
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(decl.getIfOperation()))
     return emitter.emitCResult(structOp.bindReference(), expr, dest);
-  if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
+  if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(decl.getIfOperation()))
     return emitter.emitCResult(traitOp.bindReference(), expr, dest);
 
   // If this is a module or package declaration, form a module reference.
-  if (isa<FileModuleOp, PackageOp>(decl)) {
+  if (isa_and_nonnull<FileModuleOp, PackageOp>(decl.getIfOperation())) {
     PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
         decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
     return emitter.emitCResult(result, expr, dest);
@@ -915,7 +923,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // Narrow the decl to a CValue.
   CValue value;
-  if (auto var = dyn_cast<VarDeclOp>(decl)) {
+  if (auto var = dyn_cast_or_null<VarDeclOp>(decl.getIfOperation())) {
     // Normal 'var' declarations are MLValues, but 'ref' declarations hold the
     // reference as its value and need to be loaded.
     if (var.getKind() != VarDeclKind::Ref) {
@@ -929,7 +937,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           emitter.builder->create<RefLoadOp>(expr->getLocation(emitter), var);
       value = CValue::getMValueForRef(ref);
     }
-  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+  } else if (auto globalOp =
+                 dyn_cast_or_null<GlobalVarDeclOp>(decl.getIfOperation())) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
       emitter.emitErrorForDynamicValueInParameter(expr);
@@ -950,7 +959,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // Now that we're referencing a potentially dynamic value, see if it is from
   // an outer function.  If so, record it as a capture in this nested function.
   ASTDecl *declRef = nullptr;
-  if (!isa<FnOp>(*decls[0])) {
+  if (!isa_and_nonnull<FnOp>(decls[0]->getIfOperation())) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
@@ -1279,10 +1288,10 @@ static PValue substituteParametersIntoUserDefinedType(
     SMLoc rhsLoc, IREmitter &emitter) {
   auto metaType = cast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl->getIfOperation());
   if (!structOp) {
     auto diag = emitter.emitError(loc);
-    if (isa<FileModuleOp, PackageOp>(typeDecl)) {
+    if (isa_and_nonnull<FileModuleOp, PackageOp>(typeDecl->getIfOperation())) {
       // Emit helpful error message when user tried to subscript a module.
       emitModuleCallSubscriptDiag(diag, metaType, "subscript", loc,
                                   emitter.shared);
@@ -1352,7 +1361,8 @@ LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
   unsigned numPosBindings =
       overloadSet.paramBindings.getParameters().getNumPositional();
   for (ASTDecl *fnDecl : overloadSet.fnDecls) {
-    FnTypeGeneratorType sig = cast<FnOp>(fnDecl).getFullSignature();
+    FnTypeGeneratorType sig =
+        cast<FnOp>(fnDecl->getIfOperation()).getFullSignature();
     bindables.emplace_back(sig.getInputParamTypes(), sig.getParamListAttrs(),
                            numPosBindings);
   }
@@ -1442,8 +1452,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   for (ASTDecl *elt : nonemptySet->fnDecls) {
     // TODO: This is really naive: it doesn't account for default arguments,
     // variadic, byref_result, etc etc etc.
-    if (cast<FnOp>(*elt).getFuncTypeGenerator().getArguments().size() !=
-        size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
+    if (cast<FnOp>(elt->getIfOperation())
+            .getFuncTypeGenerator()
+            .getArguments()
+            .size() != size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
       shouldBindParameters = false;
       break;
     }
@@ -1566,8 +1578,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // __setitem__ use the same name for their value argument, so we just sniff
   // at the first entry of the set to see what it uses and assume the rest use
   // the same name.
-  auto firstFnSig =
-      cast<FnOp>(*setterSet.fnDecls.front()).getFuncTypeGenerator();
+  auto firstFnSig = cast<FnOp>(setterSet.fnDecls.front()->getIfOperation())
+                        .getFuncTypeGenerator();
 
   // Find the last user declared argument.
   auto argNo = firstFnSig.getNumArguments();
@@ -1683,13 +1695,13 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     return {};
 
   // Handle module or package references.
-  if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
+  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDecl->getIfOperation())) {
     // Look up the unqualified identifier in the right scope.
     return DeclRefNode::emitUnqualLookup(spelling, this, *typeDecl, dest,
                                          emitter, false);
   }
 
-  if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl) &&
+  if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDecl->getIfOperation()) &&
       !isa<TraitType>(typeDecl->getIfTypeValue())) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
@@ -1720,7 +1732,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
-  if (isa<FnOp>(memberDecls[0])) {
+  if (isa_and_nonnull<FnOp>(memberDecls[0]->getIfOperation())) {
     // Build an overload set of all matching function declarations.
 
     // TODO(ParameterizedType): This representation is subtly wrong.  We should
@@ -1755,8 +1767,9 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   ASTDecl &memberDecl = *memberDecls[0];
 
   // Parameters form a meta-value.
-  if (auto aliasDeclOpParam = dyn_cast<AliasDeclOp>(memberDecl)) {
-    if (isa<StructDeclOp>(*typeDecl)) {
+  if (auto aliasDeclOpParam =
+          dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
+    if (isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation())) {
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
                                             getLoc(), emitter);
@@ -1764,7 +1777,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // If we get here, we're accessing an alias in a trait.
-    assert((isa<TraitDeclOp>(*typeDecl) ||
+    assert((isa_and_nonnull<TraitDeclOp>(typeDecl->getIfOperation()) ||
             isa<TraitType>(typeDecl->getIfTypeValue())) &&
            "Alias's parent should be struct or trait");
     PValue basePValue = baseVal.getIfPValue();
@@ -1788,7 +1801,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   }
 
   // If the field is a variable, emit a reference to it.
-  if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
+  if (auto fieldOp =
+          dyn_cast_or_null<StructFieldOp>(memberDecl.getIfOperation())) {
     if (hasTypeBase || isa<StructMetaType>(baseRVType)) {
       emitter.emitError(getLoc(), "cannot access instance field '")
           << spelling << "' without an instance of " << baseRVType
@@ -1820,7 +1834,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     if (auto baseDecl = dyn_cast<StructMetaType>(baseRVType.getMetaType())) {
       for (auto [name, value] :
-           llvm::zip(cast<StructDeclOp>(typeDecl).getParams(),
+           llvm::zip(cast<StructDeclOp>(typeDecl->getIfOperation()).getParams(),
                      baseDecl.getParamValues())) {
         // If this binding is for this parameter propagate the bound
         // parameter.
@@ -1993,12 +2007,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           /*searchParentScopes=*/false);
       ArrayRef<ASTDecl *> results = result.getIfSuccess();
       if (result.isFailure() || results.size() != 1 ||
-          !isa<LIT::UnboundRegionOp>(*results.front())) {
+          !isa<LIT::UnboundRegionOp>(results.front()->getIfOperation())) {
         emitter.emitError(call.getLoc(), "MLIR operation region reference did "
                                          "not resolve to a region body");
         return {};
       }
-      auto unboundRegion = cast<LIT::UnboundRegionOp>(*results.front());
+      auto unboundRegion =
+          cast_or_null<LIT::UnboundRegionOp>(results.front()->getIfOperation());
       auto region = std::make_unique<Region>();
       region->takeBody(unboundRegion.getRegion());
       unboundRegion.erase();

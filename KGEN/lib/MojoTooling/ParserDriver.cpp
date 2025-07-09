@@ -104,7 +104,8 @@ MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
                                                  ArrayRef<TypedAttr> params,
                                                  MojoASTTypeRef type) {
   KGEN::ParameterEvaluator evaluator(
-      cast<StructDeclOp>(base.getDecl(getSharedState()).decl).getInputParams(),
+      cast<StructDeclOp>(base.getDecl(getSharedState()).decl->getIfOperation())
+          .getInputParams(),
       params);
 
   return evaluator.replace(evaluator.getReboundType(type.getMLIRType()));
@@ -144,8 +145,9 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
 
   // Import the file from within the package.
   std::reverse(packageNames.begin(), packageNames.end());
-  return &sharedState.importModule("." + llvm::join(packageNames, "."),
-                                   cast<PackageOp>(packageDecl), SMLoc());
+  return &sharedState.importModule(
+      "." + llvm::join(packageNames, "."),
+      cast<PackageOp>(packageDecl.getIfOperation()), SMLoc());
 }
 
 /// Create an ASTDecl for the given file module.
@@ -322,7 +324,7 @@ MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
     return nullptr;
   }
 
-  bool isPackage = isa<PackageOp>(*moduleDecl);
+  bool isPackage = isa<PackageOp>(moduleDecl->getIfOperation());
 
   std::deque<ASTDecl *> worklist({moduleDecl});
   while (!worklist.empty()) {

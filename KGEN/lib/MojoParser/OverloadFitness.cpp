@@ -671,13 +671,13 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
   DeclResolver &resolver = *callable.getShared().declResolver;
-  auto func = cast<FnOp>(*candidate);
+  auto func = cast_or_null<FnOp>(candidate->getIfOperation());
   FnTypeGeneratorType signature = func.getFullSignature();
 
   if (selfPValue) {
     // TODO(MOCO-1259): Support static methods with associated aliases
     auto parentDecl = candidate->getParentDecl();
-    if (dyn_cast_or_null<TraitDeclOp>(parentDecl)) {
+    if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
       signature = substituteTraitAliasesIntoSignature(
           resolver, parentDecl, func, signature, selfPValue);
     }
@@ -719,11 +719,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
       if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
         // TODO(MOCO-1259): Support static methods with associated aliases
-        if (auto func = dyn_cast_or_null<FnOp>(funcIfDirect)) {
-          auto parentDecl = funcIfDirect->getParentDecl();
-          if (dyn_cast_or_null<TraitDeclOp>(parentDecl)) {
-            signature = substituteTraitAliasesIntoSignature(
-                *shared.declResolver, parentDecl, func, signature, selfPValue);
+        if (funcIfDirect) {
+          if (auto func =
+                  dyn_cast_or_null<FnOp>(funcIfDirect->getIfOperation())) {
+            auto parentDecl = funcIfDirect->getParentDecl();
+            if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
+              signature = substituteTraitAliasesIntoSignature(
+                  *shared.declResolver, parentDecl, func, signature,
+                  selfPValue);
+            }
           }
         }
       }
@@ -778,7 +782,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
           // Hide the implicit trait parameter from the diagnostic.
           size_t hidden = 0;
           if (funcIfDirect &&
-              isa<TraitDeclOp>(cast<FnOp>(*funcIfDirect)->getParentOp()))
+              isa_and_nonnull<TraitDeclOp>(
+                  cast<FnOp>(funcIfDirect->getIfOperation())->getParentOp()))
             hidden = 1;
           size_t numExpected = signature.getInputParamTypes().size() - hidden -
                                countNumImplicitKinds(paramListAttr) -
@@ -830,7 +835,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         // its self parameters, complain about the struct.
         if (funcIfDirect) {
           if (auto structOp = dyn_cast<StructDeclOp>(
-                  cast<FnOp>(*funcIfDirect)->getParentOp())) {
+                  cast<FnOp>(funcIfDirect->getIfOperation())->getParentOp())) {
             auto structSig = structOp.getSignature();
             if (paramIdx < structSig.getNumParams()) {
               emitMessage(structSig);
@@ -878,13 +883,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                 indexRef && !indexRef.getDepth() &&
                 indexRef.getIndex() == paramIdx) {
               diag << "failed to infer implicit parameter ";
-              auto structDecl =
-                  cast<StructDeclOp>(ASTType(type).getDecl(shared));
-              printNameOrIdx(structDecl.getSignature().getParamName(i), i,
+              auto structDecl = ASTType(type).getDecl(shared);
+              assert(structDecl);
+              auto structDeclOp =
+                  cast<StructDeclOp>(structDecl->getIfOperation());
+              printNameOrIdx(structDeclOp.getSignature().getParamName(i), i,
                              diag);
               diag << " of argument ";
               printNameOrIdx(signature.getArgName(idx), idx, diag);
-              diag << " type '" << structDecl.getSymName() << "'";
+              diag << " type '" << structDeclOp.getSymName() << "'";
               return WalkResult::interrupt();
             }
           }
@@ -914,8 +921,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // for inferring parameters on Self.
     bool returnsSelf = false;
     if (funcIfDirect)
-      returnsSelf =
-          cast<FnOp>(*funcIfDirect).getSpecialFunctionInfo().hasSelfResult();
+      returnsSelf = cast<FnOp>(funcIfDirect->getIfOperation())
+                        .getSpecialFunctionInfo()
+                        .hasSelfResult();
 
     // Infer information from this signature holistically.
     if (failed(inference.infer(signature, operands, variadicKwOperands,
@@ -943,7 +951,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // TODO: Provide a first class representation for conditional conformance
     // that doesn't have us shadowing parameters like this!
     if (funcIfDirect) {
-      auto func = cast<FnOp>(*funcIfDirect);
+      auto func = cast<FnOp>(funcIfDirect->getIfOperation());
       if (!func.getIsStatic() && isa<StructDeclOp>(func->getParentOp())) {
         if (failed(inference.inferCTADParams(signature, operands)))
           return PValue();
@@ -1177,7 +1185,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      !cast<FnOp>(funcIfDirect).getIsImplicitConversion()) {
+      !cast<FnOp>(funcIfDirect->getIfOperation()).getIsImplicitConversion()) {
     ASTType fromType = operands[0].ir.getRValueTypeIfResolvable();
     return emitDiagFor.badImplicitConversion(fromType,
                                              signature.getUserResultType());

@@ -1553,7 +1553,7 @@ ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
 
   // We need to convert named parameters like "T", which are ParamDeclRefAttr
   // into ParamIndexRefAttr(0) style of representation.
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl)) {
+  if (auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation())) {
     IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
     selfType = remapper.replace(selfType.mlirType);
   }

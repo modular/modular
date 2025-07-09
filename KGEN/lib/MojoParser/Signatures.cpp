@@ -51,7 +51,11 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
                                   /*searchParentScopes=*/false);
   if (lookup.getIfSuccess().size() != 1)
     return {};
-  auto fieldOp = dyn_cast<StructFieldOp>(lookup.getIfSuccess()[0]);
+  auto lookupResult = lookup.getIfSuccess()[0];
+  if (!lookupResult)
+    return {};
+  auto fieldOp =
+      dyn_cast_or_null<StructFieldOp>(lookupResult->getIfOperation());
   if (!fieldOp)
     return {};
 
@@ -1086,7 +1090,12 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // VariadicPack[
   //   mut: Bool, //, is_owned: Bool, origin: Origin[mut],
   //   element_trait: _AnyTypeMetaType, *element_types: element_trait]
-  auto packStruct = dyn_cast_if_present<StructDeclOp>(packDecl);
+  if (!packDecl) {
+    emitter.emitError(arg.loc, "malformed VariadicPack");
+    return {};
+  }
+  auto packStruct =
+      dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
   if (!packStruct || packStruct.getParams().size() != 5) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
@@ -1423,8 +1432,9 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // argument.  If we're generating this argument for a function, put it into
   // its entry block. Otherwise it is a function type: We allocate the argument
   // into a holding block owned by SharedState so it isn't leaked.
-  Block &blockOwningArg =
-      fnDecl ? *cast<FnOp>(fnDecl).getBody() : shared.getArgumentOwningBlock();
+  Block &blockOwningArg = fnDecl
+                              ? *cast<FnOp>(*fnDecl->getIfOperation()).getBody()
+                              : shared.getArgumentOwningBlock();
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
@@ -1600,7 +1610,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     // If this is for a lit.fn declaration (as opposed to a function type),
     // add a block argument for this.
     if (fnDecl) {
-      Block &body = *cast<FnOp>(fnDecl).getBody();
+      Block &body = *cast<FnOp>(*fnDecl->getIfOperation()).getBody();
       (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
@@ -1636,7 +1646,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     // though, we don't want it to conflict with user identifiers, and it is
     // never looked up directly.
     if (fnDecl) {
-      Block &body = *cast<FnOp>(fnDecl).getBody();
+      Block &body = *cast<FnOp>(*fnDecl->getIfOperation()).getBody();
       auto bbArg =
           body.addArgument(refType, shared.translateLocation(resultArg.loc));
 
@@ -1746,7 +1756,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // __new__ and __init__ are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    cast<FnOp>(fnDecl).setIsStatic(true);
+    cast<FnOp>(*fnDecl->getIfOperation()).setIsStatic(true);
 
   // Trivial types are copyable with memcpy so they can't define copyinit.
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
@@ -1764,7 +1774,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // It isn't clear if this is actually that bad, maybe we should just say that
   // first arguments in methods default to Self it they don't have type.  This
   // could be true for static methods as well.
-  bool isStaticMethod = selfType && cast<FnOp>(fnDecl).getIsStatic();
+  bool isStaticMethod =
+      selfType && cast<FnOp>(*fnDecl->getIfOperation()).getIsStatic();
 
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
@@ -1797,7 +1808,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 /// resets the SpecialFunctionInfo.
 void TypeCheckedFnSignature::verifyFunctionNameBinding(
     ASTDecl &decl, StringAttr name, SpecialFunctionInfo &fnInfo) const {
-  FnOp funcOp = cast<FnOp>(decl);
+  FnOp funcOp = cast<FnOp>(*decl.getIfOperation());
 
   ArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
   ArrayRef<Type> argTypes = this->argTypes;
@@ -1830,7 +1841,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   ASTType selfType;
   constexpr size_t kSelfArgNo = 0;
   if (ASTDecl *parent = decl.getParentDecl();
-      parent && isa<StructDeclOp, TraitDeclOp>(*parent)) {
+      parent &&
+      isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation())) {
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::body);
@@ -1873,7 +1885,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       // explicit self type is very hard to specify in mojo, so we suggest to
       // use 'Self' instead.
       auto diag = emitErrorLoc(selfArg.loc, "'self' argument must have type ");
-      if (isa<TraitDeclOp>(*decl.getParentDecl()))
+      if (decl.getParentDecl() &&
+          isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()))
         diag << "'Self' in trait method declaration";
       else
         diag << selfType;

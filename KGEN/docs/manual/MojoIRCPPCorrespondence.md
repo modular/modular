@@ -91,7 +91,7 @@ if (lookup.isFailure()) {
   return failure();
 }
 ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-auto firstDecl = dyn_cast<FnOp>(decls[0]);
+auto firstDecl = dyn_cast_or_null<FnOp>(decls[0]->getIfOperation());
 if (!firstDecl) {
   emitter.emitError(smLoc, "found a '")
       << spelling << "' but it wasn't a function";

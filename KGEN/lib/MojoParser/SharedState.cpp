@@ -739,7 +739,8 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     do {
       ArrayRef<ASTDecl *> e = lookupInScope(*curSearchScope);
       if (!e.empty()) {
-        if (isa<StructDeclOp>(*curSearchScope) &&
+        if (curSearchScope &&
+            isa_and_nonnull<StructDeclOp>(curSearchScope->getIfOperation()) &&
             !(*e.front()).getIfIRValue().getIfPValue()) {
           // Skip struct bodies when searching up parent scopes, unless the
           // value is a parameter.
@@ -766,8 +767,9 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood. Make a copy of the entries to avoid dangling references if
   // we end up invalidating the decl map.
-  bool wasUnresolvedImport =
-      !resultDecls.empty() && isa<UnresolvedImportOp>(*resultDecls.front());
+  bool wasUnresolvedImport = !resultDecls.empty() && resultDecls.front() &&
+                             isa_and_nonnull<UnresolvedImportOp>(
+                                 resultDecls.front()->getIfOperation());
   for (ASTDecl *decl : resultDecls) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
@@ -1024,15 +1026,18 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   if (name.consume_front(".")) {
     // Find the current package.
     identifierLoc = adjustIdentifierLoc(1);
-    while (!isa<PackageOp>(*parentDecl) && parentDecl->parentDecl)
+    while (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()) &&
+           parentDecl->parentDecl)
       parentDecl = parentDecl->parentDecl;
-    if (!isa<PackageOp>(*parentDecl))
+    if (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()))
       return emitError("cannot import relative to a top-level package");
 
     // Otherwise, this is a package relative to the current parent.
     while (name.consume_front(".")) {
       identifierLoc = adjustIdentifierLoc(1);
-      if (!parentDecl->parentDecl || !isa<PackageOp>(*parentDecl->parentDecl)) {
+      if (!parentDecl->parentDecl ||
+          !isa_and_nonnull<PackageOp>(
+              parentDecl->parentDecl->getIfOperation())) {
         return emitError(
             "attempted relative import with no known parent package");
       }
@@ -1063,7 +1068,7 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       return emitError("'" + parentName +
                        "' does not refer to a nested package");
     parentDecl = lookupResult.getIfSuccess()[0];
-    if (!isa<PackageOp>(*parentDecl))
+    if (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()))
       return emitError("'" + parentName +
                        "' does not refer to a nested package");
     identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
@@ -1081,11 +1086,12 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       ASTDecl *existingDecl = existingDecls.front();
 
       // The decl already exists, so we can just return it.
-      if (isa<FileModuleOp, PackageOp>(*existingDecl))
+      if (isa_and_nonnull<FileModuleOp, PackageOp>(
+              existingDecl->getIfOperation()))
         return *impl->moduleStates[existingDecl];
 
       // If the decl isn't an unresolved import, emit an error.
-      if (!isa<UnresolvedImportOp>(*existingDecl))
+      if (!isa_and_nonnull<UnresolvedImportOp>(existingDecl->getIfOperation()))
         return emitError("'" + name +
                          "' does not refer to a package or module");
       existingDecls.clear();
@@ -1104,7 +1110,7 @@ ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
   LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
-      if (auto trait = dyn_cast<TraitDeclOp>(result))
+      if (auto trait = dyn_cast_or_null<TraitDeclOp>(result->getIfOperation()))
         return result;
     }
   }
@@ -1124,7 +1130,7 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
   // The overload set may contain multiple entries, but if it is a struct, it
   // must be a single entry and therefore we can just check that one.
   ASTDecl &firstDecl = *result.getIfSuccess()[0];
-  if (!isa<StructDeclOp>(firstDecl)) {
+  if (!isa_and_nonnull<StructDeclOp>(firstDecl.getIfOperation())) {
     auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
     return {};
@@ -1135,7 +1141,7 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
 ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
                                      llvm::SMLoc loc) {
   if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc))
-    return cast<StructDeclOp>(decl).bindReference();
+    return cast_or_null<StructDeclOp>(decl->getIfOperation()).bindReference();
   return getTypeCheckErrorType();
 }
 
@@ -1195,7 +1201,7 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
     return {};
   }
   ArrayRef<ASTDecl *> decls = result.getIfSuccess();
-  if (!isa<FnOp>(decls.front())) {
+  if (!isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
     emitError(loc, "internal error: builtin '")
         << fnName << "' does not refer to a function";
     return {};
@@ -1361,7 +1367,7 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
   // Process each of the stubs, deduplicating each of them into the shared
   // state. For any added thunks, we have to register a decl for them.
-  auto theModule = cast<ModuleOp>(getTopLevelDecl());
+  auto theModule = cast_or_null<ModuleOp>(getTopLevelDecl().getIfOperation());
   for (auto thunk : llvm::make_early_inc_range(tmpModule.getOps<FnOp>())) {
     Attribute key = thunk.getThunkKeyAttr();
     assert(key && "thunk is missing its key");
@@ -1391,7 +1397,8 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   moduleState.bytecodeReader = std::move(bytecodeReader);
   moduleState.tmpModule = tmpModule;
   impl->moduleStates[&decl] = &moduleState;
-  impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
+  impl->packageStates[cast_or_null<PackageOp>(decl.getIfOperation())] =
+      &moduleState;
 
   return moduleState;
 }
@@ -1540,7 +1547,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   mlir::BytecodeReader *bytecodeReader = nullptr;
   ASTDecl *parentDecl = &decl;
   do {
-    if (!isa<FileModuleOp, PackageOp>(*parentDecl))
+    if (!isa_and_nonnull<FileModuleOp, PackageOp>(parentDecl->getIfOperation()))
       continue;
 
     ModuleState *moduleState = impl->moduleStates[parentDecl];
@@ -2350,7 +2357,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
     StructDeclOp structOp;
-    if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
+    if (decl &&
+        (structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) &&
         structOp.getConvention() == TypeConvention::RegisterPassableTrivial) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
@@ -2382,7 +2390,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           evaluator.getReboundType(gerBase.getType().getElementType()));
 
       // These asserting casts are checked when the VarDecl is processed.
-      auto structOp = cast<StructDeclOp>(*ASTType(structType).getDecl(shared));
+      auto structDecl = ASTType(structType).getDecl(shared);
+      auto structOp =
+          structDecl ? cast_or_null<StructDeclOp>(structDecl->getIfOperation())
+                     : nullptr;
 
       // Form the new struct using all the same fields as before but with the
       // new one replaced.
@@ -2476,8 +2487,9 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
 
   auto &resolver = getDeclResolver();
   ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(symCst.getSymbol());
-  assert(llvm::isa_and_present<FnOp>(*calleeDecl) && "callee isn't known?");
-  auto fnOp = cast<FnOp>(*calleeDecl);
+  assert(llvm::isa_and_present<FnOp>(calleeDecl->getIfOperation()) &&
+         "callee isn't known?");
+  auto fnOp = cast_or_null<FnOp>(calleeDecl->getIfOperation());
   if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
     folder.emitError(callLoc) << "only supports calls to other "
                                  "'@always_inline(\"builtin\")' functions";
