@@ -104,13 +104,13 @@ def test_PyObject_HasAttrString(mut python: Python):
 
     var the_object = PythonObject(0)
     var result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(0, result)
 
     the_object = Python.list(1, 2, 3)
     result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(1, result)
     _ = the_object
@@ -164,7 +164,7 @@ def test_PyCapsule(mut python: Python):
     with assert_raises(
         contains="PyCapsule_GetPointer called with invalid PyCapsule object"
     ):
-        _ = cpython_env.PyCapsule_GetPointer(the_object.py_object, "some_name")
+        _ = cpython_env.PyCapsule_GetPointer(the_object._obj_ptr, "some_name")
 
     # Build a capsule and retrieve a pointer to it.
     var capsule_impl = UnsafePointer[UInt64].alloc(1)
