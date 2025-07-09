@@ -24,7 +24,7 @@ def test_function_attributes():
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function[kernel]()
-        assert_equal(func.get_attribute(Attribute.CONST_SIZE_BYTES), 0)
+        assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 
 def main():
