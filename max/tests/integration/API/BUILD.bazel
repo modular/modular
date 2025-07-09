@@ -42,7 +42,6 @@ lit_tests(
     tags = ["gpu"],
     tools = [
         "//GenericML/tools/mt",
-        "//KGEN/tools/mojo",
         "//SDK/tools/modular-api-executor",
     ],
 )
