@@ -1,3 +1,5 @@
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+
 filegroup(
     name = "mojo-filecheck-test",
     testonly = True,
@@ -13,4 +15,14 @@ alias(
         "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
     }),
     visibility = ["//visibility:public"],
+)
+
+modular_py_binary(
+    name = "mojodoc_json_to_markdown",
+    srcs = ["mojodoc_json_to_markdown.py"],
+    data = glob(["mojodoc-templates/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
 )

@@ -4,12 +4,12 @@ load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library", "py_test")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
 load("@protobuf//bazel:py_proto_library.bzl", _py_proto_library = "py_proto_library")
 load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
-load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
 load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 basic_py_test = py_test
@@ -106,11 +106,7 @@ def modular_py_binary(
         **kwargs
     )
 
-# buildifier: disable=function-docstring
-def mojo_library(
-        validate_missing_docs = False,  # buildifier: disable=unused-variable
-        deps = [],
-        **kwargs):
+def mojo_library(deps = [], **kwargs):
     if _has_internal_reference(deps):
         return
 
@@ -147,7 +143,6 @@ def _noop(**_kwargs):
 
 lit_tests = _noop
 modular_py_test = _noop
-mojo_doc = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
