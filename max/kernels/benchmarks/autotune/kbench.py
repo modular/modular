@@ -125,7 +125,9 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        output = subprocess.run(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
@@ -228,6 +230,11 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MOJO_BINARY_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")

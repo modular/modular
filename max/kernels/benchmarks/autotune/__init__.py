@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,18 +9,5 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
-
-
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.mojo
-params:
-
-- dtype: DType.float16
-  shape: [1024x512x256, 32x32x32]
-  stages: [4,8]
-  $x: [0,1,2,3]
-
-- dtype: DType.float32
-  shape: 64x64x64
-  stages: 2
+# ===----------------------------------------------------------------------=== #
+"""Autotune package for kernel benchmarking."""

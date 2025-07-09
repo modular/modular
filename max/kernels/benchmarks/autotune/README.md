@@ -37,10 +37,43 @@ autotuning problem, so just leaned into building something simple.
 Compile using `--config=production`:
 
 ```bash
-bb //... --config=production
 br //:install --config=production
 setup-gpu-benchmarking
 ```
+
+### Setup kbench
+
+There's two ways to run kbench:
+
+Before running you many need to export the `$KERNEL_BENCHMARKS_ROOT`
+environment variable. This is the root directory of the kbench repository.
+
+```bash
+export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/open-source/max/max/kernels/benchmarks
+```
+
+1. Using bazel:
+   Running with bazel should automatically build and install mojo
+
+    ```bash
+    br //open-source/max/max/kernels/benchmarks/autotune:kbench -- --help
+
+    ```
+
+    When running from bazel, note your .yaml files reference a mojo file,
+    you'll need to be in a directory where that file is accessible.
+
+    ```bash
+    br //open-source/max/max/kernels/benchmarks/autotune:kbench --  test.yaml --dryrun
+    ```
+
+2. Using uv:
+    If you use uv, you'll need to install `modular` first, so that `mojo` will be
+    available.
+
+    ```bash
+    uv run kbench --help
+    ```
 
 ## Usage
 

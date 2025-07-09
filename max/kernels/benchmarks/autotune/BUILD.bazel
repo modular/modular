@@ -3,6 +3,7 @@ load(
     "modular_py_binary",
     "modular_py_library",
     "modular_py_test",
+    "mojo_test_environment",
     "pkg_files",
     "requirement",
 )
@@ -33,22 +34,53 @@ modular_py_library(
     ],
 )
 
+mojo_test_environment(
+    name = "mojo_test_env",
+    data = [
+        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    libs = [
+        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:DeviceContext",
+        "//Support:Globals",
+        "//KGEN:CompilerRT",
+    ],
+)
+
 modular_py_binary(
     name = "kbench",
     srcs = [
+        "__init__.py",
         "kbench.py",
+        "kbench_shim.py",
         "utils.py",
     ],
+    data = [
+        ":mojo_test_env",
+        "//KGEN/tools/mojo",
+    ],
+    env = {
+        "MOJO_BINARY_PATH": "$(rootpath //KGEN/tools/mojo)",
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+        "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+    },
     imports = ["."],
+    main = "kbench_shim.py",
+    toolchains = [":mojo_test_env"],
     deps = [
         requirement("numpy"),
         requirement("click"),
         requirement("pandas"),
         requirement("rich"),
-        requirement("plotly"),
-        requirement("kaleido"),
-        requirement("pyyaml"),
         requirement("ruamel-yaml"),
+        requirement("pygments"),
     ],
 )
 
@@ -66,7 +98,7 @@ pkg_files(
         "kbench.py",
         "kplot.py",
         "kprofile.py",
-        "requirements.txt",
+        "pyproject.toml",
         "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
