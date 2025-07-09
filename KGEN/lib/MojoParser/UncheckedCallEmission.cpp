@@ -62,8 +62,10 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
 
   ValueDest packDest(ExprContext::EC_PackArgument);
 
+  auto variadicPackDecl = variadicPackType.getDecl(emitter.shared);
+  assert(variadicPackDecl && "Missing VariadicPack declaration");
   auto variadicPackStructDecl =
-      cast<StructDeclOp>(variadicPackType.getDecl(emitter.shared));
+      cast<StructDeclOp>(variadicPackDecl->getIfOperation());
   SmallVector<TypedAttr> bindings(
       cast<LIT::StructType>(variadicPackType).getParamValues());
   // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
@@ -1116,7 +1118,7 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
-  auto structOp = cast<StructDeclOp>(decl);
+  auto structOp = cast<StructDeclOp>(decl->getIfOperation());
   ParameterExprArrayAttr bindings = paramBinds.verifyBindings(
       structOp, structOp.getSignature(), expr->getLoc(), /*partial=*/false);
   if (!bindings)
@@ -1139,7 +1141,7 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
       emitter.getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol());
   if (!calleeDecl)
     return;
-  auto calleeFunc = cast<FnOp>(*calleeDecl);
+  auto calleeFunc = cast<FnOp>(calleeDecl->getIfOperation());
 
   // The __del__ special function takes its operand as an owning reference,
   // and destroys it.  It is a bit silly, but you can call it directly on an
@@ -1400,7 +1402,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
         // Figure out what is getting called and include it.
         if (ASTDecl *calleeDecl =
                 getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
-          auto calleeFunc = cast<FnOp>(*calleeDecl);
+          auto calleeFunc = cast<FnOp>(calleeDecl->getIfOperation());
 
           // Print "'Type' initializer" instead of just '__init__'.
           if (calleeFunc.getSpecialFunctionInfo().isInitializer()) {
@@ -1515,7 +1517,7 @@ static bool shouldEmitParameterCall(RValue callee,
           ParamOperatorAttr::stripRebind(callee.getIfPValue()))) {
     if (ASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
             calleeSymbolCst.getSymbol())) {
-      if (cast<FnOp>(*calleeDecl).getInlineLevel() ==
+      if (cast<FnOp>(calleeDecl->getIfOperation()).getInlineLevel() ==
           InlineLevel::AlwaysBuiltin)
         return true;
     }

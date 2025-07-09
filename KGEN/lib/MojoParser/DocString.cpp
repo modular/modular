@@ -52,8 +52,10 @@ bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
   if (name.starts_with("_") && !isPublicSpecialFunction(name))
     return true;
 
+  if (!decl.getIfOperation())
+    return false;
   // Otherwise, check to see if this was marked explicitly to be hidden.
-  return TypeSwitch<ASTDecl &, bool>(decl)
+  return TypeSwitch<Operation *, bool>(decl.getIfOperation())
       .Case<FnOp, GlobalVarDeclOp, StructDeclOp>(
           [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
       .Default(false);
@@ -366,7 +368,10 @@ public:
   void validate(ASTDecl &decl) {
     if (decl.isErroneous())
       return;
-    TypeSwitch<ASTDecl &>(decl)
+
+    if (!decl.getIfOperation())
+      return;
+    TypeSwitch<Operation *>(decl.getIfOperation())
         .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp>([&](auto op) {
           ValidationKind validation = requiresDocString(op)
                                           ? ValidationKind::Strict
@@ -774,23 +779,25 @@ public:
     if (decl.isErroneous())
       return std::nullopt;
 
-    TypeSwitch<ASTDecl &>(decl)
-        .Case<FnOp, FileModuleOp, StructDeclOp, StructFieldOp, TraitDeclOp>(
-            [&](auto op) {
-              StringRef summaryCodeBlock = "[summary].";
-              os << summaryCodeBlock;
+    if (decl.getIfOperation()) {
+      TypeSwitch<Operation *>(decl.getIfOperation())
+          .Case<FnOp, FileModuleOp, StructDeclOp, StructFieldOp, TraitDeclOp>(
+              [&](auto op) {
+                StringRef summaryCodeBlock = "[summary].";
+                os << summaryCodeBlock;
 
-              // Indent and generate the rest of the decl.
-              for (size_t i = 0; i < indent; i += 2)
-                os.indent();
-              generateDecl(decl, op);
+                // Indent and generate the rest of the decl.
+                for (size_t i = 0; i < indent; i += 2)
+                  os.indent();
+                generateDecl(decl, op);
 
-              // If we added anything other than the summary, add a newline.
-              if (rawOS.str().size() > summaryCodeBlock.size()) {
-                os << "\n";
-                os.indent(indent);
-              }
-            });
+                // If we added anything other than the summary, add a newline.
+                if (rawOS.str().size() > summaryCodeBlock.size()) {
+                  os << "\n";
+                  os.indent(indent);
+                }
+              });
+    }
 
     // If we actually generated something, return it, otherwise bail.
     if (rawOS.str().empty())

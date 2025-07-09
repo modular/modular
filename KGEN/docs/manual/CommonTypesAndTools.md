@@ -398,12 +398,6 @@ find any of those matching a certain name.
 
 It also holds a cursor for lazily, gradually parsing itself (see `ASTDecl::getCursor`).
 
-You can `dyn_cast` an `ASTDecl` to its underlying operation, like
-`dyn_cast<VarDeclOp>(myAstDecl)`, but that **does not** mean `ASTDecl` is a
-superclass for any operations. That's our own custom sugar for this equivalent
-statement: `dyn_cast<VarDeclOp>(myAstDecl.getIfOperation())` (we do this via the
-`struct CastInfo` in `ASTDecl.h`).
-
 An `ASTDecl` will usually be backed by an operation, but can also be backed by a
 `CValue`. One time, we observed a `struct MyStruct<T: AnyType>` containing a
 child "T" that was an `ASTDecl` that was backed by a `ParamDeclRefAttr("T")`

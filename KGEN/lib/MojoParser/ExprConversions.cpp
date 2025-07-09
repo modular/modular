@@ -783,24 +783,29 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
 
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
-  auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
-  auto toDecl = dyn_cast_or_null<StructDeclOp>(toType.getDecl(shared));
+  auto fromDecl = fromType.getDecl(shared);
+  auto toDecl = toType.getDecl(shared);
   if (fromDecl && toDecl) {
-    FuncTypeGeneratorType fromSig =
-        fromDecl.getClosureSignature().value_or(nullptr);
-    FuncTypeGeneratorType toSig =
-        toDecl.getClosureSignature().value_or(nullptr);
-    if (fromSig && toSig) {
-      // Compare the specialized signatures.
-      fromSig = fromSig.getSpecializedGenerator(fromType.getParamBindings(),
-                                                /*emitErrorFn=*/{},
-                                                &shared.getEvaluationContext());
-      toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
-                                            /*emitErrorFn=*/{},
-                                            &shared.getEvaluationContext());
-      return canZeroCostConvert(fromSig, toSig, shared);
+    auto fromDeclOp =
+        dyn_cast_or_null<StructDeclOp>(fromDecl->getIfOperation());
+    auto toDeclOp = dyn_cast_or_null<StructDeclOp>(toDecl->getIfOperation());
+    if (fromDeclOp && toDeclOp) {
+      FuncTypeGeneratorType fromSig =
+          fromDeclOp.getClosureSignature().value_or(nullptr);
+      FuncTypeGeneratorType toSig =
+          toDeclOp.getClosureSignature().value_or(nullptr);
+      if (fromSig && toSig) {
+        // Compare the specialized signatures.
+        fromSig = fromSig.getSpecializedGenerator(
+            fromType.getParamBindings(),
+            /*emitErrorFn=*/{}, &shared.getEvaluationContext());
+        toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
+                                              /*emitErrorFn=*/{},
+                                              &shared.getEvaluationContext());
+        return canZeroCostConvert(fromSig, toSig, shared);
+      }
+      return false;
     }
-    return false;
   }
 
   // Check origin downcasting.  The safe conversions are:
@@ -1188,7 +1193,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
     return false; // an error was emitted
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
-      auto traitFn = dyn_cast<FnOp>(*decl);
+      auto traitFn = dyn_cast_or_null<FnOp>(decl->getIfOperation());
       // Skip any children that aren't methods or are inherited. This could be
       // an alias.
       if (!traitFn || traitFn.getInheritedFrom())
@@ -1228,12 +1233,13 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 
   // Use a special wrapper decl in the builtins as stubs.
   ASTDecl *wrapperDecl = shared.getBuiltinStubsMLIRType(loc).getDecl(shared);
-  if (!wrapperDecl || !isa<StructDeclOp>(wrapperDecl)) {
+  if (!wrapperDecl ||
+      !isa_and_nonnull<StructDeclOp>(wrapperDecl->getIfOperation())) {
     shared.emitError(loc, "malformed builtin._stubs.__MLIRType");
     return {};
   }
-  ASTType boundWrapper =
-      cast<StructDeclOp>(wrapperDecl).bindReference({typeValue});
+  ASTType boundWrapper = cast<StructDeclOp>(wrapperDecl->getIfOperation())
+                             .bindReference({typeValue});
 
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
@@ -1258,7 +1264,8 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   // bugs.  We already do this for rp-trivial types which MLIR types are.
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    assert(!decls.empty() && isa<FnOp>(decls.front()));
+    assert(!decls.empty() &&
+           isa_and_nonnull<FnOp>(decls.front()->getIfOperation()));
 
     for (ASTDecl *decl : decls) {
       // MLIR types are movable, copyable, and destructible only.

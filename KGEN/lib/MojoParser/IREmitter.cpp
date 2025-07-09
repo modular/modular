@@ -1351,7 +1351,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // There must be an ASTDecl for it with the same name, in scope.
     ArrayRef<ASTDecl *> decls =
         declScope.lookupInCurrentScope(refOp.getNameAttr());
-    assert(decls.size() == 1 && cast<VarDeclOp>(decls[0]) == refOp &&
+    assert(decls.size() == 1 &&
+           cast_or_null<VarDeclOp>(decls[0]->getIfOperation()) == refOp &&
            "lookup failure");
 
     // Handle 'bind' by determining if this is a 'var' or immutable 'ref'.
@@ -1589,7 +1590,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   if (!decl) // MLIR types are never parameterized.
     return type;
 
-  auto structDecl = dyn_cast<StructDeclOp>(decl);
+  auto structDecl = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
   if (!structDecl)
     return type;
 
@@ -1687,7 +1688,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   if (tupleType.isTypeCheckErrorType())
     return {};
   ASTDecl *typeDecl = ASTType(tupleType).getDecl(shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl->getIfOperation());
   if (!structOp) {
     emitError(loc, "internal error: Tuple type not found or not a struct");
     return {};

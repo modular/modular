@@ -30,7 +30,7 @@ ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
 }
 
 DocStringAttr ASTDecl::getDocString() const {
-  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(this))
+  if (auto astDeclOp = dyn_cast_or_null<ASTDeclInterface>(getIfOperation()))
     return astDeclOp.getDocStringAttr();
   return {};
 }
@@ -63,12 +63,14 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 /// or trait.
 ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
   // Methods are always FuncOps.
-  if (!isa<FnOp>(*this))
+  if (!isa_and_nonnull<FnOp>(getIfOperation()))
     return nullptr;
 
   // Don't return non-null for nested functions or module-level functions.
   ASTDecl *parent = getParentDecl();
-  return isa<StructDeclOp, TraitDeclOp>(*parent) ? parent : nullptr;
+  return isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation())
+             ? parent
+             : nullptr;
 }
 
 void ASTDecl::takeDecls(ASTDecl &src) {
@@ -97,11 +99,11 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
   while (decl) {
     checkForCollision(decl);
 
-    if (isa<DeclInterface>(*decl)) {
+    if (isa_and_nonnull<DeclInterface>(decl->getIfOperation())) {
       ++depth;
       if (!paramScope)
         paramScope = decl;
-      if (isa<FileModuleOp>(*decl))
+      if (isa_and_nonnull<FileModuleOp>(decl->getIfOperation()))
         break;
     }
 
@@ -186,8 +188,8 @@ std::optional<StringRef> ASTDecl::getNameIfOperation() const {
 }
 
 PValue ASTDecl::getFuncAsPValue() const {
-  return SymbolConstantAttr::get(getSymbolRef(),
-                                 cast<FnOp>(*this).getFuncTypeGenerator());
+  return SymbolConstantAttr::get(
+      getSymbolRef(), cast<FnOp>(getIfOperation()).getFuncTypeGenerator());
 }
 
 /// Return the SymbolRefAttr for a declaration, including all scoping that may

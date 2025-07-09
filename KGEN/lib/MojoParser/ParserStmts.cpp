@@ -53,7 +53,8 @@ void ParserBase::parseDocString(ASTDecl &decl) {
   Token docToken = getToken();
   if (!consumeIf(Token::string))
     return;
-  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(decl)) {
+  if (auto astDeclOp =
+          dyn_cast_or_null<ASTDeclInterface>(decl.getIfOperation())) {
     StringRef docSpelling = docToken.getSpelling();
     Location loc = shared.diags.translateLocation(
         lexer.getStringLiteralStartLoc(docSpelling));
@@ -159,7 +160,7 @@ struct StmtParser : public ParserBase {
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
     // Special logic for functions.
-    if (auto funcOp = dyn_cast<FnOp>(curDeclScope)) {
+    if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
       // The default of inserting at the end of the function isn't right,
       // because it will have an lit.endfn: insert before that instead.
       assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
@@ -625,7 +626,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_var:
     // In function bodies, we parse 'var' as expressions, part of the pattern
     // grammar.  TODO: extend this to other contexts.
-    if (isa<FnOp>(getParentDecl())) {
+    if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
       rejectDecorator();
       break;
     }
@@ -700,7 +701,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.  First ensure we're in a function.
-  auto func = dyn_cast<FnOp>(getParentDecl());
+  auto func = dyn_cast_or_null<FnOp>(getParentDecl().getIfOperation());
   if (!func) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -2335,7 +2336,8 @@ ParseResult StmtParser::parseFromImportStmt() {
       // Resolve the module if we haven't yet.
       if (!currentResolvedModule) {
         ASTDecl *curModuleDecl = curDeclScope;
-        while (curModuleDecl && !isa<FileModuleOp>(curModuleDecl))
+        while (curModuleDecl &&
+               !isa_and_nonnull<FileModuleOp>(curModuleDecl->getIfOperation()))
           curModuleDecl = curModuleDecl->getParentDecl();
 
         currentResolvedModule = &shared.importModule(
@@ -2590,7 +2592,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 ///                 | "var" identifier "=" expression
 ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                                      size_t stmtIndent) {
-  assert(!isa<FnOp>(getParentDecl()) &&
+  assert(!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()) &&
          "var decls in functions are processed as expression statements");
 
   // Global var decls are allowed to have decorators, but nothing else.
@@ -2610,7 +2612,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                       &identifierLoc))
     return failure();
 
-  if (isa<TraitDeclOp>(getParentDecl())) {
+  if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
     rejectDecorator();
     emitError(loc, "TODO: fields in traits are not supported yet");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
@@ -2620,7 +2622,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
-  if (isa<StructDeclOp>(getParentDecl())) {
+  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
     rejectDecorator();
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
 
@@ -2647,7 +2649,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
       stmtIndent);
   getDeclResolver().attachDeclToParentNameTable(&decl, name);
 
-  auto varOp = dyn_cast<VarDeclOp>(decl);
+  auto varOp = dyn_cast_or_null<VarDeclOp>(decl.getIfOperation());
   if (!varOp) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
@@ -2766,13 +2768,13 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
                                         size_t curIndent) {
   // We don't support non-top level structs (yet?).
   bool nestFailure = false;
-  if (isa<StructDeclOp>(getParentDecl())) {
+  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
     emitTokenError("nested struct not supported here");
     nestFailure = true;
-  } else if (isa<TraitDeclOp>(getParentDecl())) {
+  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
     emitTokenError("nested struct in a trait not supported here");
     nestFailure = true;
-  } else if (isa<FnOp>(getParentDecl())) {
+  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
     emitTokenError("struct inside a function not supported here");
     nestFailure = true;
   }
@@ -2805,7 +2807,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // We don't support non-top level traits (yet?).
-  if (!isa<FileModuleOp>(getParentDecl()))
+  if (!isa_and_nonnull<FileModuleOp>(getParentDecl().getIfOperation()))
     emitTokenError("nested trait not supported here");
 
   consumeToken(Token::kw_trait);

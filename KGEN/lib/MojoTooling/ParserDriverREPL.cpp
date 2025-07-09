@@ -471,15 +471,16 @@ static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
 static void processVariablesForPersistence(MojoParserREPLListener &listener,
                                            ASTDecl &exprFnDecl,
                                            ASTDecl &stateStructDecl) {
-  auto exprFn = cast<FnOp>(exprFnDecl);
-  auto stateStruct = cast<StructDeclOp>(stateStructDecl);
+  auto exprFn = cast<FnOp>(exprFnDecl.getIfOperation());
+  auto stateStruct = cast<StructDeclOp>(stateStructDecl.getIfOperation());
 
   // Grab all of the variables within the expression body and sort them by name,
   // so that we can deterministically process them.
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   auto addVars = [&](ASTDecl &decl) {
     for (auto &[name, decls] : decl.getDeclsInScope())
-      if (decls.size() == 1 && isa<VarDeclOp>(*decls.front()))
+      if (decls.size() == 1 &&
+          isa_and_nonnull<VarDeclOp>(decls.front()->getIfOperation()))
         variables.emplace_back(name, decls.front());
   };
   addVars(exprFnDecl);
@@ -562,7 +563,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   for (auto &[name, decl] : variables) {
     // Handle memory based decls.
-    if (auto varOp = dyn_cast<LIT::VarDeclOp>(*decl)) {
+    if (auto varOp = dyn_cast_or_null<LIT::VarDeclOp>(decl->getIfOperation())) {
       if (MRValue field = checkInsertPersistentVar(varOp)) {
         varOp.replaceAllUsesWith(field);
         varOp.erase();
@@ -743,7 +744,8 @@ static ASTDecl &buildAndResolveREPLModule(
       // If we hit an overlap and these are function decls, save them for
       // processing for later. We might be able to import if the signatures
       // don't overlap.
-      if (isa<FnOp>(*existingDecls.front()) && isa<FnOp>(*decls.front())) {
+      if (isa_and_nonnull<FnOp>(existingDecls.front()->getIfOperation()) &&
+          isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
         fnDecls.push_back({name, decls});
       }
     }

@@ -362,7 +362,8 @@ LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
       });
   if (!module)
     return {};
-  return {std::move(module), cast<PackageOp>(*packageDecl)};
+  return {std::move(module),
+          cast_or_null<PackageOp>(packageDecl->getIfOperation())};
 }
 
 /// Load a stripped binary package at the given path, only pulling in the top

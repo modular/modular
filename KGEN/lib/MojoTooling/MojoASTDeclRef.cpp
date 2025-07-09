@@ -35,8 +35,9 @@ KGEN::LIT::SharedState *MojoASTDeclRef::getShared() const {
 static FnTypeGeneratorType getSignatureFromDecl(ASTDecl *decl) {
   if (!decl)
     return nullptr;
-  if (auto func = dyn_cast<FnOp>(*decl))
-    return func.getFuncTypeGenerator();
+  if (auto declOp = decl->getIfOperation())
+    if (auto func = dyn_cast<FnOp>(declOp))
+      return func.getFuncTypeGenerator();
   if (auto typeValue = decl->getIfTypeValue())
     return dyn_cast_or_null<FnTypeGeneratorType>(typeValue);
   return nullptr;
@@ -116,7 +117,9 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 }
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
-  return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
+  if (!decl->getIfOperation())
+    return {};
+  return TypeSwitch<Operation &, MojoASTTypeRef>(*decl->getIfOperation())
       .Case<GlobalVarDeclOp, VarDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FnOp op) { return op.getFullSignature(); })
@@ -223,51 +226,53 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
   constexpr bool isApproximateResult =
       std::is_same_v<ResultType, ApproximatePublicDeclKind>;
 
-  if (isa<AliasDeclOp>(*decl))
-    return createPublicDecl<ResultType, PublicAliasDecl>(*this);
+  if (Operation *declOp = decl->getIfOperation()) {
+    if (isa<AliasDeclOp>(declOp))
+      return createPublicDecl<ResultType, PublicAliasDecl>(*this);
 
-  if (isa<FnOp>(*decl))
-    return createPublicDecl<ResultType, PublicFunctionDecl>(*this);
+    if (isa<FnOp>(declOp))
+      return createPublicDecl<ResultType, PublicFunctionDecl>(*this);
+
+    if (isa<FileModuleOp>(declOp))
+      return createPublicDecl<ResultType, PublicModuleDecl>(*this);
+
+    if (isa<StructDeclOp>(declOp))
+      return createPublicDecl<ResultType, PublicStructDecl>(*this);
+
+    if (isa<StructFieldOp>(declOp))
+      return createPublicDecl<ResultType, PublicStructFieldDecl>(*this);
+
+    if (auto varDecl = dyn_cast<VarDeclOp>(declOp)) {
+      // Handle the case of an argument materialized in a variable.
+      if (varDecl.getKind() == VarDeclKind::Arg) {
+        if constexpr (isApproximateResult) {
+          return PublicDeclKind::DK_PublicArgumentDecl;
+        } else {
+          auto parentFn = varDecl->getParentOfType<FnOp>();
+          for (auto [idx, pogAttr] : llvm::enumerate(
+                   parentFn.getFuncTypeGenerator().getArgListAttrs().getPogs()))
+            if (pogAttr.getName() == varDecl.getNameAttr())
+              return createPublicArgumentDecl(*this, idx);
+        }
+      }
+      // Otherwise, this is a regular variable.
+      return createPublicDecl<ResultType, PublicVariableDecl>(*this);
+    }
+
+    if (isa<GlobalVarDeclOp>(declOp))
+      return createPublicDecl<ResultType, PublicVariableDecl>(*this);
+
+    if (isa<PackageOp>(declOp))
+      return createPublicDecl<ResultType, PublicPackageDecl>(*this);
+
+    if (isa<TraitDeclOp>(declOp))
+      return createPublicDecl<ResultType, PublicTraitDecl>(*this);
+  }
 
   // If the decl corresponds to a signature, synthesize a function view for
   // it.
   if (auto signature = getSignatureFromDecl(decl))
     return createPublicDecl<ResultType, PublicFunctionDecl>(*this, signature);
-
-  if (isa<FileModuleOp>(*decl))
-    return createPublicDecl<ResultType, PublicModuleDecl>(*this);
-
-  if (isa<StructDeclOp>(*decl))
-    return createPublicDecl<ResultType, PublicStructDecl>(*this);
-
-  if (isa<StructFieldOp>(*decl))
-    return createPublicDecl<ResultType, PublicStructFieldDecl>(*this);
-
-  if (auto varDecl = dyn_cast<VarDeclOp>(*decl)) {
-    // Handle the case of an argument materialized in a variable.
-    if (varDecl.getKind() == VarDeclKind::Arg) {
-      if constexpr (isApproximateResult) {
-        return PublicDeclKind::DK_PublicArgumentDecl;
-      } else {
-        auto parentFn = varDecl->getParentOfType<FnOp>();
-        for (auto [idx, pogAttr] : llvm::enumerate(
-                 parentFn.getFuncTypeGenerator().getArgListAttrs().getPogs()))
-          if (pogAttr.getName() == varDecl.getNameAttr())
-            return createPublicArgumentDecl(*this, idx);
-      }
-    }
-    // Otherwise, this is a regular variable.
-    return createPublicDecl<ResultType, PublicVariableDecl>(*this);
-  }
-
-  if (isa<GlobalVarDeclOp>(*decl))
-    return createPublicDecl<ResultType, PublicVariableDecl>(*this);
-
-  if (isa<PackageOp>(*decl))
-    return createPublicDecl<ResultType, PublicPackageDecl>(*this);
-
-  if (isa<TraitDeclOp>(*decl))
-    return createPublicDecl<ResultType, PublicTraitDecl>(*this);
 
   // After failing to match with regular Ops, we then inspect the IR to
   // identify if this decl is an argument.

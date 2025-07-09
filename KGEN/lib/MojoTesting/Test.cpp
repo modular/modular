@@ -526,7 +526,7 @@ struct Test::TestDiscovery {
 
     // Check for a doc test suite if this isn't a package (package doc strings
     // are just a copy from their __init__).
-    if (!isa<PackageOp>(*ref)) {
+    if (!isa<PackageOp>(ref.getIfOperation())) {
       if (std::optional<Test> test =
               getDocTestSuiteFromDecl(path, ref, shared.getSourceMgr()))
         tests.emplace_back(std::move(*test));
@@ -553,7 +553,7 @@ struct Test::TestDiscovery {
         if (!definesTestSuite(decl.getIfOperation())) {
           // If the operation is still a container, recurse into it but don't
           // start a new test suite.
-          if (isa<StructDeclOp, TraitDeclOp>(*decl)) {
+          if (isa<StructDeclOp, TraitDeclOp>(decl.getIfOperation())) {
             discoverTestsNestedInDecl(path, decl, shared, tests,
                                       processUnitTests);
           } else {

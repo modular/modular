@@ -379,11 +379,12 @@ extractChildDecls(const ASTDecl &decl,
   SmallVector<PublicDeclType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
-    if (decls.empty() || !isa<OpType>(**decls.begin()))
+    if (decls.empty() || !decls.front() ||
+        !isa_and_nonnull<OpType>(decls.front()->getIfOperation()))
       continue;
 
     for (ASTDecl *child : decls) {
-      OpType childOp = dyn_cast<OpType>(*child);
+      OpType childOp = dyn_cast_or_null<OpType>(child->getIfOperation());
       if (!childOp || shouldHideDeclInDocGen(*child, name))
         continue;
 
@@ -776,7 +777,9 @@ llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
 /// Return if the given alias decl is global, i.e. nested within a module,
 /// package, or struct.
 static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
-  return isa<FileModuleOp, PackageOp, StructDeclOp>(*declRef->getParentDecl());
+  return declRef->getParentDecl() &&
+         isa_and_nonnull<FileModuleOp, PackageOp, StructDeclOp>(
+             declRef->getParentDecl()->getIfOperation());
 }
 
 PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
@@ -1025,7 +1028,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
-  if (isa<StructDeclOp>(*declRef.getParent()))
+  if (declRef.getParent() &&
+      isa_and_nonnull<StructDeclOp>(declRef.getParent().getIfOperation()))
     selfType = declRef->getParentDecl()->getTypeDeclSelf();
 
   // Update param / arg types with decl refs instead of index refs.
@@ -1262,7 +1266,7 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
     std::optional<StringRef> name = decl.getName();
     if (!name)
       continue;
-    if (isa<TraitDeclOp>(*decl))
+    if (isa_and_nonnull<TraitDeclOp>(decl.getIfOperation()))
       parentTraits.push_back(*name);
   };
   llvm::sort(parentTraits);
@@ -1291,8 +1295,9 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
 
   SmallVector<StringRef> parentTraits;
-  collectParentTraits(ctx, decl, parentTraits,
-                      cast<TraitDeclOp>(*decl).getCanonicalTrait());
+  collectParentTraits(
+      ctx, decl, parentTraits,
+      cast<TraitDeclOp>(decl.getIfOperation()).getCanonicalTrait());
 
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
@@ -1361,8 +1366,9 @@ std::string PublicStructDecl::getDeclarationSnippet(
                                  os);
 
   SmallVector<StringRef> parentTraits;
-  collectParentTraits(ctx, decl, parentTraits,
-                      cast<StructDeclOp>(*decl).getCanonicalTrait());
+  collectParentTraits(
+      ctx, decl, parentTraits,
+      cast<StructDeclOp>(decl.getIfOperation()).getCanonicalTrait());
   if (!parentTraits.empty()) {
     os << "\n# Traits: ";
     llvm::interleaveComma(parentTraits, os,
@@ -1414,8 +1420,9 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl));
   SmallVector<StringRef> parentTraits;
-  collectParentTraits(ctx, decl, parentTraits,
-                      cast<StructDeclOp>(*decl).getCanonicalTrait());
+  collectParentTraits(
+      ctx, decl, parentTraits,
+      cast<StructDeclOp>(decl->getIfOperation()).getCanonicalTrait());
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
       {"constraints", constraints},

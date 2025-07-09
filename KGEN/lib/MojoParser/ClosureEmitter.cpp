@@ -40,7 +40,8 @@ using namespace M::KGEN::LIT;
 
 ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
     : FunctionEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
-      node(moduleDecl.getLoc()), fileModuleOp(cast<FileModuleOp>(moduleDecl)),
+      node(moduleDecl.getLoc()),
+      fileModuleOp(cast<FileModuleOp>(moduleDecl.getIfOperation())),
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
       dtorFieldAttr(StringAttr::get(ctx, "dtor")),
@@ -89,7 +90,7 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
 static std::pair<ASTDecl &, StructDeclOp>
 createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
              ArrayRef<ParamDeclAttr> params, SMLoc loc) {
-  auto module = cast<FileModuleOp>(moduleDecl);
+  auto module = cast_or_null<FileModuleOp>(moduleDecl.getIfOperation());
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames;
   for (ParamDeclAttr param : params) {
@@ -184,7 +185,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
           sig.getBody().getFnEffects().setEscaping(false)));
   auto b = ImplicitLocOpBuilder::atBlockEnd(
       translateLocation(decl.getLoc()),
-      &cast<StructDeclOp>(decl).getFields().front());
+      &cast<StructDeclOp>(decl.getIfOperation()).getFields().front());
   auto argListAttrs =
       PogListAttr::get(ctx, {otherName, selfName},
                        {PassingKind::PosOrKw, PassingKind::Implicit});
@@ -212,10 +213,10 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
     return;
 
   Value dtorRef = b.create<CreateClosureOp>(
-      cast<FnOp>(dtor.front())
+      cast<FnOp>(dtor.front()->getIfOperation())
           .getBoundReference(shared.getEvaluationContext()));
   Value copyRef = b.create<CreateClosureOp>(
-      cast<FnOp>(copy.front())
+      cast<FnOp>(copy.front()->getIfOperation())
           .getBoundReference(shared.getEvaluationContext()));
   storeField(b, self, dtorRef, b.getStringAttr("dtor"));
   storeField(b, self, copyRef, b.getStringAttr("_copy"));
@@ -311,7 +312,7 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
         void(ASTDecl &traitDecl,
              DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
         populateTrait) {
-  auto module = cast<FileModuleOp>(moduleDecl);
+  auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
   OpBuilder b(module.getRegion());
   MLIRContext *ctx = b.getContext();
   Location location =
@@ -426,8 +427,8 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                                                  ASTDecl &traitDecl,
                                                  SMLoc smLocation) {
   StringRef implName = "impl";
-  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl);
-  auto module = cast<FileModuleOp>(moduleDecl);
+  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
+  auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
   Location location = shared.diags.translateLocation(smLocation);
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockBegin(location, module->getBlock());
@@ -546,7 +547,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   };
   for (auto decls : traitDecl.getDeclsInScope()) {
     for (auto method : decls.second) {
-      auto fnOp = dyn_cast<FnOp>(method);
+      auto fnOp = dyn_cast_or_null<FnOp>(method->getIfOperation());
       if (!fnOp)
         continue;
       populateTraitFn(fnOp);
@@ -624,7 +625,7 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
   SmallVector<StringRef> parents{"Movable", "AnyType"};
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
-    TraitDeclOp closureTrait = cast<TraitDeclOp>(decl);
+    TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
     RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
     FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
         refType, ArgConvention::ReadMem, dependentSignatureType);
@@ -861,7 +862,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Create map from the parent name to the index of the parameter in the
   // closure struct.
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   wrapperSig = nestedFn.getFuncTypeGenerator();
   if (!wrapperSig.getInputParamTypes().empty()) {
     shared.emitError(
@@ -1532,7 +1533,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
                                     StructDeclOp wrapper, TraitDeclOp trait,
                                     Location location) {
   // (1) Create the closure instance.
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   FnOp parent = nestedFn->getParentOfType<FnOp>();
   assert(parent && "expected the function to be a nested function");
   ImplicitLocOpBuilder builder(location, shared.getContext());
