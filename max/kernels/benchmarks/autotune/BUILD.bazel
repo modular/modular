@@ -31,7 +31,7 @@ modular_py_library(
 mojo_test_environment(
     name = "mojo_test_env",
     data = [
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:kv_cache",
         "@mojo//:layout",
         "@mojo//:linalg",
