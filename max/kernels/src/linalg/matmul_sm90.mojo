@@ -362,10 +362,9 @@ fn warp_specialized_gemm_output[
     var c_gmem_tile = tile_crd_idx[0]
     var c_gmem_corner_coords = tile_crd_idx[1]
     var c_gmem_offset = tile_crd_idx[2]
-    var c_gmem_split_crd_idx = c_gmem_tile.tile_with_offset[
-        BM // num_consumer, BN
-    ](local_warp_group_idx, 0)
-    var c_gmem_split = c_gmem_split_crd_idx[0]
+    var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
+        local_warp_group_idx, 0
+    )
     alias c_coord_type = __type_of(c_gmem_corner_coords)
     var warp_id = warp_group_thread_idx // WARP_SIZE
 
@@ -463,6 +462,7 @@ fn warp_specialized_gemm_output[
             var c_gmem_wg_coords = rebind[c_coord_type](
                 c_gmem_wg_tile_crd_idx[1]
             )
+            var c_gmem_wg_offset = c_gmem_wg_tile_crd_idx[2] + c_gmem_offset
             c_gmem_wg_coords = c_gmem_wg_coords + c_gmem_corner_coords
 
             @parameter
@@ -632,46 +632,23 @@ fn warp_specialized_gemm_output[
                 for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
-                    var warp_tile_crd_idx = c_gmem_split.tile_with_offset[
+                    warp_tile = c_gmem_split.tile[
                         wgmma_shape[0] // 4, wgmma_shape[1]
                     ](m_mma * 4 + warp_id, n_mma)
-                    var warp_tile = warp_tile_crd_idx[0]
-                    var warp_tile_coords = rebind[c_coord_type](
-                        warp_tile_crd_idx[1]
-                    )
-                    warp_tile_coords = (
-                        warp_tile_coords
-                        + c_gmem_corner_coords
-                        + rebind[c_coord_type](c_gmem_split_crd_idx[1])
-                    )
-                    warp_tile_offset = (
-                        warp_tile_crd_idx[2]
-                        + c_gmem_offset
-                        + c_gmem_split_crd_idx[2]
-                    )
 
-                    gmem_frag_with_offsets = warp_tile.vectorize[
-                        1, 2
-                    ]().distribute_with_offset[Layout.row_major(8, 4)](lane)
-                    gmem_frag = gmem_frag_with_offsets[0]
-                    gmem_offset_coords = rebind[c_coord_type](
-                        gmem_frag_with_offsets[1]
-                    )
-                    gmem_offset_coords[1] *= 2
-                    coords = gmem_offset_coords + warp_tile_coords
-                    c_block_offset = (
-                        gmem_frag_with_offsets[2] + warp_tile_offset
-                    )
+                    gmem_frag = warp_tile.vectorize[1, 2]().distribute[
+                        Layout.row_major(8, 4)
+                    ](lane)
+                    thread_offset = gmem_frag.distance(c.ptr)
 
                     alias num_vecs = __type_of(gmem_frag).layout.size()
 
                     @parameter
                     for i in range(num_vecs):
                         alias dst_idx = __type_of(gmem_frag).layout(i)
-                        alias dst_m_offset = dst_idx // N
-                        alias dst_n_offset = dst_idx % N
-                        var m = Int(coords[0] + dst_m_offset)
-                        var n = Int(coords[1] + dst_n_offset)
+
+                        m = Int((thread_offset + dst_idx) // N)
+                        n = Int((thread_offset + dst_idx) % N)
 
                         alias alignment = alignof[SIMD[c_type, 2]]()
                         if m < M and n < N:
@@ -692,7 +669,7 @@ fn warp_specialized_gemm_output[
                                     c_frag_vec2[mma_id, i].cast[c_type](),
                                 )
                                 c.ptr.store[alignment=alignment](
-                                    c_block_offset + dst_idx, reg_val
+                                    thread_offset + dst_idx, reg_val
                                 )
 
         else:
