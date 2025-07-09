@@ -7,6 +7,15 @@ common --incompatible_strict_action_env
 # Enable --config=(macos|windows|linux) based on the host OS
 common --enable_platform_specific_config
 
+# Allow --modify_execution_info to be passed any number of times
+common --incompatible_modify_execution_info_additive
+
+# Reduce the impact of transitions on rebuilding C++ files
+build --modify_execution_info=CppCompile=+supports-path-mapping
+build --modify_execution_info=CcStrip=+supports-path-mapping
+build --modify_execution_info=Objc.*=+supports-path-mapping
+build --experimental_output_paths=strip
+
 # Force hermetic toolchain, make sure we don't accidentally used the default one
 common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
