@@ -676,10 +676,21 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Process a HLCF::ElifOp
     if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      lowerElif(elifOp, doesRaise, doesBreak, doesFallThrough);
-      if (!doesFallThrough)
+      bool elifFallsThrough = false;
+      lowerElif(elifOp, doesRaise, doesBreak, elifFallsThrough);
+      if (elifFallsThrough) {
+        // Continue on and process the rest of the current containing `block`.
+        // We don't assign doesFallThrough = true because this scope's
+        // doesFallThrough is talking about what happens at the end of this
+        // current containing `block`, and is only known when this
+        // `LowerSemanticCF::lowerBlock` call returns.
+        continue;
+      } else {
+        // The elif doesn't fall through, which means everything after here is
+        // dead code, so return.
+        doesFallThrough = false;
         return;
-      continue;
+      }
     }
 
     // Otherwise we must have an if operation.
