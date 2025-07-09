@@ -1080,7 +1080,7 @@ struct _ThreadIdx(Defaultable):
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
@@ -1120,7 +1120,7 @@ struct _BlockIdx(Defaultable):
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
