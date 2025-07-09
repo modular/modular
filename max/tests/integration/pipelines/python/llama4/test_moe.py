@@ -10,7 +10,10 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.llama4.layers.moe import MoE
+from max.pipelines.architectures.llama4.layers.moe import (
+    Llama4MoE,
+    Llama4MoEGate,
+)
 from transformers.models.llama4.configuration_llama4 import (
     Llama4Config,
     Llama4TextConfig,
@@ -54,24 +57,36 @@ def generate_max_outputs(
 ) -> torch.Tensor:
     is_gpu = isinstance(device, Accelerator)
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+    input_tensor = input_tensor.reshape([-1, text_config.hidden_size])
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
-    state_dict = {"router.weight": dummy_router_weight.cpu()}
+    state_dict = {"gate.gate_score.weight": dummy_router_weight.cpu()}
 
     state_dict["experts.gate_up_proj"] = expert_weights["gate_up_proj"].cpu()
     state_dict["experts.down_proj"] = expert_weights["down_proj"].cpu()
 
-    state_dict["shared_expert_gate_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.gate_proj.weight"] = shared_expert_weights[
         "gate_proj.weight"
     ].cpu()
-    state_dict["shared_expert_down_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.down_proj.weight"] = shared_expert_weights[
         "down_proj.weight"
     ].cpu()
-    state_dict["shared_expert_up_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.up_proj.weight"] = shared_expert_weights[
         "up_proj.weight"
     ].cpu()
 
-    moe = MoE(dtype=dtype, devices=[device_ref])
+    moe = Llama4MoE(
+        dtype=dtype,
+        devices=[device_ref],
+        hidden_dim=text_config.hidden_size,
+        num_experts=text_config.num_local_experts,
+        num_experts_per_token=text_config.num_experts_per_tok,
+        moe_dim=text_config.intermediate_size,
+        gate_cls=Llama4MoEGate,
+        has_shared_experts=True,
+        shared_experts_dim=text_config.intermediate_size,
+        apply_router_weight_first=True,
+    )
     moe.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])
@@ -84,7 +99,6 @@ def generate_max_outputs(
                 dtype,
                 (
                     input_tensor.shape[0],
-                    input_tensor.shape[1],
                     text_config.hidden_size,
                 ),
                 device=device_ref,
