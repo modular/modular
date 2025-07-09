@@ -38,14 +38,16 @@ def _mojo_test_environment_implementation(ctx):
     for lib in mojo_toolchain.implicit_deps:
         if CcInfo not in lib:
             continue
-        file = lib[DefaultInfo].files.to_list()[0]
-        transitive_libs.append(file)
-        path = file.path
-        if ctx.attr.short_path:
-            path = file.short_path
 
-        shared_libs.append(path)
-        shared_libs.append("-Xlinker,-rpath,-Xlinker,{}".format(paths.dirname(path)))
+        for linker_input in lib[CcInfo].linking_context.linker_inputs.to_list():
+            for library in linker_input.libraries:
+                transitive_libs.append(library.dynamic_library)
+                path = library.dynamic_library.path
+                if ctx.attr.short_path:
+                    path = library.dynamic_library.short_path
+
+                shared_libs.append(path)
+                shared_libs.append("-Xlinker,-rpath,-Xlinker,{}".format(paths.dirname(path)))
 
     return [
         CcInfo(),  # Requirement of py_test
