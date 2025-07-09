@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
@@ -37,7 +38,21 @@ from max.pipelines.lib import (
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float]
+VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+
+
+class JSONType(click.ParamType):
+    """Click parameter type for JSON input."""
+
+    name = "json"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, dict):
+            return value
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
 def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
@@ -91,6 +106,8 @@ def get_field_type(field_type: Any):
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
+    elif get_origin(field_type) is dict or field_type is dict:
+        field_type = JSONType()
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
