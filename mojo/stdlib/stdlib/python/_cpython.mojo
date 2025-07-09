@@ -1270,6 +1270,90 @@ struct CPython(Copyable, Defaultable, Movable):
         print(flush=True)
 
     # ===-------------------------------------------------------------------===#
+    # The Very High Level Layer
+    # ref: https://docs.python.org/3/c-api/veryhigh.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyRun_SimpleString(self, var command: String) -> c_int:
+        """This is a simplified interface to `PyRun_SimpleStringFlags()` below,
+        leaving the `PyCompilerFlags*` argument set to `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
+        """
+        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
+
+    fn PyRun_String(
+        self,
+        var str: String,
+        start: c_int,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Execute Python source code from `str` in the context specified by
+        the objects `globals` and `locals`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
+        """
+        var r = self._PyRun_String(
+            str.unsafe_cstr_ptr(), start, globals, locals
+        )
+        self.log(
+            r,
+            " NEWREF PyRun_String, str:",
+            str,
+            ", ptr: ",
+            r,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+        )
+        self._inc_total_rc()
+        return r
+
+    fn Py_CompileString(
+        self,
+        var str: String,
+        var filename: String,
+        start: c_int,
+    ) -> PyObjectPtr:
+        """Parse and compile the Python source code in `str`, returning the
+        resulting code object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
+        """
+        var r = self._Py_CompileString(
+            str.unsafe_cstr_ptr(),
+            filename.unsafe_cstr_ptr(),
+            start,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyEval_EvalCode(
+        self,
+        co: PyObjectPtr,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Evaluate a precompiled code object, given a particular environment
+        for its evaluation.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
+        """
+        var r = self._PyEval_EvalCode(co, globals, locals)
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Reference Counting
     # ref: https://docs.python.org/3/c-api/refcounting.html
     # ===-------------------------------------------------------------------===#
@@ -1750,95 +1834,11 @@ struct CPython(Copyable, Defaultable, Movable):
     ) -> PyObjectPtr:
         return self.lib.call["PyType_GenericAlloc", PyObjectPtr](type, nitems)
 
-    # ===-------------------------------------------------------------------===#
-    # The Very High Level Layer
-    # ref: https://docs.python.org/3/c-api/veryhigh.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyRun_SimpleString(self, var command: String) -> c_int:
-        """This is a simplified interface to `PyRun_SimpleStringFlags()` below,
-        leaving the `PyCompilerFlags*` argument set to `NULL`.
-
-        References:
-        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
-        """
-        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
-
-    fn PyRun_String(
-        self,
-        var str: String,
-        start: c_int,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """Execute Python source code from `str` in the context specified by
-        the objects `globals` and `locals`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
-        """
-        var r = self._PyRun_String(
-            str.unsafe_cstr_ptr(), start, globals, locals
-        )
-        self.log(
-            r,
-            " NEWREF PyRun_String, str:",
-            str,
-            ", ptr: ",
-            r,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyEval_EvalCode(
-        self,
-        co: PyObjectPtr,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """Evaluate a precompiled code object, given a particular environment
-        for its evaluation.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
-        """
-        var r = self._PyEval_EvalCode(co, globals, locals)
-        self._inc_total_rc()
-        return r
-
     fn PyEval_GetBuiltins(self) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
         """
         return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn Py_CompileString(
-        self,
-        var str: String,
-        var filename: String,
-        start: c_int,
-    ) -> PyObjectPtr:
-        """Parse and compile the Python source code in `str`, returning the
-        resulting code object.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
-        """
-        var r = self._Py_CompileString(
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
-            start,
-        )
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Object operations
