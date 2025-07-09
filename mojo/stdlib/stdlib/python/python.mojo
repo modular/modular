@@ -322,7 +322,7 @@ struct Python(Defaultable):
         var result = cpython.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
-            module.unsafe_as_py_object_ptr(),
+            module.py_object,
             functions,
         )
 
@@ -352,9 +352,9 @@ struct Python(Defaultable):
         var cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
-            module.unsafe_as_py_object_ptr(),
+            module.py_object,
             name.unsafe_cstr_ptr(),
-            value.unsafe_as_py_object_ptr(),
+            value.py_object,
         )
 
         if result != 0:

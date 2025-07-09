@@ -267,11 +267,9 @@ struct PythonObject(
         #   PyTypeObject that represents a given Mojo type.
         var type_obj = lookup_py_type_object[T]()
 
-        var type_obj_ptr = (
-            type_obj.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
-                PyTypeObject
-            ]()
-        )
+        var type_obj_ptr = type_obj.py_object.unsized_obj_ptr.bitcast[
+            PyTypeObject
+        ]()
 
         return _unsafe_alloc_init(type_obj_ptr, alloc^)
 
@@ -1359,18 +1357,6 @@ struct PythonObject(
         """
         return self^
 
-    fn unsafe_as_py_object_ptr(self) -> PyObjectPtr:
-        """Get the underlying PyObject pointer.
-
-        Returns:
-            The underlying PyObject pointer.
-
-        Safety:
-            Use-after-free: The caller must take care that `self` outlives the
-            usage of the pointer returned by this function.
-        """
-        return self.py_object
-
     fn steal_data(var self) -> PyObjectPtr:
         """Take ownership of the underlying pointer from the Python object.
 
@@ -1476,12 +1462,12 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var type = PyObjectPtr(
-            cpython.Py_TYPE(self.unsafe_as_py_object_ptr()).bitcast[PyObject]()
+            cpython.Py_TYPE(self.py_object).bitcast[PyObject]()
         )
 
         var expected_type_obj = lookup_py_type_object[T]()
 
-        if type == expected_type_obj.unsafe_as_py_object_ptr():
+        if type == expected_type_obj.py_object:
             var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
             if obj_ptr[].is_initialized:
                 return UnsafePointer[T](to=obj_ptr[].mojo_value)
