@@ -102,6 +102,12 @@ struct OpaqueOperandAdaptor {
   }
 };
 
+struct UnsupportedOperandAdaptor {
+  bool operator==(const UnsupportedOperandAdaptor &other) const {
+    return false;
+  }
+};
+
 struct MojoKernelOperandSourceDescriptor {
   // The name of the variable in the original Mojo code.
   StringRef sourceName;
@@ -116,7 +122,8 @@ using MojoKernelOperandVariant =
     std::variant<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
                  ListOfTensorOperandAdaptor, ScalarOperandAdaptor,
                  OpaqueOperandAdaptor, DevicesContextPtrOperandAdaptor,
-                 DevicesContextPtrListOperandAdaptor>;
+                 DevicesContextPtrListOperandAdaptor,
+                 UnsupportedOperandAdaptor>;
 
 struct MojoKernelOperandAdaptor {
   MojoKernelOperandAdaptor() = default;
@@ -127,7 +134,7 @@ struct MojoKernelOperandAdaptor {
   MojoKernelOperandVariant underlyingType;
 
   MojoKernelOperandAdaptor(std::optional<uint64_t> positionInFunction,
-                           StringRef typeName, ArrayAttr argumentSourceNames,
+                           StringAttr typeName, ArrayAttr argumentSourceNames,
                            ArrayAttr argsIoSpecs, bool isByRefResult = false);
 
   template <typename StreamType>
@@ -163,6 +170,10 @@ struct MojoKernelOperandAdaptor {
 
   bool isOpaqueType() const {
     return std::holds_alternative<OpaqueOperandAdaptor>(underlyingType);
+  }
+
+  bool isUnsupportedType() const {
+    return std::holds_alternative<UnsupportedOperandAdaptor>(underlyingType);
   }
 
   bool isContextType() const {
@@ -235,8 +246,8 @@ struct MojoKernelFunctionAdaptor {
   MojoKernelFunctionAdaptor(FuncOpType op) : mojoCode(op) {
     auto argumentTypesNames = mojoCode->template getAttrOfType<ArrayAttr>(
         KGEN::MOGGPreElab::MOGG_ARG_TYPE_NAMES);
-    auto resultTypeName = mojoCode->template getAttrOfType<StringAttr>(
-        KGEN::MOGGPreElab::MOGG_RESULT_TYPE_NAME);
+    auto resultTypeNameAttr =
+        mojoCode->getAttr(KGEN::MOGGPreElab::MOGG_RESULT_TYPE_NAME);
     auto numberOfOutputArgumentsAttr =
         mojoCode->template getAttrOfType<IntegerAttr>(
             KGEN::MOGGPreElab::kMOGGNumDPSOutputs);
@@ -263,13 +274,13 @@ struct MojoKernelFunctionAdaptor {
         argumentTypesNames.size() - numberOfArgumentsRelatedToByrefResult;
 
     for (size_t i = begOfInputArguments; i < endOfInputArguments; ++i) {
-      auto argTypeName = cast<StringAttr>(argumentTypesNames[i]).strref();
+      auto argTypeName = dyn_cast<StringAttr>(argumentTypesNames[i]);
       inputArguments.emplace_back(i, argTypeName, argumentSourceNames,
                                   argsIoSpecsAttr, begOfInputArguments);
     }
 
     for (size_t i = 0; i < begOfInputArguments; ++i) {
-      auto argTypeName = cast<StringAttr>(argumentTypesNames[i]).strref();
+      auto argTypeName = dyn_cast<StringAttr>(argumentTypesNames[i]);
       // Providing no mutable tensor positions because outputs can't be mutable
       // inputs.
       outputArguments.emplace_back(i, argTypeName, argumentSourceNames,
@@ -283,14 +294,15 @@ struct MojoKernelFunctionAdaptor {
       if (argTypeName) {
         outputResult = MojoKernelOperandAdaptor(
             endOfInputArguments + numberOfArgumentsRelatedToByrefResult - 1,
-            argTypeName.strref(), argumentSourceNames, argsIoSpecsAttr,
+            argTypeName, argumentSourceNames, argsIoSpecsAttr,
             /*isByRefResult=*/true);
       }
-    } else if (resultTypeName) {
+    } else if (resultTypeNameAttr) {
+      auto resultTypeName = dyn_cast<StringAttr>(resultTypeNameAttr);
       // Providing no mutable or fused tensor positions because they don't make
       // sense for output results.
       outputResult = MojoKernelOperandAdaptor(
-          {}, resultTypeName.strref(), argumentSourceNames, argsIoSpecsAttr);
+          {}, resultTypeName, argumentSourceNames, argsIoSpecsAttr);
     }
   }
 
@@ -460,6 +472,13 @@ StreamType &operator<<(StreamType &os,
 template <typename StreamType>
 StreamType &operator<<(StreamType &os, const OpaqueOperandAdaptor &opaque) {
   os << "<" << opaque.typeName.str() << ">";
+  return os;
+}
+
+template <typename StreamType>
+StreamType &operator<<(StreamType &os,
+                       const UnsupportedOperandAdaptor &opaque) {
+  os << "Unsupported";
   return os;
 }
 
