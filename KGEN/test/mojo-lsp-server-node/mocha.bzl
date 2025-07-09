@@ -5,11 +5,6 @@ load("//bazel:api.bzl", "mojo_test_environment")
 
 def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
     mojo_test_environment(name = "mojo_test_env", data = ["@mojo//:stdlib"], testonly = True)
-    mojo_libs = [
-        "//AsyncRT:RuntimeGlobals",
-        "//AsyncRT:DeviceContext",
-        "//Support:Globals",
-    ]
 
     bin.mocha_test(
         name = name,
@@ -27,7 +22,8 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
             "//KGEN/test/mojo-lsp-server-node:mocha-reporters.json",
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",
             "@mojo//:stdlib",
-        ] + mojo_libs,
+            ":mojo_test_env",
+        ],
         env = env | {
             # Add environment variable so that mocha writes its test xml
             # to the location Bazel expects.
