@@ -1686,6 +1686,190 @@ struct CPython(Copyable, Defaultable, Movable):
         return self._PyImport_AddModule(name.unsafe_cstr_ptr())
 
     # ===-------------------------------------------------------------------===#
+    # Abstract Objects Layer
+    # ref: https://docs.python.org/3/c-api/abstract.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # Object Protocol
+    # ref: https://docs.python.org/3/c-api/object.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_HasAttrString(
+        self, obj: PyObjectPtr, var name: String
+    ) -> c_int:
+        """Returns `1` if `obj` has the attribute `name`, and `0` otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
+        """
+        return self._PyObject_HasAttrString(obj, name.unsafe_cstr_ptr())
+
+    fn PyObject_GetAttrString(
+        self, obj: PyObjectPtr, var name: String
+    ) -> PyObjectPtr:
+        """Retrieve an attribute named `name` from object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
+        """
+        var r = self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
+        self.log(
+            r,
+            " NEWREF PyObject_GetAttrString, str:",
+            name,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+            ", parent obj:",
+            obj,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyObject_SetAttrString(
+        self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
+    ) -> c_int:
+        """Set the value of the attribute named `name`, for object `obj`, to
+        `value`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
+        """
+        var r = self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
+        self.log(
+            "PyObject_SetAttrString str:",
+            name,
+            ", parent obj:",
+            obj,
+            ", new value:",
+            value,
+            " new value ref count: ",
+            self._Py_REFCNT(value),
+        )
+        return r
+
+    fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Compute a string representation of object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Str
+        """
+        var r = self._PyObject_Str(obj)
+        self._inc_total_rc()
+        return r
+
+    fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
+        """Compute and return the hash value of an object `obj`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Hash
+        """
+        return self._PyObject_Hash(obj)
+
+    fn PyObject_IsTrue(self, obj: PyObjectPtr) -> c_int:
+        """Returns `1` if the object `obj` is considered to be true, and `0`
+        otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_IsTrue
+        """
+        return self._PyObject_IsTrue(obj)
+
+    fn PyObject_Type(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """When `obj` is non-`NULL`, returns a type object corresponding to the
+        object type of object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Type
+        """
+        var r = self._PyObject_Type(obj)
+        self._inc_total_rc()
+        return r
+
+    fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
+        """Return the length of object `obj`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Length
+        """
+        return self._PyObject_Length(obj)
+
+    fn PyObject_GetItem(
+        self, obj: PyObjectPtr, key: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Return element of `obj` corresponding to the object `key` or `NULL`
+        on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem
+        """
+        var r = self._PyObject_GetItem(obj, key)
+        self.log(
+            r,
+            " NEWREF PyObject_GetItem, key:",
+            key,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+            ", parent obj:",
+            obj,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyObject_SetItem(
+        self, obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
+    ) -> c_int:
+        """Map the object `key` to `value`. Raise an exception and return `-1`
+        on failure; return `0` on success.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetItem
+        """
+        var r = self._PyObject_SetItem(obj, key, value)
+        self.log(
+            "PyObject_SetItem result:",
+            r,
+            ", key:",
+            key,
+            ", value:",
+            value,
+            ", parent obj:",
+            obj,
+        )
+        return r
+
+    fn PyObject_GetIter(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """This is equivalent to the Python expression `iter(obj)`. It returns
+        a new iterator for the object argument, or the object itself if the
+        object is already an iterator.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter
+        """
+        var r = self._PyObject_GetIter(obj)
+        self.log(
+            r,
+            " NEWREF PyObject_GetIter, refcnt:",
+            self._Py_REFCNT(r),
+            "referencing ",
+            obj,
+            "refcnt of traversable: ",
+            self._Py_REFCNT(obj),
+        )
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -1936,16 +2120,6 @@ struct CPython(Copyable, Defaultable, Movable):
         """
         return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
 
-    # ===-------------------------------------------------------------------===#
-    # Abstract Objects Layer
-    # ref: https://docs.python.org/3/c-api/abstract.html
-    # ===-------------------------------------------------------------------===#
-
-    # ===-------------------------------------------------------------------===#
-    # Object Protocol
-    # ref: https://docs.python.org/3/c-api/object.html
-    # ===-------------------------------------------------------------------===#
-
     fn Py_Is(
         self,
         rhs: PyObjectPtr,
@@ -1961,137 +2135,11 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             return rhs == lhs
 
-    fn PyObject_Type(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """When `obj` is non-`NULL`, returns a type object corresponding to the
-        object type of object `obj`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_Type
-        """
-        var r = self._PyObject_Type(obj)
-        self._inc_total_rc()
-        return r
-
     fn PyObject_Free(self, p: OpaquePointer):
         """[Reference](
         https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
         """
         self.lib.call["PyObject_Free"](p)
-
-    fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """Compute a string representation of object `obj`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_Str
-        """
-        var r = self._PyObject_Str(obj)
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_GetItem(
-        self, obj: PyObjectPtr, key: PyObjectPtr
-    ) -> PyObjectPtr:
-        """Return element of `obj` corresponding to the object `key` or `NULL`
-        on failure.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem
-        """
-        var r = self._PyObject_GetItem(obj, key)
-        self.log(
-            r,
-            " NEWREF PyObject_GetItem, key:",
-            key,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_SetItem(
-        self, obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
-    ) -> c_int:
-        """Map the object `key` to `value`. Raise an exception and return `-1`
-        on failure; return `0` on success.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetItem
-        """
-        var r = self._PyObject_SetItem(obj, key, value)
-        self.log(
-            "PyObject_SetItem result:",
-            r,
-            ", key:",
-            key,
-            ", value:",
-            value,
-            ", parent obj:",
-            obj,
-        )
-        return r
-
-    fn PyObject_HasAttrString(
-        self, obj: PyObjectPtr, var name: String
-    ) -> c_int:
-        """Returns `1` if `obj` has the attribute `name`, and `0` otherwise.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
-        """
-        return self._PyObject_HasAttrString(obj, name.unsafe_cstr_ptr())
-
-    fn PyObject_GetAttrString(
-        self, obj: PyObjectPtr, var name: String
-    ) -> PyObjectPtr:
-        """Retrieve an attribute named `name` from object `obj`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
-        """
-        var r = self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
-        self.log(
-            r,
-            " NEWREF PyObject_GetAttrString, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_SetAttrString(
-        self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
-    ) -> c_int:
-        """Set the value of the attribute named `name`, for object `obj`, to
-        `value`.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
-        """
-        var r = self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
-        self.log(
-            "PyObject_SetAttrString str:",
-            name,
-            ", parent obj:",
-            obj,
-            ", new value:",
-            value,
-            " new value ref count: ",
-            self._Py_REFCNT(value),
-        )
-        return r
 
     fn PyObject_CallObject(
         self,
@@ -2139,54 +2187,6 @@ struct CPython(Copyable, Defaultable, Movable):
             callable_obj,
         )
 
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_IsTrue(self, obj: PyObjectPtr) -> c_int:
-        """Returns `1` if the object `obj` is considered to be true, and `0`
-        otherwise.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_IsTrue
-        """
-        return self._PyObject_IsTrue(obj)
-
-    fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
-        """Return the length of object `obj`.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_Length
-        """
-        return self._PyObject_Length(obj)
-
-    fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
-        """Compute and return the hash value of an object `obj`.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_Hash
-        """
-        return self._PyObject_Hash(obj)
-
-    fn PyObject_GetIter(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """This is equivalent to the Python expression `iter(obj)`. It returns
-        a new iterator for the object argument, or the object itself if the
-        object is already an iterator.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter
-        """
-        var r = self._PyObject_GetIter(obj)
-        self.log(
-            r,
-            " NEWREF PyObject_GetIter, refcnt:",
-            self._Py_REFCNT(r),
-            "referencing ",
-            obj,
-            "refcnt of traversable: ",
-            self._Py_REFCNT(obj),
-        )
         self._inc_total_rc()
         return r
 
