@@ -1,7 +1,7 @@
 "Example macro wrapping the mocha CLI"
 
 load("@mojo-lsp-server-node-tests//KGEN/test/mojo-lsp-server-node:mocha/package_json.bzl", "bin")
-load("//bazel/internal:mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
+load("//bazel:api.bzl", "mojo_test_environment")
 
 def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
     mojo_test_environment(name = "mojo_test_env", data = ["@mojo//:stdlib"], testonly = True)
