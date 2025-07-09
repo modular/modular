@@ -178,18 +178,17 @@ fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     Args:
         py_self: Pointer to the Python object to be deallocated.
     """
-    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
+    var cpython = Python().cpython()
+
+    ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
-    if self_obj_ptr[].is_initialized:
-        self_ptr.destroy_pointee()
+    if self.is_initialized:
+        UnsafePointer(to=self.mojo_value).destroy_pointee()
 
-    var cpython = Python().cpython()
-
-    cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
+    cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
 
 fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
@@ -210,12 +209,13 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         A new Python string object containing the string representation,
         or null pointer if an error occurs.
     """
-    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
     var cpython = Python().cpython()
 
+    ref self = py_self.bitcast[PyMojoObject[T]]()[]
+
     var repr_str: String
-    if self_obj_ptr[].is_initialized:
-        repr_str = repr(self_obj_ptr[].mojo_value)
+    if self.is_initialized:
+        repr_str = repr(self.mojo_value)
     else:
         repr_str = "<uninitialized " + get_type_name[T]() + ">"
 
