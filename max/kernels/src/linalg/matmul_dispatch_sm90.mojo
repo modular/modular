@@ -164,6 +164,7 @@ fn matmul_dispatch_sm90[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     return DISPATCH_MISS
@@ -459,6 +460,7 @@ fn matmul_dispatch_sm90_fp8[
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
+                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
