@@ -147,6 +147,17 @@ def test_object_protocol_api(python: Python):
     assert_equal(cpy.PyObject_GetIter(it), it)
 
 
+def test_call_protocol_api(python: Python):
+    var cpy = python.cpython()
+
+    var dict_func = rebind[PyObjectPtr](cpy.PyDict_Type())
+    var t = cpy.PyTuple_New(0)
+    var d = cpy.PyDict_New()
+
+    assert_true(cpy.PyObject_CallObject(dict_func, t))
+    assert_true(cpy.PyObject_Call(dict_func, t, d))
+
+
 def test_PyDict(mut python: Python):
     var cpy = python.cpython()
 
@@ -240,6 +251,9 @@ def main():
 
     # Object Protocol
     test_object_protocol_api(python)
+
+    # Call Protocol
+    test_call_protocol_api(python)
 
     test_PyDict(python)
     test_PyCapsule(python)

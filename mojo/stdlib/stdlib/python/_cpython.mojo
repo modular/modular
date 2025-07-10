@@ -942,6 +942,18 @@ alias PyObject_GetIter = ExternalFunction[
     fn (PyObjectPtr) -> PyObjectPtr,
 ]
 
+# Call Protocol
+alias PyObject_Call = ExternalFunction[
+    "PyObject_Call",
+    # PyObject *PyObject_Call(PyObject *callable, PyObject *args, PyObject *kwargs)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+alias PyObject_CallObject = ExternalFunction[
+    "PyObject_CallObject",
+    # PyObject *PyObject_CallObject(PyObject *callable, PyObject *args)
+    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
 # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
 alias PyLong_FromSsize_t = ExternalFunction[
     "PyLong_FromSsize_t",
@@ -1123,6 +1135,9 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyObject_GetItem: PyObject_GetItem.type
     var _PyObject_SetItem: PyObject_SetItem.type
     var _PyObject_GetIter: PyObject_GetIter.type
+    # Call Protocol
+    var _PyObject_Call: PyObject_Call.type
+    var _PyObject_CallObject: PyObject_CallObject.type
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
@@ -1243,6 +1258,9 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyObject_GetItem = PyObject_GetItem.load(self.lib)
         self._PyObject_SetItem = PyObject_SetItem.load(self.lib)
         self._PyObject_GetIter = PyObject_GetIter.load(self.lib)
+
+        self._PyObject_Call = PyObject_Call.load(self.lib)
+        self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
@@ -1870,6 +1888,60 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
+    # Call Protocol
+    # ref: https://docs.python.org/3/c-api/call.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_Call(
+        self,
+        callable: PyObjectPtr,
+        args: PyObjectPtr,
+        kwargs: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Call a callable Python object `callable`, with arguments given by the
+        tuple `args`, and named arguments given by the dictionary `kwargs`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/call.html#c.PyObject_Call
+        """
+        var r = self._PyObject_Call(callable, args, kwargs)
+        self.log(
+            r,
+            " NEWREF PyObject_Call, refcnt:",
+            self._Py_REFCNT(r),
+            ", callable obj:",
+            callable,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyObject_CallObject(
+        self,
+        callable: PyObjectPtr,
+        args: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Call a callable Python object `callable`, with arguments given by the
+        tuple `args`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject
+        """
+        var r = self._PyObject_CallObject(callable, args)
+        self.log(
+            r,
+            " NEWREF PyObject_CallObject, refcnt:",
+            self._Py_REFCNT(r),
+            ", callable obj:",
+            callable,
+        )
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2140,55 +2212,6 @@ struct CPython(Copyable, Defaultable, Movable):
         https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
         """
         self.lib.call["PyObject_Free"](p)
-
-    fn PyObject_CallObject(
-        self,
-        callable_obj: PyObjectPtr,
-        args: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject).
-        """
-
-        var r = self.lib.call["PyObject_CallObject", PyObjectPtr](
-            callable_obj, args
-        )
-
-        self.log(
-            r,
-            " NEWREF PyObject_CallObject, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable_obj,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_Call(
-        self,
-        callable_obj: PyObjectPtr,
-        args: PyObjectPtr,
-        kwargs: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/call.html#c.PyObject_Call).
-        """
-
-        var r = self.lib.call["PyObject_Call", PyObjectPtr](
-            callable_obj, args, kwargs
-        )
-
-        self.log(
-            r,
-            " NEWREF PyObject_Call, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable_obj,
-        )
-
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Tuple Objects
