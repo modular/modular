@@ -6,16 +6,16 @@
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
 from .log_probabilities import LogProbabilities
+from .status import GenerationStatus
 from .text_generation import (
     SamplingParams,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
 )
 
 __all__ = [
     "LogProbabilities",
-    "TextGenerationStatus",
+    "GenerationStatus",
     "TextGenerationResponse",
     "TextResponse",
     "SamplingParams",
