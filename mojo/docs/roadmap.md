@@ -260,11 +260,11 @@ Use a `var` pattern if you want a local copy like python, or a `ref` pattern if
 you want to mutate the values inside a mutable collection.
 
 ```mojo
-for var v in list:
+for var i in list:
     i += 1  # i is a copy; changing i doesn't update the list
 
-for ref r in list:
-    i += 1  # r is a mutable reference; changing r updates the list
+for ref i in list:
+    i += 1  # i is a mutable reference; changing i updates the list 
 ```
 
 ### Name scoping of nested function declarations
