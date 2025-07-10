@@ -479,12 +479,12 @@ fn _umul128[CarrierDType: DType](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
     var bd = _umul64(b, d)
 
     var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+        (bd >> 32) + (ad & UInt64(0xFFFFFFFF)) + (bc & UInt64(0xFFFFFFFF))
     )
 
     return _uint64s_to_uint128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
-        (intermediate << 32) + _truncate[DType.uint32](bd),
+        (intermediate << 32) + bd.cast[DType.uint32](),
     )
 
 
@@ -639,8 +639,11 @@ fn _check_divisibility_and_divide_by_pow10[
 
 @always_inline
 fn _truncate[
-    dtype: DType, S: Int, TruncateType: DType
+    dtype: DType, S: Int, //, TruncateType: DType
 ](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
+    """Cast to DType to truncate to the width of that type, then cast back to
+    original DType.
+    """
     return u.cast[TruncateType]().cast[dtype]()
 
 
@@ -689,7 +692,7 @@ fn _umul192_upper128[
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
     r += _umul128_upper64(x.cast[DType.uint64](), _uint128_low(y)).cast[
-        uint128
+        UInt128
     ]()
     return r
 
@@ -705,8 +708,9 @@ fn _umul128_upper64(x: UInt64, y: UInt64) -> UInt64:
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
+    # keep only the low‑32 bits from ad and bc, then add
     var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+        (bd >> 32) + (ad & UInt64(0xFFFFFFFF)) + (bc & UInt64(0xFFFFFFFF))
     )
     return ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)
 
