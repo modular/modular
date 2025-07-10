@@ -12,10 +12,10 @@ from collections.abc import AsyncGenerator
 from unittest.mock import Mock
 
 import torch
+from max.interfaces import SamplingParams
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
-    SamplingParams,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
