@@ -787,8 +787,8 @@ PIPELINES = {
             pipeline="internvl3-1b-instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=1.5e-2,
-            kl_div_threshold=7.7e-2,
+            cos_dist_threshold=2.3e-03,
+            kl_div_threshold=1.5e-02,
         ),
     ),
     "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
@@ -799,7 +799,7 @@ PIPELINES = {
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
             cos_dist_threshold=1.1e-1,
-            kl_div_threshold=5.8e-1,
+            kl_div_threshold=3.3e-01,
         ),
     ),
     "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
@@ -809,7 +809,7 @@ PIPELINES = {
             pipeline="internvl3-14b-instruct",
             encoding="bfloat16",
             cos_dist_threshold=4.4e-03,
-            kl_div_threshold=4.0e-02,
+            kl_div_threshold=9.8e-03,
         ),
     ),
     "OpenGVLab/InternVL3-38B-Instruct-bfloat16": PipelineDef(
@@ -819,7 +819,7 @@ PIPELINES = {
             pipeline="internvl3-38b-instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.9e-03,
-            kl_div_threshold=5.1e-03,
+            kl_div_threshold=7.5e-03,
         ),
     ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(

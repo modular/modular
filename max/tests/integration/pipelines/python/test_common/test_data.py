@@ -37,6 +37,9 @@ MULTIMODAL_IMAGE = "https://huggingface.co/datasets/huggingface/documentation-im
 PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
 PIXTRAL_IMAGE = "https://picsum.photos/id/237/400/300"
 
+INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|>\nDescribe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
+INTERNVL_INSTRUCT_IMAGE = "https://cdn-uploads.huggingface.co/production/uploads/632698f75cf955bfbbe727a9/L9E3YzvMo2B_XvloSx5ud.jpeg"
+
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]
 DEFAULT_TEXT_ONLY = [
     TextGenerationRequest.text_only(prompt) for prompt in DEFAULT_PROMPTS
@@ -48,4 +51,10 @@ DEFAULT_MULTIMODAL = [
 
 PIXTRAL_REQUESTS = [
     TextGenerationRequest.with_images(PIXTRAL_PROMPT, [PIXTRAL_IMAGE])
+]
+
+INTERNVL_INSTRUCT_REQUESTS = [
+    TextGenerationRequest.with_images(
+        INTERNVL_INSTRUCT_PROMPT, [INTERNVL_INSTRUCT_IMAGE]
+    )
 ]
