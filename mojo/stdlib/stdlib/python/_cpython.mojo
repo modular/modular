@@ -746,6 +746,37 @@ struct ExternalFunction[
 # external functions for the CPython C API
 # ordered based on https://docs.python.org/3/c-api/index.html
 
+# The Very High Level Layer
+alias PyRun_SimpleString = ExternalFunction[
+    "PyRun_SimpleString",
+    # int PyRun_SimpleString(const char *command)
+    fn (UnsafePointer[c_char, mut=False]) -> c_int,
+]
+alias PyRun_String = ExternalFunction[
+    "PyRun_String",
+    # PyObject *PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        c_int,
+        PyObjectPtr,
+        PyObjectPtr,
+    ) -> PyObjectPtr,
+]
+alias Py_CompileString = ExternalFunction[
+    "Py_CompileString",
+    # PyObject *Py_CompileString(const char *str, const char *filename, int start)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        UnsafePointer[c_char, mut=False],
+        c_int,
+    ) -> PyObjectPtr,
+]
+alias PyEval_EvalCode = ExternalFunction[
+    "PyEval_EvalCode",
+    # PyObject *PyEval_EvalCode(PyObject *co, PyObject *globals, PyObject *locals)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
 # Reference Counting
 alias Py_IncRef = ExternalFunction[
     "Py_IncRef",
@@ -993,6 +1024,11 @@ struct CPython(Copyable, Defaultable, Movable):
     # fields holding function pointers to CPython C API functions
     # ordered based on https://docs.python.org/3/c-api/index.html
 
+    # The Very High Level Layer
+    var _PyRun_SimpleString: PyRun_SimpleString.type
+    var _PyRun_String: PyRun_String.type
+    var _Py_CompileString: Py_CompileString.type
+    var _PyEval_EvalCode: PyEval_EvalCode.type
     # Reference Counting
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
@@ -1088,6 +1124,11 @@ struct CPython(Copyable, Defaultable, Movable):
             self.version = PythonVersion(_py_get_version(self.lib))
         else:
             self.version = PythonVersion(0, 0, 0)
+
+        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
+        self._PyRun_String = PyRun_String.load(self.lib)
+        self._Py_CompileString = Py_CompileString.load(self.lib)
+        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
 
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
@@ -1240,6 +1281,90 @@ struct CPython(Copyable, Defaultable, Movable):
             print(args[i], sep="", end="", flush=False)
 
         print(flush=True)
+
+    # ===-------------------------------------------------------------------===#
+    # The Very High Level Layer
+    # ref: https://docs.python.org/3/c-api/veryhigh.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyRun_SimpleString(self, var command: String) -> c_int:
+        """This is a simplified interface to `PyRun_SimpleStringFlags()` below,
+        leaving the `PyCompilerFlags*` argument set to `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
+        """
+        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
+
+    fn PyRun_String(
+        self,
+        var str: String,
+        start: c_int,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Execute Python source code from `str` in the context specified by
+        the objects `globals` and `locals`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
+        """
+        var r = self._PyRun_String(
+            str.unsafe_cstr_ptr(), start, globals, locals
+        )
+        self.log(
+            r,
+            " NEWREF PyRun_String, str:",
+            str,
+            ", ptr: ",
+            r,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+        )
+        self._inc_total_rc()
+        return r
+
+    fn Py_CompileString(
+        self,
+        var str: String,
+        var filename: String,
+        start: c_int,
+    ) -> PyObjectPtr:
+        """Parse and compile the Python source code in `str`, returning the
+        resulting code object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
+        """
+        var r = self._Py_CompileString(
+            str.unsafe_cstr_ptr(),
+            filename.unsafe_cstr_ptr(),
+            start,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyEval_EvalCode(
+        self,
+        co: PyObjectPtr,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Evaluate a precompiled code object, given a particular environment
+        for its evaluation.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
+        """
+        var r = self._PyEval_EvalCode(co, globals, locals)
+        self._inc_total_rc()
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Reference Counting
@@ -1722,94 +1847,11 @@ struct CPython(Copyable, Defaultable, Movable):
     ) -> PyObjectPtr:
         return self.lib.call["PyType_GenericAlloc", PyObjectPtr](type, nitems)
 
-    # ===-------------------------------------------------------------------===#
-    # Python Evaluation
-    # ===-------------------------------------------------------------------===#
-
-    fn PyRun_SimpleString(self, var str: String) -> Bool:
-        """Executes the given Python code.
-
-        Args:
-            str: The python code to execute.
-
-        Returns:
-            `True` if the code executed successfully or `False` if the code
-            raised an exception.
-
-        Notes:
-            [Reference](
-            https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString).
-        """
-        return (
-            self.lib.call["PyRun_SimpleString", c_int](str.unsafe_cstr_ptr())
-            == 0
-        )
-
-    fn PyRun_String(
-        self,
-        owned str: String,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-        run_mode: c_int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String).
-        """
-        var result = self.lib.call["PyRun_String", PyObjectPtr](
-            str.unsafe_cstr_ptr(), run_mode, globals, locals
-        )
-
-        self.log(
-            result,
-            " NEWREF PyRun_String, str:",
-            str,
-            ", ptr: ",
-            result,
-            ", refcnt:",
-            self._Py_REFCNT(result),
-        )
-
-        self._inc_total_rc()
-        return result
-
-    fn PyEval_EvalCode(
-        self,
-        co: PyObjectPtr,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode).
-        """
-        var result = self.lib.call["PyEval_EvalCode", PyObjectPtr](
-            co, globals, locals
-        )
-        self._inc_total_rc()
-        return result
-
     fn PyEval_GetBuiltins(self) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
         """
         return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn Py_CompileString(
-        self,
-        owned str: String,
-        owned filename: String,
-        compile_mode: c_int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString).
-        """
-
-        var r = self.lib.call["Py_CompileString", PyObjectPtr](
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
-            compile_mode,
-        )
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Object operations
