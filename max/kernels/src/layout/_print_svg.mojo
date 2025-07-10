@@ -23,16 +23,17 @@ fn print_svg[
     layout_int_type: DType,
     linear_idx_type: DType,
     element_layout: Layout,
-    masked: Bool, //,
+    masked: Bool,
+    origin: ImmutableOrigin, //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor,
+    tensor_base: LayoutTensor[_, _, origin, **_],
     tensors: List[
         LayoutTensor[
             dtype,
             layout,
-            MutableAnyOrigin,
+            origin,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
@@ -57,16 +58,17 @@ fn _print_svg_impl[
     linear_idx_type: DType,
     element_layout: Layout,
     masked: Bool,
-    W: Writer, //,
+    W: Writer,
+    origin: ImmutableOrigin, //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor,
+    tensor_base: LayoutTensor[_, _, origin, **_],
     tensors: List[
         LayoutTensor[
             dtype,
             layout,
-            MutableAnyOrigin,
+            origin,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
