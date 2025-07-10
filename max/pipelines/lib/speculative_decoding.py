@@ -30,13 +30,13 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    InputContext,
     TextGenerationResponse,
     TextResponse,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import (
-    InputContext,
     TokenGenerator,
 )
 from max.profiler import traced

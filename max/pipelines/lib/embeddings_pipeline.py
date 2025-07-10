@@ -21,11 +21,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import load_weights
+from max.interfaces import InputContext
 from max.nn import ReturnLogits
 from max.pipelines.core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
-    InputContext,
 )
 from max.profiler import Tracer, traced
 

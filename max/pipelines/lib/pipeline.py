@@ -46,6 +46,7 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    InputContext,
     LogProbabilities,
     TextGenerationResponse,
     TextResponse,
@@ -60,7 +61,6 @@ from max.nn.kv_cache import (
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import (
-    InputContext,
     TokenGenerator,
 )
 from max.profiler import Tracer, traced
