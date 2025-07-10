@@ -95,6 +95,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
 
     // Baseline is the top-level scope, which would be valid for empty uses.
     Region *upperBound = topLevel.scope;
+
     for (ParamDeclRefAttr use : uses) {
       const ParamDeclaration &decl = graph.decls.at(use.getName());
       if (upperBound->isProperAncestor(decl.scope))
@@ -150,8 +151,6 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return {existing, WalkResult::advance()};
   });
 
-  // If the parent is a function, extract 'apply' operators and place them at
-  // the start of the body.
   if (auto func = dyn_cast<GeneratorOp>(body->getParentOp())) {
     b.setLoc(func.getLoc());
     b.setInsertionPointToStart(func.getBody());
@@ -169,11 +168,22 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     func->setAttrs(attrs.getDictionary(func.getContext()));
   }
 
+  auto gen = dyn_cast<GeneratorOp>(body->getParentOp());
+  if (gen) {
+    // If the parent is a function, extract 'apply' operators and place them
+    // at the start of the body.
+    b.setLoc(gen.getLoc());
+    b.setInsertionPointToStart(gen.getBody());
+  }
+
   body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Insert the apply operations as close to the original location of the
-    // 'apply' operator as possible.
-    b.setLoc(op->getLoc());
-    b.setInsertionPoint(op);
+    if (!gen) {
+      // Insert the apply operations as close to the original location of the
+      // 'apply' operator as possible, if the parent is not a function.
+      b.setLoc(op->getLoc());
+      b.setInsertionPoint(op);
+    }
+
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
                                /*replaceTypes=*/true);
 
@@ -181,6 +191,9 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // shadowing can cause collisions.
     if (isa<DeclInterface>(op)) {
       for (Region &region : op->getRegions()) {
+        ImplicitLocOpBuilder b(body->getParentOp()->getLoc(),
+                               OpBuilder(body->getContext()));
+
         liftAndFoldApply(&region, b, collector, lifted, counter,
                          topLevel.nestedScopes.at(&region), topLevel,
                          numDedupedApplies);

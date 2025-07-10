@@ -17,14 +17,14 @@ kgen.generator @lift_apply() {
   kgen.param.declare p1 = <add(p0, 1)>
   // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
   // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
+  // CHECK: apply *[[L2:.*]] = [(index) -> index: @pass](p1)
+  // CHECK: apply *[[L3:.*]] = [(index) -> index: @pass](*[[L2]])
   // CHECK: constant = <*[[L1]]>
   kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
   // CHECK: constant = <*[[L1]]>
   kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
   // CHECK: constant = <*[[L0]]>
   kgen.param.constant = <apply(:(index) -> index @pass, p0)>
-  // CHECK: apply *[[L2:.*]] = [(index) -> index: @pass](p1)
-  // CHECK: apply *[[L3:.*]] = [(index) -> index: @pass](*[[L2]])
   // CHECK: call @take_and_pass<*[[L2]]>() : () -> !pop.array<*[[L3]], index>
   %0 = kgen.call @take_and_pass<apply(:(index) -> index @pass, p1)>() : ()
     -> !pop.array<apply(:(index) -> index @pass, apply(:(index) -> index @pass, p1)), index>
@@ -83,5 +83,29 @@ kgen.generator @nohoist_cond() {
   kgen.param.declare cond: i1 = <0>
   // CHECK-NOT: kgen.param.apply
   kgen.param.declare value = <cond(cond, apply(:() -> index @bad), 1)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @hlcf_if_apply
+kgen.generator @hlcf_if_apply(%cond: i1) {
+  // COM: make sure that the apply is being lifted to the beginning
+  // COM: of the generator since hlcf.if regions don't create
+  // COME: new parameter decl scopes.
+
+  kgen.param.declare p0 = <1>
+  // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
+  // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
+  // CHECK: hlcf.if
+  hlcf.if %cond  {
+    // CHECK: constant = <*[[L1]]>
+    kgen.param.constant = <apply(:(index) -> index @pass, p0)>
+    kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+    hlcf.yield
+  } else {
+    // CHECK: constant = <*[[L1]]>
+    kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+    hlcf.yield
+  }
+
   kgen.return
 }
