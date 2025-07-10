@@ -50,6 +50,7 @@ from max.interfaces import (
     LogProbabilities,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -60,9 +61,6 @@ from max.nn.kv_cache import (
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import (
-    TokenGenerator,
-)
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 

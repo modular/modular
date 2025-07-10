@@ -20,11 +20,11 @@ from max.interfaces import (
     GenerationStatus,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
     TextContext,
-    TokenGenerator,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )

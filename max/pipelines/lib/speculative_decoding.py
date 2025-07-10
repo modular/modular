@@ -33,12 +33,10 @@ from max.interfaces import (
     InputContext,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import (
-    TokenGenerator,
-)
 from max.profiler import traced
 from transformers import AutoConfig
 

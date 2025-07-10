@@ -28,7 +28,7 @@ from typing import (
     runtime_checkable,
 )
 
-from max.interfaces import SamplingParams, TextGenerationResponse
+from max.interfaces import SamplingParams
 from typing_extensions import TypeVar
 
 
@@ -268,32 +268,5 @@ class PipelineTokenizer(
 
         Returns:
             str: Un-encoded response text.
-        """
-        ...
-
-
-@runtime_checkable
-class TokenGenerator(Generic[TokenGeneratorContext], Protocol):
-    """Interface for LLM token-generator models."""
-
-    def next_token(
-        self, batch: dict[str, TokenGeneratorContext], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
-        """Computes the next token response for a single batch.
-
-        Args:
-            batch (dict[str, TokenGeneratorContext]): Batch of contexts.
-            num_steps int: Number of tokens to generate.
-
-        Returns:
-            list[dict[str, TextResponse]]: List of encoded responses (indexed by req. ID)
-        """
-        ...
-
-    def release(self, context: TokenGeneratorContext) -> None:
-        """Releases resources associated with this context.
-
-        Args:
-            context (TokenGeneratorContext): Finished context.
         """
         ...

@@ -36,12 +36,12 @@ from max.interfaces import (
     GenerationStatus,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 from max.pipelines.core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     TextContext,
-    TokenGenerator,
 )
 
 logger = logging.getLogger("max.pipelines")

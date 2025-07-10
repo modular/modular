@@ -19,13 +19,14 @@ from typing import Optional, Union
 
 import zmq
 from max._core import nixl
+from max.interfaces import TokenGenerator
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
     XferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TokenGenerator
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
 from max.serve.config import Settings

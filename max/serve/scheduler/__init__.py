@@ -13,11 +13,11 @@
 from __future__ import annotations
 
 import zmq
+from max.interfaces import TokenGenerator
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerator,
     EmbeddingsGenerator,
-    TokenGenerator,
 )
 from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
