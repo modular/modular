@@ -7,6 +7,7 @@
 
 from .log_probabilities import LogProbabilities
 from .text_generation import (
+    SamplingParams,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
@@ -17,4 +18,5 @@ __all__ = [
     "TextGenerationStatus",
     "TextGenerationResponse",
     "TextResponse",
+    "SamplingParams",
 ]
