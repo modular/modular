@@ -23,8 +23,8 @@ from typing import Literal, Optional, Union
 
 import numpy as np
 from max.interfaces import (
+    GenerationStatus,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
 )
 from max.pipelines.core import (
@@ -255,7 +255,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             for request_id, context in batch.items():
                 if request_id not in response:
                     response[request_id] = TextGenerationResponse(
-                        [], TextGenerationStatus.ACTIVE
+                        [], GenerationStatus.ACTIVE
                     )
 
                 if (
@@ -263,7 +263,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                     >= context.max_tokens
                 ):
                     response[request_id].update_status(
-                        TextGenerationStatus.MAXIMUM_LENGTH
+                        GenerationStatus.MAXIMUM_LENGTH
                     )
                     break
 

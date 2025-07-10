@@ -45,9 +45,9 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
+    GenerationStatus,
     LogProbabilities,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
 )
 from max.nn.kv_cache import (
@@ -1119,7 +1119,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = TextGenerationStatus.ACTIVE
+            status = GenerationStatus.ACTIVE
             res[request_id] = TextGenerationResponse([], status)
             for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.

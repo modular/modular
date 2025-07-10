@@ -29,8 +29,8 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
+    GenerationStatus,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
 )
 from max.nn import ReturnLogits
@@ -813,7 +813,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 current_length = context.start_idx + 1
 
                 if current_length >= context_max_length:
-                    context.update_status(TextGenerationStatus.MAXIMUM_LENGTH)
+                    context.update_status(GenerationStatus.MAXIMUM_LENGTH)
                     res[request_ids[idx]].update_status(context.status)
 
                     res[request_ids[idx]].append_token(
