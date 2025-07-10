@@ -13,7 +13,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputContext
+from max.interfaces import InputContext, PipelineTask
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -28,7 +28,6 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    PipelineTask,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,

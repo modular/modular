@@ -30,6 +30,7 @@ import transformers
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import interfaces
@@ -97,7 +98,7 @@ class PipelineOracle(ABC):
     necessary to run the model.
     """
 
-    task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION
+    task: PipelineTask = PipelineTask.TEXT_GENERATION
 
     @property
     @abstractmethod
@@ -421,7 +422,7 @@ class GenericOracle(PipelineOracle):
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
-        task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
+        task: PipelineTask = PipelineTask.TEXT_GENERATION,
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
@@ -787,7 +788,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512, "pool_embeddings": False},
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         auto_model_cls=transformers.AutoModel,
-        task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
+        task=PipelineTask.EMBEDDINGS_GENERATION,
         device_encoding_map={
             "cpu": ["float32"],
             "gpu": ["float32"],
@@ -1015,7 +1016,7 @@ def generate_llm_logits(
                 device_specs=device_specs,
             )
             print(f"Running {pipeline_name} model on MAX")
-            if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+            if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 results = evaluate.run_model(
                     max_pipeline_and_tokenizer.model,
                     max_pipeline_and_tokenizer.tokenizer,
@@ -1024,10 +1025,7 @@ def generate_llm_logits(
                     batch_size=max_batch_size,
                     reference=reference,
                 )
-            elif (
-                pipeline_oracle.task
-                == interfaces.PipelineTask.EMBEDDINGS_GENERATION
-            ):
+            elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
                 assert isinstance(
                     max_pipeline_and_tokenizer.generator,
                     pipelines.EmbeddingsPipeline,
@@ -1061,15 +1059,12 @@ def generate_llm_logits(
                     encoding=encoding_name, device=device
                 )
             )
-            if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+            if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 results = pipeline_oracle.run_torch_text_generation(
                     torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
                     device=torch_device,
                 )
-            elif (
-                pipeline_oracle.task
-                == interfaces.PipelineTask.EMBEDDINGS_GENERATION
-            ):
+            elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
                 results = torch_utils.run_embeddings_generation(
                     model=torch_pipeline_and_tokenizer.model,
                     data_processor=torch_pipeline_and_tokenizer.data_processor,

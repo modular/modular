@@ -34,6 +34,7 @@ import numpy as np
 
 # Pipelines
 from max.entrypoints.cli import pipeline_config_options
+from max.interfaces import PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsGenerator,
@@ -41,7 +42,6 @@ from max.pipelines import (
     PipelineEngine,
 )
 from max.pipelines.core import (
-    PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
