@@ -494,8 +494,8 @@ struct SIMD[dtype: DType, size: Int](
     @always_inline
     fn __init__[
         *, `_`: Int = 0
-    ](out self: Float64, obj: PythonObject, /) raises:
-        """Initialize a Float64 from a PythonObject.
+    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+        """Initialize a SIMD value from a PythonObject.
 
         Parameters:
             _: A dummy parameter to ensure this overload has lower priority than
@@ -507,10 +507,22 @@ struct SIMD[dtype: DType, size: Int](
         Raises:
             If the conversion to double fails.
         """
-        var cpy = Python().cpython()
-        self = cpy.PyFloat_AsDouble(obj._obj_ptr)
-        if self == -1.0 and cpy.PyErr_Occurred():
-            raise cpy.unsafe_get_error()
+
+        @parameter
+        if dtype.is_floating_point():
+            var cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[dtype](float_value)
+        elif dtype.is_integral() and dtype.bitwidth() <= 64:
+            self = Int(obj)
+        else:
+            self = Scalar[dtype]()
+            constrained[False, "unsupported dtype"]()
 
     @always_inline("nodebug")
     @implicit
