@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
+from .context import InputContext, SamplingParams
 from .log_probabilities import LogProbabilities
 from .status import GenerationStatus
 from .text_generation import (
-    SamplingParams,
     TextGenerationResponse,
     TextResponse,
 )
