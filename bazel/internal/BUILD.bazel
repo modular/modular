@@ -1,5 +1,11 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":lib_toolchain.bzl", "lib_toolchain")
+
+exports_files([
+    "asan-suppressions.txt",
+    "lsan-suppressions.txt",
+])
 
 filegroup(
     name = "mojo-filecheck-test",
@@ -39,5 +45,11 @@ modular_py_library(
         "sitecustomize.py",
     ],
     imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+gpu_toolchain_alias(
+    name = "current_gpu_toolchain",
+    testonly = True,
     visibility = ["//visibility:public"],
 )
