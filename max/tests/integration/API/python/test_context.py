@@ -9,7 +9,7 @@ from typing import Union
 
 import numpy as np
 import pytest
-from max.interfaces import SamplingParams, TextGenerationStatus
+from max.interfaces import GenerationStatus, SamplingParams
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
@@ -163,7 +163,7 @@ def test_context__eos() -> None:
     context.update(4)
     assert context.is_initial_prompt == False
     assert context.current_length == 5
-    assert context.status == TextGenerationStatus.END_OF_SEQUENCE
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
 
 
 def test_context__max_length() -> None:
@@ -174,9 +174,9 @@ def test_context__max_length() -> None:
     )
     context.assign_to_cache(cache_seq_id=0)
     for i in range(2):
-        assert context.status == TextGenerationStatus.ACTIVE
+        assert context.status == GenerationStatus.ACTIVE
         context.update(i)
-    assert context.status == TextGenerationStatus.MAXIMUM_LENGTH
+    assert context.status == GenerationStatus.MAXIMUM_LENGTH
 
 
 def test_context__current_length() -> None:
