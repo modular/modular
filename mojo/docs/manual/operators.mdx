@@ -1588,7 +1588,7 @@ struct Complex(
         return self.re == other.re and self.im == other.im
 
     fn __ne__(self, other: Self) -> Bool:
-        return self.re != other.re and self.im != other.im
+        return self.re != other.re or self.im != other.im
 ```
 
 :::note
