@@ -311,9 +311,9 @@ ensure that the function is heavily optimized for the most common case.
 A good example is `List.pop()` where the default value
 (popping the last element) could be "specialized".
 
-**Warning**: This use case currently
-requires a compiler fix for generic functions
-with default arguments (see <https://github.com/modular/modular/issues/4996>).
+**Warning**: This use case currently requires a quite verbose syntax that
+we can hopefully improve in the future with the help of 
+the compiler and tooling team.
 
 ```mojo
 struct List[T: CollectionElement]:
@@ -321,16 +321,13 @@ struct List[T: CollectionElement]:
     var size: Int
     var capacity: Int
     
-    fn pop(
-        inout self, index: ParameterOrArg[T=Int] = Parameter[-1]()
+    fn pop[_param_i: Optional[Int] = -1](
+        inout self, i: ParameterOrArg[_param_i] = ParameterOrArg[_param_i]()
     ) -> T:
-        """Remove and return element at index (default: last element)."""
-        
         @parameter
-        if index.is_parameter:
-            alias idx = index.comptime_value
+        if i.is_parameter:
             @parameter
-            if idx == -1:
+            if i.comptime_value == -1:
                 # Optimized path for the common case (pop last)
                 # No bounds checking needed, 
                 # just check non-empty & decrement size
@@ -340,7 +337,7 @@ struct List[T: CollectionElement]:
             else:
                 ...
         else:
-            # Runtime index - full bounds checking and logic
+            # Runtime idx - full bounds checking and logic
             ...
 
 # Usage examples:
@@ -370,8 +367,6 @@ fn example_usage():
 Currently, no compiler changes are needed.
 But the compiler team might be involved with those:
 
-- The use case **5** might benefit from
-  a [compiler fix](https://github.com/modular/modular/issues/4996) though.
 - If we notice that the compiler doesn't produce
   zero-cost transfer of structs of size 0,
   we might ask for help there since this proposal relies on that.
@@ -379,6 +374,8 @@ But the compiler team might be involved with those:
 There could be some slight, optional, quality-of-life
 improvements in the future, such as:
 
+- The use case **5** might benefit from
+  a an improve syntax and way of displaying the signature.
 - Allowing `*_, **_` in the types of struct attributes
 - Changing `@parameter` to allow `@parameter(cond=value.is_parameter)` to
   disable the decorator if the value is only known at runtime, reducing

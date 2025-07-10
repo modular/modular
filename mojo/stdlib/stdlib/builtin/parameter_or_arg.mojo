@@ -52,6 +52,14 @@ struct ParameterOrArg[
             uninitialized=True
         )
 
+    # Only used for default arguments in functions.
+    fn __init__[](
+        out self,
+    ):
+        self._runtime_value = InlineArray[Self.T, self._arr_size](
+            uninitialized=True
+        )
+
     @always_inline
     fn runtime_value(self) -> T:
         """Can only be used if the value is known at runtime, otherwise the compilation will fail.

@@ -77,6 +77,25 @@ def test_struct_with_parameter_or_arg():
     assert_equal(literal_buffer.get_size(), 16)
 
 
+fn func_with_default[
+    _param_x: Optional[Int] = 42
+](
+    x: ParameterOrArg[_param_x] = ParameterOrArg[_param_x]()
+) -> String:
+    @parameter
+    if x.is_parameter:
+        return "Comptime: " + String(x.comptime_value)
+    else:
+        return "Runtime: " + String(x.runtime_value())
+
+
+def test_func_with_default():
+    assert_equal(func_with_default(), "Comptime: 42")
+    assert_equal(func_with_default(100), "Runtime: 100")
+    assert_equal(func_with_default(Parameter[84]()), "Comptime: 84")
+
+
 def main():
     test_maybe_parameter()
     test_struct_with_parameter_or_arg()
+    test_func_with_default()
