@@ -1,0 +1,29 @@
+load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "PYTHON_VERSIONS")
+load("//bazel:api.bzl", "mojo_test", "requirement")
+
+[
+    mojo_test(
+        name = src + "{}.test".format("" if version == DEFAULT_PYTHON_VERSION.replace(".", "_") else "_" + version),
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = [
+            "custom_indexable.py",
+            "my_module.py",
+        ],
+        python_version = version.replace("_", "."),
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+            requirement("numpy"),
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+    for version in PYTHON_VERSIONS
+    if version != "3_13"  # TODO: This doesn't work with all deps today
+]
