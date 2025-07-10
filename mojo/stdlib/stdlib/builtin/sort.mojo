@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from math import ceil
+from math import ceil, iota
 from sys import bitwidthof
 
 from bit import count_leading_zeros
@@ -41,7 +41,7 @@ fn _insertion_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     """Sort the array[start:end] slice"""
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
@@ -66,7 +66,7 @@ fn _quicksort_partition_right[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]) -> Int:
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
 
@@ -95,7 +95,7 @@ fn _quicksort_partition_left[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]) -> Int:
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
 
@@ -121,7 +121,7 @@ fn _heap_sort_fix_down[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin], idx: Int):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_], idx: Int):
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
     var i = idx
@@ -142,7 +142,7 @@ fn _heap_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
     # heapify
@@ -171,7 +171,7 @@ fn _delegate_small_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
     if size == 2:
@@ -202,7 +202,7 @@ fn _quicksort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     var array = span.unsafe_ptr().origin_cast[origin=MutableAnyOrigin]()
     var size = len(span)
     if size == 0:
@@ -265,9 +265,9 @@ fn _merge[
     result_origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](
-    span1: Span[T, span_origin],
-    span2: Span[T, span_origin],
-    result: Span[T, result_origin],
+    span1: Span[T, span_origin, address_space = AddressSpace.GENERIC, **_],
+    span2: Span[T, span_origin, address_space = AddressSpace.GENERIC, **_],
+    result: Span[T, result_origin, address_space = AddressSpace.GENERIC, **_],
 ):
     """Merge span1 and span2 into result using the given cmp_fn. The function
     will crash if result is not large enough to hold both span1 and span2.
@@ -319,10 +319,13 @@ fn _merge[
 
 fn _stable_sort_impl[
     T: Copyable & Movable,
-    span_life: MutableOrigin,
-    tmp_life: MutableOrigin, //,
+    span_origin: MutableOrigin,
+    tmp_origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, span_life], temp_buff: Span[T, tmp_life]):
+](
+    span: Span[T, span_origin, address_space = AddressSpace.GENERIC, **_],
+    temp_buff: Span[T, tmp_origin, address_space = AddressSpace.GENERIC, **_],
+):
     var size = len(span)
     if size <= 1:
         return
@@ -349,7 +352,7 @@ fn _stable_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     var temp_buff = UnsafePointer[T].alloc(len(span))
     var temp_buff_span = Span(ptr=temp_buff, length=len(span))
     _stable_sort_impl[cmp_fn](span, temp_buff_span)
@@ -366,7 +369,7 @@ fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]) -> Int:
     var size = len(span)
     if size <= 1:
         return 0
@@ -399,7 +402,10 @@ fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](var span: Span[T, origin], var k: Int):
+](
+    owned span: Span[T, origin, address_space = AddressSpace.GENERIC, **_],
+    owned k: Int,
+):
     while True:
         var pivot = _partition[cmp_fn](span)
         if pivot == k:
@@ -417,7 +423,7 @@ fn partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
-](span: Span[T, origin], k: Int):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_], k: Int):
     """Partition the input buffer inplace such that first k elements are the
     largest (or smallest if cmp_fn is < operator) elements.
     The ordering of the first k elements is undefined.
@@ -451,7 +457,7 @@ fn _sort[
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
     *,
     stable: Bool = False,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     if len(span) <= 5:
         _delegate_small_sort[cmp_fn](span)
         return
@@ -467,7 +473,7 @@ fn _sort[
         _quicksort[cmp_fn](span)
 
 
-# TODO (MSTDL-766): The Int and Scalar[T] overload should be remove
+# TODO (MSTDL-766): The Int and Scalar[T] overload should be removed
 # (same for partition)
 # Eventually we want a sort that takes a Span and one that takes a List with
 # optional cmp_fn.
@@ -477,7 +483,7 @@ fn sort[
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, *_, **_]):
     """Sort the list inplace.
     The function doesn't return anything, the list is updated inplace.
 
@@ -503,7 +509,7 @@ fn sort[
     cmp_fn: fn (Int, Int) capturing [_] -> Bool,
     *,
     stable: Bool = False,
-](span: Span[Int, origin]):
+](span: Span[Int, origin, address_space = AddressSpace.GENERIC, **_]):
     """Sort the list inplace.
     The function doesn't return anything, the list is updated inplace.
 
@@ -527,7 +533,7 @@ fn sort[
     origin: MutableOrigin, //,
     *,
     stable: Bool = False,
-](span: Span[Int, origin]):
+](span: Span[Int, origin, address_space = AddressSpace.GENERIC, **_]):
     """Sort the list inplace.
     The function doesn't return anything, the list is updated inplace.
 
@@ -551,7 +557,7 @@ fn sort[
     origin: MutableOrigin, //,
     *,
     stable: Bool = False,
-](span: Span[Scalar[dtype], origin]):
+](span: Span[Scalar[dtype], origin, address_space = AddressSpace.GENERIC, **_]):
     """Sort the list inplace.
     The function doesn't return anything, the list is updated inplace.
 
@@ -576,7 +582,7 @@ fn sort[
     origin: MutableOrigin, //,
     *,
     stable: Bool = False,
-](span: Span[T, origin]):
+](span: Span[T, origin, address_space = AddressSpace.GENERIC, **_]):
     """Sort list of the order comparable elements in-place.
 
     Parameters:
@@ -696,3 +702,73 @@ fn _small_sort[
         _sort_partial_3[T, cmp_fn](array, 0, 2, 3)
         _sort_partial_3[T, cmp_fn](array, 1, 2, 3)
         return
+
+
+# ===-----------------------------------------------------------------------===#
+# argsort
+# ===-----------------------------------------------------------------------===#
+
+
+fn argsort[
+    values_dtype: DType, indices_dtype: DType, //, *, ascending: Bool = True
+](
+    values: Span[mut=False, Scalar[values_dtype], **_],
+    indices: Span[
+        mut=True,
+        Scalar[indices_dtype],
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+):
+    """Sorts the index buffer according to the biggest/smallest values that they
+    correspond to.
+
+    Parameters:
+        values_dtype: The dtype of the value buffer.
+        indices_dtype: The dtype of the indices buffer.
+        ascending: Sort direction (True for ascending, False for descending).
+
+    Args:
+        values: Input buffer to sort.
+        indices: Output buffer to store sorted indices.
+    """
+
+    @always_inline
+    @parameter
+    fn cmp_fn(a: Scalar[indices_dtype], b: Scalar[indices_dtype]) -> Bool:
+        @parameter
+        if ascending:
+            return Bool(values[a] < values[b])
+        else:
+            return Bool(values[a] > values[b])
+
+    sort[cmp_fn](indices)
+
+
+@always_inline
+fn argsort[
+    values_dtype: DType, //,
+    *,
+    ascending: Bool = True,
+    indices_dtype: DType = DType.index,
+](values: Span[mut=False, Scalar[values_dtype], **_]) -> List[
+    Scalar[indices_dtype]
+]:
+    """Returns the sorted index buffer according to the biggest/smallest values
+    that they correspond to.
+
+    Parameters:
+        values_dtype: The dtype of the value buffer.
+        ascending: Sort direction (True for ascending, False for descending).
+        indices_dtype: The dtype of the indices buffer.
+
+    Args:
+        values: Input buffer to sort.
+
+    Returns:
+        The sorted index buffer.
+    """
+
+    var res = List[Scalar[indices_dtype]](unsafe_uninit_length=len(values))
+    iota(res)
+    argsort[ascending=ascending](values, res)
+    return res^

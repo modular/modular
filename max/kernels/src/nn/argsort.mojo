@@ -17,6 +17,7 @@ from sys.info import simdwidthof
 
 from algorithm import elementwise
 from bit import next_power_of_two
+from builtin.sort import argsort as _stdlib_argsort
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
@@ -53,20 +54,7 @@ fn _argsort_cpu[
         indices.size()
     )
 
-    @parameter
-    fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
-        @parameter
-        if ascending:
-            return Bool(input[Int(a)] < input[Int(b)])
-        else:
-            return Bool(input[Int(a)] > input[Int(b)])
-
-    sort[cmp_fn](
-        Span[
-            Scalar[indices.dtype],
-            indices.origin,
-        ](ptr=indices.ptr, length=indices.size())
-    )
+    _stdlib_argsort[ascending=ascending](input._as_span(), indices._as_span())
 
 
 @always_inline

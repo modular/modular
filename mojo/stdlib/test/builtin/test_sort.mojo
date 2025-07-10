@@ -15,7 +15,7 @@
 from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
 
-from builtin.sort import _quicksort, _small_sort, _SortWrapper
+from builtin.sort import _quicksort, _small_sort, _SortWrapper, argsort
 from testing import assert_equal, assert_false, assert_true
 
 
@@ -642,6 +642,12 @@ def test_stable_sort_stress():
         test[_lt, _lt_check](length)
 
 
+def test_argsort():
+    values = List[Byte](9, 8, 7, 6, 5, 4, 3, 2, 1)
+    expected = List[Scalar[DType.index]](8, 7, 6, 5, 4, 3, 2, 1, 0)
+    assert_equal(argsort(Span(values)), expected)
+
+
 def main():
     test_sort_small_3()
     test_sort_small_5()
@@ -672,3 +678,5 @@ def main():
     test_sort_strings()
     test_sort_comparamble_elements_list()
     test_sort_empty_comparable_elements_list()
+
+    test_argsort()
