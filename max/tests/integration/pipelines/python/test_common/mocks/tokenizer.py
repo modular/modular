@@ -12,8 +12,8 @@ from collections.abc import Sequence
 from typing import TypeVar, Union
 
 import numpy as np
+from max.interfaces import InputContext
 from max.pipelines.core import (
-    InputContext,
     PipelineTokenizer,
     TextContext,
     TokenGeneratorRequest,

@@ -6,7 +6,8 @@
 """Context utility functions for use in testing infrastructure."""
 
 import numpy as np
-from max.pipelines.core import InputContext, TextContext
+from max.interfaces import InputContext
+from max.pipelines.core import TextContext
 
 
 def create_text_context(
