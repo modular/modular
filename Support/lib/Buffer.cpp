@@ -11,13 +11,11 @@
 using namespace M;
 using mapped_file_region = llvm::sys::fs::mapped_file_region;
 
-//===----------------------------------------------------------------------===//
-// Buffer
-//===----------------------------------------------------------------------===//
+namespace M {
 
 /// Open a file in read-only or read-write mode and return its file descriptor
 /// and the status object for the file so we can get things like its size.
-static ErrorOr<std::pair<llvm::sys::fs::file_t, llvm::sys::fs::file_status>>
+ErrorOr<std::pair<llvm::sys::fs::file_t, llvm::sys::fs::file_status>>
 openFile(const std::filesystem::path &filepath, bool readOnly) {
   std::string filepathStr = filepath.string();
 
@@ -53,6 +51,12 @@ openFile(const std::filesystem::path &filepath, bool readOnly) {
 
   return std::make_pair(fd, status);
 }
+
+} // namespace M
+
+//===----------------------------------------------------------------------===//
+// Buffer
+//===----------------------------------------------------------------------===//
 
 ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
                                    std::optional<size_t> size,

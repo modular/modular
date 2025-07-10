@@ -19,6 +19,12 @@
 #include <filesystem>
 
 namespace M {
+
+/// Open a file in read-only or read-write mode and return its file descriptor
+/// and the status object for the file so we can get things like its size.
+ErrorOr<std::pair<llvm::sys::fs::file_t, llvm::sys::fs::file_status>>
+openFile(const std::filesystem::path &filepath, bool readOnly);
+
 class Buffer;
 using BufferRef = RCRef<Buffer>;
 
