@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Union, cast
 
 import zmq
-from max.interfaces import TextGenerationResponse, TextResponse
+from max.interfaces import TextGenerationResponse, TextResponse, TokenGenerator
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -28,7 +28,6 @@ from max.nn.kv_cache import (
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    TokenGenerator,
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager

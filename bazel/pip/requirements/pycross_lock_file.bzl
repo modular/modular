@@ -94,17 +94,17 @@ PINS = {
     "pyyaml": "pyyaml@6.0.1",
     "pyzmq": "pyzmq@26.3.0",
     "qwen-vl-utils": "qwen-vl-utils@0.0.10",
+    "regex": "regex@2024.11.6",
     "requests": "requests@2.32.3",
     "responses": "responses@0.25.3",
     "rich": "rich@13.7.1",
-    "ruamel-yaml": "ruamel-yaml@0.18.6",
-    "ruamel-yaml-clib": "ruamel-yaml-clib@0.2.8",
     "safetensors": "safetensors@0.4.4",
     "schema": "schema@0.7.5",
     "scipy": "scipy@1.13.1",
     "sentence-transformers": "sentence-transformers@3.3.1",
     "sentinel": "sentinel@1.0.0",
     "setuptools": "setuptools@80.9.0",
+    "simpy": "simpy@4.1.1",
     "soundfile": "soundfile@0.12.1",
     "sphinx": "sphinx@7.4.7",
     "sse-starlette": "sse-starlette@2.1.2",
@@ -113,6 +113,7 @@ PINS = {
     "starlette": "starlette@0.41.2",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
+    "termcolor": "termcolor@2.5.0",
     "threadpoolctl": "threadpoolctl@3.5.0",
     "timm": "timm@1.0.15",
     "tokenicer": "tokenicer@0.0.4",
@@ -178,6 +179,19 @@ def targets():
             "//conditions:default": ":torchvision@0.22.0+cpu",
         }),
     )
+
+    extra_build_args = {
+        "copts": ["-fvisibility=default"],
+        "linkopts": select({
+            "@platforms//os:linux": ["-Wl,-z,undefs"],
+            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
+        }),
+        "tags": [
+            "manual",
+            "requires-network",
+        ],
+        "exec_properties": {"dockerNetwork": "bridge"},
+    }
 
     build_targets = {}
     for version in PYTHON_VERSIONS:
@@ -537,16 +551,7 @@ def targets():
         sdist = ":_sdist_async-asgi-testclient@1.4.11",
         target_environment = _target,
         deps = _async_asgi_testclient_1_4_11_deps + _async_asgi_testclient_1_4_11_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1122,16 +1127,7 @@ def targets():
         sdist = ":_sdist_device-smi@0.4.1",
         target_environment = _target,
         deps = _device_smi_0_4_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1352,16 +1348,7 @@ def targets():
         sdist = ":_sdist_fire@0.7.0",
         target_environment = _target,
         deps = _fire_0_7_0_deps + _fire_0_7_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1424,16 +1411,7 @@ def targets():
         sdist = ":_sdist_flask-basicauth@0.2.0",
         target_environment = _target,
         deps = _flask_basicauth_0_2_0_deps + _flask_basicauth_0_2_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1596,16 +1574,7 @@ def targets():
         sdist = ":_sdist_gevent@24.2.1",
         target_environment = _target,
         deps = _gevent_24_2_1_deps + _gevent_24_2_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2757,16 +2726,7 @@ def targets():
         sdist = ":_sdist_langdetect@1.0.9",
         target_environment = _target,
         deps = _langdetect_1_0_9_deps + _langdetect_1_0_9_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2854,16 +2814,7 @@ def targets():
         sdist = ":_sdist_llvmlite@0.43.0",
         target_environment = _target,
         deps = _llvmlite_0_43_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2976,16 +2927,7 @@ def targets():
         sdist = ":_sdist_logbar@0.0.3",
         target_environment = _target,
         deps = _logbar_0_0_3_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -3609,16 +3551,7 @@ def targets():
         sdist = ":_sdist_numba@0.60.0",
         target_environment = _target,
         deps = _numba_0_60_0_deps + _numba_0_60_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -3694,16 +3627,7 @@ def targets():
         sdist = ":_sdist_numpy@2.0.2",
         target_environment = _target,
         deps = _numpy_2_0_2_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -4163,16 +4087,7 @@ def targets():
         sdist = ":_sdist_nvtx@0.2.11",
         target_environment = _target,
         deps = _nvtx_0_2_11_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5253,16 +5168,7 @@ def targets():
         sdist = ":_sdist_pytrec-eval-terrier@0.5.6",
         target_environment = _target,
         deps = _pytrec_eval_terrier_0_5_6_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5316,16 +5222,7 @@ def targets():
         sdist = ":_sdist_pyyaml@6.0.1",
         target_environment = _target,
         deps = _pyyaml_6_0_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5564,16 +5461,7 @@ def targets():
         sdist = ":_sdist_rouge-score@0.1.2",
         target_environment = _target,
         deps = _rouge_score_0_1_2_deps + _rouge_score_0_1_2_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5602,16 +5490,7 @@ def targets():
         sdist = ":_sdist_roundrobin@0.0.4",
         target_environment = _target,
         deps = _roundrobin_0_0_4_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5663,111 +5542,6 @@ def targets():
         name = "rsa@4.9",
         deps = _rsa_4_9_deps,
         wheel = ":_wheel_rsa@4.9",
-    )
-
-    _ruamel_yaml_0_18_6_deps = [
-    ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        "//conditions:default": [],
-    })
-
-    native.alias(
-        name = "_wheel_ruamel-yaml@0.18.6",
-        actual = "@pycross_lock_file_wheel_ruamel.yaml_0.18.6_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "ruamel-yaml@0.18.6",
-        deps = _ruamel_yaml_0_18_6_deps,
-        wheel = ":_wheel_ruamel-yaml@0.18.6",
-    )
-
-    _ruamel_yaml_clib_0_2_8_build_deps = [
-        ":setuptools",
-        ":wheel",
-    ]
-
-    native.alias(
-        name = "_sdist_ruamel-yaml-clib@0.2.8",
-        actual = "@pycross_lock_file_sdist_ruamel.yaml.clib_0.2.8//file",
-    )
-
-    pycross_wheel_build(
-        name = "_build_ruamel-yaml-clib@0.2.8",
-        sdist = ":_sdist_ruamel-yaml-clib@0.2.8",
-        target_environment = _target,
-        deps = _ruamel_yaml_clib_0_2_8_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
-    )
-
-    native.alias(
-        name = "_wheel_ruamel-yaml-clib@0.2.8",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_macosx_10_9_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_24_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_24_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_24_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_macosx_12_0_arm64//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_24_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_5_x86_64.manylinux1_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "ruamel-yaml-clib@0.2.8",
-        wheel = ":_wheel_ruamel-yaml-clib@0.2.8",
     )
 
     _s3transfer_0_10_1_deps = [
@@ -5899,16 +5673,7 @@ def targets():
         sdist = ":_sdist_scipy@1.13.1",
         target_environment = _target,
         deps = _scipy_1_13_1_deps + _scipy_1_13_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5984,16 +5749,7 @@ def targets():
         sdist = ":_sdist_sentencepiece@0.2.0",
         target_environment = _target,
         deps = _sentencepiece_0_2_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -6040,6 +5796,16 @@ def targets():
     pycross_wheel_library(
         name = "setuptools@80.9.0",
         wheel = ":_wheel_setuptools@80.9.0",
+    )
+
+    native.alias(
+        name = "_wheel_simpy@4.1.1",
+        actual = "@pycross_lock_file_wheel_simpy_4.1.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "simpy@4.1.1",
+        wheel = ":_wheel_simpy@4.1.1",
     )
 
     native.alias(
@@ -6281,16 +6047,7 @@ def targets():
         sdist = ":_sdist_sqlitedict@2.1.0",
         target_environment = _target,
         deps = _sqlitedict_2_1_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -6581,16 +6338,7 @@ def targets():
         sdist = ":_sdist_tokenicer@0.0.4",
         target_environment = _target,
         deps = _tokenicer_0_0_4_deps + _tokenicer_0_0_4_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -7735,16 +7483,7 @@ def targets():
         sdist = ":_sdist_word2number@1.1",
         target_environment = _target,
         deps = _word2number_1_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -7839,16 +7578,7 @@ def targets():
         sdist = ":_sdist_xgrammar@0.1.16",
         target_environment = _target,
         deps = _xgrammar_0_1_16_deps + _xgrammar_0_1_16_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -8168,16 +7898,6 @@ def repositories():
         ],
         sha256 = "7e9d19a5bd6123d99993fb935fa86d25c88bb2096e493885f61737ed0f5e9abd",
         downloaded_file_path = "roundrobin-0.0.4.tar.gz",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_sdist_ruamel.yaml.clib_0.2.8",
-        urls = [
-            "https://files.pythonhosted.org/packages/46/ab/bab9eb1566cd16f060b54055dd39cf6a34bfa0240c53a7218c43e974295b/ruamel.yaml.clib-0.2.8.tar.gz",
-        ],
-        sha256 = "beb2e0404003de9a4cab9753a8805a8fe9320ee6673136ed7f04255fe60bb512",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8.tar.gz",
     )
 
     maybe(
@@ -16782,136 +16502,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/ca/01/37ac131614f71b98e9b148b2d7790662dcee92217d2fb4bac1aa377def33/ruamel.yaml.clib-0.2.8-cp310-cp310-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "b42169467c42b692c19cf539c38d4602069d8c1505e97b86387fcf7afb766e1d",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/d3/62/c60b034d9a008bbd566eeecf53a5a4c73d191c8de261290db6761802b72d/ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-        ],
-        sha256 = "fff3573c2db359f091e1589c3d7c5fc2f86f5bdb6f24252c2d8e539d4e45f412",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/90/8c/6cdb44f548b29eb6328b9e7e175696336bc856de2ff82e5776f860f03822/ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "aa2267c6a303eb483de8d02db2871afb5c5fc15618d894300b88958f729ad74f",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/b1/15/971b385c098e8d0d170893f5ba558452bb7b776a0c90658b8f4dd0e3382b/ruamel.yaml.clib-0.2.8-cp311-cp311-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "bef08cd86169d9eafb3ccb0a39edb11d8e25f3dae2b28f5c52fd997521133069",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a4/f7/22d6b620ed895a05d40802d8281eff924dc6190f682d933d4efff60db3b5/ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-        ],
-        sha256 = "25c515e350e5b739842fc3228d662413ef28f295791af5e5110b543cf0b57d9b",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/7c/e4/0d19d65e340f93df1c47f323d95fa4b256bb28320290f5fddef90837853a/ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "1707814f0d9791df063f8c19bb51b0d1278b8e9a2353abbb676c2f685dee6afe",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/7a/a2/eb5e9d088cb9d15c24d956944c09dca0a89108ad6e2e913c099ef36e3f0d/ruamel.yaml.clib-0.2.8-cp312-cp312-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "ebc06178e8821efc9692ea7544aa5644217358490145629914d8020042c24aa1",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/30/d3/5fe978cd01a61c12efd24d65fa68c6f28f28c8073a06cf11db3a854390ca/ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "d176b57452ab5b7028ac47e7b3cf644bcfdc8cacfecf7e71759f7f51a59e5c92",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/55/b3/e2531a050758b717c969cbf76c103b75d8a01e11af931b94ba656117fbe9/ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "1dc67314e7e1086c9fdf2680b7b6c2be1c0d8e3a8279f2e993ca2a7545fecf62",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_macosx_12_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/b2/ed/f221e60a4cdc7996aae23643da44b12ef33f457c2a52d590236a6950ac8e/ruamel.yaml.clib-0.2.8-cp39-cp39-macosx_12_0_arm64.whl",
-        ],
-        sha256 = "bba64af9fa9cebe325a62fa398760f5c7206b215201b0ec825005f1b18b9bccf",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-macosx_12_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/57/e4/f572d7e2502854f15291dfa94eebdc687e04db387559f026995c7697af34/ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "a1a45e0bb052edf6a1d3a93baef85319733a888363938e1fc9924cb00c8df24c",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_5_x86_64.manylinux1_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/7c/b2/389b345a60131593028b0263fddaa580edb4081697a3f3aa1f168f67519f/ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
-        ],
-        sha256 = "da09ad1c359a728e112d60116f626cc9f29730ff3e0e7db72b9a2dbc2e4beed5",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml_0.18.6_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/73/67/8ece580cc363331d9a53055130f86b096bf16e38156e33b1d3014fffda6b/ruamel.yaml-0.18.6-py3-none-any.whl",
-        ],
-        sha256 = "57b53ba33def16c4f3d807c0ccbc00f8a6081827e81ba2491691b76882d0c636",
-        downloaded_file_path = "ruamel.yaml-0.18.6-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_s3transfer_0.10.1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/83/37/395cdb6ee92925fa211e55d8f07b9f93cf93f60d7d4ce5e66fd73f1ea986/s3transfer-0.10.1-py3-none-any.whl",
@@ -17518,6 +17108,16 @@ def repositories():
         ],
         sha256 = "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922",
         downloaded_file_path = "setuptools-80.9.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_simpy_4.1.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/48/72/920ed1224c94a8a5a69e6c1275ac7fe4eb911ba8feffddf469f1629d47f3/simpy-4.1.1-py3-none-any.whl",
+        ],
+        sha256 = "7c5ae380240fd2238671160e4830956f8055830a8317edf5c05e495b3823cd88",
+        downloaded_file_path = "simpy-4.1.1-py3-none-any.whl",
     )
 
     maybe(

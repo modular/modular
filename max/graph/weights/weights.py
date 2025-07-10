@@ -118,10 +118,10 @@ class WeightData:
     quantization_encoding: Optional[QuantizationEncoding] = None
 
     def __dlpack__(self) -> Any:
-        return self.data.__dlpack__
+        return self.data.__dlpack__()
 
     def __dlpack_device__(self) -> Any:
-        return self.data.__dlpack_device__
+        return self.data.__dlpack_device__()
 
     @classmethod
     def from_numpy(cls, arr, name):

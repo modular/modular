@@ -36,9 +36,8 @@ def can_allocate(size: int) -> bool:
     Returns:
         True if allocation is likely to succeed
     """
-    shm_dir = os.getenv("MODULAR_MAX_SHM_DIR", "/dev/shm")
     try:
-        stat = os.statvfs(shm_dir)
+        stat = os.statvfs(path="/dev/shm")
         available = stat.f_bsize * stat.f_bavail
     except OSError:
         # If we can't check capacity, assume we can allocate.

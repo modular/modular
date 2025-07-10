@@ -37,6 +37,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,7 +47,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from utils import YAML, pretty_exception_handler
+from utils import pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -125,7 +126,9 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        output = subprocess.run(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
@@ -228,6 +231,15 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MOJO_BINARY_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MOJO_BINARY_PATH '{mojo_path}' does not exist."
+                )
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")
@@ -508,7 +520,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -522,7 +534,7 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
         if "name" not in obj.keys():
             logging.warning("Field [name] is not set in YAML")
@@ -554,7 +566,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
@@ -1461,4 +1475,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
+
     main()

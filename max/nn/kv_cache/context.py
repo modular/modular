@@ -16,17 +16,17 @@ from __future__ import annotations
 from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
-from max.interfaces import TextGenerationStatus
+from max.interfaces import GenerationStatus
 
 
 @runtime_checkable
 class KVCacheAwareContext(Protocol):
     """A Protocol identifying the minimum API necessary for interacting with a KV Cache."""
 
-    def update_status(self, status: TextGenerationStatus) -> None: ...
+    def update_status(self, status: GenerationStatus) -> None: ...
 
     @property
-    def status(self) -> TextGenerationStatus: ...
+    def status(self) -> GenerationStatus: ...
 
     @property
     def is_done(self) -> bool: ...

@@ -34,6 +34,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import InputContext
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -51,7 +52,7 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.nn.layer import Layer
-from max.pipelines.core import InputContext, TextAndVisionContext
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

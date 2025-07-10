@@ -14,7 +14,9 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .context import InputContext, TextAndVisionContext, TextContext, TTSContext
+from max.interfaces import TokenGenerator
+
+from .context import TextAndVisionContext, TextContext, TTSContext
 from .interfaces import (
     AudioGenerationRequest,
     AudioGenerationResponse,
@@ -25,8 +27,6 @@ from .interfaces import (
     EmbeddingsResponse,
     PipelineTask,
     PipelineTokenizer,
-    SamplingParams,
-    TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
     TokenGeneratorRequestFunction,
@@ -48,14 +48,11 @@ __all__ = [
     "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsResponse",
-    "InputContext",
     "PipelineTask",
     "PipelineTokenizer",
     "PipelinesFactory",
-    "SamplingParams",
     "TextAndVisionContext",
     "TextContext",
-    "TokenGenerator",
     "TokenGeneratorContext",
     "TokenGeneratorRequest",
     "TokenGeneratorRequestFunction",

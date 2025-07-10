@@ -345,7 +345,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
         # Vision encoder memory estimation.
         vision_memory_per_image = 128 * 1024 * 1024  # 128 MiB per image
 
-        image_config = InternVLImageConfig(huggingface_config)
+        image_config = InternVLImageConfig(
+            huggingface_config,
+            pipeline_config.model_config.vision_config_overrides,
+        )
 
         # Maximum number of images that can be processed is limited by
         # how many image tokens fit in the target new tokens

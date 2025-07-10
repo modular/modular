@@ -1,12 +1,12 @@
 """Define bazel dependencies common to the internal and external repos."""
 
+bazel_dep(name = "abseil-cpp", version = "20250127.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.8")
-
-# TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
-bazel_dep(name = "aspect_rules_py", version = "1.4.0")
+bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
@@ -19,7 +19,16 @@ bazel_dep(name = "rules_python", version = "1.4.0-rc4")
 bazel_dep(name = "rules_shell", version = "0.4.1")
 
 # TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
+bazel_dep(name = "rules_apple", version = "3.22.0")
+bazel_dep(name = "rules_swift", version = "2.8.2")
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
+
+# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
+single_version_override(
+    module_name = "rules_jvm_external",
+    version = "6.7",
+)
 
 bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
 
@@ -58,6 +67,7 @@ single_version_override(
         "//bazel/public-patches:rules_mypy_pycross.patch",
         # https://github.com/theoremlp/rules_mypy/pull/104
         "//bazel/public-patches:rules_mypy_user_site.patch",
+        "//bazel/public-patches:rules_mypy_zipfile.patch",
     ],
 )
 
@@ -72,6 +82,28 @@ single_version_override(
         # https://github.com/bazel-contrib/rules_python/pull/2813
         "//bazel/public-patches:rules_python_override_hub.patch",
     ],
+)
+
+single_version_override(
+    module_name = "grpc",
+    patch_strip = 1,
+    patches = [
+        # TODO: Drop when we update grpc again
+        "//bazel/public-patches:grpc.patch",
+        # TODO: Drop once https://github.com/grpc/grpc/commit/ed7916161a405b0e01aa7c39494c7dd536264ea4 is in a release
+        "//bazel/public-patches:grpc-providers.patch",
+    ],
+    version = "1.68.0",
+)
+
+single_version_override(
+    module_name = "grpc-java",
+    patch_strip = 1,
+    patches = [
+        # TODO: Drop when this is pulled from bzlmod instead of grpc_deps.bzl
+        "//bazel/public-patches:grpc-java.patch",
+    ],
+    version = "1.67.1",
 )
 
 DEFAULT_PYTHON_VERSION = "3.12"

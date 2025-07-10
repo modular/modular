@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from max.interfaces import TextGenerationStatus
+from max.interfaces import GenerationStatus
 
 
 @dataclass
@@ -31,7 +31,7 @@ class EmbeddingsResponse:
 class AudioGenerationResponse:
     def __init__(
         self,
-        final_status: TextGenerationStatus,
+        final_status: GenerationStatus,
         audio: np.ndarray | None = None,
         buffer_speech_tokens: np.ndarray | None = None,
     ) -> None:
@@ -53,7 +53,7 @@ class AudioGenerationResponse:
         return self._audio
 
     @property
-    def final_status(self) -> TextGenerationStatus:
+    def final_status(self) -> GenerationStatus:
         return self._final_status
 
     @property

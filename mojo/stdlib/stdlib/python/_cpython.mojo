@@ -746,6 +746,37 @@ struct ExternalFunction[
 # external functions for the CPython C API
 # ordered based on https://docs.python.org/3/c-api/index.html
 
+# The Very High Level Layer
+alias PyRun_SimpleString = ExternalFunction[
+    "PyRun_SimpleString",
+    # int PyRun_SimpleString(const char *command)
+    fn (UnsafePointer[c_char, mut=False]) -> c_int,
+]
+alias PyRun_String = ExternalFunction[
+    "PyRun_String",
+    # PyObject *PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        c_int,
+        PyObjectPtr,
+        PyObjectPtr,
+    ) -> PyObjectPtr,
+]
+alias Py_CompileString = ExternalFunction[
+    "Py_CompileString",
+    # PyObject *Py_CompileString(const char *str, const char *filename, int start)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        UnsafePointer[c_char, mut=False],
+        c_int,
+    ) -> PyObjectPtr,
+]
+alias PyEval_EvalCode = ExternalFunction[
+    "PyEval_EvalCode",
+    # PyObject *PyEval_EvalCode(PyObject *co, PyObject *globals, PyObject *locals)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
 # Reference Counting
 alias Py_IncRef = ExternalFunction[
     "Py_IncRef",
@@ -817,6 +848,40 @@ alias PyGILState_Release = ExternalFunction[
     "PyGILState_Release",
     # void PyGILState_Release(PyGILState_STATE)
     fn (PyGILState_STATE) -> None,
+]
+
+# Importing Modules
+alias PyImport_ImportModule = ExternalFunction[
+    "PyImport_ImportModule",
+    # PyObject *PyImport_ImportModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+alias PyImport_AddModule = ExternalFunction[
+    "PyImport_AddModule",
+    # PyObject *PyImport_AddModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+
+# Module Objects
+alias PyModule_GetDict = ExternalFunction[
+    "PyModule_GetDict",
+    # PyObject *PyModule_GetDict(PyObject *module)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyModule_Create2 = ExternalFunction[
+    "PyModule_Create2",
+    # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
+    fn (UnsafePointer[PyModuleDef], c_int) -> PyObjectPtr,
+]
+alias PyModule_AddFunctions = ExternalFunction[
+    "PyModule_AddFunctions",
+    # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
+    fn (PyObjectPtr, UnsafePointer[PyMethodDef]) -> c_int,
+]
+alias PyModule_AddObjectRef = ExternalFunction[
+    "PyModule_AddObjectRef",
+    # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
 ]
 
 # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
@@ -927,6 +992,16 @@ fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
     )
 
 
+fn _PyModule_AddObjectRef_dummy(
+    module: PyObjectPtr,
+    name: UnsafePointer[c_char, mut=False],
+    value: PyObjectPtr,
+) -> c_int:
+    return abort[c_int](
+        "PyModule_AddObjectRef is not available in this Python version"
+    )
+
+
 @fieldwise_init
 struct CPython(Copyable, Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process."""
@@ -949,6 +1024,11 @@ struct CPython(Copyable, Defaultable, Movable):
     # fields holding function pointers to CPython C API functions
     # ordered based on https://docs.python.org/3/c-api/index.html
 
+    # The Very High Level Layer
+    var _PyRun_SimpleString: PyRun_SimpleString.type
+    var _PyRun_String: PyRun_String.type
+    var _Py_CompileString: Py_CompileString.type
+    var _PyEval_EvalCode: PyEval_EvalCode.type
     # Reference Counting
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
@@ -964,6 +1044,14 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
+    # Import Modules
+    var _PyImport_ImportModule: PyImport_ImportModule.type
+    var _PyImport_AddModule: PyImport_AddModule.type
+    # Module Objects
+    var _PyModule_GetDict: PyModule_GetDict.type
+    var _PyModule_Create2: PyModule_Create2.type
+    var _PyModule_AddFunctions: PyModule_AddFunctions.type
+    var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
@@ -1037,6 +1125,11 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self.version = PythonVersion(0, 0, 0)
 
+        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
+        self._PyRun_String = PyRun_String.load(self.lib)
+        self._Py_CompileString = Py_CompileString.load(self.lib)
+        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
+
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
 
@@ -1056,6 +1149,17 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
         self._PyGILState_Release = PyGILState_Release.load(self.lib)
+
+        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
+        if self.version.minor >= 10:
+            self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
+        else:
+            self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
@@ -1177,6 +1281,90 @@ struct CPython(Copyable, Defaultable, Movable):
             print(args[i], sep="", end="", flush=False)
 
         print(flush=True)
+
+    # ===-------------------------------------------------------------------===#
+    # The Very High Level Layer
+    # ref: https://docs.python.org/3/c-api/veryhigh.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyRun_SimpleString(self, var command: String) -> c_int:
+        """This is a simplified interface to `PyRun_SimpleStringFlags()` below,
+        leaving the `PyCompilerFlags*` argument set to `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
+        """
+        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
+
+    fn PyRun_String(
+        self,
+        var str: String,
+        start: c_int,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Execute Python source code from `str` in the context specified by
+        the objects `globals` and `locals`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
+        """
+        var r = self._PyRun_String(
+            str.unsafe_cstr_ptr(), start, globals, locals
+        )
+        self.log(
+            r,
+            " NEWREF PyRun_String, str:",
+            str,
+            ", ptr: ",
+            r,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+        )
+        self._inc_total_rc()
+        return r
+
+    fn Py_CompileString(
+        self,
+        var str: String,
+        var filename: String,
+        start: c_int,
+    ) -> PyObjectPtr:
+        """Parse and compile the Python source code in `str`, returning the
+        resulting code object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
+        """
+        var r = self._Py_CompileString(
+            str.unsafe_cstr_ptr(),
+            filename.unsafe_cstr_ptr(),
+            start,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyEval_EvalCode(
+        self,
+        co: PyObjectPtr,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Evaluate a precompiled code object, given a particular environment
+        for its evaluation.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
+        """
+        var r = self._PyEval_EvalCode(co, globals, locals)
+        self._inc_total_rc()
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Reference Counting
@@ -1380,6 +1568,109 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyGILState_Release(state)
 
     # ===-------------------------------------------------------------------===#
+    # Importing Modules
+    # ref: https://docs.python.org/3/c-api/import.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyImport_ImportModule(self, owned name: String) -> PyObjectPtr:
+        """This is a wrapper around `PyImport_Import()` which takes a `const char*`
+        as an argument instead of a `PyObject*`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
+        """
+        var r = self._PyImport_ImportModule(name.unsafe_cstr_ptr())
+        self.log(
+            r,
+            " NEWREF PyImport_ImportModule, str:",
+            name,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
+        """Return the module object corresponding to a module name.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
+        """
+        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+
+    # ===-------------------------------------------------------------------===#
+    # Module Objects
+    # ref: https://docs.python.org/3/c-api/module.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyModule_GetDict(self, module: PyObjectPtr) -> PyObjectPtr:
+        """Return the dictionary object that implements `module`'s namespace;
+        this object is the same as the `__dict__` attribute of the module
+        object.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
+        """
+        return self._PyModule_GetDict(module)
+
+    fn PyModule_Create(self, name: StaticString) -> PyObjectPtr:
+        """Create a new module object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_Create
+        """
+
+        # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
+        # for what we want to do here.
+        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
+        module_def_ptr.init_pointee_move(PyModuleDef(name))
+
+        # TODO: set gil stuff
+        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
+        # after the caller imports said module.
+
+        # TODO: it would be nice to programmatically call a CPython API to get the value here
+        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
+        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
+        # docs.
+        alias module_api_version: c_int = 1013
+        return self._PyModule_Create2(module_def_ptr, module_api_version)
+
+    fn PyModule_AddFunctions(
+        self,
+        module: PyObjectPtr,
+        functions: UnsafePointer[PyMethodDef],
+    ) -> c_int:
+        """Add the functions from the `NULL` terminated `functions` array to
+        module.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
+        """
+        return self._PyModule_AddFunctions(module, functions)
+
+    fn PyModule_AddObjectRef(
+        self,
+        module: PyObjectPtr,
+        name: UnsafePointer[c_char],
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Add an object to `module` as `name`.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
+        """
+        return self._PyModule_AddObjectRef(module, name, value)
+
+    # ===-------------------------------------------------------------------===#
     # Python Set operations
     # ===-------------------------------------------------------------------===#
 
@@ -1509,99 +1800,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
-    # Python Module operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyImport_ImportModule(
-        self,
-        owned name: String,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule).
-        """
-
-        var r = self.lib.call["PyImport_ImportModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-        self.log(
-            r,
-            " NEWREF PyImport_ImportModule, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
-        """
-        return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-    fn PyModule_Create(
-        self,
-        name: StaticString,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_Create).
-        """
-
-        # TODO: See https://docs.python.org/3/c-api/module.html#c.PyModule_Create
-        # and https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
-        # for what we want to do essentially here.
-        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
-        var module_def = PyModuleDef(name)
-        module_def_ptr.init_pointee_move(module_def^)
-
-        # TODO: set gil stuff
-        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
-        # after the caller imports said module.
-
-        # TODO: it would be nice to programmatically call a CPython API to get the value here
-        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
-        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
-        # docs.
-        var module_api_version = 1013
-        return self.lib.call["PyModule_Create2", PyObjectPtr](
-            module_def_ptr, module_api_version
-        )
-
-    fn PyModule_AddFunctions(
-        self,
-        mod: PyObjectPtr,
-        functions: UnsafePointer[PyMethodDef],
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions).
-        """
-        return self.lib.call["PyModule_AddFunctions", c_int](mod, functions)
-
-    fn PyModule_AddObjectRef(
-        self,
-        module: PyObjectPtr,
-        name: UnsafePointer[c_char, **_],
-        value: PyObjectPtr,
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef).
-        """
-
-        return self.lib.call["PyModule_AddObjectRef", c_int](
-            module, name, value
-        )
-
-    fn PyModule_GetDict(self, name: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
-        """
-        return self.lib.call["PyModule_GetDict", PyObjectPtr](name)
-
-    # ===-------------------------------------------------------------------===#
     # Python Type operations
     # ===-------------------------------------------------------------------===#
 
@@ -1649,94 +1847,11 @@ struct CPython(Copyable, Defaultable, Movable):
     ) -> PyObjectPtr:
         return self.lib.call["PyType_GenericAlloc", PyObjectPtr](type, nitems)
 
-    # ===-------------------------------------------------------------------===#
-    # Python Evaluation
-    # ===-------------------------------------------------------------------===#
-
-    fn PyRun_SimpleString(self, var str: String) -> Bool:
-        """Executes the given Python code.
-
-        Args:
-            str: The python code to execute.
-
-        Returns:
-            `True` if the code executed successfully or `False` if the code
-            raised an exception.
-
-        Notes:
-            [Reference](
-            https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString).
-        """
-        return (
-            self.lib.call["PyRun_SimpleString", c_int](str.unsafe_cstr_ptr())
-            == 0
-        )
-
-    fn PyRun_String(
-        self,
-        owned str: String,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-        run_mode: c_int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String).
-        """
-        var result = self.lib.call["PyRun_String", PyObjectPtr](
-            str.unsafe_cstr_ptr(), run_mode, globals, locals
-        )
-
-        self.log(
-            result,
-            " NEWREF PyRun_String, str:",
-            str,
-            ", ptr: ",
-            result,
-            ", refcnt:",
-            self._Py_REFCNT(result),
-        )
-
-        self._inc_total_rc()
-        return result
-
-    fn PyEval_EvalCode(
-        self,
-        co: PyObjectPtr,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode).
-        """
-        var result = self.lib.call["PyEval_EvalCode", PyObjectPtr](
-            co, globals, locals
-        )
-        self._inc_total_rc()
-        return result
-
     fn PyEval_GetBuiltins(self) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
         """
         return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn Py_CompileString(
-        self,
-        owned str: String,
-        owned filename: String,
-        compile_mode: c_int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString).
-        """
-
-        var r = self.lib.call["Py_CompileString", PyObjectPtr](
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
-            compile_mode,
-        )
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Object operations

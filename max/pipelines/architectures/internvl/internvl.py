@@ -38,10 +38,10 @@ from max.nn import (
     DistributedAttentionWithRope,
     DistributedMLP,
     DistributedRMSNorm,
+    DynamicRotaryEmbedding,
     LayerList,
     LayerNorm,
     Linear,
-    Llama3RotaryEmbedding,
     Module,
     RMSNorm,
     Shardable,
@@ -49,10 +49,7 @@ from max.nn import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    PagedKVCacheCollection,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, PagedKVCacheCollection
 
 from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import (
@@ -92,7 +89,7 @@ class InternVLDecoderLayer(Module):
     This layer follows the Qwen2 architecture, which is similar to Llama3 but
     includes attention bias. Each layer contains:
 
-    - Self-attention with RoPE (Rotary Position Embeddings)
+    - Self-attention with dynamic RoPE
     - Feed-forward network (MLP)
     - RMS normalization before attention and MLP
     - Residual connections
@@ -100,7 +97,7 @@ class InternVLDecoderLayer(Module):
 
     def __init__(
         self,
-        rope: Llama3RotaryEmbedding,
+        rope: DynamicRotaryEmbedding,
         config: InternVLConfig,
     ) -> None:
         """Initializes a decoder layer.
@@ -232,13 +229,12 @@ class InternVLLanguageModel(Module):
             raise ValueError("tied embeddings unsupported by InternVL")
 
         # Create RoPE embeddings.
-        self.rope = Llama3RotaryEmbedding(
+        self.rope = DynamicRotaryEmbedding(
             dim=llm_config.hidden_size,
             n_heads=llm_config.num_attention_heads,
             theta=llm_config.rope_theta,
             max_seq_len=llm_config.max_seq_len,
             interleaved=llm_config.interleaved_rope_weights,
-            scaling_params=llm_config.rope_scaling_params,
             device=self.devices[0],
         )
 

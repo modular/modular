@@ -226,7 +226,7 @@ struct SharedMemBarrier(Copyable, Movable):
         Args:
             bytes: Number of bytes expected to be transferred.
             cta_id: The CTA ID in a cluster to configure an arrival.
-            pred: Predication on the arrival configuration instruction.
+            pred: Predication on the arrival configuration instruction. Use UInt32 to match `selp.u32` in ptx.
         """
 
         alias asm = """

@@ -13,7 +13,7 @@
 
 
 name: multistage_gemm
-file: sample.mojo
+file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.mojo
 params:
 
 - dtype: DType.float16

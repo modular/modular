@@ -146,27 +146,6 @@ struct AMD_MMA[
 
     @always_inline
     @staticmethod
-    fn load_tiles[
-        k_tile_idx: Int
-    ](a_tiles: MMATileBuffers, b_tiles: MMATileBuffers):
-        Self.tensor_core_mma.mma_op.load_a[swizzle=swizzle](
-            a_tiles.shared_mem_warp_tile,
-            a_tiles.mma_reg_tile[k_tile_idx]
-            .tile[num_m_mmas, simd_width](k_tile_idx, 0)
-            .vectorize[1, simd_width](),
-            k_tile_idx,
-        )
-
-        Self.tensor_core_mma.mma_op.load_b[swizzle=swizzle](
-            b_tiles.shared_mem_warp_tile,
-            b_tiles.mma_reg_tile[k_tile_idx]
-            .tile[num_n_mmas, simd_width](k_tile_idx, 0)
-            .vectorize[1, simd_width](),
-            k_tile_idx,
-        )
-
-    @always_inline
-    @staticmethod
     fn mma[
         k_tile_idx: Int,
         swap_a_b: Bool,
@@ -306,6 +285,26 @@ struct MMATileBuffers[
             A tile view for the specified location in the register buffer.
         """
         return self.mma_reg_tile[k_tile_idx]
+
+    @always_inline
+    fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
+        @parameter
+        if is_a:
+            mma.tensor_core_mma.mma_op.load_a[swizzle = mma.swizzle](
+                self.shared_mem_warp_tile,
+                self.mma_reg_tile[k_tile_idx]
+                .tile[num_mmas, mma.simd_width](k_tile_idx, 0)
+                .vectorize[1, mma.simd_width](),
+                k_tile_idx,
+            )
+        else:
+            mma.tensor_core_mma.mma_op.load_b[swizzle = mma.swizzle](
+                self.shared_mem_warp_tile,
+                self.mma_reg_tile[k_tile_idx]
+                .tile[num_mmas, mma.simd_width](k_tile_idx, 0)
+                .vectorize[1, mma.simd_width](),
+                k_tile_idx,
+            )
 
 
 @__llvm_metadata(
@@ -504,6 +503,12 @@ fn gemm_kernel[
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
+    @always_inline
+    @parameter
+    fn load_tiles_from_shared[k_tile_idx: Int]():
+        a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
+        b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
+
     # GEMM Computation Pipeline
     # This kernel implements a pipelined approach optimized for AMD GPUs:
     # 1. Load: Transfer first tiles from global to shared memory
@@ -519,7 +524,7 @@ fn gemm_kernel[
 
     # Stage 2: First tile preparation - Register loading and prefetching
     load_tiles_from_dram()
-    mma.load_tiles[0](a_tiles, b_tiles)
+    load_tiles_from_shared[0]()
 
     amd_schedule_barrier()
 
@@ -528,7 +533,7 @@ fn gemm_kernel[
 
         @parameter
         for k_tile_idx in range(1, num_k_tiles):
-            mma.load_tiles[k_tile_idx](a_tiles, b_tiles)
+            load_tiles_from_shared[k_tile_idx]()
 
         mma.mma[0, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
@@ -543,7 +548,7 @@ fn gemm_kernel[
 
         barrier()
 
-        mma.load_tiles[0](a_tiles, b_tiles)
+        load_tiles_from_shared[0]()
 
         amd_scheduling_hints[
             BM=BM,
@@ -561,7 +566,7 @@ fn gemm_kernel[
 
     @parameter
     for k_tile_idx in range(1, num_k_tiles):
-        mma.load_tiles[k_tile_idx](a_tiles, b_tiles)
+        load_tiles_from_shared[k_tile_idx]()
 
     barrier()
 
@@ -577,7 +582,7 @@ fn gemm_kernel[
 
     @parameter
     for k_tile_idx in range(0, num_k_tiles):
-        mma.load_tiles[k_tile_idx](a_tiles, b_tiles)
+        load_tiles_from_shared[k_tile_idx]()
 
     @parameter
     for k_tile_idx in range(0, num_k_tiles):

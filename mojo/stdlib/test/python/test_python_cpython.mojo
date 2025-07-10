@@ -14,7 +14,7 @@
 # RUN: %mojo %s
 
 from python import Python, PythonObject
-from python._cpython import Py_ssize_t, PyObjectPtr
+from python._cpython import Py_eval_input, Py_ssize_t, PyMethodDef, PyObjectPtr
 from testing import (
     assert_false,
     assert_equal,
@@ -22,6 +22,20 @@ from testing import (
     assert_raises,
     assert_true,
 )
+
+
+def test_very_high_level_api(python: Python):
+    var cpy = python.cpython()
+
+    assert_equal(cpy.PyRun_SimpleString("None"), 0)
+
+    var d = cpy.PyDict_New()
+    assert_true(cpy.PyRun_String("42", Py_eval_input, d, d))
+
+    var co = cpy.Py_CompileString("5", "test", Py_eval_input)
+    assert_true(co)
+
+    assert_true(cpy.PyEval_EvalCode(co, d, d))
 
 
 def test_Py_IncRef_DecRef(mut python: Python):
@@ -75,18 +89,48 @@ def test_PyThread(python: Python):
     cpy.PyGILState_Release(gstate)
 
 
+def test_PyImport(python: Python):
+    var cpy = python.cpython()
+
+    assert_true(cpy.PyImport_ImportModule("builtins"))
+    assert_true(cpy.PyImport_AddModule("test"))
+
+
+def test_PyModule(python: Python):
+    var cpy = python.cpython()
+
+    var mod = cpy.PyModule_Create("module")
+    assert_true(mod)
+
+    assert_true(cpy.PyModule_GetDict(mod))
+
+    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    _ = funcs
+
+    if cpy.version.minor >= 10:
+        var n = cpy.PyLong_FromSsize_t(0)
+        var name = "n"
+        # returns 0 on success, -1 on failure
+        assert_equal(
+            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
+        )
+        _ = name
+
+
 def test_PyObject_HasAttrString(mut python: Python):
     var cpython_env = python.cpython()
 
     var the_object = PythonObject(0)
     var result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(0, result)
 
     the_object = Python.list(1, 2, 3)
     result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(1, result)
     _ = the_object
@@ -140,7 +184,7 @@ def test_PyCapsule(mut python: Python):
     with assert_raises(
         contains="PyCapsule_GetPointer called with invalid PyCapsule object"
     ):
-        _ = cpython_env.PyCapsule_GetPointer(the_object.py_object, "some_name")
+        _ = cpython_env.PyCapsule_GetPointer(the_object._obj_ptr, "some_name")
 
     # Build a capsule and retrieve a pointer to it.
     var capsule_impl = UnsafePointer[UInt64].alloc(1)
@@ -163,6 +207,9 @@ def main():
     # initializing Python instance calls init_python
     var python = Python()
 
+    # The Very High Level Layer
+    test_very_high_level_api(python)
+
     # Reference Counting
     test_Py_IncRef_DecRef(python)
 
@@ -171,6 +218,12 @@ def main():
 
     # Initialization, Finalization, and Threads
     test_PyThread(python)
+
+    # Importing Modules
+    test_PyImport(python)
+
+    # Module Objects
+    test_PyModule(python)
 
     test_PyObject_HasAttrString(python)
     test_PyDict(python)

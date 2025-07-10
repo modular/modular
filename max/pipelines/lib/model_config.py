@@ -98,6 +98,9 @@ class MAXModelConfig(MAXModelConfigBase):
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
 
+    vision_config_overrides: dict = field(default_factory=dict)
+    """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
+
     rope_type: Optional[RopeType] = None
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 

@@ -25,7 +25,7 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core.context import InputContext
+from max.interfaces import InputContext
 from max.pipelines.core.serialization import (
     SharedMemoryEncoder,
     msgpack_numpy_encoder,

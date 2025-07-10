@@ -625,13 +625,9 @@ fn grouped_matmul_kernel[
             address_space = AddressSpace.GENERIC,
         ]
 
-        c_gmem_runtime_layout = RuntimeLayout[
-            c_gmem_layout,
-            element_type = c_gmem_type.layout_int_type,
-            linear_idx_type = c_gmem_type.linear_idx_type,
-        ](
-            Index[dtype = c_gmem_type.layout_int_type](M, N),
-            Index[dtype = c_gmem_type.linear_idx_type](N, 1),
+        # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
+        var c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout](
+            Index(M, N), Index(N, 1)
         )
 
         var c_by_expert = c_gmem_type(

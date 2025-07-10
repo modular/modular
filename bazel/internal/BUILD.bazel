@@ -1,3 +1,6 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load(":lib_toolchain.bzl", "lib_toolchain")
+
 filegroup(
     name = "mojo-filecheck-test",
     testonly = True,
@@ -12,5 +15,29 @@ alias(
         "//:linux_x86_64": "@uv_linux_x86_64//:uv",
         "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
     }),
+    visibility = ["//visibility:public"],
+)
+
+modular_py_binary(
+    name = "mojodoc_json_to_markdown",
+    srcs = ["mojodoc_json_to_markdown.py"],
+    data = glob(["mojodoc-templates/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
+)
+
+lib_toolchain(
+    name = "lib_toolchain",
+    visibility = ["//visibility:public"],
+)
+
+modular_py_library(
+    name = "bazel_sitecustomize",
+    srcs = [
+        "sitecustomize.py",
+    ],
+    imports = ["."],
     visibility = ["//visibility:public"],
 )
