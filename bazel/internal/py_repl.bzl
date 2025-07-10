@@ -6,7 +6,7 @@ in the environment, in order to test things outside of bazel
 
 load("@rules_python//python:py_info.bzl", "PyInfo")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
-load(":config.bzl", "env_for_available_tools")
+load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
 
 def _py_repl_impl(ctx):
     toolchain = ctx.toolchains["@bazel_tools//tools/python:toolchain_type"]

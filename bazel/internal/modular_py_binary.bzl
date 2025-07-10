@@ -1,7 +1,7 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_binary")
-load(":config.bzl", "env_for_available_tools")
+load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
 load(":py_repl.bzl", "py_repl")
