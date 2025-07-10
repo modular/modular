@@ -17,7 +17,6 @@ from .architectures import register_all_models
 from .core import (
     AudioGenerationResponse,
     EmbeddingsGenerator,
-    EmbeddingsResponse,
     PipelinesFactory,
     TextAndVisionContext,
     TextContext,
@@ -78,7 +77,6 @@ __all__ = [
     "AudioGenerationResponse",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
-    "EmbeddingsResponse",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "MAXModelConfig",
