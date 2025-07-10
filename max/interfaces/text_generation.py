@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import Optional, Union
+from typing import (
+    Generic,
+    Optional,
+    Protocol,
+    TypeVar,
+    Union,
+    runtime_checkable,
+)
 
 import msgspec
 
@@ -46,3 +53,33 @@ class TextGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
 
     def update_status(self, status: GenerationStatus) -> None:
         self.final_status = status
+
+
+T = TypeVar("T")
+
+
+@runtime_checkable
+class TokenGenerator(Generic[T], Protocol):
+    """Interface for LLM token-generator models."""
+
+    def next_token(
+        self, batch: dict[str, T], num_steps: int
+    ) -> dict[str, TextGenerationResponse]:
+        """Computes the next token response for a single batch.
+
+        Args:
+            batch (dict[str, TokenGeneratorContext]): Batch of contexts.
+            num_steps int: Number of tokens to generate.
+
+        Returns:
+            list[dict[str, TextResponse]]: List of encoded responses (indexed by req. ID)
+        """
+        ...
+
+    def release(self, context: T) -> None:
+        """Releases resources associated with this context.
+
+        Args:
+            context (TokenGeneratorContext): Finished context.
+        """
+        ...
