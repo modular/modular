@@ -32,6 +32,7 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
+from max.interfaces import SamplingParams
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
@@ -41,7 +42,6 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (

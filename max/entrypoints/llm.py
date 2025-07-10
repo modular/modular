@@ -25,7 +25,7 @@ from threading import Thread
 from typing import Callable, NewType, TypeVar, Union, cast
 
 import tqdm
-from max.pipelines.core import SamplingParams
+from max.interfaces import SamplingParams
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory

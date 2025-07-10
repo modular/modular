@@ -24,9 +24,11 @@ from typing import Any, Optional, Protocol, runtime_checkable
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import LogProbabilities, TextGenerationStatus
-
-from .interfaces import SamplingParams
+from max.interfaces import (
+    LogProbabilities,
+    SamplingParams,
+    TextGenerationStatus,
+)
 
 CHUNK_SIZE = 128
 

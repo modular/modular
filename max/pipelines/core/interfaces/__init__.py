@@ -25,7 +25,6 @@ from .response import (
 from .tasks import PipelineTask
 from .text_generation import (
     PipelineTokenizer,
-    SamplingParams,
     TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
@@ -45,7 +44,6 @@ __all__ = [
     "EmbeddingsResponse",
     "PipelineTask",
     "PipelineTokenizer",
-    "SamplingParams",
     "TokenGenerator",
     "TokenGeneratorContext",
     "TokenGeneratorRequest",
