@@ -101,8 +101,12 @@ from memory import memcpy, memset, memcmp
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant
+from utils.write import (
+    _TotalWritableBytes,
+    _WriteBufferStack,
+    STACK_BUFFER_BYTES,
+)
 from utils._select import _select_register_value as select
-from utils.write import _WriteBufferStack
 
 
 # ===----------------------------------------------------------------------=== #
@@ -278,11 +282,11 @@ struct String(
         """
         self = value.__str__()
 
+    @always_inline
     fn __init__[
         *Ts: Writable
     ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
-        """
-        Construct a string by concatenating a sequence of Writable arguments.
+        """Construct a string by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
@@ -302,70 +306,25 @@ struct String(
         print(string) # "1, 2.0, three"
         ```
         """
-        self = String()
-        var buffer = _WriteBufferStack(self)
-        alias length = args.__len__()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(buffer)
-
-            if i < length - 1:
-                sep.write_to(buffer)
-
-        end.write_to(buffer)
-        buffer.flush()
+        self = String.write(args, sep=sep, end=end)
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
-    @staticmethod
-    fn __init__[
-        *Ts: Writable
-    ](
+    @always_inline
+    fn __init__(
         out self,
-        args: VariadicPack[_, _, Writable, *Ts],
+        args: VariadicPack[element_trait=Writable, *_, **_],
         sep: StaticString = "",
         end: StaticString = "",
     ):
-        """
-        Construct a string by passing a variadic pack.
+        """Construct a string by passing a variadic pack.
 
         Args:
             args: A VariadicPack of Writable arguments.
             sep: The separator used between elements.
             end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
-
-        Examples:
-
-        ```mojo
-        fn variadic_pack_to_string[
-            *Ts: Writable,
-        ](*args: *Ts) -> String:
-            return String(args)
-
-        string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
-        ```
-        .
         """
-        self = String()
-        var buffer = _WriteBufferStack(self)
-        alias length = args.__len__()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(buffer)
-
-            if i < length - 1:
-                sep.write_to(buffer)
-
-        end.write_to(buffer)
-        buffer.flush()
+        self = String.write(args, sep=sep, end=end)
 
     @always_inline("nodebug")
     fn copy(self) -> Self:
@@ -565,8 +524,9 @@ struct String(
             args[i].write_to(self)
 
     @staticmethod
+    @always_inline
     fn write[
-        *Ts: Writable
+        *Ts: Writable, buffer_size: Int = STACK_BUFFER_BYTES
     ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
         """Construct a string by concatenating a sequence of Writable arguments.
 
@@ -578,28 +538,68 @@ struct String(
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            buffer_size: The max size of the stack buffer.
 
         Returns:
             A string formed by formatting the argument sequence.
-
-        This is used only when reusing the `write_to` method for
-        `__str__` in order to avoid an endless loop recalling
-        the constructor.
         """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        alias length = args.__len__()
+        return String.write[buffer_size=buffer_size](args, sep=sep, end=end)
+
+    @staticmethod
+    @no_inline
+    fn write[
+        buffer_size: Int = STACK_BUFFER_BYTES
+    ](
+        args: VariadicPack[element_trait=Writable, *_, **_],
+        sep: StaticString = "",
+        end: StaticString = "",
+    ) -> Self:
+        """Construct a string by concatenating a sequence of Writable arguments.
+
+        Args:
+            args: A sequence of Writable arguments.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Parameters:
+            buffer_size: The max size of the stack buffer.
+
+        Returns:
+            A string formed by formatting the argument sequence.
+        """
+
+        var total_bytes = _TotalWritableBytes()
 
         @parameter
-        for i in range(length):
-            args[i].write_to(buffer)
+        for i in range(args.__len__()):
 
-            if i < length - 1:
-                sep.write_to(buffer)
+            @parameter
+            if i > 0:
+                sep.write_to(total_bytes)
+            args[i].write_to(total_bytes)
+        end.write_to(total_bytes)
+        if total_bytes.size == 0:
+            return String()
+        var result = String(capacity=total_bytes.size)
 
-        end.write_to(buffer)
-        buffer.flush()
-        return string^
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(args.__len__()):
+
+                @parameter
+                if i > 0:
+                    sep.write_to(writer)
+                args[i].write_to(writer)
+            end.write_to(writer)
+
+        if result._is_inline():
+            _write(result)
+        else:
+            var buffer = _WriteBufferStack[buffer_size](result)
+            _write(buffer)
+            buffer.flush()
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
