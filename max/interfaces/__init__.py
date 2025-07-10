@@ -8,6 +8,7 @@
 from .context import InputContext, SamplingParams
 from .log_probabilities import LogProbabilities
 from .status import GenerationStatus
+from .task import PipelineTask
 from .text_generation import (
     TextGenerationResponse,
     TextResponse,
@@ -21,4 +22,5 @@ __all__ = [
     "TextResponse",
     "SamplingParams",
     "TokenGenerator",
+    "PipelineTask",
 ]
