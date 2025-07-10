@@ -79,9 +79,7 @@ def test_struct_with_parameter_or_arg():
 
 fn func_with_default[
     _param_x: Optional[Int] = 42
-](
-    x: ParameterOrArg[_param_x] = ParameterOrArg[_param_x]()
-) -> String:
+](x: ParameterOrArg[_param_x] = ParameterOrArg[_param_x]()) -> String:
     @parameter
     if x.is_parameter:
         return "Comptime: " + String(x.comptime_value)
