@@ -28,6 +28,7 @@ from sys.info import sizeof
 
 from memory import bitcast
 from utils.numerics import FPUtils, isinf, isnan
+from stdlib.builtin.simd import UInt128
 
 alias U64_MAX = UInt64.MAX
 
@@ -477,7 +478,9 @@ fn _umul128[CarrierDType: DType](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate(ad) + _truncate(bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
 
     return _uint64s_to_uint128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
@@ -608,7 +611,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (r >> (32 - beta)) == 0,
+            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> (32 - beta))) == 0,
         )
 
 
@@ -635,13 +638,10 @@ fn _check_divisibility_and_divide_by_pow10[
 
 
 @always_inline
-fn _truncate[dtype: DType, S: Int](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
-    # Choose a narrower lane type when truncating uint64 SIMD values
-    @parameter
-    if dtype is DType.uint64:
-        return u.cast[DType.uint32]().cast[dtype]()
-    else:
-        return u.cast[dtype]().cast[dtype]()
+fn _truncate[
+    dtype: DType, S: Int, TruncateType: DType
+](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
+    return u.cast[TruncateType]().cast[dtype]()
 
 
 fn _umul96_upper64[
@@ -689,7 +689,7 @@ fn _umul192_upper128[
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
     r += _umul128_upper64(x.cast[DType.uint64](), _uint128_low(y)).cast[
-        DType.uint128
+        uint128
     ]()
     return r
 
@@ -705,7 +705,9 @@ fn _umul128_upper64(x: UInt64, y: UInt64) -> UInt64:
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate(ad) + _truncate(bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
     return ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)
 
 
@@ -715,7 +717,7 @@ fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
 
 fn _count_factors[
     CarrierDType: DType
-](var n: Scalar[CarrierDType], a: Int) -> Int:
+](varn: Scalar[CarrierDType], a: Int) -> Int:
     debug_assert(a > 1)
     var c = 0
     while n % a == 0:
