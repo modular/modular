@@ -23,8 +23,9 @@ from typing import Union
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines.core import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.pipelines.core import PipelinesFactory, PipelineTokenizer
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage

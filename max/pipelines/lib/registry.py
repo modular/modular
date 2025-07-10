@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 import torch
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    PipelineTask,
     PipelineTokenizer,
 )
 from transformers import (

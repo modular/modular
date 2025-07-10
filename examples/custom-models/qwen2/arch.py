@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.llama3 import weight_adapters
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,

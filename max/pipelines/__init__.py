@@ -19,7 +19,6 @@ from .core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     PipelinesFactory,
-    PipelineTask,
     TextAndVisionContext,
     TextContext,
     TokenGeneratorContext,
@@ -28,6 +27,7 @@ from .core import (
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
+    TTSContext,
 )
 from .lib.config import (
     AudioGenerationConfig,
@@ -91,7 +91,6 @@ __all__ = [
     "PipelineRole",
     "PipelineModel",
     "PipelinesFactory",
-    "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
@@ -116,4 +115,5 @@ __all__ = [
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
     "upper_bounded_default",
+    "TTSContext",
 ]
