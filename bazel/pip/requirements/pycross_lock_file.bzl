@@ -3757,7 +3757,6 @@ def targets():
         ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":nvidia-cublas-cu12@12.8.3.14",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -3799,7 +3798,6 @@ def targets():
         ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":nvidia-nvjitlink-cu12@12.8.61",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -3893,7 +3891,6 @@ def targets():
             ":nvidia-cusparse-cu12@12.5.7.53",
             ":nvidia-nvjitlink-cu12@12.8.61",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -3935,7 +3932,6 @@ def targets():
         ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":nvidia-nvjitlink-cu12@12.8.61",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -5133,7 +5129,6 @@ def targets():
         ":_env_python_3.9_x86_64-unknown-linux-gnu_amd_gpu": [
             ":setuptools@80.9.0",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -6689,7 +6684,6 @@ def targets():
             ":triton@3.3.0",
             ":typing-extensions@4.12.2",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -6753,7 +6747,6 @@ def targets():
             ":sympy@1.13.3",
             ":typing-extensions@4.12.2",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -7015,7 +7008,6 @@ def targets():
             ":numpy@2.0.2",
             ":pillow@10.4.0",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -7058,7 +7050,6 @@ def targets():
             ":numpy@2.0.2",
             ":pillow@10.4.0",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(
@@ -7196,7 +7187,6 @@ def targets():
         ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":setuptools@80.9.0",
         ],
-        "//conditions:default": [],
     })
 
     native.alias(

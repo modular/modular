@@ -56,9 +56,6 @@ def render_constrained_deps(
             output += f'            ":{dep}",\n'
         output += "        ],\n"
 
-    if deps_by_gpu_constraints:
-        output += '        "//conditions:default": [],\n'
-
     if had_select:
         output += "    })\n"
     else:
