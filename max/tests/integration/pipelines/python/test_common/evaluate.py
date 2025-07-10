@@ -133,7 +133,9 @@ async def run_model_async(
             if print_outputs:
                 print(
                     "Prompt:",
-                    f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
+                    f"{prompt[:100]}...{prompt[-100:]}"
+                    if len(prompt) > 200
+                    else prompt,
                 )
                 print(
                     "Output:",
