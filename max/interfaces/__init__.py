@@ -6,6 +6,7 @@
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
 from .context import InputContext, SamplingParams
+from .embeddings import EmbeddingsResponse
 from .log_probabilities import LogProbabilities
 from .status import GenerationStatus
 from .task import PipelineTask
@@ -23,4 +24,5 @@ __all__ = [
     "SamplingParams",
     "TokenGenerator",
     "PipelineTask",
+    "EmbeddingsResponse",
 ]
