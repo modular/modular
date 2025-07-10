@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
+from max.interfaces import SamplingParams
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
@@ -23,7 +24,7 @@ from max.pipelines import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core import SamplingParams, TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from test_common.mocks import mock_estimate_memory_footprint
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"

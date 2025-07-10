@@ -10,6 +10,7 @@ import json
 
 import hf_repo_lock
 from max.driver import DeviceSpec
+from max.interfaces import SamplingParams
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
@@ -17,7 +18,7 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core import SamplingParams, TextContext
+from max.pipelines.core import TextContext
 
 pytest_plugins = "test_common.registry"
 

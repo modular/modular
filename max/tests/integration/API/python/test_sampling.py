@@ -15,7 +15,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.pipelines.core import SamplingParams
+from max.interfaces import SamplingParams
 from max.pipelines.lib import (
     SamplingConfig,
     rejection_sampler,

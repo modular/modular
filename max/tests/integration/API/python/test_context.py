@@ -9,9 +9,8 @@ from typing import Union
 
 import numpy as np
 import pytest
-from max.interfaces import TextGenerationStatus
+from max.interfaces import SamplingParams, TextGenerationStatus
 from max.pipelines.core import (
-    SamplingParams,
     TextAndVisionContext,
     TextContext,
     TTSContext,

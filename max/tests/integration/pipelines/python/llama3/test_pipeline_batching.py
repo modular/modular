@@ -10,6 +10,7 @@ from typing import Any
 
 import hf_repo_lock
 import pytest
+from max.interfaces import SamplingParams
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -17,7 +18,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.core import SamplingParams, TokenGeneratorRequest
+from max.pipelines.core import TokenGeneratorRequest
 from max.pipelines.lib import generate_local_model_path
 from test_common.evaluate import next_token_with_logits
 from test_common.test_data import DEFAULT_PROMPTS

@@ -11,10 +11,10 @@ from unittest.mock import patch
 
 import hf_repo_lock
 from max.driver import DeviceSpec
+from max.interfaces import SamplingParams
 from max.pipelines import (
     TokenGeneratorRequest,
 )
-from max.pipelines.core import SamplingParams
 from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
     MockTextTokenizer,
