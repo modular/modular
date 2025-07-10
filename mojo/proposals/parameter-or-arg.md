@@ -312,7 +312,7 @@ A good example is `List.pop()` where the default value
 (popping the last element) could be "specialized".
 
 **Warning**: This use case currently requires a quite verbose syntax that
-we can hopefully improve in the future with the help of 
+we can hopefully improve in the future with the help of
 the compiler and tooling team.
 
 ```mojo
