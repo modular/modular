@@ -14,9 +14,7 @@
 from testing import assert_true, assert_equal
 
 
-struct Parameter[
-    T: Copyable & Movable, //, value:T
-](Copyable, Movable):
+struct Parameter[T: Copyable & Movable, //, value: T](Copyable, Movable):
     fn __init__(
         out self,
     ):
@@ -24,7 +22,8 @@ struct Parameter[
 
 
 struct ParameterOrArg[
-    T: Copyable & Movable, //, _comptime_value: Optional[T] , 
+    T: Copyable & Movable, //,
+    _comptime_value: Optional[T],
 ](Copyable, Movable):
     alias is_parameter = Self._comptime_value is not None
     alias _arr_size = 0 if Self.is_parameter else 1
@@ -37,9 +36,7 @@ struct ParameterOrArg[
 
     @implicit
     fn __init__(
-        out self: ParameterOrArg[
-             _comptime_value = Optional[T](None)
-        ],
+        out self: ParameterOrArg[_comptime_value = Optional[T](None)],
         owned value: Self.T,
     ):
         self._runtime_value = InlineArray[Self.T, self._arr_size](value)
@@ -48,12 +45,12 @@ struct ParameterOrArg[
     fn __init__[
         V: Self.T
     ](
-        out self: ParameterOrArg[
-            _comptime_value = Optional[T](V)
-        ],
+        out self: ParameterOrArg[_comptime_value = Optional[T](V)],
         value: Parameter[V],
     ):
-        self._runtime_value = InlineArray[Self.T, self._arr_size](uninitialized=True)
+        self._runtime_value = InlineArray[Self.T, self._arr_size](
+            uninitialized=True
+        )
 
     @always_inline
     fn runtime_value(self) -> T:

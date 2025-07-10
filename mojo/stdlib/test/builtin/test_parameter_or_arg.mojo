@@ -37,7 +37,6 @@ def test_maybe_parameter():
     some_func("RUNTIME")
 
 
-
 struct TestBuffer[_SizeParam: Optional[Int], //]:
     var data: UnsafePointer[Int]
     var size: ParameterOrArg[_SizeParam]
@@ -45,17 +44,17 @@ struct TestBuffer[_SizeParam: Optional[Int], //]:
     fn __init__(out self, size: ParameterOrArg[_SizeParam]):
         self.size = size
         self.data = UnsafePointer[Int].alloc(self.size.value())
-    
+
     fn __del__(owned self):
         self.data.free()
-    
+
     fn get_info(self) -> String:
         @parameter
         if __type_of(self.size).is_parameter:
             return "Fixed size buffer: " + String(self.size.comptime_value)
         else:
             return "Dynamic size buffer: " + String(self.size.runtime_value())
-    
+
     fn get_size(self) -> Int:
         return self.size.value()
 
@@ -65,13 +64,13 @@ def test_struct_with_parameter_or_arg():
     var fixed_buffer = TestBuffer(Parameter[42]())
     assert_equal(fixed_buffer.get_info(), "Fixed size buffer: 42")
     assert_equal(fixed_buffer.get_size(), 42)
-    
+
     # Test with runtime size
     var dynamic_size = 24
     var dynamic_buffer = TestBuffer(dynamic_size)
     assert_equal(dynamic_buffer.get_info(), "Dynamic size buffer: 24")
     assert_equal(dynamic_buffer.get_size(), 24)
-    
+
     # Test with literal value (becomes runtime)
     var literal_buffer = TestBuffer(16)
     assert_equal(literal_buffer.get_info(), "Dynamic size buffer: 16")
