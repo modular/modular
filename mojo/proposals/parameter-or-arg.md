@@ -155,7 +155,7 @@ fn example_usage():
 
 ### 2. Guaranteed optimizations for performance-critical code
 
-Replace "we hope do constant folding" with
+Replace "we hope the compiler will do constant folding" with
 guarantees in performance-sensitive functions:
 
 ```mojo
@@ -189,7 +189,7 @@ fn example_usage():
     var dst = UnsafePointer[Int32].alloc(100)
     var src = UnsafePointer[Int32].alloc(100)
     
-    # Case 1: We avoid branches, it's garanteed to be optimized
+    # Case 1: We avoid branches, it's guaranteed to be optimized
     fast_memcopy(dst, src, Parameter[4]())
     
     # Case 3: Runtime count - uses generic implementation
@@ -322,7 +322,7 @@ struct List[T: CollectionElement]:
     var capacity: Int
     
     fn pop(
-        inout self, index: ParameterOrArg[T=Self.T] = Parameter[-1]()
+        inout self, index: ParameterOrArg[T=Int] = Parameter[-1]()
     ) -> T:
         """Remove and return element at index (default: last element)."""
         
@@ -382,7 +382,7 @@ improvements in the future, such as:
 - Allowing `*_, **_` in the types of struct attributes
 - Changing `@parameter` to allow `@parameter(cond=value.is_parameter)` to
   disable the decorator if the value is only known at runtime, reducing
-  code duplication without loosing predictability.
+  code duplication without losing predictability.
 
 Those features are not strictly necessary for the
 initial proposal, but could help make the API more ergonomic.
@@ -404,7 +404,7 @@ the information `some_funct("hello")` that the
 argument is known at compile-time. This would
 require significant compiler changes and could
 lead to ambiguity in some cases. It would always require inlining.
-Furthermore, the caller would loose control as using parameters
+Furthermore, the caller would lose control as using parameters
 is not always desirable, for example it might increase the binary
 size if called multiple times with arguments known at compile-time.
 Mojo was designed to have predictable performance, and this
@@ -426,7 +426,7 @@ would make it harder to reason about.
 - `Span` to have the size be known at compile-time or runtime.
 - `memcpy()` and other memory functions to optimize for
   compile-time known sizes as a lot of branching is present in
-    the current implementation.
+  the current implementation.
 - `vectorize()` since the count can be known at compile-time or runtime.
 - `SIMD.shift_right/shift_left` since they currently only
   have a compile-time known count, but could benefit from runtime
