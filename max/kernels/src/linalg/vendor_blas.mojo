@@ -144,7 +144,7 @@ fn _resolve_backend[
     if backend is not Backend.AUTOMATIC:
         return backend
     elif has_amd_gpu_accelerator():
-        return Backend.ROCBLAS
+        return Backend.HIPBLASLT
     elif dtype.is_float8():
         return Backend.CUBLASLT
     return Backend.CUBLAS
