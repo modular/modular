@@ -11,6 +11,7 @@ from .status import GenerationStatus
 from .text_generation import (
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "TextGenerationResponse",
     "TextResponse",
     "SamplingParams",
+    "TokenGenerator",
 ]
