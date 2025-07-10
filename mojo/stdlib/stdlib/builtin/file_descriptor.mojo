@@ -64,23 +64,6 @@ struct FileDescriptor(Writer):
         self.value = f._get_raw_fd()
 
     @always_inline
-    fn __write_bytes_cpu(mut self, bytes: Span[Byte, _]):
-        """
-        Write a span of bytes to the file.
-
-        Args:
-            bytes: The byte span to write to this file.
-        """
-
-        written = external_call["write", Int32](
-            self.value, bytes.unsafe_ptr(), len(bytes)
-        )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
-
-    @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
@@ -88,19 +71,13 @@ struct FileDescriptor(Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-
-        if is_compile_time():
-            self.__write_bytes_cpu(bytes)
-        else:
-
-            @parameter
-            if is_nvidia_gpu():
-                _printf["%*s"](len(bytes), bytes.unsafe_ptr())
-            elif is_amd_gpu():
-                var msg = printf_begin()
-                _ = printf_append_string_n(msg, bytes, is_last=True)
-            else:
-                self.__write_bytes_cpu(bytes)
+        written = external_call["write", Int32](
+            self.value, bytes.unsafe_ptr(), len(bytes)
+        )
+        debug_assert(
+            written == len(bytes),
+            "expected amount of bytes not written",
+        )
 
     @always_inline
     fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
