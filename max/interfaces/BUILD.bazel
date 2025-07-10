@@ -9,5 +9,6 @@ modular_py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("msgspec"),
+        requirement("numpy"),
     ],
 )
