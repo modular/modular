@@ -23,11 +23,11 @@ from max.interfaces import (
     InputContext,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     TextContext,
-    TokenGenerator,
     msgpack_numpy_encoder,
 )
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket

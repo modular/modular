@@ -8,7 +8,7 @@
 import time
 
 import pytest
-from max.pipelines.core import TokenGenerator
+from max.interfaces import TokenGenerator
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
