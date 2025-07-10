@@ -7,7 +7,7 @@ Mojo's strength lies in its ability to leverage compile-time information for per
 1. **Function overload explosion**: When multiple arguments could potentially be compile-time known, developers must write exponentially many overloads to cover all combinations.
 2. **Struct design limitations**: Structs face similar challenges where attributes might be known at compile-time in some contexts but not others (e.g., `Span` with constant size, matrices with known dimensions).
 3. **Missed optimization opportunities**: Performance-critical functions must "hope" for constant folding rather than having guarantees about compile-time optimizations.
-4. **Code generation bloat**: Functions accepting multiple variants (e.g., for compression methods, export formats) must decide to either generate code for all variants and increase binary size (argument) or limit themselves to a single variant, reducing flexibility (parameter). 
+4. **Code generation bloat**: Functions accepting multiple variants (e.g., for compression methods, export formats) must decide to either generate code for all variants and increase binary size (argument) or limit themselves to a single variant, reducing flexibility (parameter).
 5. **Default values are not optimized**: Default values in functions are massively used, but despite being known at compile-time, are rarely optimized for performance. Doing this would fall back to problem 1 where many overloads are needed, especially for functions with multiple default arguments.
 
 ## Proposed solution
@@ -257,14 +257,15 @@ fn example_usage():
 ```
 
 ### 5. Specialized path for default values
+
 We can also make this beneficial even for users that don't bother with using `Parameter[...]()`.
 Since default values are often (always?) known at compile-time, we can
 ensure that the function is heavily optimized for the most common case.
-A good example is `List.pop()` where the default value 
+A good example is `List.pop()` where the default value
 (popping the last element) could be "specialized".
 
 **Warning**: This use case currently requires a compiler fix for generic functions
-with default arguments (see https://github.com/modular/modular/issues/4996).
+with default arguments (see <https://github.com/modular/modular/issues/4996>).
 
 ```mojo
 struct List[T: CollectionElement]:
@@ -316,18 +317,19 @@ fn example_usage():
 ### Compiler integration
 
 Currently, no compiler changes are needed. But the compiler team might be involved with those:
+
 - The use case **5** might benefit from a [compiler fix](https://github.com/modular/modular/issues/4996) though.
 - If we notice that the compiler doesn't produce zero-cost transfer of structs of size 0,
   we might ask for help there since this proposal relies on that.
 
 There could be some slight, optional, quality-of-life improvements in the future, such as:
+
 - Allowing `*_, **_` in the types of struct attributes
-- Changing `@parameter` to allow `@parameter(cond=value.is_parameter)` to 
-  disable the decorator if the value is only known at runtime, reducing 
+- Changing `@parameter` to allow `@parameter(cond=value.is_parameter)` to
+  disable the decorator if the value is only known at runtime, reducing
   code duplication without loosing predictability.
 
 Those features are not strictly necessary for the initial proposal, but could help make the API more ergonomic.
-
 
 ### Performance guarantees
 
