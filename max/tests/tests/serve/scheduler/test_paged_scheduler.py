@@ -19,8 +19,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
+    GenerationStatus,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
@@ -223,12 +223,12 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         # Generate the responses
         responses = {}
         for req_id, context in batch.items():
-            resp = TextGenerationResponse([], TextGenerationStatus.ACTIVE)
+            resp = TextGenerationResponse([], GenerationStatus.ACTIVE)
             for _ in range(num_steps):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
-                    resp.update_status(TextGenerationStatus.MAXIMUM_LENGTH)
+                    resp.update_status(GenerationStatus.MAXIMUM_LENGTH)
 
                 if resp.is_done:
                     break

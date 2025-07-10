@@ -19,7 +19,7 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import TextGenerationStatus
+from max.interfaces import GenerationStatus
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerationResponse,
@@ -234,19 +234,19 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
         # Generate the responses
         responses = {}
         for req_id, context in batch.items():
-            resp = AudioGenerationResponse(TextGenerationStatus.ACTIVE)
+            resp = AudioGenerationResponse(GenerationStatus.ACTIVE)
             for _ in range(num_tokens):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
                     resp = AudioGenerationResponse(
-                        TextGenerationStatus.MAXIMUM_LENGTH
+                        GenerationStatus.MAXIMUM_LENGTH
                     )
 
                     # Pretend that the audio generation is done immediately when
                     # text generation is done.
                     context.update_audio_generation_status(
-                        TextGenerationStatus.MAXIMUM_LENGTH
+                        GenerationStatus.MAXIMUM_LENGTH
                     )
 
                 if resp.is_done:
