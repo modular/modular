@@ -1,0 +1,74 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index c206b497c7..a23b1fb67a 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -28,2 +28,3 @@
+ bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
++bazel_dep(name = "protoc-gen-validate", version = "1.0.4", repo_name = "com_envoyproxy_protoc_gen_validate")
+ 
+@@ -32,3 +33,2 @@ use_repo(
+     grpc_repo_deps_ext,
+-    "com_envoyproxy_protoc_gen_validate",
+     "envoy_api",
+
+diff --git a/bazel/grpc_deps.bzl b/bazel/grpc_deps.bzl
+index 8043301a06..dbe1449ab8 100644
+--- a/bazel/grpc_deps.bzl
++++ b/bazel/grpc_deps.bzl
+@@ -53,13 +53,13 @@ def grpc_deps():
+             ],
+         )
+
+-    if "com_envoyproxy_protoc_gen_validate" not in native.existing_rules():
+-        http_archive(
+-            name = "com_envoyproxy_protoc_gen_validate",
+-            sha256 = "9372f9ecde8fbadf83c8c7de3dbb49b11067aa26fb608c501106d0b4bf06c28f",
+-            strip_prefix = "protoc-gen-validate-1.0.4",
+-            urls = ["https://github.com/bufbuild/protoc-gen-validate/archive/refs/tags/v1.0.4.zip"],
+-        )
++    # if "com_envoyproxy_protoc_gen_validate" not in native.existing_rules():
++    #     http_archive(
++    #         name = "com_envoyproxy_protoc_gen_validate",
++    #         sha256 = "9372f9ecde8fbadf83c8c7de3dbb49b11067aa26fb608c501106d0b4bf06c28f",
++    #         strip_prefix = "protoc-gen-validate-1.0.4",
++    #         urls = ["https://github.com/bufbuild/protoc-gen-validate/archive/refs/tags/v1.0.4.zip"],
++    #     )
+
+     if "google_cloud_cpp" not in native.existing_rules():
+         http_archive(
+@@ -72,7 +72,6 @@ def grpc_deps():
+             ],
+         )
+
+-
+ # TODO: move some dependencies from "grpc_deps" here?
+ # buildifier: disable=unnamed-macro
+ def grpc_test_only_deps():
+
+diff --git a/bazel/python_rules.bzl b/bazel/python_rules.bzl
+index 5924fd5b5e..56b2a2d42c 100644
+--- a/bazel/python_rules.bzl
++++ b/bazel/python_rules.bzl
+@@ -14,6 +14,7 @@
+ """Generates and compiles Python gRPC stubs from proto_library rules."""
+
+ load("@rules_proto//proto:defs.bzl", "ProtoInfo")
++load("@rules_python//python:py_info.bzl", "PyInfo")
+ load(
+     "//bazel:protobuf.bzl",
+     "declare_out_files",
+
+diff --git a/src/python/grpcio/grpc/BUILD.bazel b/src/python/grpcio/grpc/BUILD.bazel
+index 75961b3eff..6d16958aed 100644
+--- a/src/python/grpcio/grpc/BUILD.bazel
++++ b/src/python/grpcio/grpc/BUILD.bazel
+@@ -11,6 +11,9 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
++
++load("@rules_python//python:py_library.bzl", "py_library")
++
+ package(default_visibility = ["//visibility:public"])
+
+ py_library(
