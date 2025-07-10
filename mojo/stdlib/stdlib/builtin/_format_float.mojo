@@ -484,7 +484,7 @@ fn _umul128[CarrierDType: DType](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
 
     return _uint64s_to_uint128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
-        (intermediate << 32) + _truncate(bd),
+        (intermediate << 32) + _truncate[DType.uint32](bd),
     )
 
 
