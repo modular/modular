@@ -476,19 +476,23 @@ fn _log2_floor(n: Int) -> Int:
 
 
 def test_log2_floor():
-    assert_equal(log2_floor(0), 0)
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
             _log2_floor(i),
             msg=String("mismatching value for the input value of ", i),
         )
+    # test failures
+    assert_equal(log2_floor(0), -1)
+    assert_equal(log2_floor(-1), -1)
+    assert_equal(log2_floor(-2), -1)
+    assert_equal(log2_floor(-3), -1)
+    assert_equal(log2_floor(-999), -1)
 
     fn _check_alias[n: Int](expected: Int) raises:
         alias res = log2_floor(n)
         assert_equal(res, expected)
 
-    _check_alias[0](0)
     _check_alias[1](0)
     _check_alias[2](1)
     _check_alias[15](3)
