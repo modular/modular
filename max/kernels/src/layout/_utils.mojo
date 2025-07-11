@@ -244,9 +244,11 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
     alias element_layout = tensor.element_layout
     alias element_offset = element_layout(element_layout.size() - 1)
+    alias tensor_t = __type_of(tensor)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
-        strides, IndexList[2](tensor.dim[0]() - 1, tensor.dim[1]() - 1)
+        strides,
+        tensor_t.idx_list_t[2](tensor.dim[0]() - 1, tensor.dim[1]() - 1),
     )
     return offset + 1
 
