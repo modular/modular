@@ -28,7 +28,7 @@ from max.nn.layer import Module
 from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import ModelOutput
 
-from verify_layers.collect_subclasses import get_all_subclasses
+from verify_layers.collect_subclasses import all_subclasses
 from verify_layers.layer_utils import (
     normalize_max_layer_name,
     normalize_pytorch_layer_name,
@@ -625,7 +625,7 @@ def capture_max_layer_outputs(
 
         # Find all Module subclasses and patch them
         # This is a simplified approach - in practice you might need to be more selective
-        for cls in get_all_subclasses():
+        for cls in all_subclasses():
             layer_capture.monkey_patch_module(cls)
 
         pipeline_oracle = PIPELINE_ORACLES[pipeline]

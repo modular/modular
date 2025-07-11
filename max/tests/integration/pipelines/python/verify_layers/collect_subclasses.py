@@ -9,7 +9,7 @@ from collections import deque
 import max.nn as nn
 
 
-def get_all_subclasses() -> set[type[nn.Module]]:
+def all_subclasses() -> set[type[nn.Module]]:
     """Recursively collects all subclasses of nn.Module."""
     all_subclasses = set()
 
