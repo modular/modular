@@ -534,6 +534,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
+    # TODO(#4998): this should be an overload of extend, not append. And we need
+    # to give users better control over the allocation reserve calculation.
     fn append(mut self, elements: Span[T, _]):
         """Appends elements to this list.
 

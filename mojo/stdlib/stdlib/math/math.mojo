@@ -1208,7 +1208,7 @@ fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    iota(v.data, len(v), offset)
+    iota(v.unsafe_ptr(), len(v), offset)
 
 
 fn iota(mut v: List[Int, *_], offset: Int = 0):
@@ -1218,7 +1218,7 @@ fn iota(mut v: List[Int, *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = v.data.bitcast[Scalar[DType.index]]()
+    var buff = v.unsafe_ptr().bitcast[Scalar[DType.index]]()
     iota(buff, len(v), offset=offset)
 
 

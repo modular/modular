@@ -318,6 +318,13 @@ struct LayoutTensor[
     ```
     """
 
+    alias _Span = Span[
+        Scalar[dtype],
+        origin=origin,
+        address_space=address_space,
+        alignment=alignment,
+    ]
+
     alias rank = layout.rank()
     """The number of dimensions in the tensor's layout."""
 
@@ -5655,6 +5662,9 @@ struct LayoutTensor[
             Element[index_type=linear_idx_type](
                 val, self.runtime_element_layout
             ).store(self.ptr.offset(offset))
+
+    fn _as_span(self) -> Self._Span:
+        return Self._Span(ptr=self.ptr, length=self.size())
 
 
 @always_inline
