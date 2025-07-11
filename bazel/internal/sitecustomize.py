@@ -15,6 +15,9 @@ import os
 
 
 def __absolutize_path(value: str) -> str:
+    if value == "":
+        return value
+
     if os.path.exists(value):
         return os.path.abspath(value)
 
@@ -23,6 +26,11 @@ def __absolutize_path(value: str) -> str:
 
     if execroot := os.getenv("BUILD_EXECROOT"):
         rebased = os.path.join(execroot, value)
+        if os.path.exists(rebased):
+            return os.path.abspath(rebased)
+
+    if runfiles_dir := os.getenv("RUNFILES_DIR"):
+        rebased = os.path.join(runfiles_dir, value)
         if os.path.exists(rebased):
             return os.path.abspath(rebased)
 
