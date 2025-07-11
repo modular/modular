@@ -225,8 +225,10 @@ EOF
         mojo_test_env = {
             "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
             "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+            "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
             "MODULAR_MOJO_MAX_ORCRT_PATH": "$(ORCRT_PATH)",
             "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+            "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
             "MOJO_BINARY_PATH": "$(MOJO_BINARY_PATH)",
         }
         extra_tool_paths.append("$(MOJO_BINARY_PATH)")
@@ -255,8 +257,6 @@ EOF
         "LIT_PRESERVES_TMP": "1",
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
-        "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
-        "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
     } | GPU_TEST_ENV
     if "MODULAR_CRASH_REPORTING_ENABLED" not in env and \
        "MODULAR_CRASH_REPORTING_HANDLER_PATH" not in (env | default_env):
@@ -274,7 +274,6 @@ EOF
         ],
         "toolchains": mojo_test_deps + [
             "//bazel/internal:current_gpu_toolchain",
-            "//bazel/internal:mojo_linker_info",
             "//bazel/internal:lib_toolchain",
         ],
         "data": data + tools + extra_data + mojo_test_deps + [
@@ -284,7 +283,6 @@ EOF
             "@llvm-project//llvm:count",
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:not",
-            "//bazel/internal:mojo_linker_info",
         ],
         "env": env_for_available_tools() | default_env | env | mojo_test_env,
         "env_inherit": env_inherit,
@@ -311,7 +309,6 @@ EOF
         env = default_env,
         toolchains = [
             "//bazel/internal:current_gpu_toolchain",
-            "//bazel/internal:mojo_linker_info",
         ],
         tags = [
             "no-mypy",

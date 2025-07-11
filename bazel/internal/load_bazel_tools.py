@@ -131,7 +131,7 @@ for substitution, command in custom_substitutions.items():
         )
 
 new_system_libs = []
-for arg in os.environ["MODULAR_MOJO_MAX_SYSTEM_LIBS"].split(","):
+for arg in os.environ.get("MODULAR_MOJO_MAX_SYSTEM_LIBS", "").split(","):
     if arg.startswith("--sysroot=external/"):
         arg = "--sysroot=" + os.path.abspath(
             os.path.join("..", arg[len("--sysroot=external/") :])
@@ -230,9 +230,10 @@ for key in sorted(os.environ.keys()):
 
         llvm_config.with_environment(key, value)
 
-llvm_config.with_environment(
-    "MODULAR_MOJO_MAX_SYSTEM_LIBS", ",".join(new_system_libs)
-)
+if new_system_libs:
+    llvm_config.with_environment(
+        "MODULAR_MOJO_MAX_SYSTEM_LIBS", ",".join(new_system_libs)
+    )
 
 if import_paths:
     llvm_config.with_environment(
