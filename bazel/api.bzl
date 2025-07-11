@@ -37,6 +37,7 @@ _DEPS_FROM_WHEEL = [
     "//max/profiler",
     "//max/support",
     "//max:_core",
+    "//max/_core_mojo",
 ]
 
 def _is_internal_reference(dep):
