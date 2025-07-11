@@ -13,8 +13,9 @@ from typing import (
 )
 
 import msgspec
-from max.interfaces.log_probabilities import LogProbabilities
-from max.interfaces.status import GenerationStatus
+
+from .log_probabilities import LogProbabilities
+from .status import GenerationStatus
 
 
 class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
