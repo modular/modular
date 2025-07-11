@@ -158,7 +158,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
 @register_passable("trivial")
 struct AddressSpace(
-    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
+    Copyable, EqualityComparable, Indexer, Intable, Movable, Stringable, Writable
 ):
     """Address space of the pointer."""
 
