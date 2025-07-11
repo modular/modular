@@ -26,7 +26,6 @@ _KNOWN_FEATURES = {
     "msan",
     "system-darwin",
     "system-linux",
-    "system-windows",
     "tsan",
     "ubsan",
     "x86_64-linux",
