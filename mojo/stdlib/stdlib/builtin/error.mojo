@@ -21,11 +21,29 @@ from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import memcpy
-from utils.write import _WriteBufferStack
+from utils.write import _WriteBufferStack, _TotalWritableBytes
+
 
 # ===-----------------------------------------------------------------------===#
 # Error
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _UnsafeWriteToErrorPtr(Writer):
+    var data: UnsafePointer[UInt8]
+    var length: Int
+    var capacity: Int
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        var count = min(len(bytes), self.capacity - self.length)
+        memcpy(self.data + self.length, bytes.unsafe_ptr(), count)
+        self.length += count
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 @register_passable
@@ -131,6 +149,36 @@ struct Error(
 
         buffer.flush()
         self = Error(output)
+
+    # FIXME: this should use the Writer trait but there are some limitations
+    # when trying to setup a wrapper struct that is parametrized on this
+    # function and uses it in its `fn write_to()` method.
+    @no_inline
+    fn __init__[
+        message_func: fn[W: Writer] (mut writer: W) capturing
+    ](out self: Error):
+        """Construct an Error by executing a function that writes the message.
+
+        Parameters:
+            message_func: The function that writes the message.
+
+        Warning:
+            This function is for temporary internal use only. Due to some
+            language-level limitations, this needs to be a public `__init__`
+            function.
+        """
+
+        # Count the total length of bytes to allocate only once
+        var arg_bytes = _TotalWritableBytes()
+        message_func(arg_bytes)
+        var ptr = UnsafePointer[Byte].alloc(arg_bytes.size + 1)
+        var writer = _UnsafeWriteToErrorPtr(ptr, 0, arg_bytes.size)
+        var buffer = _WriteBufferStack(writer)
+        message_func(buffer)
+        buffer.flush()
+        ptr[arg_bytes.size] = 0
+        self.data = ptr
+        self.loaded_length = -arg_bytes.size
 
     fn copy(self) -> Self:
         """Copy the object.
