@@ -5,17 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
-from .audio_generation import AudioGenerationResponse
 from .context import InputContext, SamplingParams
-from .embeddings import EmbeddingsResponse
 from .log_probabilities import LogProbabilities
-from .status import GenerationStatus
-from .task import PipelineTask
-from .text_generation import (
+from .pipeline_variants import (
+    AudioGenerationResponse,
+    EmbeddingsResponse,
     TextGenerationResponse,
     TextResponse,
     TokenGenerator,
 )
+from .status import GenerationStatus
+from .task import PipelineTask
 
 __all__ = [
     "LogProbabilities",

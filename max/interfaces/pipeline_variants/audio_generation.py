@@ -13,8 +13,7 @@ from typing import Optional
 
 import msgspec
 import numpy as np
-
-from .status import GenerationStatus
+from max.interfaces.status import GenerationStatus
 
 
 class AudioGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
