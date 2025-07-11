@@ -3,15 +3,15 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library", "py_test")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
 load("@protobuf//bazel:py_proto_library.bzl", _py_proto_library = "py_proto_library")
-load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
-load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_binary", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
