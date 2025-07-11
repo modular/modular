@@ -586,12 +586,4 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        var lt = (sizes <= self.to_u32()).cast[DType.uint8]()
-
-        # TODO(MOCO-1537): Support `reduce_add()` at compile time.
-        #   var count = Int(lt.reduce_add())
-        var count = 0
-        for i in range(len(lt)):
-            count += Int(lt[i])
-
-        return UInt(count)
+        return UInt((sizes <= self.to_u32()).cast[DType.uint8]().reduce_add())
