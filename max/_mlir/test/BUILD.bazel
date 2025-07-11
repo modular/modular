@@ -11,7 +11,4 @@ lit_tests(
         "@mojo//:_mlir",
         "@mojo//:stdlib",
     ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
 )

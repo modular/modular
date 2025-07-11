@@ -75,5 +75,4 @@ lit_tests(
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
 )

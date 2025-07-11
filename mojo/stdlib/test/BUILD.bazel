@@ -253,10 +253,6 @@ lit_tests(
     name = "test",
     size = "large",
     srcs = _LIT_TESTS,
-    env = {
-        "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
-    },
-    generate_litcfg = False,
     mojo_deps = [
         "@mojo//:stdlib",
     ],
@@ -265,7 +261,4 @@ lit_tests(
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
 )

@@ -20,6 +20,14 @@ build --experimental_output_paths=strip
 common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 
+# TODO: Break lit tests finding FileCheck
+# Disable legacy duplicate runfiles creation
+common --legacy_external_runfiles=false
+common --build_runfile_links=false
+
+# Differentiate between accidental 'bazel run' vs 'bazel test'
+test --test_env=MODULAR_RUNNING_TESTS=true
+
 # Don't fail on unknown GPUs, add needed GPUs to common.MODULE.bazel
 common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
 

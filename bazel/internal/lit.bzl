@@ -11,7 +11,10 @@ from python.runfiles import runfiles
 _R = runfiles.Create()
 
 for path in [x for x in "{}".split(":") if x]:
-    tool_path = os.path.dirname(_R.Rlocation(path))
+    if os.path.exists(path):
+        tool_path = os.path.dirname(os.path.abspath(path))
+    else:
+        tool_path = os.path.dirname(_R.Rlocation(path))
     os.environ["PATH"] = tool_path + os.pathsep + os.environ["PATH"]
 """
 
@@ -69,9 +72,13 @@ def _generate_site_cfg_impl(ctx):
         output = output,
         substitutions = {
             "@LIT_SITE_CFG_IN_HEADER@": _HEADER_PATH_ADDITIONS.format(
-                ctx.expand_location(
-                    ctx.attr.path,
-                    targets = ctx.attr.data,
+                ctx.expand_make_variables(
+                    "path",
+                    ctx.expand_location(
+                        ctx.attr.path,
+                        targets = ctx.attr.data,
+                    ),
+                    {},
                 ),
             ),
             "@MODULAR_BINARY_DIR@": ".",
@@ -121,7 +128,7 @@ _generate_site_cfg = rule(
 def lit_tests(
         name,
         srcs,
-        tools,
+        tools = [],
         deps = [],
         mojo_deps = [],
         data = [],
@@ -142,7 +149,7 @@ def lit_tests(
         srcs: The files that should be treated as lit tests
         tools: The tools being exercised in the tests, used as replacements
         deps: Any py_library deps to add to the lit test target
-        mojo_deps: Mojo library dependencies required by the tests
+        mojo_deps: Mojo library dependencies required by the tests, adding anything here automatically adds mojo to the environment
         data: Any files required at test runtime
         custom_substitutions: Custom lit substitutions, use sparingly.
         tags: Tags to set on the underlying targets
@@ -168,6 +175,7 @@ def lit_tests(
         tool_names.append('"{}"'.format(tool.split(separator)[-1]))
         tool_paths.append('"{}"'.format(Label(tool).package))
 
+    tools = list(tools)
     tools.append("@llvm-project//llvm:llvm-symbolizer")
 
     litcfg = "lit.cfg.py"
@@ -211,6 +219,26 @@ EOF
             testonly = True,
         )
 
+    mojo_test_deps = []
+    mojo_test_env = {}
+    extra_tool_paths = []
+    if mojo_deps:
+        mojo_test_deps.append(name + "_mojo_deps")
+        mojo_test_env = {
+            "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
+            "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+            "MODULAR_MOJO_MAX_ORCRT_PATH": "$(ORCRT_PATH)",
+            "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+            "MOJO_BINARY_PATH": "$(MOJO_BINARY_PATH)",
+        }
+        extra_tool_paths.append("$(MOJO_BINARY_PATH)")
+        mojo_test_environment(
+            name = name + "_mojo_deps",
+            data = mojo_deps,
+            target_compatible_with = target_compatible_with,
+            testonly = True,
+        )
+
     _generate_site_cfg(
         name = name + "_lit_site_cfg_py",
         src = local_litcfg,
@@ -219,10 +247,10 @@ EOF
         custom_substitutions = custom_substitutions,
         testonly = True,
         tags = tags,
-        path = ":".join(["$(rlocationpath {})".format(tool) for tool in tools]),
+        path = ":".join(["$(rlocationpath {})".format(tool) for tool in tools] + extra_tool_paths),
         target_compatible_with = target_compatible_with,
         available_features = ["has_not", "$(GPU_LIT_FEATURE)", "$(GPU_BRAND_LIT_FEATURE)"],
-        toolchains = ["//bazel/internal:current_gpu_toolchain"],
+        toolchains = ["//bazel/internal:current_gpu_toolchain"] + mojo_test_deps,
     )
 
     default_env = {
@@ -231,32 +259,15 @@ EOF
         "ZERO_AR_DATE": "1",
         "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
         "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
-    }
+    } | GPU_TEST_ENV
     if "MODULAR_CRASH_REPORTING_ENABLED" not in env and \
        "MODULAR_CRASH_REPORTING_HANDLER_PATH" not in (env | default_env):
         default_env["MODULAR_CRASH_REPORTING_ENABLED"] = "false"
 
-    default_env |= GPU_TEST_ENV
-    mojo_test_deps = []
-    mojo_test_env = {}
     extra_data = [
         "//bazel/internal:asan-suppressions.txt",
         "//bazel/internal:lsan-suppressions.txt",
     ]
-    if mojo_deps:
-        mojo_test_deps.append(name + "_mojo_deps")
-        mojo_test_env = {
-            "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
-            "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-            "MOJO_BINARY_PATH": "$(MOJO_BINARY_PATH)",
-        }
-        mojo_test_environment(
-            name = name + "_mojo_deps",
-            data = mojo_deps,
-            target_compatible_with = target_compatible_with,
-            testonly = True,
-        )
-
     default_args = ["--config-prefix=" + name]
     kwargs = {
         "deps": deps + mojo_test_deps + [
@@ -288,7 +299,7 @@ EOF
             name = "%s%s.test" % (src.replace("🔥", "fire"), ("." + unique_suffix) if unique_suffix else ""),
             srcs = [src],
             target_compatible_with = target_compatible_with + gpu_constraints,
-            tags = tags + ["no-mypy"],
+            tags = tags + ["no-mypy", "lit"],
             args = default_args + ["-a"],
             **kwargs
         )
@@ -296,8 +307,8 @@ EOF
     py_test(
         name = name + ".validate_lit_features",
         data = srcs + extra_data,
-        srcs = ["//bazel/internal:validate_lit_features.py"],
-        main = "//bazel/internal:validate_lit_features.py",
+        srcs = ["//bazel/internal/llvm-lit:validate_lit_features.py"],
+        main = "//bazel/internal/llvm-lit:validate_lit_features.py",
         args = [native.package_name()] + srcs,
         env = default_env,
         toolchains = [

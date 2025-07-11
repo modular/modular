@@ -20,6 +20,7 @@ def _mojo_test_environment_implementation(ctx):
                 "COMPUTED_IMPORT_PATH": "",
                 "COMPUTED_LIBS": "",
                 "MOJO_BINARY_PATH": "",
+                "ORCRT_PATH": "",
             }),
         ]
 
@@ -36,7 +37,7 @@ def _mojo_test_environment_implementation(ctx):
         transitive_runfiles.append(target[DefaultInfo].default_runfiles)
 
     shared_libs = []
-    transitive_files = []
+    transitive_files = [depset([mojo_toolchain.orc_rt])]
 
     # TODO: This also contains runfiles, it probably should not.
     for tool in mojo_toolchain.all_tools:
@@ -78,6 +79,7 @@ def _mojo_test_environment_implementation(ctx):
             "COMPUTED_LIBS": ",".join(sorted(shared_libs)),
             "MOJO_BINARY_PATH": mojo_toolchain.mojo.short_path if ctx.attr.short_path else mojo_toolchain.mojo.path,
             "COMPILER_RT_PATH": compilerrt.short_path if ctx.attr.short_path else compilerrt.path,
+            "ORCRT_PATH": mojo_toolchain.orc_rt.short_path if ctx.attr.short_path else mojo_toolchain.orc_rt.path,
         }),
     ]
 

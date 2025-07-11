@@ -8,6 +8,7 @@ load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
@@ -40,7 +41,7 @@ _DEPS_FROM_WHEEL = [
 
 def _is_internal_reference(dep):
     """Check if a dependency is an internal reference."""
-    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//SDK/integration-test/pipelines/python", "//SDK/lib/API/python/max/mlir"))
+    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//SDK/integration-test/pipelines/python", "//SDK/lib/API/python/max/mlir", "//ModularFramework/"))
 
 def _has_internal_reference(deps):
     return any([_is_internal_reference(dep) for dep in deps])
@@ -137,10 +138,19 @@ def modular_run_binary_test(name, external_noop = False, **kwargs):
         **kwargs
     )
 
+def lit_tests(tools = [], data = [], **kwargs):
+    if _has_internal_reference(data) or _has_internal_reference(tools):
+        return
+
+    _lit_tests(
+        data = data,
+        tools = tools,
+        **kwargs
+    )
+
 def _noop(**_kwargs):
     pass
 
-lit_tests = _noop
 modular_py_test = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop

@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_not
-# RUN: not mojo %s 2>&1 | FileCheck %s
+# RUN: not %bare-mojo %s 2>&1 | FileCheck %s
 
 
 fn main():

@@ -1,6 +1,10 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("//bazel:api.bzl", "modular_py_library")
 
+exports_files([
+    "validate_lit_features.py",
+])
+
 modular_py_library(
     name = "modular_test_format",
     testonly = True,

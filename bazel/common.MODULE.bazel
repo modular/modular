@@ -47,13 +47,22 @@ single_version_override(
     ],
 )
 
+single_version_override(
+    module_name = "aspect_rules_py",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/aspect-build/rules_py/pull/463
+        "//bazel/public-patches:rules_py_main.patch",
+    ],
+)
+
 # TODO: Remove when >0.4.1 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-wE7eh4kPlFpI6vCzIatv7UtJDSstPs6v46EnHovRHVU=",
-    strip_prefix = "rules_mojo-48231d2c83f47e1a56a23aa612b4227d5236298d",
+    integrity = "sha256-Uhba46RfmMCL1xWvSr9oFD3gVFgvvaPLkOi2w02QHl0=",
+    strip_prefix = "rules_mojo-89f42326ed883777558b88b4127508ced550a22b",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/48231d2c83f47e1a56a23aa612b4227d5236298d.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/89f42326ed883777558b88b4127508ced550a22b.tar.gz",
     ],
 )
 

@@ -1,0 +1,22 @@
+diff --git a/py/private/py_executable.bzl b/py/private/py_executable.bzl
+index f9e5370..ebb7c6d 100644
+--- a/py/private/py_executable.bzl
++++ b/py/private/py_executable.bzl
+@@ -26,7 +26,7 @@ def _determine_main(ctx):
+     """
+     if ctx.attr.main:
+         # Deviation from rules_python: allow a leading colon, e.g. `main = ":my_target"`
+-        proposed_main = ctx.attr.main.removeprefix(":")
++        proposed_main = ctx.attr.main.label.name.removeprefix(":")
+         if not proposed_main.endswith(".py"):
+             fail("main {} must end in '.py'".format(proposed_main))
+     else:
+@@ -87,7 +87,7 @@ determine_main = rule(
+     implementation = _determine_main_impl,
+     attrs = {
+         "target_name": attr.string(mandatory = True, doc = "The name of the py_binary or py_test we are finding a main for"),
+-        "main": attr.string(doc = "Hint the user supplied as the main"),
++        "main": attr.label(doc = "Hint the user supplied as the main", allow_single_file = True),
+         "srcs": attr.label_list(allow_files = True),
+     },
+ )
