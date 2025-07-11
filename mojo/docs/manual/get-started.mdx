@@ -765,11 +765,12 @@ traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. But we also need to indicate
-which trait `Grid` conforms to. In our case, it's `StringableRaising` because we
-used `def` to define the method. If you define a function or method with `def`,
-the compiler *always* assumes that the function *can* raise an error. In
-contrast, if you define a function or method with `fn` you must explicitly
-indicate with a `raises` keyword if it can raise an error.
+which trait `Grid` conforms to. In our case, it must be `StringableRaising`
+instead of `Stringable` because the compiler *always* assumes that a `def`
+function *can* raise an error. In contrast, an `fn` function is a [non-raising
+function](/mojo/manual/functions#raising-and-non-raising-functions) by
+default (you can still declare it may raise an error using the [`raises`
+keyword](/mojo/manual/errors#raise-an-error)).
 
 So in `gridv1.mojo` we need to update the `Grid` declaration to indicate that
 the type conforms to `StringableRaising` and rename the `grid_str()` method to
