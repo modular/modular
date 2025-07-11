@@ -12,10 +12,6 @@ listing:
     contents: 'kernels/*/index.md'
     type: grid
     page-size: 99
-  - id: decorators
-    contents: 'manual/decorators/*.md'
-    type: grid
-    page-size: 20
   - id: maxlib
     contents: '../max/api/mojo/*/index.md'
     type: grid
@@ -149,5 +145,10 @@ Top-level packages:
 A Mojo decorator is a higher-order function that modifies or extends the
 behavior of a struct, a function, or some other code.
 
-:::🔥#decorators
-:::
+import MDXListing from '@site/src/components/Listing/MDXListing';
+
+export const decorators = [
+        '../manual/decorators/*.mdx'
+    ]
+
+<MDXListing mdxList={decorators} />
