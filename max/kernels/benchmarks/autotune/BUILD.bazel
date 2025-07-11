@@ -42,7 +42,6 @@ modular_py_binary(
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
-    use_sitecustomize = True,
     deps = [
         requirement("click"),
         requirement("numpy"),

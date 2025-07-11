@@ -71,7 +71,7 @@ def _py_repl_impl(ctx):
             runfiles = ctx.runfiles(ctx.files.data + ctx.files.srcs).merge_all(python_runfiles),
         ),
         RunEnvironmentInfo(
-            environment = expanded_env | {"MODULAR_USE_SITECUSTOMIZE": "True"},
+            environment = expanded_env,
             inherited_environment = ctx.attr.env_inherit,
         ),
     ]

@@ -19,7 +19,6 @@ def modular_py_binary(
         tags = [],
         args = [],
         ignore_collisions = False,
-        use_sitecustomize = False,  # TODO: Flip default and remove
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -36,13 +35,12 @@ def modular_py_binary(
         tags: See upstream py_binary docs
         args: See upstream py_binary docs
         ignore_collisions: Ignore duplicate files from multiple deps conflicting in the same final package location
-        use_sitecustomize: Use a pre-main shim to normalize bazel data paths
         **kwargs: Extra arguments passed through to py_binary
     """
     extra_toolchains = [
         "@//bazel/internal:lib_toolchain",
     ]
-    extra_env = {"MODULAR_USE_SITECUSTOMIZE": str(use_sitecustomize)}
+    extra_env = {}
     extra_data = []
     extra_deps = []
 
@@ -64,7 +62,7 @@ def modular_py_binary(
     mojo_test_environment(
         name = env_name,
         data = mojo_deps + [transitive_mojo_deps],
-        short_path = use_sitecustomize,
+        short_path = True,
     )
 
     py_binary(
@@ -76,7 +74,7 @@ def modular_py_binary(
         }),
         srcs = srcs,
         main = main,
-        env = env_for_available_tools(location_specifier = "rootpath" if use_sitecustomize else "execpath") | extra_env | env | {"MODULAR_CANNOT_DEBUG": "1"},
+        env = env_for_available_tools() | extra_env | env | {"MODULAR_CANNOT_DEBUG": "1"},
         toolchains = extra_toolchains + toolchains,
         imports = imports,
         tags = tags,

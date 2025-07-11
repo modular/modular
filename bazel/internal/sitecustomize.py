@@ -52,5 +52,4 @@ def __absolutize_env() -> None:
         os.environ[key] = value
 
 
-if os.getenv("MODULAR_USE_SITECUSTOMIZE") == "True":
-    __absolutize_env()
+__absolutize_env()
