@@ -38,6 +38,6 @@ modular_nanobind_extension(
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
     deps = [
-        "//ModularFramework/tools/max",
+        "//SDK:max",
     ],
 )
