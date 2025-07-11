@@ -11,9 +11,9 @@ from lit.llvm import llvm_config
 # name: The name of this test suite.
 config.name = "mojo-isolated"
 
-config.parser_stubs_source = os.path.abspath(os.path.join(
-    "KGEN", "test", "test-packages"
-))
+config.parser_stubs_source = os.path.abspath(
+    os.path.join("KGEN", "test", "test-packages")
+)
 
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".mojo", ".🔥", ".test"]
@@ -22,9 +22,7 @@ config.suffixes = [".mojo", ".🔥", ".test"]
 config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(
-    config.modular_obj_root, "KGEN", "test", "mojo-isolated"
-)
+config.test_exec_root = os.path.join("KGEN", "test", "mojo-isolated")
 
 config.excludes = [
     "debuginfo/inputs",
@@ -38,23 +36,9 @@ config.excludes = [
     "imported_cached_module.mojo",
 ]
 
-tool_dirs = [
-    config.modular_tools_dir,
-    config.mlir_tools_dir,
-    config.llvm_tools_dir,
-]
-tools = [
-    "kgen-translate",
-    "kgen-opt",
-    "hash-mlir",
-]
-llvm_config.add_tool_substitutions(tools, tool_dirs)
-
 translate_with_prebuilt_packages = (
     "kgen-translate -import-mojo -mojo-enable-prebuilt-packages"
-    " -mojo-search-paths={0}".format(
-        config.parser_stubs_source
-    )
+    " -mojo-search-paths={0}".format(config.parser_stubs_source)
 )
 
 config.substitutions.append(
@@ -62,5 +46,5 @@ config.substitutions.append(
 )
 
 config.environment["MODULAR_HOME"] = os.path.join(
-    config.modular_obj_root, "KGEN", "test", "mojo-isolated"
+    "KGEN", "test", "mojo-isolated"
 )
