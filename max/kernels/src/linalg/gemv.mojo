@@ -872,15 +872,11 @@ fn gemv_gpu[
     var k = shape.K
     alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
 
-    # Log top-level information
-    logger.info("---- GEMV execution started ----")
-    logger.info("MxNxK: ", String(m), "x", String(n), "x", String(k))
-    logger.info("Transpose B: ", transpose_b)
-    logger.info("Data types: A=", a.type, " B=", b.type, " C=", c.type)
-
     alias has_M = c.shape.has_value[0]()
     alias has_N = c.shape.has_value[1]()
     alias has_K = a.shape.has_value[1]()
+
+    logger.info("------ Dispatching to GEMV ------")
 
     # Log dimension static/dynamic status
     log_shape[has_M, has_K, "A"](logger, m, k)

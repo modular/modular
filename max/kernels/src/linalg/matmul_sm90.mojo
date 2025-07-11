@@ -100,6 +100,7 @@ from .utils_gpu import (
 )
 
 from .matmul_loadop_sm90 import async_load_AB
+from logger import Logger
 
 alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
@@ -2226,6 +2227,13 @@ fn warp_specialize_gemm_with_multicasting[
     constrained[
         k_align in (4, 8, 16), "H100 matmul K dim must be multiple of 4B"
     ]()
+
+    var logger = Logger()
+
+    logger.info("Executing Warp Specialize Gemm with Multicasting")
+    logger.info("block_tile_shape: ", config.block_tile_shape)
+    logger.info("cluster_shape: ", config.cluster_shape)
+    logger.info("mma_shape: ", wgmma_shape)
 
     @parameter
     if schedule == MatmulSchedule.DS_SCHEDULER:

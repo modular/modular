@@ -86,7 +86,7 @@ from stdlib.bit import log2_floor
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-
+from logger import Logger
 from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .matmul_sm90 import warp_specialize_gemm_with_multicasting
@@ -127,6 +127,9 @@ fn matmul_dispatch_sm90[
     alias N = c.shape.get[1]()
     alias N_multiple_of_8 = N % 8 == 0
 
+    var logger = Logger()
+    logger.info("------ Dispatching to sm90 ------")
+
     # Support K multiple of 16B for FP8 due to using TMA.
     # 4B and 8B alignments are supported for BF16/FP32 by using
     # cp.async.ca.
@@ -151,6 +154,7 @@ fn matmul_dispatch_sm90[
 
     @parameter
     if is_AB_fp8:
+        logger.info("------ Dispatching to sm90 FP8 ------")
         return matmul_dispatch_sm90_fp8[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -159,6 +163,7 @@ fn matmul_dispatch_sm90[
         ](c, a, b, ctx)
 
     elif is_AB_bf16 or is_AB_fp32:
+        logger.info("------ Dispatching to sm90 BF16/FP32 ------")
         return matmul_dispatch_sm90_bf16_fp32[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -166,6 +171,7 @@ fn matmul_dispatch_sm90[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
+    logger.info("SM90 dispatch miss - no matching path")
     return DISPATCH_MISS
 
 
