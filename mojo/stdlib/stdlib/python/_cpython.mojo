@@ -966,6 +966,46 @@ alias PyList_SetItem = ExternalFunction[
     fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
+# Object Implementation Support
+# Common Type Structures
+alias PyType_GenericAlloc = ExternalFunction[
+    "PyType_GenericAlloc",
+    # PyObject *PyType_GenericAlloc(PyTypeObject *type, Py_ssize_t nitems)
+    fn (PyTypeObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyType_GetName = ExternalFunction[
+    "PyType_GetName",
+    # PyObject *PyType_GetName(PyTypeObject *type)
+    fn (PyTypeObjectPtr) -> PyObjectPtr,
+]
+alias PyType_FromSpec = ExternalFunction[
+    "PyType_FromSpec",
+    # PyObject *PyType_FromSpec(PyType_Spec *spec)
+    fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
+]
+
+
+fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
+    return abort[PyObjectPtr](
+        "PyErr_GetRaisedException is not available in this Python version"
+    )
+
+
+fn _PyModule_AddObjectRef_dummy(
+    module: PyObjectPtr,
+    name: UnsafePointer[c_char, mut=False],
+    value: PyObjectPtr,
+) -> c_int:
+    return abort[c_int](
+        "PyModule_AddObjectRef is not available in this Python version"
+    )
+
+
+fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
+    return abort[PyObjectPtr](
+        "PyType_GetName is not available in this Python version"
+    )
+
 
 # ===-------------------------------------------------------------------===#
 # Context Managers for Python GIL and Threading
@@ -1056,22 +1096,6 @@ struct GILReleased(Movable):
         self.cpython.PyEval_RestoreThread(self.thread_state)
 
 
-fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
-    return abort[PyObjectPtr](
-        "PyErr_GetRaisedException is not available in this Python version"
-    )
-
-
-fn _PyModule_AddObjectRef_dummy(
-    module: PyObjectPtr,
-    name: UnsafePointer[c_char, mut=False],
-    value: PyObjectPtr,
-) -> c_int:
-    return abort[c_int](
-        "PyModule_AddObjectRef is not available in this Python version"
-    )
-
-
 @fieldwise_init
 struct CPython(Copyable, Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process."""
@@ -1141,6 +1165,12 @@ struct CPython(Copyable, Defaultable, Movable):
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
+
+    # Object Implementation Support
+    # Common Type Structures
+    var _PyType_GenericAlloc: PyType_GenericAlloc.type
+    var _PyType_GetName: PyType_GetName.type
+    var _PyType_FromSpec: PyType_FromSpec.type
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1264,6 +1294,13 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
+
+        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
+        if self.version.minor >= 11:
+            self._PyType_GetName = PyType_GetName.load(self.lib)
+        else:
+            self._PyType_GetName = _PyType_GetName_dummy
+        self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
 
     fn __del__(owned self):
         pass
@@ -2139,11 +2176,24 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
-    # Python Type operations
+    # Object Implementation Support
+    # ref: https://docs.python.org/3/c-api/objimpl.html
     # ===-------------------------------------------------------------------===#
 
-    fn Py_TYPE(self, ob_raw: PyObjectPtr) -> PyTypeObjectPtr:
-        """Get the PyTypeObject field of a Python object."""
+    # ===-------------------------------------------------------------------===#
+    # Common Type Structures
+    # ref: https://docs.python.org/3/c-api/structures.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_TYPE(self, obj: PyObjectPtr) -> PyTypeObjectPtr:
+        """Get the type of the Python object `obj`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/structures.html#c.Py_TYPE
+        - https://docs.python.org/3/c-api/typeobj.html#c.Py_TYPE
+        """
 
         # Note:
         #   The `Py_TYPE` function is a `static` function in the C API, so
@@ -2153,38 +2203,51 @@ struct CPython(Copyable, Defaultable, Movable):
         #   Investigate doing this without hard-coding private API details.
 
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ob_raw.unsized_obj_ptr[].object_type
-
-    fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
-        """Retrieve the name of the Python type.
-
-        Notes:
-            This function was patched for python < 3.11.
-            [Reference](
-            https://docs.python.org/3/c-api/type.html#c.PyType_GetName).
-        """
-        if self.version.minor >= 11:
-            # PyObject *PyType_GetName(PyTypeObject *type)
-            var r = self.lib.call["PyType_GetName", PyObjectPtr](type)
-            self._inc_total_rc()
-            return r
-        else:
-            return self.PyObject_GetAttrString(
-                rebind[PyObjectPtr](type), "__name__"
-            )
-
-    fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec).
-        """
-        return self.lib.call["PyType_FromSpec", PyObjectPtr](spec)
+        return obj.unsized_obj_ptr[].object_type
 
     fn PyType_GenericAlloc(
         self,
         type: PyTypeObjectPtr,
         nitems: Py_ssize_t,
     ) -> PyObjectPtr:
-        return self.lib.call["PyType_GenericAlloc", PyObjectPtr](type, nitems)
+        """Generic handler for the `tp_alloc` slot of a type object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GenericAlloc
+        """
+        var r = self._PyType_GenericAlloc(type, nitems)
+        self._inc_total_rc()
+        return r
+
+    fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
+        """Return the type's name.
+
+        Return value: New reference. Part of the Stable ABI since version 3.11.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GetName
+        """
+        if self.version.minor < 11:
+            return self.PyObject_GetAttrString(
+                rebind[PyObjectPtr](type), "__name__"
+            )
+        var r = self._PyType_GetName(type)
+        self._inc_total_rc()
+        return r
+
+    fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
+        """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
+        """
+        var r = self._PyType_FromSpec(spec)
+        self._inc_total_rc()
+        return r
 
     fn PyEval_GetBuiltins(self) -> PyObjectPtr:
         """[Reference](
