@@ -506,7 +506,9 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
     "StringAttr":$witnessName,
     AttributeSelfTypeParameter<"", "Type">:$type
   );
-  let assemblyFormat = "`<` $typeValue `,` $traitName `,` $witnessName `>`";
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($typeValue) `,` $traitName `,` $witnessName `>`
+  }];
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,

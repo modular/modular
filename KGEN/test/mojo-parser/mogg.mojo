@@ -45,8 +45,8 @@ fn custom_op_param[a: Int](b: ParamType[a], c: ParamType[1]) -> ParamType[a]:
 
 
 # CHECK: lit.fn @"unknown_type
-# CHECK-NEXT: mogg.arg_value_witnesses = [{__del__ = #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Movable, "stdlib::builtin::anytype::AnyType", "__del__">{{.*}}, __moveinit__ = #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Movable, "stdlib::builtin::value::Movable", "__moveinit__">{{.*}}}]
-# CHECK-SAME: mogg.result_value_witnesses = {__del__ = #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Movable, "stdlib::builtin::anytype::AnyType", "__del__">{{.*}}, __moveinit__ = #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Movable, "stdlib::builtin::value::Movable", "__moveinit__">{{.*}}}
+# CHECK-NEXT: mogg.arg_value_witnesses = [{__del__ = #kgen.get_witness<:!Movable T, "stdlib::builtin::anytype::AnyType", "__del__">{{.*}}, __moveinit__ = #kgen.get_witness<:!Movable T, "stdlib::builtin::value::Movable", "__moveinit__">{{.*}}}]
+# CHECK-SAME: mogg.result_value_witnesses = {__del__ = #kgen.get_witness<:!Movable T, "stdlib::builtin::anytype::AnyType", "__del__">{{.*}}, __moveinit__ = #kgen.get_witness<:!Movable T, "stdlib::builtin::value::Movable", "__moveinit__">{{.*}}}
 @register_internal("custom.op")
 fn unknown_type[T: Movable](a: T) -> T:
     pass

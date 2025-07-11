@@ -73,7 +73,7 @@ fn useAny[T: AnyType](x: T):
 # CHECK-SAME: <T: !Trait1>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1 T,
 fn use1[T: Trait1](x: T):
-    # CHECK: lit.call[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait1, "trait_composition::Trait1", "f1">][{{.*}}](%x)
+    # CHECK: lit.call[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<:!Trait1 T, "trait_composition::Trait1", "f1">][{{.*}}](%x)
     x.f1()
 
 
@@ -98,7 +98,7 @@ fn use12[T: Traits12](x: T):
 fn use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
-    # CHECK-SAME: #kgen.get_witness<#kgen.type<!kgen.param<:!Trait2_Trait3 T>> : !Trait3, "trait_composition::Trait3", "f3">
+    # CHECK-SAME: #kgen.get_witness<:!Trait3 !kgen.param<:!Trait2_Trait3 T>, "trait_composition::Trait3", "f3">
     x.f3()
 
 
@@ -210,7 +210,7 @@ trait IntConstructable:
 fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
     # CHECK: lit.call[
-    # CHECK-SAME: #kgen.get_witness<#kgen.type<!kgen.param<:!Defaultable_IntConstructable T>> : !IntConstructable, "trait_composition::IntConstructable", "__init__">
+    # CHECK-SAME: #kgen.get_witness<:!IntConstructable !kgen.param<:!Defaultable_IntConstructable T>, "trait_composition::IntConstructable", "__init__">
     # CHECK-SAME: %[[INT33]]
     return T(33)
 

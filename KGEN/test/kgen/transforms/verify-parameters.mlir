@@ -43,8 +43,8 @@ lit.struct.decl @"Wrapper"<T: type> {
 }
 
 // CHECK-LABEL: lit.fn @expect_associated_alias
-// CHECK-SAME:    (%arg: !kgen.param<#kgen.get_witness<#kgen.param.decl.ref<"T"> : !lit.trait<@Fooable>, "Fooable", "MyType" : !kgen.string>>)
-lit.fn @expect_associated_alias<T: !Fooable>(%arg: !kgen.param<#kgen.get_witness<#kgen.param.decl.ref<"T"> : !Fooable, "Fooable", "MyType" : !kgen.string>>) -> !kgen.none {
+// CHECK-SAME:    (%arg: !kgen.param<#kgen.get_witness<:trait<@Fooable> T, "Fooable", "MyType">>)
+lit.fn @expect_associated_alias<T: !Fooable>(%arg: !kgen.param<#kgen.get_witness<:!Fooable T, "Fooable", "MyType">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_fn
@@ -71,8 +71,8 @@ kgen.struct.generator @Wrapper<T: type> = struct_inst<"Wrapper"[T]<:type T>(data
 #wrapper_index = #kgen.type<typevalue<#kgen.genref<@Wrapper<:type index>>>, struct<(index)>> : !kgen.type
 
 // CHECK-LABEL: kgen.generator @expect_associated_alias
-// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<#kgen.param.decl.ref<"T"> : !kgen.type, "Fooable", "MyType" : !kgen.string>>)
-kgen.generator @expect_associated_alias<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#kgen.param.decl.ref<"T"> : !kgen.type, "Fooable", "MyType" : !kgen.string>>) -> !kgen.none {
+// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<T, "Fooable", "MyType">>)
+kgen.generator @expect_associated_alias<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<T, "Fooable", "MyType">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
