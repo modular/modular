@@ -119,21 +119,32 @@ def test_PyModule(python: Python):
         _ = name
 
 
-def test_PyObject_HasAttrString(mut python: Python):
-    var cpython_env = python.cpython()
+def test_object_protocol_api(python: Python):
+    var cpy = python.cpython()
 
-    var the_object = PythonObject(0)
-    var result = cpython_env.PyObject_HasAttrString(
-        the_object._obj_ptr, "__contains__"
-    )
-    assert_equal(0, result)
+    var n = cpy.PyLong_FromSsize_t(42)
+    var z = cpy.PyLong_FromSsize_t(0)
+    var l = cpy.PyList_New(1)
+    _ = cpy.PyList_SetItem(l, 0, z)
 
-    the_object = Python.list(1, 2, 3)
-    result = cpython_env.PyObject_HasAttrString(
-        the_object._obj_ptr, "__contains__"
-    )
-    assert_equal(1, result)
-    _ = the_object
+    assert_equal(cpy.PyObject_HasAttrString(n, "__hash__"), 1)
+    assert_true(cpy.PyObject_GetAttrString(n, "__hash__"))
+    assert_equal(cpy.PyObject_SetAttrString(n, "attr", cpy.Py_None()), -1)
+    cpy.PyErr_Clear()
+
+    assert_true(cpy.PyObject_Str(n))
+    assert_equal(cpy.PyObject_Hash(n), 42)
+    assert_equal(cpy.PyObject_IsTrue(n), 1)
+    assert_true(cpy.PyObject_Type(n))
+    assert_equal(cpy.PyObject_Length(l), 1)
+
+    assert_equal(cpy.PyObject_GetItem(l, z), z)
+    assert_equal(cpy.PyObject_SetItem(l, z, n), 0)
+    assert_equal(cpy.PyObject_GetItem(l, z), n)
+
+    var it = cpy.PyObject_GetIter(l)
+    assert_true(it)
+    assert_equal(cpy.PyObject_GetIter(it), it)
 
 
 def test_PyDict(mut python: Python):
@@ -225,6 +236,10 @@ def main():
     # Module Objects
     test_PyModule(python)
 
-    test_PyObject_HasAttrString(python)
+    # Abstract Objects Layer
+
+    # Object Protocol
+    test_object_protocol_api(python)
+
     test_PyDict(python)
     test_PyCapsule(python)
