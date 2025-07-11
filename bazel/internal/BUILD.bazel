@@ -1,6 +1,7 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":lib_toolchain.bzl", "lib_toolchain")
+load(":mojo_linker_info.bzl", "mojo_linker_info")
 
 exports_files([
     "asan-suppressions.txt",
@@ -45,6 +46,12 @@ modular_py_library(
         "sitecustomize.py",
     ],
     imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+mojo_linker_info(
+    name = "mojo_linker_info",
+    testonly = True,
     visibility = ["//visibility:public"],
 )
 
