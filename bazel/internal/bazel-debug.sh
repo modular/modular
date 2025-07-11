@@ -52,7 +52,10 @@ do
   fi
 done
 
-wrapper="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)/../bazelw"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+root="$(git -C "$script_root" rev-parse --show-toplevel)"
+wrapper="$root/bazelw"
+
 # py_binary rule //path/to:target
 output=$("$wrapper" query "some(labels(actual, $target) union set($target))" --output=label_kind)
 kind="${output%% *}"
