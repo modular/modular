@@ -571,7 +571,7 @@ struct Python(Defaultable):
     @no_inline
     fn as_string_slice(
         self, str_obj: PythonObject
-    ) -> StringSlice[__origin_of(str_obj._obj_ptr.unsized_obj_ptr.origin)]:
+    ) -> StringSlice[MutableAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

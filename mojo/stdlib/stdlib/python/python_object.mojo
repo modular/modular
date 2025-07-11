@@ -260,17 +260,12 @@ struct PythonObject(
             If no Python type object has been registered for `T` by a
             `PythonTypeBuilder`.
         """
-
         # NOTE:
         #   We can't use PythonTypeBuilder.bind[T]() because that constructs a
         #   _new_ PyTypeObject. We want to reference the existing _singleton_
         #   PyTypeObject that represents a given Mojo type.
         var type_obj = lookup_py_type_object[T]()
-
-        var type_obj_ptr = type_obj._obj_ptr.unsized_obj_ptr.bitcast[
-            PyTypeObject
-        ]()
-
+        var type_obj_ptr = type_obj._obj_ptr.bitcast[PyTypeObject]()
         return _unsafe_alloc_init(type_obj_ptr, alloc^)
 
     # TODO(MSTDL-715):
@@ -1461,16 +1456,14 @@ struct PythonObject(
             If `T` has not been bound to a Python type object.
         """
         var cpython = Python().cpython()
-        var type = PyObjectPtr(
-            cpython.Py_TYPE(self._obj_ptr).bitcast[PyObject]()
-        )
 
-        var expected_type_obj = lookup_py_type_object[T]()
+        var type = PyObjectPtr(upcast_from=cpython.Py_TYPE(self._obj_ptr))
+        var expected_type = lookup_py_type_object[T]()._obj_ptr
 
-        if type == expected_type_obj._obj_ptr:
-            var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
-            if obj_ptr[].is_initialized:
-                return UnsafePointer[T](to=obj_ptr[].mojo_value)
+        if type == expected_type:
+            ref obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
+            if obj.is_initialized:
+                return UnsafePointer(to=obj.mojo_value)
         return None
 
     fn unchecked_downcast_value_ptr[T: AnyType](self) -> UnsafePointer[T]:
@@ -1491,15 +1484,9 @@ struct PythonObject(
         The user must be certain that this Python object type matches the bound
         Python type object for `T`.
         """
-        var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
-
+        ref obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T](to=obj_ptr[].mojo_value)
-
-    @always_inline
-    fn _unchecked_downcast_object_ptr[T: AnyType](var self) -> UnsafePointer[T]:
-        """Assume that this Python object contains a wrapped Mojo value."""
-        return self._obj_ptr.unsized_obj_ptr.bitcast[T]()
+        return UnsafePointer(to=obj.mojo_value)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1525,14 +1512,9 @@ fn _unsafe_alloc[
         If the Python object allocation fails.
     """
     var cpython = Python().cpython()
-    var obj_py_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
-        type_obj_ptr,
-        0,
-    )
-
-    if not obj_py_ptr.unsized_obj_ptr:
+    var obj_py_ptr = cpython.PyType_GenericAlloc(type_obj_ptr, 0)
+    if not obj_py_ptr:
         raise Error("Allocation of Python object failed.")
-
     return obj_py_ptr
 
 
@@ -1553,10 +1535,9 @@ fn _unsafe_init[
      `obj_py_ptr` must be a Python object pointer allocated using the correct
      type object. Use of any other pointer is invalid.
     """
-    var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
-    obj_value_ptr.init_pointee_move(mojo_value^)
-    obj_ptr[].is_initialized = True
+    ref obj = obj_py_ptr.bitcast[PyMojoObject[T]]()[]
+    UnsafePointer(to=obj.mojo_value).init_pointee_move(mojo_value^)
+    obj.is_initialized = True
 
 
 fn _unsafe_alloc_init[

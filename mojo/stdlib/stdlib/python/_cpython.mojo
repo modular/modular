@@ -124,8 +124,7 @@ struct PyObjectPtr(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var unsized_obj_ptr: UnsafePointer[PyObject]
-
+    var _unsized_obj_ptr: UnsafePointer[PyObject]
     """Raw pointer to the underlying PyObject struct instance.
 
     It is not valid to read or write a `PyObject` directly from this pointer.
@@ -147,7 +146,11 @@ struct PyObjectPtr(
     @always_inline
     fn __init__(out self):
         """Initialize a null PyObjectPtr."""
-        self.unsized_obj_ptr = {}
+        self._unsized_obj_ptr = {}
+
+    @always_inline
+    fn __init__[T: AnyType, //](out self, *, upcast_from: UnsafePointer[T]):
+        self._unsized_obj_ptr = upcast_from.bitcast[PyObject]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -163,7 +166,7 @@ struct PyObjectPtr(
         Returns:
             Bool: True if the pointers are equal, False otherwise.
         """
-        return Int(self.unsized_obj_ptr) == Int(rhs.unsized_obj_ptr)
+        return self._unsized_obj_ptr == rhs._unsized_obj_ptr
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:
@@ -183,11 +186,11 @@ struct PyObjectPtr(
 
     @always_inline
     fn __bool__(self) -> Bool:
-        return Bool(self.unsized_obj_ptr)
+        return Bool(self._unsized_obj_ptr)
 
     @always_inline
     fn __int__(self) -> Int:
-        return Int(self.unsized_obj_ptr)
+        return Int(self._unsized_obj_ptr)
 
     @always_inline
     fn __str__(self) -> String:
@@ -196,6 +199,17 @@ struct PyObjectPtr(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn bitcast[T: AnyType](self) -> UnsafePointer[T]:
+        """Bitcasts the `PyObjectPtr` to a pointer of type `T`.
+
+        Parameters:
+            T: The target type to cast to.
+
+        Returns:
+            A pointer to the underlying object as type `T`.
+        """
+        return self._unsized_obj_ptr.bitcast[T]()
 
     fn write_to[W: Writer](self, mut writer: W):
         """Formats to the provided Writer.
@@ -206,7 +220,7 @@ struct PyObjectPtr(
         Args:
             writer: The object to write to.
         """
-        writer.write(self.unsized_obj_ptr)
+        writer.write(self._unsized_obj_ptr)
 
 
 @fieldwise_init
@@ -1409,7 +1423,7 @@ struct CPython(Copyable, Defaultable, Movable):
             return -1
         # NOTE:
         #   The "obvious" way to write this would be:
-        #       return ptr.unsized_obj_ptr[].object_ref_count
+        #       return ptr._unsized_obj_ptr[].object_ref_count
         #   However, that is not valid, because, as the name suggest, a PyObject
         #   is an "unsized" or "incomplete" type, meaning that a pointer to an
         #   instance of that type doesn't point at the entire allocation of the
@@ -1420,7 +1434,7 @@ struct CPython(Copyable, Defaultable, Movable):
         #   treats the object pointer "as if" it was a pointer to just the first
         #   field.
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ptr.unsized_obj_ptr.bitcast[Py_ssize_t]()[]
+        return ptr.bitcast[Py_ssize_t]()[]
 
     # ===-------------------------------------------------------------------===#
     # Exception Handling
@@ -1814,7 +1828,7 @@ struct CPython(Copyable, Defaultable, Movable):
         #   Investigate doing this without hard-coding private API details.
 
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ob_raw.unsized_obj_ptr[].object_type
+        return ob_raw._unsized_obj_ptr[].object_type
 
     fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
         """Retrieve the name of the Python type.
@@ -1831,7 +1845,7 @@ struct CPython(Copyable, Defaultable, Movable):
             return r
         else:
             return self.PyObject_GetAttrString(
-                rebind[PyObjectPtr](type), "__name__"
+                PyObjectPtr(upcast_from=type), "__name__"
             )
 
     fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
@@ -2437,7 +2451,7 @@ struct CPython(Copyable, Defaultable, Movable):
 
     fn PyUnicode_AsUTF8AndSize(
         self, py_object: PyObjectPtr
-    ) -> StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)]:
+    ) -> StringSlice[MutableAnyOrigin]:
         """[Reference](
         https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
         """
@@ -2446,9 +2460,7 @@ struct CPython(Copyable, Defaultable, Movable):
         var ptr = self.lib.call[
             "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
         ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
-        return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
-            ptr=ptr, length=length
-        )
+        return StringSlice[MutableAnyOrigin](ptr=ptr, length=length)
 
     # ===-------------------------------------------------------------------===#
     # Python Error types
