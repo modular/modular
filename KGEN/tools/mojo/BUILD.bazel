@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "pkg_files", "rpath_shim", "td_library")
+load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "pkg_files", "td_library")
 
 [
     driver_option_tablegen(
@@ -111,7 +111,6 @@ pkg_files(
             ":REPL.inc_files",
             ":Run.inc_files",
             ":Test.inc_files",
-            ":rpaths",
             "//AsyncRT:Runtime",
             "//AsyncRT:RuntimeGlobals",
             "//Config",
@@ -156,11 +155,3 @@ pkg_files(
         ("mojo-compiler-only", []),
     ]
 ]
-
-rpath_shim(
-    name = "rpaths",
-    packages = [
-        "//ModularFramework/tools/max",
-    ],
-    visibility = ["//visibility:private"],
-)
