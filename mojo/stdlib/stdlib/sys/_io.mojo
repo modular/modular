@@ -11,6 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """IO constants and functions."""
+from sys.ffi import _Global
+from builtin.io import _fdopen
+
 alias stdin = FileDescriptor(0)
+alias STDIN = _Global["STDIN", _fdopen["r"], _init_stdin]
+
+
+fn _init_stdin() -> _fdopen["r"]:
+    return _fdopen["r"](stdin)
+
+
 alias stdout = FileDescriptor(1)
 alias stderr = FileDescriptor(2)
