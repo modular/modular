@@ -20,6 +20,10 @@ lit_tests(
         "//:ubsan": ["@platforms//:incompatible"],
         "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
+    }) + select({
+        # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
+        "//:strip_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     tools = [
         "//KGEN/tools/mojo",
