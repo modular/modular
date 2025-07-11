@@ -81,8 +81,6 @@ def _generate_site_cfg_impl(ctx):
                     {},
                 ),
             ),
-            "@MODULAR_BINARY_DIR@": ".",
-            "@MODULAR_SOURCE_DIR@": ".",
         },
     )
 
@@ -207,7 +205,7 @@ cat > $(OUTS) <<EOF
 @LIT_SITE_CFG_IN_HEADER@
 
 lit_config.load_config(
-    config, "@MODULAR_BINARY_DIR@/bazel/internal/llvm-lit/lit.common.configured"
+    config, "./bazel/internal/llvm-lit/lit.common.configured"
 )
 
 lit_config.load_config(config, "{package}/{name}.cfg.py")

@@ -46,9 +46,7 @@ if "_START_MODULAR_INCLUDED" in os.environ:
     config.test_source_root = os.path.dirname(__file__)
 
     # test_exec_root: The root path where tests should be run.
-    config.test_exec_root = os.path.join(
-        config.modular_obj_root, "mojo-stdlib", "test"
-    )
+    config.test_exec_root = os.path.join("mojo-stdlib", "test")
 # External, public Mojo testing configuration
 else:
     config.test_format = lit.formats.ShTest(True)

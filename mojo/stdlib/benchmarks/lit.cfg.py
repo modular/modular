@@ -34,7 +34,7 @@ if "_START_MODULAR_INCLUDED" in os.environ:
 
     # test_exec_root: The root path where tests should be run.
     config.test_exec_root = os.path.join(
-        config.modular_obj_root, "open-source", "mojo", "stdlib", "benchmarks"
+        "open-source", "mojo", "stdlib", "benchmarks"
     )
 else:
     config.test_format = lit.formats.ShTest(True)
