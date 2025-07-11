@@ -38,6 +38,7 @@ See the `Dict` docs for more details.
 """
 
 from hashlib import Hasher, default_hasher, default_comp_time_hasher
+from sys.intrinsics import likely
 from memory import bitcast, memcpy
 
 
@@ -641,9 +642,9 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             key: The key to check.
 
         Returns:
-            True if there key exists in the dictionary, False otherwise.
+            True if the key exists in the dictionary, False otherwise.
         """
-        return self.find(key).__bool__()
+        return self._find_index(hash[HasherType=H](key), key)[0]
 
     fn __iter__(ref self) -> _DictKeyIter[K, V, H, __origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -1046,8 +1047,9 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             else:
                 ref entry = self._entries[index]
                 debug_assert(entry.__bool__(), "entry in index must be full")
-                if hash == entry.value().hash and key == entry.value().key:
-                    return (True, slot, index)
+                ref val = entry.unsafe_value()
+                if val.hash == hash and likely(val.key == key):
+                    return True, slot, index
             self._next_index_slot(slot, perturb)
 
     fn _over_load_factor(self) -> Bool:

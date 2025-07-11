@@ -245,6 +245,15 @@ def test_iter_items():
     assert_equal(sum, 3)
 
 
+def test_dict_contains():
+    var dict: Dict[String, Int] = {}
+    dict["abc"] = 1
+    dict["def"] = 2
+    assert_true("abc" in dict)
+    assert_true("def" in dict)
+    assert_false("c" in dict)
+
+
 def test_dict_copy():
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
@@ -460,6 +469,7 @@ def test_dict():
     test["test_iter_values", test_iter_values]()
     test["test_iter_values_mut", test_iter_values_mut]()
     test["test_iter_items", test_iter_items]()
+    test["test_dict_contains", test_dict_contains]()
     test["test_dict_copy", test_dict_copy]()
     test["test_dict_copy_add_new_item", test_dict_copy_add_new_item]()
     test["test_dict_copy_delete_original", test_dict_copy_delete_original]()
