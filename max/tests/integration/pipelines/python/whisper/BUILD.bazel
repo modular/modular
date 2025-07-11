@@ -12,7 +12,7 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
     ),
-    data = ["//ModularFramework/tools/max"],
+    data = ["//SDK:max"],
     ignore_collisions = True,
     tags = [
         "no-sandbox",

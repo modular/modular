@@ -11,7 +11,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
-        "//ModularFramework/tools/max",
+        "//SDK:max",
         "//SDK/integration-test/pipelines/python/qwen3/testdata",
     ],
     env = {

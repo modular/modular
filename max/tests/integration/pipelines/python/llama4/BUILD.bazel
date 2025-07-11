@@ -18,7 +18,7 @@ modular_py_test(
         ],
     ) + ["conftest.py"],
     data = [
-        "//ModularFramework/tools/max",
+        "//SDK:max",
         "//SDK/integration-test/pipelines/python/llama4/testdata",
     ],
     env = {
@@ -52,7 +52,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/test_*_distributed_gpu.py"]) + ["conftest.py"],
     data = [
-        "//ModularFramework/tools/max",
+        "//SDK:max",
         "//SDK/integration-test/pipelines/python/llama4/testdata",
     ],
     env = {

@@ -35,7 +35,7 @@ modular_py_test(
         "configs/internvl-2B.json",
         "configs/internvl-38B.json",
         "configs/internvl-8B.json",
-        "//ModularFramework/tools/max",
+        "//SDK:max",
     ],
     gpu_constraints = ["//:has_multi_gpu"],
     imports = ["."],

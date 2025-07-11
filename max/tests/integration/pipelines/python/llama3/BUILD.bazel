@@ -20,7 +20,7 @@ load(
             "auto",
         ],
         data = [
-            "//ModularFramework/tools/max",
+            "//SDK:max",
             "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
             "@test_llama_golden",
@@ -79,7 +79,7 @@ modular_py_test(
     ],
     data = [
         "//Kernels/tools/gpu-query",
-        "//ModularFramework/tools/max",
+        "//SDK:max",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
         "@test_llama_golden",
@@ -130,7 +130,7 @@ modular_py_test(
         "test_rms_norm_gpu.py",
     ],
     data = [
-        "//ModularFramework/tools/max",
+        "//SDK:max",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
     ],
     env = {

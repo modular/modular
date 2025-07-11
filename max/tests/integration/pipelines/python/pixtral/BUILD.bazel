@@ -10,7 +10,7 @@ modular_py_test(
     name = "pixtral",
     size = "large",
     srcs = glob(["**/test_*.py"]),
-    data = ["//ModularFramework/tools/max"],
+    data = ["//SDK:max"],
     tags = [
         "no-sandbox",
         "requires-network",  # needed for pytorch_pixtral_processor() calls.

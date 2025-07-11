@@ -10,7 +10,7 @@ modular_py_test(
     name = "qwen2_5vl",
     size = "large",
     srcs = glob(["**/test_*.py"]),
-    data = ["//ModularFramework/tools/max"],
+    data = ["//SDK:max"],
     tags = [
         "no-sandbox",
         "requires-network",  # process_vision_info() API call in test_visual_transformer.py requires network.
