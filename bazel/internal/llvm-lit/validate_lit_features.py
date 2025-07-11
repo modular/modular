@@ -40,6 +40,12 @@ _KNOWN_FEATURES = {
 }
 
 _FEATURES_BY_PREFIX = {
+    "max/kernels/test/linalg": {
+        "avx2",
+        "intel_amx",
+        "neon_dotprod",
+        "neon_matmul",
+    },
     "open-source/max/max/kernels/test/linalg": {
         "avx2",
         "intel_amx",
@@ -47,6 +53,7 @@ _FEATURES_BY_PREFIX = {
         "neon_matmul",
     },
     "open-source/max/mojo/stdlib/test": {"has_not"},
+    "mojo/stdlib/test": {"has_not"},
 }
 
 
