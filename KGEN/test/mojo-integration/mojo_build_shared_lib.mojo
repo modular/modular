@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: system-windows
-
 # RUN: mkdir %t
 # COM: For sake of keeping the test commands simple, this hard-codes the use of
 # COM:   `.dylib`, even on platforms like Linux where .so would otherwise be used.
