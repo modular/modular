@@ -246,6 +246,24 @@ def main():
         ](ctx, dynamic(512), static[2560](), static[8192]())
 
         test_warp_specialize_gemm_with_multicasting[
+            144,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_consumer=2,
+        ](ctx, dynamic(277), static[2560](), static[128]())
+
+        test_warp_specialize_gemm_with_multicasting[
+            232,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_consumer=2,
+        ](ctx, dynamic(277), static[2560](), static[128]())
+
+        test_warp_specialize_gemm_with_multicasting[
             256,
             DType.bfloat16,
             DType.bfloat16,
