@@ -69,5 +69,5 @@ struct S1[X: Int](R1, R1Child, R2, Movable):
     # CHECK-NEXT: immediateParents = #M<symbols[[[R1_NAME]]]>
 
     # CHECK: kgen.conformance @{{.*}}R2
-    # CHECK-NEXT: kgen.witness "T" : !AnyType = [!Int
+    # CHECK-NEXT: kgen.witness "T" : !AnyType = !Int
     # CHECK-NEXT: kgen.witness "f2" : {{.*}} = {{.*}}@S1::@"f2[[F2_NAME]]"<:!Int X>

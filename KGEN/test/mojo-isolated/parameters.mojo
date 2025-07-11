@@ -938,9 +938,9 @@ fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
 fn call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{\[}}!FloatDyn, {{.*}}]]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [!FloatDyn]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{\[}}!Int, {{.*}}]]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [!Int]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -970,7 +970,7 @@ fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
 fn useMapSingle() -> String:
   fn f(x: String, y: String) -> String:
     return String()
-  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType [!String, {{.*}}], :!AnyType [!String, {{.*}}], :!AnyType [!String, {{.*}}]>
+  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType !String, :!AnyType !String, :!AnyType !String>
   return mapSingle(f, "a", "b")
 
 
@@ -1073,9 +1073,9 @@ struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
 
 # CHECK-LABEL: lit.fn @"useMixedInferAndPosParam()"
 fn useMixedInferAndPosParam():
-    # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt [!HasToInt, {{.*}}], :!ToInt [!HasToInt, {{.*}}]
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
     _ = MixedInferAndPosParam[27](HasToInt(37), HasToInt(47))
-    # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt [!HasToInt, {{.*}}], :!Int {27}, :!ToInt [!HasToInt, {{.*}}], :!ToInt [!HasToInt, {{.*}}]
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt !HasToInt, :!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
     _ = MixedInferAndPosParamWithInferredOnStruct[27](HasToInt(99), HasToInt(37), HasToInt(47))
 
 @register_passable("trivial")
@@ -1086,7 +1086,7 @@ struct Box[T: AnyType]:
 
 # CHECK-LABEL: lit.fn @"infer_box_type
 fn infer_box_type[T: AnyType, //, box: Box[T]]():
-    # CHECK-NEXT: lit.call {{.*}}infer_box_type{{.*}}<:!AnyType [!Int,
+    # CHECK-NEXT: lit.call {{.*}}infer_box_type{{.*}}<:!AnyType !Int,
     infer_box_type[Int()]()
 
 # MOCO-1457: Support struct param inference for origins
@@ -1520,7 +1520,7 @@ fn test_inference_from_Self_type(x: Int):
   implicit_convert_specific_Self(x)
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>{{.*}}([[TMP]], {{.*}})
+  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!Movable !Int>{{.*}}([[TMP]], {{.*}})
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: Index, param: Index, default: Index = param]:
@@ -1549,7 +1549,7 @@ fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
 # CHECK-LABEL: lit.fn @"tryCallingAThingReturningMOCO1144Bound
 fn tryCallingAThingReturningMOCO1144Bound():
-    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType [!Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType [!Int
+    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
 
@@ -1620,8 +1620,7 @@ fn infer_variadic[
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
 fn test_infer_variadic():
-    # CHECK: lit.call @parameters::@"infer_variadic{{.*}}"<:variadic<!AnyType> [
-    # CHECK-SAME: [!Int,
-    # CHECK-SAME: [!Bool,
+    # CHECK: lit.call @parameters::@"infer_variadic{{.*}}"<:variadic<!AnyType>
+    # CHECK-SAME: [!Int, !Bool]
     # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
     infer_variadic[Tuple[Int, Bool]]()

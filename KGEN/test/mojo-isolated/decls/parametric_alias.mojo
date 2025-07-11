@@ -113,7 +113,7 @@ fn two_identical_inputs[T: AnyType](x: T, y: T):
 # CHECK-LABEL: fn @"test_type_inference()"
 fn test_type_inference():
     # CHECK: lit.call @parametric_alias::@"two_identical_inputs
-    # CHECK-SAME: <:!AnyType [@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>,
+    # CHECK-SAME: <:!AnyType @parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>>
     # CHECK-SAME: "x": !lit.ref<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>
     # CHECK-SAME: "y": !lit.ref<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>
     two_identical_inputs(PS_21x[5](), PS[2, 1, 5]())

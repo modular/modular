@@ -124,22 +124,22 @@ struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> read_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none>:
-    # CHECK-SAME: get_vtable_entry(:!Trait T, "f0")]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait, "traits::Trait", "f0">]{{.*}}(%x)
     x.f0()
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}}) -> !kgen.none>:
-    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait, "traits::Trait", "overloaded">]{{.*}}(%x)
     x.overloaded()
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": index)
-    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait, "traits::Trait", "overloaded">]{{.*}}(%x, %{{.*}})
     x.overloaded(`1`)
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": !kgen.string)
-    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait, "traits::Trait", "overloaded">]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}} read_mem)
     # CHECK-SAME: bind_params(:!lit.generator<<"x": index>[1](
-    # CHECK-SAME: get_vtable_entry(:{{.*}} T, "parametric"), 1)
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait, "traits::Trait", "parametric">, 1)
     x.parametric[`1`]()
 
 
@@ -183,13 +183,9 @@ fn infer_trait[T: SimpleTrait](value: T):
 
 # CHECK-LABEL: lit.fn @"test_metatype_to_trait_vtable
 fn test_metatype_to_trait_vtable():
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [!TraitStruct{{[0-9]*}}, {
-    # CHECK-SAME: "method" : !lit.generator<[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> read_mem, "y": index) -> !kgen.none> = {{.*}}@TraitStruct::@"method
-    # CHECK-SAME: "param_method" : !lit.generator<<"x": index>[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> read_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait !TraitStruct
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2>, {
-    # CHECK-SAME: "method" : !lit.generator<[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} read_mem, "y": index) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
-    # CHECK-SAME: "param_method" : !lit.generator<<"x": index>[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} read_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<2>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
 
 
@@ -197,9 +193,9 @@ fn test_metatype_to_trait_vtable():
 fn test_infer_trait(
     a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : index`]
 ):
-    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [!TraitStruct,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait !TraitStruct
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2>,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<2>
     infer_trait(b)
 
 
@@ -220,7 +216,7 @@ struct StaticMethodStruct(StaticMethodTrait, Copyable):
 
 # CHECK-LABEL: lit.fn @"trait_static_method{{.*}}<T: !StaticMethodTrait
 fn trait_static_method[T: StaticMethodTrait]():
-    # CHECK: call[!lit.generator<() -> !kgen.none>: get_vtable_entry(:!StaticMethodTrait T, "foobar")]()
+    # CHECK: call[!lit.generator<() -> !kgen.none>: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !StaticMethodTrait, "traits::StaticMethodTrait", "foobar">]()
     T.foobar()
 
 
@@ -230,7 +226,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
 fn copy_me[T: Copyable](value: T) -> T:
     # CHECK-NEXT: call[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: get_vtable_entry({{.*}} T, "__copyinit__")]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Copyable, "stdlib::builtin::stubs::Copyable", "__copyinit__">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -240,7 +236,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: call[{{.*}}get_vtable_entry({{.*}} T, "__moveinit__")]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: call[{{.*}}#kgen.get_witness<#kgen.param.decl.ref<"T"> : !Movable, "stdlib::builtin::stubs::Movable", "__moveinit__">]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -288,9 +284,9 @@ struct RegTraitType(TraitForReg):
 
 # CHECK-LABEL: lit.fn @"raising_method
 fn raising_method[T: TraitForReg](x: T) raises:
-    # CHECK: lit.call[{{.*}}: get_vtable_entry(:!TraitForReg T, "may_throw")][{{.*}}](%__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !TraitForReg, "traits::TraitForReg", "may_throw">][{{.*}}](%__error__, %anonymous
     _ = T.may_throw()
-    # CHECK: lit.call[{{.*}}: get_vtable_entry(:!TraitForReg T, "throwing_method")][{{.*}}](%{{.*}}, %__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<#kgen.param.decl.ref<"T"> : !TraitForReg, "traits::TraitForReg", "throwing_method">][{{.*}}](%{{.*}}, %__error__, %anonymous
     x.throwing_method()
 
 
@@ -309,12 +305,16 @@ trait ChangedResultTypeTrait:
 
 # COM: The calling convention rewrite results in a decl with two "overloads" that
 # COM: differ only in result type. Ensure that the thunk gets selected.
+# CHECK-LABEL: lit.struct.decl @ChangedResultTypeStruct
 @register_passable
 struct ChangedResultTypeStruct(ChangedResultTypeTrait):
+    # CHECK-LABEL: lit.fn @"result_type()"() -> !ChangedResultTypeStruct
     @staticmethod
     fn result_type() -> Self:
         pass
 
+    # CHECK-LABEL: kgen.conformance @{{.*}}ChangedResultTypeTrait
+    # CHECK-NEXT: kgen.witness "result_type" : !lit.generator<{{.*}}"__result__": !lit.ref<!ChangedResultTypeStruct, {{.*}}> byref_result) -> !kgen.none>{{.*}}fn() -> traits::ChangedResultTypeStruct
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 fn convert_result_type():
@@ -322,7 +322,7 @@ fn convert_result_type():
     fn convert_result_type[T: ChangedResultTypeTrait]():
         pass
 
-    # CHECK: call{{.*}}fn() -> traits::ChangedResultTypeStruct
+    # CHECK: call{{.*}}!ChangedResultTypeStruct
     convert_result_type[ChangedResultTypeStruct]()
 
 
@@ -336,6 +336,8 @@ struct VariadicTrait[*I: Index](SimpleTraitMethod):
     fn foo(self):
         pass
 
+    # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
+    # CHECK-NEXT: kgen.witness "foo" : !lit.generator<[1]("self": {{.*}}<:variadic<index> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> I>
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 fn test_bind_variadic():
@@ -343,8 +345,7 @@ fn test_bind_variadic():
     fn bind_trait[T: SimpleTraitMethod]():
         pass
 
-    # CHECK: call
-    # CHECK: "foo" : !lit.generator<[1]("self": {{.*}}<:variadic<index> []>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> []>
+    # CHECK: call{{.*}}@VariadicTrait<:variadic<index> []>
     bind_trait[VariadicTrait[]]()
 
 
@@ -415,7 +416,7 @@ fn default_construct[T: DefaultConstructible]() -> T:
 # CHECK-LABEL: lit.fn @"generic_fn_return_type
 fn generic_fn_return_type():
     # CHECK: lit.var.decl "c" var : !lit.ref<!NoDtor,
-    # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:!DefaultConstructible [!NoDtor,{{.*}}(%c)
+    # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:!DefaultConstructible !NoDtor>(%c)
     var c = default_construct[NoDtor]()
     # CHECK: call {{.*}}@NoDtor::@"method
     c.method()
@@ -462,11 +463,13 @@ struct RegPassableRequiredType(RequiredType):
     fn use_it(arg: Int) -> Int:
         pass
 
+    # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
+    # CHECK: kgen.witness "use_it" : {{.*}}fn(::Int) -> ::Int
+
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
 fn bind_regpassable_required_type():
-    # CHECK-NEXT: fn(::Int) -> ::Int
-    # CHECK-SAME: @RegPassableRequiredType::@"use_it
+    # CHECK-NEXT: : !RequiredType = <!RegPassableRequiredType>
     alias T: RequiredType = RegPassableRequiredType
 
 
@@ -601,6 +604,15 @@ struct TraitInheritance(Father):
     fn baz(self):
         pass
 
+    # CHECK-LABEL: kgen.conformance @{{.*}}Father
+    # CHECK-NEXT: kgen.witness "baz"
+
+    # CHECK-LABEL: kgen.conformance @{{.*}}GrandFather
+    # CHECK-NEXT: kgen.witness "bar"
+
+    # CHECK-LABEL: kgen.conformance @{{.*}}GreatGrandFather
+    # CHECK-NEXT: kgen.witness "foo"
+
 
 # CHECK-LABEL: lit.fn @"test_trait_inheritance
 fn test_trait_inheritance():
@@ -616,17 +628,11 @@ fn test_trait_inheritance():
     fn take_father[T: Father]():
         pass
 
-    # CHECK: call
-    # CHECK-SAME: "foo"
+    # CHECK: call{{.*}}!TraitInheritance
     take_great_grand_father[TraitInheritance]()
-    # CHECK: call
-    # CHECK-SAME: "bar"
-    # CHECK-SAME: "foo"
+    # CHECK: call{{.*}}!TraitInheritance
     take_grand_father[TraitInheritance]()
-    # CHECK: call
-    # CHECK-SAME: "baz"
-    # CHECK-SAME: "bar"
-    # CHECK-SAME: "foo"
+    # CHECK: call{{.*}}!TraitInheritance
     take_father[TraitInheritance]()
 
 
@@ -637,11 +643,7 @@ fn infer_grand_father[T: GrandFather](x: T):
 # CHECK-LABEL: lit.fn @"pass_up_trait
 # CHECK-SAME: <T: !Father>
 fn pass_up_trait[T: Father](x: T):
-    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather
-    # CHECK-SAME: [!kgen.param<:!Father T>, {
-    # CHECK-SAME: "bar" : !lit.generator<[1]("self": !lit.ref<:!Father T, imm {{.*}}> read_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "bar"),
-    # CHECK-SAME: "foo" : !lit.generator<[1]("self": !lit.ref<:!Father T, imm {{.*}}> read_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "foo")
-    # CHECK-SAME: }]>(%x)
+    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather !kgen.param<:!Father T>>(%x)
     infer_grand_father(x)
 
 
@@ -664,8 +666,12 @@ struct Collection[T: InCollection]:
 
 
 @register_passable("trivial")
+# CHECK-LABEL: lit.struct.decl @Item
 struct Item(InCollection):
     pass
+
+    # CHECK-LABEL: kgen.conformance @{{.*}}Movable
+    # CHECK-NEXT: kgen.witness "__moveinit__"
 
 
 fn take_movable(x: MovableType[Item]):
@@ -674,7 +680,7 @@ fn take_movable(x: MovableType[Item]):
 
 # CHECK-LABEL: lit.fn @"converted_metatype_struct_element
 fn converted_metatype_struct_element(x: Collection[Item]):
-    # CHECK: call {{.*}}take_movable{{.*}}"__moveinit__" : {{.*}} = rebind({{.*}}__moveinit__({{.*}})
+    # CHECK: call {{.*}}take_movable
     take_movable(x.x)
 
 
@@ -770,13 +776,13 @@ struct KeysContainer[end: Index](KeysBuilder):
 
 # CHECK-LABEL: lit.fn @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} get_vtable_entry(:!SimpleTrait T, "method"){{.*}} store_to_mem(value), 1)
+    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<#kgen.param.decl.ref<"T"> : !SimpleTrait, "traits::SimpleTrait", "method">{{.*}} store_to_mem(value), 1)
     alias param = value.method(`1`)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: call[{{.*}}get_vtable_entry(:!SimpleTrait T, "method"){{.*}}([[IMM]], %index2)
+    # CHECK: call[{{.*}}#kgen.get_witness<#kgen.param.decl.ref<"T"> : !SimpleTrait, "traits::SimpleTrait", "method">{{.*}}([[IMM]], %index2)
     value.method(`2`)
 
 
@@ -817,7 +823,7 @@ struct Foo[T: EmptyTrait]:
 
 # CHECK-LABEL: lit.fn @"test_infer_sub_trait
 fn test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
-    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.param<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
+    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait !kgen.param<:!OtherEmptyTrait T>, :!OtherEmptyTrait T>(%foo, %bar)
     var copy = foo.infer_sub_trait(bar)
 
 
@@ -852,17 +858,17 @@ fn take_many_things_of_specified_trait[element_type: __type_of(AnyType),
 # CHECK-LABEL: lit.fn @"call_many_things_of_specified_trait
 fn call_many_things_of_specified_trait(a: TraitStruct):
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> {{.}}[!TraitStruct
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!TraitStruct]
     take_many_things_of_specified_trait[AnyType, TraitStruct]()
 
     # Int is movable.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> {{.}}[!Int
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> [!Int]
     take_many_things_of_specified_trait[Movable, Int]()
 
     # TraitStruct conforms to SimpleTrait.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> {{.}}[!TraitStruct
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> [!TraitStruct, !TraitStruct]
     take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 
@@ -929,9 +935,7 @@ fn take_anytype_ref[type: AnyType](ref value: type): pass
 # CHECK-LABEL: lit.fn @"pass_movable_mt_ref
 fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
-    # CHECK-SAME: <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>, {
-    # CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *[0,0]> owned_in_mem, |) -> !kgen.none>
-    # CHECK-SAME: = get_vtable_entry(:!Movable upcast(:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a)
+    # CHECK-SAME: <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
@@ -952,11 +956,11 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
+        # CHECK-SAME: <:!Movable !kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
         take_movable_pointer(ptr)

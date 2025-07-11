@@ -82,7 +82,7 @@ fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
     inferred_param_from_param[y]()
     # CHECK: inferred_param_variadic{{.*}}<x, :variadic<[[PARAMTYPE]]<x>> [y, y]>
     inferred_param_variadic[y, y]()
-    # CHECK: inferred_trait{{.*}}<:!SomeTrait {{#.*}}, :[[PARAMTYPE]]<x> y>
+    # CHECK: inferred_trait{{.*}}<:!SomeTrait [[PARAMTYPE]]<x>, :[[PARAMTYPE]]<x> y>
     inferred_trait[y]()
     # CHECK: inferred_with_default{{.*}}<x, :[[PARAMTYPE]]<x> y, 1>
     inferred_with_default[y]()

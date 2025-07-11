@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
 
 trait SomeTrait:
@@ -203,13 +203,13 @@ fn variadicParameter[*Ts: AnyTrivialRegType](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: FloatDyn, y: Int):
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1, #FloatDyn1, #Int1]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!Int, !FloatDyn, !Int]>
     var b: MyTuple[Int, FloatDyn, Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!Int]>
     var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#FloatDyn1, #type_value]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:type index>, index]]>
     var d = MyTuple(3.14, Int(6).value)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> []>
     var e = MyTuple()
@@ -233,6 +233,6 @@ fn usePacks(x: FloatDyn, y: Int):
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[2](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}@VariadicPack<{{.*}}origin<0> = #lit.comptime.origin}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}@VariadicPack<{{.*}}origin<0> = #lit.comptime.origin}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     alias foo = pack(a)

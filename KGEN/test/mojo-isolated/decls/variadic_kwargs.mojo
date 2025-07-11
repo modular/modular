@@ -11,15 +11,16 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.type<index,
-# CHECK-DAG: #[[MEM_ONLY:.*]] = #kgen.type<!MemOnly,
+# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.type<{{.*}}@__MLIRType<:type index>, index>
 
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
 # CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index,
 # CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|kw_vararg)
-fn variadic_kwargs(a: Index, b: Index, *args: Index, c: Index, d: Index, **kwargs: Index):
+fn variadic_kwargs(
+    a: Index, b: Index, *args: Index, c: Index, d: Index, **kwargs: Index
+):
     pass
 
 
@@ -83,7 +84,7 @@ fn test_variadic_kwargs_param_inference():
     # CHECK: %[[M:.*]] = lit.var.decl
     # CHECK: lit.call {{.*}}MemOnly::@"__init__{{.*}}(%[[M]])
 
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!Copyable_Movable !MemOnly>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
     # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "y">
 
@@ -106,7 +107,7 @@ fn takes_kw(**kwargs: MemOnly) -> Index:
 
 # CHECK-LABEL: lit.fn @"test_takes_kw_in_assignment
 fn test_takes_kw_in_assignment(x: MemOnly):
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}@OwnedKwargsDict<:!Copyable_Movable !MemOnly>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
     # CHECK: lit.ref.store %[[RES]], %b

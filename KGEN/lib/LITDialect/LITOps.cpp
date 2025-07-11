@@ -1319,8 +1319,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         SymbolRefArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
         /*definesClosure=*/none,
-        /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
-        /*linearTypeErrorMsg*/ {});
+        /*dtorSig=*/{}, /*dtorWitnessTrait=*/{}, /*docString=*/{},
+        /*deprecationWarning=*/{}, /*linearTypeErrorMsg*/ {});
   result.regions[0]->push_back(new Block());
 }
 

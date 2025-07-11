@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 
 using namespace M;
@@ -58,11 +59,15 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
           dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation());
       if (!traitAlias)
         continue;
-      StringAttr nameStringAttr = StringAttr::get(
-          name.str(), StringType::get(candidateFunc->getContext()));
-      TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetVTableEntry,
-                                                  {selfPValue, nameStringAttr},
-                                                  traitAlias.getType());
+      StringAttr nameStringAttr =
+          StringAttr::get(candidateFunc->getContext(), name.str());
+      auto traitName = StringAttr::get(
+          candidateFunc->getContext(),
+          getFlattenedSymbolName(candidateFunc.getInheritedFrom().value_or(
+              traitDecl->getSymbolRef())));
+      TypedAttr aliasRef =
+          declResolver.shared.getEvaluationContext().getGetWitnessAttr(
+              selfPValue, traitName, nameStringAttr, traitAlias.getType());
       traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
     }
   }
@@ -925,10 +930,12 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
       &shared.getEvaluationContext());
   assert(signature && "Error binding trait Self type");
 
-  TypedAttr fnRef = ParamOperatorAttr::get(
-      POC::GetVTableEntry,
-      {selfExpr,
-       StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
+  auto traitName =
+      StringAttr::get(funcOp.getContext(),
+                      getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
+                          traitDecl.getSymbolRef())));
+  TypedAttr fnRef = shared.getEvaluationContext().getGetWitnessAttr(
+      selfExpr, traitName, StringAttr::get(funcOp.getContext(), baseName),
       signature);
 
   if (bindings.empty())

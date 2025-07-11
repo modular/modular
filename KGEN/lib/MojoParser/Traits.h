@@ -41,17 +41,19 @@ void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
 
-/// Emit a GetWitnessAttr that fetches a unique trait requirement if a type
-/// conforms to it. The entry must be unique (non-overloaded) within the trait.
-/// If the type does not conform to the trait, return an empty GetWitnessAttr.
-FailureOr<GetWitnessAttr> getUniqueWitnessForTypeIfConforms(SharedState &shared,
-                                                            ASTType type,
-                                                            TraitType trait,
-                                                            StringRef entryName,
-                                                            SMLoc errorLoc);
-
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
                                         DeclResolver &declResolver);
+
+/// Emit a GetWitnessAttr that fetches a unique trait requirement if a type
+/// conforms to it. The entry must be unique (non-overloaded) within the trait.
+/// The GetWitnessAttr may be immediately evaluated if the type-value was
+/// already resolved. If the type does not conform to the trait, returns an
+/// empty TypedAttr.
+FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(SharedState &shared,
+                                                       ASTType type,
+                                                       TraitType trait,
+                                                       StringRef entryName,
+                                                       SMLoc errorLoc);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H

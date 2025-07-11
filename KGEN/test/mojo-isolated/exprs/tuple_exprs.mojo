@@ -152,16 +152,16 @@ fn returnTup0a() -> ():
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1]>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int]>,
 fn returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
-    # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [#Int1],
+    # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int],
     # CHECK:  = lit.call{{.*}}__init__
     return (Int(4),)
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1]>
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int]>
 fn returnTup1a() -> (Int,):
     return (Int(4),)
 
@@ -171,18 +171,18 @@ fn returnTup1b() -> (Int,):
 
 
 # CHECK-LABEL: lit.fn @"returnTup2
-# CHECK-SAME:  %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1, #FloatDyn1]>
+# CHECK-SAME:  %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>
 fn returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant: !Int = <{4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{:scalar<f64> "2"}>
-    # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [#Int1, #FloatDyn1]
+    # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
     return (Int(4), 2.0)
 
 
 # CHECK-LABEL: lit.fn @"returnTup2a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1, #FloatDyn1]>,
+# CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
 fn returnTup2a() -> (Int, FloatDyn):
-    # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [#Int1, #FloatDyn1]
+    # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
     return (Int(4), 2.0)
 
 
@@ -192,7 +192,7 @@ fn returnTup2b() -> (Int, FloatDyn):
 
 
 # CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !Copyable>
-# CHECK-SAME: @Tuple<:variadic<!AnyType> [#type_value1, #type_value1]>
+# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!Copyable T>, !kgen.param<:!Copyable T>]>
 fn takesSugarTuple[T: Copyable](elements: (T, T)):
     pass
 

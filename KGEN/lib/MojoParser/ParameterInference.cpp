@@ -504,6 +504,21 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return success();
   }
 
+  // If both parameters are GetWitnessAttrs, match up the insides.
+  if (auto actualGetWitness = dyn_cast<GetWitnessAttr>(actualAttr)) {
+    if (auto expectedGetWitness = dyn_cast<GetWitnessAttr>(expectedAttr)) {
+      // The trait name and witness name are immediates, not parameters, so they
+      // must match exactly.
+      if (actualGetWitness.getTraitName() !=
+              expectedGetWitness.getTraitName() ||
+          actualGetWitness.getWitnessName() !=
+              expectedGetWitness.getWitnessName())
+        return failure();
+      return matchParams(actualGetWitness.getTypeValue(),
+                         expectedGetWitness.getTypeValue());
+    }
+  }
+
   // If the expected value is the parameter declaration remember the binding!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     // Check if this ParamIndexRefAttr is referring to a param-decl in the

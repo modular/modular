@@ -8,8 +8,6 @@
 
 # Tests that we correctly call get_vtable_entry when looking up a trait's alias.
 
-# CHECK: #[[StructWithMatchingAlias_VTable:.*]] = #kgen.type<!StructWithMatchingAlias, {"N" : !ZInt = {{.*}} : !TraitWithAlias
-
 
 @fieldwise_init
 @register_passable("trivial")
@@ -23,7 +21,10 @@ trait TraitWithAlias:
     alias N: ZInt
 
 
+# CHECK-LABEL: lit.struct.decl @StructWithMatchingAlias
 struct StructWithMatchingAlias(TraitWithAlias):
+    # CHECK: kgen.conformance {{.*}}::TraitWithAlias
+    # CHECK: kgen.witness "N" : !ZInt = apply{{.*}}ZInt::@"__init__()"
     alias N: ZInt = ZInt()
 
     fn __init__(out self):
@@ -34,8 +35,8 @@ struct StructWithMatchingAlias(TraitWithAlias):
 # alias.
 # CHECK-LABEL: lit.fn @"getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
-    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <get_vtable_entry(:!TraitWithAlias T, "N")>
-    # CHECK-NEXT: kgen.param.constant: !ZInt = <get_vtable_entry(:!TraitWithAlias T, "N")>
+    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <#kgen.get_witness<#kgen.param.decl.ref<"T"> : !TraitWithAlias, "associated_aliases::TraitWithAlias", "N">>
+    # CHECK-NEXT: kgen.param.constant: !ZInt = <#kgen.get_witness<#kgen.param.decl.ref<"T"> : !TraitWithAlias, "associated_aliases::TraitWithAlias", "N">>
     alias X = T.N
     return X
 
@@ -45,7 +46,7 @@ fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
 # CHECK-LABEL: lit.fn export @"testTraitWithAliasAndStructWithMatchingAlias
 @export
 fn testTraitWithAliasAndStructWithMatchingAlias():
-    # CHECK: {{.*}} = lit.call @associated_aliases::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias #[[StructWithMatchingAlias_VTable]]>(%1)
+    # CHECK: {{.*}} = lit.call @associated_aliases::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias !StructWithMatchingAlias>(%1)
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 
 
@@ -78,7 +79,7 @@ trait TraitWithSameTypeAlias(TraitWithTypeAlias):
 
 # CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
 fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
-    # CHECK-NEXT: !TraitWithAlias = <get_vtable_entry(:!TraitWithSameTypeAlias T, "T")>
+    # CHECK-NEXT: !TraitWithAlias = <#kgen.get_witness<#kgen.param.decl.ref<"T"> : !TraitWithSameTypeAlias, "associated_aliases::TraitWithSameTypeAlias", "T">>
     alias MyT: TraitWithAlias = T.T
 
 
@@ -87,8 +88,6 @@ fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
 # Tests that we can upcast a generic struct to a trait, when the generic struct
 # uses an input-parameter in a method override for a trait method that mentions
 # a trait alias in an argument.
-
-# CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.generator<{{.*}}"thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>{{.*}}> = @associated_aliases::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[associated_aliases::ZInt])"}> : !TraitWithAliasArgMethod
 
 
 @fieldwise_init
@@ -114,6 +113,9 @@ trait TraitWithAliasArgMethod:
 
 @fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
+    # CHECK: kgen.conformance {{.*}}::TraitWithAliasArgMethod
+    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "lork" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork(
     alias T: ATrait = ZInt
 
     fn lork(self, thing: SIMD[ZInt]):
@@ -126,7 +128,7 @@ fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
 
 # CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
 fn testUpcastingStructWithAliasArgMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod !StructWithAliasArgMethod>
     receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
 
 
@@ -135,8 +137,6 @@ fn testUpcastingStructWithAliasArgMethod():
 # Tests that we can upcast a generic struct to a trait, when the generic struct
 # uses an input-parameter in a STATIC method override for a trait method that
 # mentions a trait alias in an argument. (Similar to the last test but static)
-
-# CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.generator<{{.*}}"thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>{{.*}}> = @associated_aliases::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[associated_aliases::ZInt])"}> : !TraitWithAliasArgMethod
 
 
 @fieldwise_init
@@ -176,7 +176,7 @@ fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
 
 # CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
 fn testUpcastingStructWithAliasArgMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod !StructWithAliasArgMethod>
     receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
 
 
@@ -212,8 +212,8 @@ fn callTraitMethodWithAliasArg[
     X: TraitWithAliasArgMethod
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
-    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
+    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasArgMethod, "associated_aliases::TraitWithAliasArgMethod", "T">>
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasArgMethod, "associated_aliases::TraitWithAliasArgMethod", "lork">
     t.lork(thing)
 
 
@@ -250,8 +250,8 @@ fn callTraitMethodWithAliasArg[
     X: TraitWithAliasArgMethod
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
-    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
+    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasArgMethod, "associated_aliases::TraitWithAliasArgMethod", "T">>
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasArgMethod, "associated_aliases::TraitWithAliasArgMethod", "lork">
     t.lork(thing)
 
 
@@ -259,8 +259,6 @@ fn callTraitMethodWithAliasArg[
 
 # Tests that a trait can have a method that returns a generic struct with an
 # input parameter-value that's a trait alias.
-
-# CHECK-DAG: #[[ExplicitStructWithAliasMethod_VTable:.*]] = #kgen.type<!ExplicitStructWithAliasMethod, {"T" : !ATrait = !ZInt{{.*}} : !TraitWithAliasReturnMethod
 
 
 @fieldwise_init
@@ -288,6 +286,9 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
+    # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
+    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork(
     alias T: ATrait = ZInt
 
     fn bork(self) -> SIMD[ZInt]:
@@ -296,7 +297,7 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingExplicitStructWithAliasMethod
 fn testUpcastingExplicitStructWithAliasMethod():
-    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ExplicitStructWithAliasMethod_VTable]]>
+    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod !ExplicitStructWithAliasMethod>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
 
 
@@ -309,8 +310,6 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 # Tests that a trait can have a STATIC method that returns a generic struct with
 # an input parameter-value that's a trait alias. Similar to the previous test
 # but static.
-
-# CHECK-DAG: #[[ExplicitStructWithAliasMethod_VTable:.*]] = #kgen.type<!ExplicitStructWithAliasMethod, {"T" : !ATrait = !ZInt{{.*}} : !TraitWithAliasReturnMethod
 
 
 @fieldwise_init
@@ -348,7 +347,7 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingExplicitStructWithAliasMethod
 fn testUpcastingExplicitStructWithAliasMethod():
-    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ExplicitStructWithAliasMethod_VTable]]>
+    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod !ExplicitStructWithAliasMethod>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
 
 
@@ -379,8 +378,8 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.fn @"callTraitWithAliasReturnMethod
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
-    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasReturnMethod X, "T")>
-    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasReturnMethod X, "bork")
+    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasReturnMethod, "associated_aliases::TraitWithAliasReturnMethod", "T">>
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasReturnMethod, "associated_aliases::TraitWithAliasReturnMethod", "bork">
     _ = t.bork()
 
 
@@ -409,8 +408,8 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.fn @"callTraitWithAliasReturnMethod
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
-    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasReturnMethod X, "T")>
-    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasReturnMethod X, "bork")
+    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasReturnMethod, "associated_aliases::TraitWithAliasReturnMethod", "T">>
+    # CHECK-SAME: #kgen.get_witness<#kgen.param.decl.ref<"X"> : !TraitWithAliasReturnMethod, "associated_aliases::TraitWithAliasReturnMethod", "bork">
     _ = t.bork()
 
 
@@ -419,8 +418,6 @@ fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 # Tests that we can upcast a generic struct to a trait, when the generic struct
 # uses an input-parameter in a method override for a trait method that mentions
 # a trait alias in the return.
-
-# CHECK-DAG: #[[GenericStructWithAliasMethod_VTable:.*]] = #kgen.type<@associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>, {"T" : !ATrait = !ZInt, "bork" : !lit.generator<[2]("self": {{.*}}, "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>, mut *[0,1]> byref_result{{.*}} : !TraitWithAliasReturnMethod
 
 
 @fieldwise_init
@@ -446,8 +443,12 @@ trait TraitWithAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# CHECK-LABEL: lit.struct.decl @GenericStructWithAliasMethod<Z: !ATrait>
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
+    # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
+    # CHECK: kgen.witness "T" : !ATrait = Z
+    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork(
     alias T: ATrait = Z
 
     fn bork(self) -> SIMD[Z]:
@@ -456,7 +457,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 fn testUpcastingGenericStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[GenericStructWithAliasMethod_VTable]]>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod @associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>>
     receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[ZInt]())
 
 
@@ -469,8 +470,6 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 # Tests that we can upcast a generic struct to a trait, when the generic struct
 # uses an input-parameter in a STATIC method override for a trait method that
 # mentions a trait alias in the return. Same as the last test but with static.
-
-# HECK-DAG: #[[GenericStructWithAliasMethod_VTable:.*]] = #kgen.type<@associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>, {"T" : !ATrait = !ZInt, "bork" : !lit.generator<[1]("__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>, mut *[0,1]> byref_result{{.*}} : !TraitWithAliasReturnMethod
 
 
 @fieldwise_init
@@ -508,7 +507,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 fn testUpcastingGenericStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[GenericStructWithAliasMethod_VTable]]>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod @associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>>
     receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[ZInt]())
 
 
@@ -546,7 +545,11 @@ trait TraitWithSelfDotAliasReturnMethod:
         ...
 
 
+# CHECK-LABEL: lit.struct.decl @StructWithSelfDotAliasReturnMethod
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
+    # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
+    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork(
     alias T: ATrait = ZInt
 
     fn bork(self) -> SIMD[Self.T]:
@@ -650,10 +653,14 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# CHECK-LABEL: lit.struct.decl @GenericStructWithSelfDotAliasReturnMethod<Z: !ATrait>
 @fieldwise_init
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
+    # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
+    # CHECK: kgen.witness "T" : !ATrait = Z
+    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork(
     alias T: ATrait = Z
 
     fn bork(self) -> SIMD[Self.Z]:
@@ -859,7 +866,6 @@ fn bar[foo: FooTrait]():
 # This is the important check, it makes sure that we:
 #  * Pull it out of the vtable as a BB
 #  * Upcast it to an AA
-# CHECK: #[[BTypeAsAATypeValue:.*]] = #kgen.type<!kgen.param<:!B T>, {"Type" : !AA = upcast(:!BB get_vtable_entry(:!B T, "Type"))}> : !A
 
 
 trait AA:
@@ -886,7 +892,9 @@ fn fa[T: A]() -> T.Type:
 
 # CHECK-LABEL: lit.fn @"fb
 fn fb[T: B]() -> T.Type:
-    # CHECK: lit.call{{.*}}fa{{.*}}#[[BTypeAsAATypeValue]]
+    # CHECK: %[[REBIND:.*]] = kgen.rebind {{.*}} : !lit.ref<:!BB #kgen.get_witness<#kgen.param.decl.ref<"T"> : !B, "associated_aliases::B", "Type">
+    # CHECK-SAME: to !lit.ref<:!AA #kgen.get_witness<#kgen.type<!kgen.param<:!B T>> : !A, "associated_aliases::A", "Type">
+    # CHECK: lit.call{{.*}}fa{{.*}}(%[[REBIND]])
     return fa[T]()
 
 

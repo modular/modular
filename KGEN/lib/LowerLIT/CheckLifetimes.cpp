@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -281,9 +282,9 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
-        FuncTypeGeneratorType dtorSig = TraitDeclOp(traitMap.at(symbol))
-                                            .getDtorSig()
-                                            .value_or(FuncTypeGeneratorType());
+        TraitDeclOp traitDecl = traitMap.at(symbol);
+        FuncTypeGeneratorType dtorSig =
+            traitDecl.getDtorSig().value_or(FuncTypeGeneratorType());
         if (dtorSig) {
           // Bind the *(0,0) parameter to a concrete type we're using in this
           // context.
@@ -298,8 +299,9 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
           auto specSig = dtorSig.getSpecializedGenerator({selfParam});
           auto delStr =
               StringAttr::get("__del__", StringType::get(type.getContext()));
-          return ParamOperatorAttr::get(POC::GetVTableEntry,
-                                        {selfParam, delStr}, specSig);
+          auto traitName = StringAttr::get(type.getContext(),
+                                           *traitDecl.getDtorWitnessTrait());
+          return GetWitnessAttr::get(selfParam, traitName, delStr, specSig);
         }
       }
     }

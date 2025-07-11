@@ -114,6 +114,7 @@ using TypeDomain = LowerLITReplacer::TypeDomain;
 /// Populate `replacer` with the lowering patterns for attributes and types
 /// from the computed lowerings for each struct decl.
 static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
+                             ParameterEvaluationContext &evalContext,
                              MLIRContext *ctx) {
   auto typeType = TypeType::get(ctx);
   auto emptyStructType = KGEN::StructType::get(ctx, {});
@@ -271,10 +272,12 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   // - For the AsValue type domain, convert into a symbol reference to the
   //   pre-created symbol generator op.
   replacer.addNonRecursiveReplacement(
-      [&, noneType, ctx](LIT::StructType ref) -> Type {
+      [&, noneType, ctx,
+       evalCtxPtr = &evalContext](LIT::StructType ref) -> Type {
         StructDecl &decl = decls.get(ref.getName());
         // Substitute the given parameters in.
         ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
+        evaluator.setEvaluationContext(evalCtxPtr);
         SmallVector<Type> fieldTypes;
         for (auto [idx, type] :
              llvm::enumerate(llvm::make_second_range(decl.fields))) {
@@ -367,7 +370,8 @@ static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
 namespace {
 /// Struct operations need to refer to the struct declaration symbol.
 struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
-  explicit LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls);
+  explicit LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
+                          mlir::LockedSymbolTableCollection &symtab);
 
   /// Get the index of the struct field.
   int getField(StringAttr name, LIT::StructType ref) {
@@ -383,6 +387,8 @@ struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
   template <typename OpT>
   LogicalResult materializeLowering(OpT op);
 
+  /// Evaluation context used for simplifying parameters.
+  LITSymTabEvaluationContext evalContext;
   /// The struct decl map.
   StructDecls &structDecls;
   /// Converter for debuginfo.
@@ -394,10 +400,12 @@ struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
 
 static DebugInfo::DIType buildDebugInfoForStructRef(
     LIT::StructType ref, StructDecls &structDecls,
-    DebugInfo::DebugInfoNonCyclicTypeConverter &converter) {
+    DebugInfo::DebugInfoNonCyclicTypeConverter &converter,
+    ParameterEvaluationContext &evalContext) {
   // Substitute parameters into the field types.
   StructDecl &decl = structDecls.get(ref.getName());
   ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
+  evaluator.setEvaluationContext(&evalContext);
 
   auto getDebugInfoType = [&](const std::pair<StringAttr, Type> &nameAndType) {
     auto [name, type] = nameAndType;
@@ -442,9 +450,11 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
   return DebugInfo::DIStructType::get(sourceName.encode(), elementTypes);
 }
 
-LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
-    : IRRewriter(ctx), structDecls(structDecls) {
-  populateReplacer(structDecls, *this, ctx);
+LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
+                               mlir::LockedSymbolTableCollection &symtab)
+    : IRRewriter(module.getContext()), evalContext(module, symtab),
+      structDecls(structDecls) {
+  populateReplacer(structDecls, *this, evalContext, module.getContext());
 
   // Build a converter to handle updating converted types within debug info
   // constructs.
@@ -456,8 +466,8 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
   });
   debugTypeConverter.addConversion(
       [&](LIT::StructType type) -> DebugInfo::DIType {
-        return buildDebugInfoForStructRef(type, structDecls,
-                                          debugTypeConverter);
+        return buildDebugInfoForStructRef(type, structDecls, debugTypeConverter,
+                                          evalContext);
       });
   debugTypeConverter.addConversion([&](PointerType type) -> DebugInfo::DIType {
     DebugInfo::DIType elementType =
@@ -627,10 +637,11 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
 // Entrypoint.
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state) {
+LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
+                                 mlir::LockedSymbolTableCollection &symtab) {
   if (failed(detectIllegalStructDeclsRecursion(state)))
     return failure();
-  LITTypeLowerer b(module.getContext(), state);
+  LITTypeLowerer b(module, state, symtab);
 
   // Lower operations first.
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
@@ -653,7 +664,7 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state) {
                           /*replaceLocs=*/true,
                           /*replaceTypes=*/true);
       structGen.setValueDomainType(valueDomainType);
-      return WalkResult::advance();
+      return WalkResult::skip();
     }
 
     b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
@@ -674,5 +685,17 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state) {
     }
     return WalkResult::advance();
   });
+
+  // Lower types in StructGeneratorOps last because we need witness entries to
+  // keep using LIT types in order for ParameterEvaluator to work smoothly.
+  for (StructGeneratorOp op : module.getOps<StructGeneratorOp>()) {
+    op.getBody().walk([&](Operation *op) {
+      b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
+                          /*replaceLocs=*/true,
+                          /*replaceTypes=*/true);
+      return WalkResult::advance();
+    });
+  }
+
   return success();
 }

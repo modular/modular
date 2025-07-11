@@ -762,6 +762,38 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
 // Zero Cost Conversions
 //===----------------------------------------------------------------------===//
 
+static TypedAttr stripTypeValueUpcast(TypedAttr typeValue) {
+  if (auto upcast = dyn_cast<UpcastAttr>(typeValue))
+    return stripTypeValueUpcast(upcast.getInputTypeValue());
+  if (auto typeParam = dyn_cast<TypeParamAttr>(typeValue))
+    if (auto paramType = dyn_cast<ParamType>(typeParam.getTypeValue()))
+      return stripTypeValueUpcast(paramType.getParam());
+  return typeValue;
+}
+
+static bool canZeroCostConvertParamTypes(ParamType fromParamType,
+                                         ParamType toParamType,
+                                         SharedState &shared) {
+  // If the source & target types are both get_witness on the same type-values,
+  // we can zero-cost convert.
+  if (auto fromGetWitness =
+          dyn_cast<GetWitnessAttr>(fromParamType.getParam())) {
+    if (auto toGetWitness = dyn_cast<GetWitnessAttr>(toParamType.getParam())) {
+      if (fromGetWitness.getWitnessName() != toGetWitness.getWitnessName())
+        return false;
+
+      auto fromTypeValue = stripTypeValueUpcast(fromGetWitness.getTypeValue());
+      auto toTypeValue = stripTypeValueUpcast(toGetWitness.getTypeValue());
+      if (fromTypeValue != toTypeValue)
+        return false;
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a zero-cost conversion like a rebind.  This means that values of the
 /// two types have exactly the same representation post-elaboration.
@@ -780,6 +812,11 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
              TypeConvention::RegisterPassableTrivial;
     }
   }
+
+  // Check for param type conversions.
+  if (auto fromParamType = dyn_cast<ParamType>(fromType))
+    if (auto toParamType = dyn_cast<ParamType>(toType))
+      return canZeroCostConvertParamTypes(fromParamType, toParamType, shared);
 
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
@@ -1238,8 +1275,6 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
     shared.emitError(loc, "malformed builtin._stubs.__MLIRType");
     return {};
   }
-  ASTType boundWrapper = cast<StructDeclOp>(wrapperDecl->getIfOperation())
-                             .bindReference({typeValue});
 
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
@@ -1255,56 +1290,17 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
     return {};
   }
 
-  // NOTE: This substantially duplicates emitMetaTypeToTraitConversion because
-  // it is doing some crazy manual binding of the type into the parameter list
-  // so the vtable entries are specialized on the MLIR type.
-  //
-  // FIXME(MOCO-1146): Could we instead just synthesize the members required and
-  // eliminate __mlir_type entirely?  This __mlir_type thing introduces other
-  // bugs.  We already do this for rp-trivial types which MLIR types are.
-  SmallVector<VTableEntryAttr> vtable;
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    assert(!decls.empty() &&
-           isa_and_nonnull<FnOp>(decls.front()->getIfOperation()));
-
-    for (ASTDecl *decl : decls) {
-      // MLIR types are movable, copyable, and destructible only.
-      switch (SpecialFunctionInfo::getKind(name)) {
-      case SpecialFunctionKind::kMoveInit:
-      case SpecialFunctionKind::kCopyInit:
-      case SpecialFunctionKind::kDel:
-        break;
-      default:
-        if (name != "copy") {
-          InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
-                              << mlirType << " to trait " << ASTType(trait);
-          diag.attachNote(decl->getLoc())
-              << "MLIR type cannot satisfy required trait function here";
-          return {};
-        }
-      }
-      // We know the stub will provide exactly one overload for each allowed
-      // trait requirement.
-      auto ovSet =
-          OverloadSet::lookup(emitter.getDeclScope(), boundWrapper, name,
-                              value.expr, CallSyntax::kMethodCall);
-      // Manually bind the type into the parameter list so the vtable entries
-      // are specialized on the MLIR type.
-      ovSet.paramBindings = ParamBindings::getForDeclaredType(
-          emitter.getDeclScope(), boundWrapper, value.expr);
-
-      PValue callee = ovSet.getIfPValue();
-      if (!callee) {
-        shared.emitError(loc, "internal error: MLIR type stub didn't resolve ")
-            << name;
-        return {};
-      }
-      vtable.push_back(VTableEntryAttr::get(name, callee));
-    }
+  // If the type is a param type, then we just need to upcast it to the trait.
+  if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+    return UpcastAttr::get(trait, PValue(paramType.getParam()),
+                           VTableAttr::get(trait.getContext(), {}));
   }
 
-  return TypeParamAttr::get(mlirType, trait,
-                            VTableAttr::get(shared.getContext(), vtable));
+  // Otherwise, create a new type value whose witness table is provided by the
+  // wrapper stub.
+  ASTType boundWrapper = cast<StructDeclOp>(wrapperDecl->getIfOperation())
+                             .bindReference({typeValue});
+  return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 
 //===----------------------------------------------------------------------===//

@@ -93,7 +93,7 @@ fn construct_implicit_type_explicitly():
 
 # CHECK-LABEL: lit.fn @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
-    # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_vtable_entry
+    # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: #kgen.get_witness
     _ = value.foo()
 
 
@@ -107,5 +107,5 @@ fn nonmaterializable_trait():
     # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: store [[VAL]], [[SLOT]]
     # CHECK-NEXT:  = lit.ref.immut [[SLOT]]
-    # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:!Intable [!Int, {"__int__"
+    # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:!Intable !Int
     take_intable(1)

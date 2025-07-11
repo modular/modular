@@ -428,7 +428,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     // If asking for a buffer of the type we happen to have, or if the client
     // doesn't care if it matches, then we can directly return it.
     if (allowIncompatibleTypes ||
-        lValue.getRValueType().isEqualCanon(resultType)) {
+        emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
+                                   emitter.shared)) {
       // If the client accepts any sort of LValue, then we succeed.
       if (!requireMLValue) {
         representation = LValueBufferTaken(); // Buffer taken!

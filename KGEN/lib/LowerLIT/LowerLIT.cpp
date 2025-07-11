@@ -1058,7 +1058,8 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
     }
 
     // Keep lowering all the operations and types.
-    if (failed(LIT::lowerLITTypes(module, structDecls)))
+    mlir::LockedSymbolTableCollection lockedSymtab(symtab.getSymbolTables());
+    if (failed(LIT::lowerLITTypes(module, structDecls, lockedSymtab)))
       signalPassFailure();
   }
 };

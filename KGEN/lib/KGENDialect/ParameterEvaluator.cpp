@@ -118,10 +118,6 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
 FailureOr<TypedAttr>
 SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   // We can only simplify if the type reference is resolved already.
-  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
-  if (!typeParam)
-    return failure();
-
   auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(
       getWitness.getTypeRefIfResolved());
   if (!genRef)
