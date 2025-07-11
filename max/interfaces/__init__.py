@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
+from .audio_generation import AudioGenerationResponse
 from .context import InputContext, SamplingParams
 from .embeddings import EmbeddingsResponse
 from .log_probabilities import LogProbabilities
@@ -25,4 +26,5 @@ __all__ = [
     "TokenGenerator",
     "PipelineTask",
     "EmbeddingsResponse",
+    "AudioGenerationResponse",
 ]
