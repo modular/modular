@@ -73,7 +73,7 @@ fn useAny[T: AnyType](x: T):
 # CHECK-SAME: <T: !Trait1>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1 T,
 fn use1[T: Trait1](x: T):
-    # CHECK: lit.call[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} get_vtable_entry(:!Trait1 T, "f1")][{{.*}}](%x)
+    # CHECK: lit.call[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<#kgen.param.decl.ref<"T"> : !Trait1, "trait_composition::Trait1", "f1">][{{.*}}](%x)
     x.f1()
 
 
@@ -87,16 +87,10 @@ fn use2[T: Trait2](x: T):
 # CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
 fn use12[T: Traits12](x: T):
     # CHECK: lit.call @trait_composition::@"use1
-    # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "f1")
-    # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "__del__")
+    # CHECK-SAME: <:!Trait1 !kgen.param<:!Trait1_Trait2 T>>
     use1[T](x)
     # CHECK: lit.call @trait_composition::@"use2
-    # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "f2")
-    # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "__del__")
+    # CHECK-SAME: <:!Trait2 !kgen.param<:!Trait1_Trait2 T>>
     use2[T](x)
 
 
@@ -104,7 +98,7 @@ fn use12[T: Traits12](x: T):
 fn use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait2_Trait3 T, "f3")
+    # CHECK-SAME: #kgen.get_witness<#kgen.type<!kgen.param<:!Trait2_Trait3 T>> : !Trait3, "trait_composition::Trait3", "f3">
     x.f3()
 
 
@@ -119,38 +113,38 @@ fn main_use():
     s123 = Struct123()
 
     # CHECK: lit.call @trait_composition::@"useAny
-    # CHECK-SAME: <:!AnyType {{.*}}"__del__"
+    # CHECK-SAME: <:!AnyType !Struct123>
     useAny(s123)
     # CHECK: lit.call @trait_composition::@"use1
-    # CHECK-SAME: <:!Trait1 {{.*}}"f1"{{.*}}"__del__"
+    # CHECK-SAME: <:!Trait1 !Struct123>
     use1(s123)
     # CHECK: lit.call @trait_composition::@"use1
-    # CHECK-SAME: <:!Trait1 {{.*}}"f1"{{.*}}"__del__"
+    # CHECK-SAME: <:!Trait1 !Struct123>
     use1[Struct123](s123)
     # CHECK: lit.call @trait_composition::@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
+    # CHECK-SAME: <:!Trait1_Trait2 !Struct123>
     use12(s123)
     # CHECK: lit.call @trait_composition::@"use23
-    # CHECK-SAME: <:!Trait2_Trait3 {{.*}}"__del__"{{.*}}"f2"{{.*}}"f3"
+    # CHECK-SAME: <:!Trait2_Trait3 !Struct123>
     use23(s123)
     # CHECK: lit.call @trait_composition::@"use123
-    # CHECK-SAME: <:!Trait1_Trait2_Trait3 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"{{.*}}"f3"
+    # CHECK-SAME: <:!Trait1_Trait2_Trait3 !Struct123>
     use123(s123)
 
     s12direct = Struct12Direct()
     # CHECK: lit.call @trait_composition::@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
+    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
     use12(s12direct)
     # CHECK: lit.call @trait_composition::@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
+    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
     use12[Struct12Direct](s12direct)
 
     s12alias = Struct12Alias()
     # CHECK: lit.call @trait_composition::@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
+    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
     use12(s12alias)
     # CHECK: lit.call @trait_composition::@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
+    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
     use12[Struct12Alias](s12alias)
 
 
@@ -193,11 +187,7 @@ fn useCond1[
     ElementType: Traits12
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
-    # CHECK-SAME: <:!AnyType [!kgen.param<:!Trait1_Trait2 ElementType>,
-    # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")}],
-    # CHECK-SAME:  :!Trait1 [!kgen.param<:!Trait1_Trait2 ElementType>,
-    # CHECK-SAME:    {"f1" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType,{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "f1")
-    # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")
+    # CHECK-SAME: <:!AnyType !kgen.param<:!Trait1_Trait2 ElementType>, :!Trait1 !kgen.param<:!Trait1_Trait2 ElementType>>
     p1.cond1(p2)
 
 
@@ -220,7 +210,7 @@ trait IntConstructable:
 fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
     # CHECK: lit.call[
-    # CHECK-SAME: get_vtable_entry(:!Defaultable_IntConstructable T, "__init__")
+    # CHECK-SAME: #kgen.get_witness<#kgen.type<!kgen.param<:!Defaultable_IntConstructable T>> : !IntConstructable, "trait_composition::IntConstructable", "__init__">
     # CHECK-SAME: %[[INT33]]
     return T(33)
 

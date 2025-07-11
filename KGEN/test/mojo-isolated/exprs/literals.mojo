@@ -100,7 +100,7 @@ fn test_list_literal():
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var c : IntList = []
 
-    # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!AnyType !FloatDyn>
     inspect([1.0, 2])
 
     # MOCO-2085: List comprehensive fails without explicit use of var
@@ -109,7 +109,7 @@ fn test_list_literal():
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 fn test_list_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@List<:!AnyType !Int>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
@@ -124,7 +124,7 @@ fn test_list_comprehension():
     # CHECK: }
     var a_collection = [i1*2 for i1 in SimpleIntRange()]
 
-    # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
+    # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType !Int>
     # CHECK: } body {
     # CHECK: %i2 = lit.var.decl "i2"
     # CHECK:   } body {
@@ -189,7 +189,7 @@ fn test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType #Int1, :!Copyable_Movable #String1>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType !Int, :!Copyable_Movable !String>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
@@ -235,7 +235,7 @@ fn test_set_literal():
 
 # CHECK-LABEL: lit.fn @"test_set_comprehension
 fn test_set_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Set<:!AnyType #Int1>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Set<:!AnyType !Int>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {

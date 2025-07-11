@@ -55,21 +55,17 @@ using namespace LIT;
 /// This last step is accomplished by this function here.
 static FnTypeGeneratorType
 simplifyGetVTableEntryOnSelf(PValue selfType,
-                             const DenseMap<StringAttr, TypedAttr> *aliasValues,
+                             const DenseMap<StringRef, TypedAttr> *aliasValues,
                              FnTypeGeneratorType signature) {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-    if (paramOp.getOpcode() == POC::GetVTableEntry &&
-        paramOp.getOperand(0) == PValue(selfType).get()) {
-      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-      // The vtable entries have type !kgen.string, but the entries from the
-      // trait decl have a StringAttr with no type.  Reunique them to look up.
-      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
-      auto iter = aliasValues->find(aliasName);
+  replacer.addReplacement([&](KGEN::GetWitnessAttr attr) -> Attribute {
+    if (attr.getTypeValue() == selfType.get()) {
+      auto aliasName = attr.getWitnessName();
+      auto iter = aliasValues->find(aliasName.getValue());
       if (iter != aliasValues->end())
         return iter->second;
     }
-    return paramOp;
+    return attr;
   });
   return cast<FnTypeGeneratorType>(replacer.replace(signature));
 }
@@ -81,7 +77,7 @@ static std::pair<FnTypeGeneratorType, ParamBindings>
 getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
-                          const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                          const DenseMap<StringRef, TypedAttr> &aliasValues,
                           ParserParameterEvaluator &traitAliasReplacer) {
   TraitType trait = TraitType::get(traitSymbol);
   FnTypeGeneratorType signature = traitFn.getFullSignature();
@@ -173,7 +169,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   //
   // TODO(MOCO-1993): Consolidate docs on this.
   ParserParameterEvaluator traitAliasReplacer(shared);
-  DenseMap<StringAttr, TypedAttr> aliasValues;
+  DenseMap<StringRef, TypedAttr> aliasValues;
 
   // Prepare an error. It will be abandoned if the check succeeds.
   diag = shared.emitError(structDecl.getLoc())
@@ -544,7 +540,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
                            ParserParameterEvaluator *traitAliasReplacer,
-                           const DenseMap<StringAttr, TypedAttr> *aliasValues,
+                           const DenseMap<StringRef, TypedAttr> *aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
@@ -630,10 +626,11 @@ FnTypeGeneratorType LIT::specializeSignature(FnOp traitFn, ASTType newSelfType,
                                     declResolver);
 }
 
-FailureOr<GetWitnessAttr>
-LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
-                                       TraitType trait, StringRef entryName,
-                                       SMLoc errorLoc) {
+FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
+                                                            ASTType type,
+                                                            TraitType trait,
+                                                            StringRef entryName,
+                                                            SMLoc errorLoc) {
   // Get the decl for the type.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
@@ -655,7 +652,7 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
   if (!typeDecl->doesNominalTypeConformTo(trait)) {
     // Does not conform. This is the only non-error case where we return an
     // empty attr.
-    return GetWitnessAttr();
+    return TypedAttr();
   }
 
   // Make sure the trait body is fully resolved so we know what the methods are.
@@ -695,7 +692,7 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
 
   ASTDecl *parentTraitDecl = entry.getParentDecl();
   MLIRContext *ctx = parentTraitDecl->getContext();
-  return GetWitnessAttr::get(
+  return shared.getEvaluationContext().getGetWitnessAttr(
       PValue(type),
       StringAttr::get(ctx,
                       getFlattenedSymbolName(parentTraitDecl->getSymbolRef())),
@@ -757,176 +754,6 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  // Synthesize the vtable required for the trait from the struct. Make sure the
-  // trait body is fully resolved so we know what the methods are.
-  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
-  if (failed(getDeclResolver().resolveBody(*traitDecl, value.expr->getLoc())))
-    return {};
-
-  // Determine if the conforming value is trivial or register passable.  If so,
-  // this will affect the methods we can synthesize in conformance. Values of
-  // trait type will already have been erased to a memory type.
-  ArrayRef<ParamDeclAttr> structParamDecls;
-  if (auto structDeclOp =
-          dyn_cast_or_null<StructDeclOp>(metaTypeDecl->getIfOperation()))
-    structParamDecls = structDeclOp.getParams();
-
-  // When we're looking for a trait's method in a certain struct, like:
-  //     trait TraitWithAliasMethod:
-  //         alias T: ATrait
-  //         fn bork(self) -> Something[T]: ...
-  // and a struct overrides it:
-  //     struct ExplicitStructWithAliasMethod(TraitWithAliasMethod):
-  //         alias T: ATrait = int
-  //         fn bork(self) -> SIMD[int]: ...
-  // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
-  // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
-  ParserParameterEvaluator traitAliasReplacer(shared);
-  DenseMap<StringAttr, TypedAttr> aliasValues;
-
-  // If the struct (e.g. List[T]) has an alias that uses an input parameter,
-  // (e.g. `alias element_type = T`), then this will help us interpret that
-  // alias value while filling the above traitAliasReplacer.
-  // FIXME: We need to reject accessing aliases of a partially bound type, until
-  // ParameterizedType is a thing!
-  ParserParameterEvaluator implGenericsReplacer(shared, structParamDecls,
-                                                type.getParamBindings());
-
-  // Bind each trait requirement into vtable entries.
-  SmallVector<VTableEntryAttr> vtable;
-  for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
-    // Each entry can have multiple overloads in 'decls'.
-    if (requirementDecls.empty())
-      continue;
-
-    // Find candidates in the implementing type (either a struct or trait) which
-    // also may have multiple overloads.
-    LookupResult result =
-        shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
-                                    /*searchParentScopes=*/false);
-    ArrayRef<ASTDecl *> impls = result.getIfSuccess();
-
-    if (auto traitAliasDecl = dyn_cast_or_null<AliasDeclOp>(
-            requirementDecls.front()->getIfOperation())) {
-      // These asserts should be safe because we already know it correctly
-      // conforms because we called `doesNominalTypeConformTo` above.
-      assert(impls.size() == 1);
-      auto implAlias = cast<AliasDeclOp>(impls.front()->getIfOperation());
-
-      TypedAttr newValue = implAlias.getValueAttr();
-      if (newValue) {
-        newValue = implGenericsReplacer.replace(newValue);
-        // If a decl has a parameter "T : Trait" where Trait defines an
-        // associated type "U : Trait2", then when we emit vtable for T, we must
-        // also emit vtable for T.U.  We perform this by implicitly converting
-        // to the alias' declared type.
-        newValue = emitPValue({newValue, value.expr}, EC_Trait,
-                              traitAliasDecl.getType());
-      } else {
-        // Must come from a child trait. Pull the alias value out of the vtable
-        // of the child trait alias' type.
-        newValue = ParamOperatorAttr::get(
-            POC::GetVTableEntry,
-            {PValue(type),
-             StringAttr::get(name.getValue(), StringType::get(getContext()))},
-            implAlias.getType());
-
-        if (implAlias.getType() != traitAliasDecl.getType()) {
-          // If the overriding alias's type is more specific than the
-          // super-trait's type (see STATCBMS), we'll need to cast it.
-          newValue =
-              UpcastAttr::get(traitAliasDecl.getType(), newValue,
-                              // This vtable can be empty because the vtable
-                              // should come from the newValue.
-                              VTableAttr::get(traitAliasDecl.getContext(), {}));
-        }
-      }
-
-      if (!newValue)
-        return {};
-
-      vtable.push_back(VTableEntryAttr::get(name, newValue));
-      traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
-                                           newValue);
-      aliasValues[name] = newValue;
-      continue;
-    }
-
-    // Traits shouldn't have var decls or other things.
-    if (!isa_and_nonnull<FnOp>(requirementDecls.front()->getIfOperation()))
-      continue;
-
-    // Each requirement may be overloaded, resolve each individually.
-    for (ASTDecl *expected : requirementDecls) {
-      auto traitFn = dyn_cast_or_null<FnOp>(expected->getIfOperation());
-      assert(traitFn && "trait has an alias and a fn with the same name!");
-
-      // For any given requirement, the implementing type may have multiple
-      // overloads.  Resolve which one we're using by forming an overload set
-      // and filtering it.  Start by finding a set of param bindings for the
-      // implementing function that get bound, including:
-      //
-      //  * The self type if the conforming type is a trait.
-      //  * The conforming struct's values for the trait's aliases.
-
-      // The requirement will have a Self parameter whose type will be of the
-      // current trait.  In order to get types to line up, we need to force it
-      // to the implementation type.  This changes the parameter value, but also
-      // changes the metatype of the value.  To support this, we use a custom
-      // replacer.
-      // TODO(MOCO-1789): This complicated logic will be removed once we have
-      // symbolized witness tables.
-      FnTypeGeneratorType requirementSig = createRequirementSignature(
-          traitFn, type, &traitAliasReplacer, &aliasValues, getDeclResolver());
-
-      // Form a set of bindings to plow into the impl signature by binding Self
-      // to the appropriate Struct or derived Trait type.
-      // We need to upcast the self type to the parent trait type, so that it
-      // can be marked prechecked in the bindings of trait functions that have
-      // parameters in their signature, e.g.:
-      // trait Writable:
-      //     fn write_to[W: Writer](self, mut writer: W): pass
-      auto parentTraitType = cast<TraitType>(
-          expected->getParentDecl()->getTypeDeclSelf().getMetaType());
-      auto implBindings = ParamBindings::getForDeclaredType(
-          getDeclScope(), type, value.expr, parentTraitType);
-
-      // Leave the rest of the the parameters Unbound.
-      ParserParameterEvaluator evaluator(shared);
-      for (Type type : requirementSig.getInputParamTypes()) {
-        auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
-        evaluator.addInputValue(unbound);
-        implBindings.addPrechecked(value.expr, unbound);
-      }
-
-      // If the input type is a trait, no need to look through its methods since
-      // trait inheritance is always explicit.
-      if (isa<TraitType>(metaTypeDecl->getIfTypeValue())) {
-        TypedAttr result = ParamOperatorAttr::get(
-            POC::GetVTableEntry,
-            {PValue(type),
-             StringAttr::get(name.getValue(), StringType::get(getContext()))},
-            requirementSig);
-        vtable.push_back(VTableEntryAttr::get(name, result));
-        continue;
-      }
-
-      // Grab the matching function.  If the input type is a StructType, this
-      // will directly bind the method in question.  If the input type is
-      // something like "T: Movable" and we're binding __del__ then this will
-      // end up with `get_vtable_entry(T, "__del__")`.
-      OverloadSet ov(name, impls, std::move(implBindings), value.expr,
-                     CallSyntax::kMethodCallSynthetic);
-      auto result = ov.filterOverloadSetForValueType(
-          requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
-      if (!result)
-        return {};
-      assert(result.getType().mlirType == requirementSig &&
-             "didn't form a fn with signature of expected type");
-      vtable.push_back(VTableEntryAttr::get(name, result));
-    }
-  }
-
   // Create the new type value with the vtable and the trait metatype.
-  return TypeParamAttr::get(type, trait, VTableAttr::get(getContext(), vtable));
+  return TypeParamAttr::get(type, trait);
 }

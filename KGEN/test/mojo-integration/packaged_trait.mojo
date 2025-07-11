@@ -21,12 +21,18 @@ struct MyType(PackageTrait):
     fn method(self):
         pass
 
+    # CHECK: kgen.conformance {{.*}}::PackageTrait
+    # CHECK: kgen.witness "method" {{.*}} = {{.*}}::@MyType::@"method
+
 
 # CHECK: lit.struct.decl @MyRegType({{.*}}PackageTrait
 @register_passable
 struct MyRegType(PackageTrait):
     fn method(self):
         pass
+
+    # CHECK: kgen.conformance {{.*}}::PackageTrait
+    # CHECK: kgen.witness "method" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
 
 
 fn bind_trait[T: PackageTrait]():
@@ -35,13 +41,13 @@ fn bind_trait[T: PackageTrait]():
 
 # CHECK-LABEL: lit.fn @"test
 fn test():
-    # CHECK-NEXT: [!MyType{{[0-9]*}}, {"method" {{.*}}@MyType::@"method
+    # CHECK-NEXT: <:!PackageTrait !MyType>
     bind_trait[MyType]()
-    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}!lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@MyRegType::@"method
+    # CHECK-NEXT: <:!PackageTrait !MyRegType>
     bind_trait[MyRegType]()
-    # CHECK-NEXT: [!UseTrait{{[0-9]*}}, {"method" {{.*}}@UseTrait::@"method
+    # CHECK-NEXT: <:!UsedInPackageTrait !UseTrait>
     trait_method[UseTrait]()
-    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}!lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none>{{.*}}@UseTraitReg::@"method
+    # CHECK-NEXT: <:!UsedInPackageTrait !UseTraitReg>
     trait_method[UseTraitReg]()
 
     # COM: Anchor this decl reference to materialize it.
@@ -52,6 +58,15 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
     y.method()
 
 
+# CHECK-LABEL: lit.package @test_package_trait
+
 # CHECK: lit.trait.decl @PackageTrait
 # CHECK: lit.trait.decl @UsedInPackageTrait
-# CHECK: lit.struct.decl @UseTrait({{.*}}UsedInPackageTrait
+
+# CHECK-LABEL: lit.struct.decl @UseTrait
+# CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
+# CHECK: kgen.witness "method" {{.*}} = {{.*}}::@UseTrait::@"method
+
+# CHECK-LABEL: lit.struct.decl @UseTraitReg
+# CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
+# CHECK: kgen.witness "method" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method

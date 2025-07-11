@@ -1786,16 +1786,25 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           << spelling << "' in non-parameter " << baseRVType << getRange();
       return {};
     }
-    // Make a get_vtable_entry call to extract the value out of the trait
-    // value's vtable.
+    // Make a get_witness call to extract the value out of the trait
+    // value's conformance table.
     // See
     // https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
     // for why and where else we do this.
-    auto vtableEntryName =
-        StringAttr::get(spelling, StringType::get(emitter.getContext()));
-    auto vtableEntryResult = ParamOperatorAttr::get(
-        POC::GetVTableEntry, {basePValue, vtableEntryName},
-        aliasDeclOpParam.getType());
+    auto vtableEntryName = StringAttr::get(emitter.getContext(), spelling);
+    auto traitSymRef = memberDecl.getParentDecl()->getSymbolRef();
+    auto traitName = StringAttr::get(emitter.getContext(),
+                                     getFlattenedSymbolName(traitSymRef));
+    // If the base is a trait composition type, upcast the composition into the
+    // trait that defined the alias so that types match.
+    if (typeDecl != memberDecl.getParentDecl()) {
+      basePValue = emitter.emitMetaTypeToTraitConversion(
+          {baseVal, base},
+          cast<TraitDeclOp>(memberDecl.getParentDecl()->getIfOperation())
+              .bindReference());
+    }
+    auto vtableEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
+        basePValue, traitName, vtableEntryName, aliasDeclOpParam.getType());
 
     return emitter.emitResult(vtableEntryResult, this, dest);
   }

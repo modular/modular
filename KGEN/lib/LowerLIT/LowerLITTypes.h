@@ -7,6 +7,10 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 
+namespace mlir {
+class LockedSymbolTableCollection;
+} // namespace mlir
+
 namespace M::KGEN::LIT {
 
 struct StructDecl {
@@ -45,6 +49,7 @@ struct StructDecls {
   llvm::MapVector<StringAttr, StructDecl> structDecls;
 };
 
-LogicalResult lowerLITTypes(ModuleOp module, StructDecls &decls);
+LogicalResult lowerLITTypes(ModuleOp module, StructDecls &decls,
+                            mlir::LockedSymbolTableCollection &symtab);
 
 } // namespace M::KGEN::LIT

@@ -121,7 +121,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     directly_pass_pack(pack)
 
     # CHECK: call {{.*}}trait_pack
-    # CHECK-SAME: [!Int, {"__copyinit__"
+    # CHECK-SAME: [!Int, !Int]
     trait_pack(1, 2, 3)
 
 
@@ -1123,7 +1123,7 @@ struct Node(Copyable, Movable):
 struct RecursiveCopyable:
     alias ID = Int
     # CHECK: lit.struct.field recurse
-    # CHECK-SAME: "__copyinit__"
+    # CHECK-SAME: <:!Copyable !Node>
     var recurse: BoxCopyable[Node]
 
 
@@ -1179,7 +1179,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
-        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>(%[[CORO]])
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%[[CORO]])
         _ = coroutine()
 
 
@@ -1243,12 +1243,12 @@ fn coroutine_origins():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
     # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
-    # CHECK: Coroutine<:!AnyType [none, {{.*}}], :origin.set {{{.*}}, mut [[Y_LT]]}>
+    # CHECK: Coroutine<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
 
 
@@ -1623,7 +1623,7 @@ struct SomeType:
 # COM: An implicit origin is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.fn @"implicit_origin_as_param
-# CHECK-SAME: "__del__" : !lit.generator<[1]("self": !lit.ref<{{.*}}Match<:origin<0> *"arg`">, mut *[0,0]>
+# CHECK-SAME: !lit.ref<{{.*}}<:!AnyType {{.*}}Match<:origin<0> *"arg`">>
 fn implicit_origin_as_param(
     arg: SomeType,
 ) -> Bound[Match[__origin_of(arg)]]:
@@ -1635,8 +1635,11 @@ struct Bound[T: AnyType]:
 
 
 @fieldwise_init
+# CHECK: lit.struct.decl @Match
 struct Match[lt: __mlir_type.`!lit.origin<0>`]:
     pass
+    # CHECK: kgen.conformance {{.*}}::AnyType
+    # CHECK-NEXT: kgen.witness "__del__" : !lit.generator<[1]("self": !lit.ref<@decls::@Match<:origin<0> lt>, mut *[0,0]> owned_in_mem,
 
 
 ##===----------------------------------------------------------------------===##

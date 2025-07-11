@@ -212,11 +212,11 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.fn @"testSelfRef
 fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, {{.*}}origin<0> = *"a`"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType !SelfRefTest, {{.*}}origin<0> = *"a`"
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType #SelfRefTest1, {{.*}}origin<1> = *"b`1"
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :!AnyType !SelfRefTest, {{.*}}origin<1> = *"b`1"
   _ = b.method()
 
 
@@ -300,10 +300,10 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
-  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
+  # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
-  # CHECK-NEXT: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__del__{{.*}}(%_x)
+  # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 
@@ -384,7 +384,7 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest,
   var r = a.method()
   # The result reference should have inferred the origin of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, {{.*}}origin<0> = (mutcast mut *"anony{{.*}})},
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}!SelfRefTest, {{.*}}origin<0> = (mutcast mut *"anony{{.*}})},
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r

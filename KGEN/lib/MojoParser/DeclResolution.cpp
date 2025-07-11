@@ -2334,8 +2334,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
 /// returns null if there is no defined destructor.
-static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
-                                           SharedState &shared) {
+/// The second return element is the symbol this destructor is inherited from,
+/// or null if it is self-declared.
+static std::pair<SymbolConstantAttr, std::optional<SymbolRefAttr>>
+lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   auto dels = shared.lookupAndResolveDecl(
       "__del__", structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> entries = dels.getIfSuccess();
@@ -2355,7 +2357,8 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
     shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
   }
-  return func.getBoundSymbolRef(shared.getEvaluationContext());
+  return {func.getBoundSymbolRef(shared.getEvaluationContext()),
+          func.getInheritedFrom()};
 }
 
 /// Look up a special method impl for the specified `type` when there is exactly
@@ -2654,7 +2657,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Check to see if there is a destructor and install it into the StructDeclOp
   // if so.
   bool synthesizedDtor = false;
-  if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
+  if (auto dtorAttr = lookupDestructor(structDecl, shared).first) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
   } else if (implicitlyDestructible) {
@@ -3156,8 +3159,12 @@ void DeclResolver::addParentDeclsToTrait(
     }
   }
 
-  if (SymbolConstantAttr dtor = lookupDestructor(traitDecl, shared))
+  auto [dtor, inheritedFrom] = lookupDestructor(traitDecl, shared);
+  if (dtor) {
     traitOp.setDtorSig(dtor.getType());
+    traitOp.setDtorWitnessTrait(getFlattenedSymbolName(
+        inheritedFrom.value_or(traitDecl.getSymbolRef())));
+  }
 }
 
 ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,

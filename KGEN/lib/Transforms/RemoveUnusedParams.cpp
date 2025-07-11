@@ -46,6 +46,8 @@ public:
   void runOnOperation() override;
 
 private:
+  std::optional<SymTabEvaluationContext> evaluationContext;
+
   // Memory cache of data structures we can reuse without reallocating.
   llvm::BitVector unusedArgs, unusedParamsIndex;
   llvm::SmallPtrSet<StringAttr, 8> unusedParamsAttr;
@@ -231,7 +233,7 @@ private:
     auto symbol = SymbolConstantAttr::get(
         flatSym,
         newFunc.getFuncTypeGenerator().getSpecializedGenerator(
-            newParams, oldCall.getLoc()),
+            newParams, oldCall.getLoc(), &*evaluationContext),
         newParams);
 
     auto newCall =
@@ -378,7 +380,10 @@ void RemoveUnusedParams::runOnOperation() {
   MLIRContext *ctx = mod.getContext();
   OpBuilder builder{mod->getContext()};
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+  mlir::LockedSymbolTableCollection symTabCollection(
+      analysis.getSymbolTables());
   SymbolTable &symTab = analysis.getTopLevelSymbolTable();
+  evaluationContext.emplace(mod.getOperation(), symTabCollection);
   auto optimizedOutDIType = builder.getType<DebugInfo::DIUnspecifiedType>(
       builder.getStringAttr("optimized out"));
 
