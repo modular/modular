@@ -62,6 +62,8 @@ from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
+from builtin.device_passable import DevicePassable
+
 
 fn _compute_distribute_layout[
     data_layout: Layout,
@@ -284,7 +286,15 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable, _Expable):
+](
+    Copyable,
+    DevicePassable,
+    Movable,
+    ExplicitlyCopyable,
+    Stringable,
+    Writable,
+    _Expable,
+):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -317,6 +327,42 @@ struct LayoutTensor[
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """
+
+    # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+        return (
+            "LayoutTensor[mut = "
+            + String(mut)
+            + ", dtype = "
+            + String(dtype)
+            + ", layout = "
+            + String(layout)
+            + ", address_space = "
+            + String(address_space)
+            + "]"
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
 
     alias rank = layout.rank()
     """The number of dimensions in the tensor's layout."""
