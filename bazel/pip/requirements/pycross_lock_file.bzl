@@ -6,6 +6,7 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@module_versions//:config.bzl", "PYTHON_VERSIONS", "TORCH_DEFAULT_VERSION")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 PINS = {
@@ -6451,6 +6452,7 @@ def targets():
         deps = _torch_2_7_0_deps,
         wheel = ":_wheel_torch@2.7.0",
         tags = ["no-remote"],
+        exec_compatible_with = HOST_CONSTRAINTS,
     )
 
     _torch_2_7_0_cpu_deps = [
@@ -6563,6 +6565,7 @@ def targets():
         deps = _torch_2_7_0_cpu_deps,
         wheel = ":_wheel_torch@2.7.0+cpu",
         tags = ["no-remote"],
+        exec_compatible_with = HOST_CONSTRAINTS,
     )
 
     _torch_2_7_0_cu128_deps = [
@@ -6696,6 +6699,7 @@ def targets():
         deps = _torch_2_7_0_cu128_deps,
         wheel = ":_wheel_torch@2.7.0+cu128",
         tags = ["no-remote"],
+        exec_compatible_with = HOST_CONSTRAINTS,
     )
 
     _torch_2_7_0_rocm6_3_deps = [
@@ -6765,6 +6769,7 @@ def targets():
         deps = _torch_2_7_0_rocm6_3_deps,
         wheel = ":_wheel_torch@2.7.0+rocm6.3",
         tags = ["no-remote"],
+        exec_compatible_with = HOST_CONSTRAINTS,
     )
 
     _torchaudio_2_7_0_deps = [

@@ -176,7 +176,8 @@ class Package:
         tags_line = ""
         if self.library_name.startswith("torch@"):
             tags_line = """
-        tags = ["no-remote"],"""
+        tags = ["no-remote"],
+        exec_compatible_with = HOST_CONSTRAINTS,"""
 
         package += f"""\
     native.alias(
