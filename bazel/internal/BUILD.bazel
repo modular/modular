@@ -5,6 +5,7 @@ load(":mojo_linker_info.bzl", "mojo_linker_info")
 
 exports_files([
     "asan-suppressions.txt",
+    "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
 
