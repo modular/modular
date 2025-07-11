@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
+from sys import env_get_dtype, env_get_int, env_get_string
 
 from algorithm.functional import stencil, stencil_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList

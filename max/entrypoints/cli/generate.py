@@ -22,19 +22,19 @@ from collections.abc import Iterable
 from typing import Optional
 
 import requests
+from max.interfaces import TokenGenerator
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
-    TokenGenerator,
     TokenGeneratorRequest,
 )
 
 from .metrics import TextGenerationMetrics
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 MODEL_NAME = "model"
 

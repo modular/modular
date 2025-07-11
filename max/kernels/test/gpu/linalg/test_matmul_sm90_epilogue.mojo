@@ -13,47 +13,19 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from sys import alignof, sizeof
 
 import linalg.vendor_blas
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host import Dim as ClusterDim
-from gpu.host import FuncAttribute
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_dim, block_idx, thread_idx
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.mma import (
-    WGMMADescriptor,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
-from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils import (
@@ -61,21 +33,15 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from linalg.utils_gpu import MatmulConfig
-from memory import stack_allocation
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
 
 
 def test_warp_specialize_gemm_with_multicasting[
     wgmma_n: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
+    a_dtype: DType,
+    b_dtype: DType,
+    c_dtype: DType,
     cluster_shape: IndexList[3],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
@@ -105,21 +71,21 @@ def test_warp_specialize_gemm_with_multicasting[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    var a_host = HostNDBuffer[a_dtype, 2, static_a_shape](dynamic_a_shape)
+    var b_host = HostNDBuffer[b_dtype, 2, static_b_shape](dynamic_b_shape)
+    var c_host = HostNDBuffer[c_dtype, 2, static_c_shape](dynamic_c_shape)
+    var c_host_ref = HostNDBuffer[c_dtype, 2, static_c_shape](dynamic_c_shape)
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
+    var a_device = DeviceNDBuffer[a_dtype, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
+    var b_device = DeviceNDBuffer[b_dtype, 2, static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
+    var c_device = DeviceNDBuffer[c_dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
+    var c_device_ref = DeviceNDBuffer[c_dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
 
@@ -137,8 +103,8 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_type]())
-    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_type]())
+    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_dtype]())
+    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_dtype]())
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -181,17 +147,17 @@ def test_warp_specialize_gemm_with_multicasting[
     @always_inline
     @__copy_capture(c_tensor)
     fn epilogue_fn[
-        _type: DType,
+        _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_type, width]](),
-    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
+        alignment: Int = alignof[SIMD[_dtype, width]](),
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
+            idx, rebind[SIMD[c_dtype, width]](val)
         )
 
     alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
+        a_dtype, b_dtype, c_dtype, transpose_b, mma_shape=wgmma_shape
     ](
         block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
@@ -215,9 +181,6 @@ def test_warp_specialize_gemm_with_multicasting[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 
@@ -335,92 +298,35 @@ def main():
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[8192](), static[2560](), static[8192]())
 
+        # Odd N dim
         test_warp_specialize_gemm_with_multicasting[
             256,
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(2, 1, 1),
+            Index(1, 1, 1),
             num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[4096](), static[2560](), static[8192]())
+        ](ctx, dynamic(100), static[331](), static[1024]())
 
+        # Odd N dim and K not multiple of 16B
         test_warp_specialize_gemm_with_multicasting[
-            256,
+            128,
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(2, 1, 1),
+            Index(1, 1, 1),
             num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[8192](), static[8192](), static[2048]())
-
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(2, 1, 1),
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[4096](), static[8192](), static[2048]())
-
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(2, 1, 1),
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[8192](), static[14336](), static[8192]())
-
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(2, 1, 1),
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[4096](), static[14336](), static[8192]())
-
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(2, 1, 1),
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[8192](), static[8192](), static[7168]())
-
-        test_warp_specialize_gemm_with_multicasting[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(2, 1, 1),
-            num_consumer=2,
-            partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
-        ](ctx, static[4096](), static[8192](), static[7168]())
+        ](ctx, dynamic(91), static[111](), static[588]())
 
         @parameter
         @always_inline
         fn test_lambda_fn_square[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
-            _type, width
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
         ]:
             return val * val
 
@@ -439,17 +345,17 @@ def main():
         @parameter
         @always_inline
         fn test_lambda_add_coords[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
-            _type, width
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
         ]:
             # Cast indices between 0-1 to avoid accuracy issues
             var i = Float32(idx[0]) / 277.0
             var j = Float32(idx[1] - idx[1] % 8) / 2560.0
-            return val + i.cast[_type]() + 2 * j.cast[_type]()
+            return val + i.cast[_dtype]() + 2 * j.cast[_dtype]()
 
         test_warp_specialize_gemm_with_multicasting[
             256,
@@ -486,17 +392,6 @@ def main():
                 partitioned_multicast=False,
                 schedule = MatmulSchedule.TILE2D,
             ](ctx, static[1024](), static[wgmma_n * 2](), static[128]())
-
-            test_warp_specialize_gemm_with_multicasting[
-                wgmma_n,
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_consumer=2,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.TILE2D,
-            ](ctx, static[1024](), static[wgmma_n * 4](), static[128]())
 
             test_warp_specialize_gemm_with_multicasting[
                 wgmma_n,

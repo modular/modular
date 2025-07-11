@@ -23,17 +23,18 @@ from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+import gpu.block
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.tracing import trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import FPUtils, max_finite, min_finite
+from utils.index import IndexList
+from utils.numerics import max_finite, min_finite
 
 ########################################################
 # Static scaled fp8 quantization
@@ -44,7 +45,7 @@ from utils.numerics import FPUtils, max_finite, min_finite
 fn quantize_static_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
-    is_scale_inverted: Bool = True,
+    scale_is_inverted: Bool = True,
 ](
     out_buffer: NDBuffer[mut=True, out_dtype, 2, *_],
     in_buffer: NDBuffer[in_dtype, 2, *_],
@@ -53,10 +54,10 @@ fn quantize_static_scaled_fp8[
 ) raises:
     constrained[
         in_dtype in (DType.float32, DType.float16, DType.bfloat16),
-        "input type should be float16, bfloat16 or float32",
+        "input dtype should be float16, bfloat16 or float32",
     ]()
     constrained[
-        out_dtype is DType.float8_e4m3fn, "output type should be float8_e4m3fn"
+        out_dtype is DType.float8_e4m3fn, "output dtype should be float8_e4m3fn"
     ]()
 
     @always_inline
@@ -87,7 +88,7 @@ fn quantize_static_scaled_fp8[
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()
         out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
 
-    alias compile_target = _get_gpu_target()
+    alias compile_target = get_gpu_target()
     alias target_simd_width = simdwidthof[in_dtype, target=compile_target]()
 
     _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
@@ -115,18 +116,18 @@ fn quantize_dynamic_scaled_fp8[
 ) raises:
     constrained[
         scales_dtype in (DType.bfloat16, DType.float16, DType.float32),
-        "scales type should be bfloat16, float16 or float32",
+        "scales dtype should be bfloat16, float16 or float32",
     ]()
     constrained[
         out_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
-        "output type should be float8_e4m3fn or float8_e4m3fnuz",
+        "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
     ]()
 
     alias group_size = input.shape.get[
         1
     ]() if group_size_or_per_token == -1 else group_size_or_per_token
     alias n_groups = input.shape.get[1]() // group_size
-    alias simd_width = simdwidthof[in_dtype, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
@@ -149,46 +150,6 @@ fn quantize_dynamic_scaled_fp8[
         block_dim=warps_per_block * WARP_SIZE,
         attributes=pdl_launch_attributes(),
     )
-
-
-@always_inline
-fn block_reduce[
-    type: DType, //, warps_per_block: Int
-](val: Scalar[type]) -> Scalar[type]:
-    var max_smem = stack_allocation[
-        warps_per_block, type, address_space = AddressSpace.SHARED
-    ]()
-    var max_broadcast = stack_allocation[
-        1, type, address_space = AddressSpace.SHARED
-    ]()
-
-    var tid = thread_idx.x
-    var warp_id = warp_id()
-    var lane_idx = lane_id()
-
-    var warp_max = warp.max(val)
-
-    if tid < warps_per_block:
-        max_smem[tid] = 0
-    barrier()
-
-    if lane_idx == 0:
-        max_smem[warp_id] = warp_max
-    barrier()
-
-    if warp_id == 0:
-        var warp_max: Scalar[type]
-        if lane_idx < warps_per_block:
-            warp_max = max_smem[lane_idx]
-        else:
-            warp_max = 0
-        # the shuffle function only support shuffle a whole warp
-        var block_max = warp.lane_group_max[num_lanes=WARP_SIZE](warp_max)
-        if lane_idx == 0:
-            max_broadcast[0] = block_max
-    barrier()
-
-    return max_broadcast[0]
 
 
 fn quantize_fp8_kernel[
@@ -221,13 +182,9 @@ fn quantize_fp8_kernel[
             input_vec = input.load[width=simd_width](row, idx)
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
-        var group_max: Scalar[in_type]
-
-        @parameter
-        if warps_per_block > 1:
-            group_max = block_reduce[warps_per_block](thread_max)
-        else:
-            group_max = warp.lane_group_max_and_broadcast[WARP_SIZE](thread_max)
+        var group_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
 
         var scale_factor = (
             max(group_max.cast[scales_type](), scale_ub)
@@ -284,19 +241,19 @@ fn matmul_dynamic_scaled_fp8[
 ) raises:
     constrained[
         a_type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
-        "input A type should be float8_e4m3fn, float8_e4m3fnuz",
+        "input A dtype should be float8_e4m3fn, float8_e4m3fnuz",
     ]()
     constrained[
         b_type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
-        "input B type should be float8_e4m3fn, float8_e4m3fnuz",
+        "input B dtype should be float8_e4m3fn, float8_e4m3fnuz",
     ]()
     constrained[
         a_scales_type in (DType.bfloat16, DType.float16, DType.float32),
-        "input A scales type should be bfloat16, float16 or float32",
+        "input A scales dtype should be bfloat16, float16 or float32",
     ]()
     constrained[
         b_scales_type in (DType.bfloat16, DType.float16, DType.float32),
-        "input B scales type should be bfloat16, float16 or float32",
+        "input B scales dtype should be bfloat16, float16 or float32",
     ]()
 
     alias b_k_axis = 1 if transpose_b else 0
@@ -319,7 +276,7 @@ fn matmul_dynamic_scaled_fp8[
     ]()
 
     # create a dummy buffer to instruct the matmul kernel to output values
-    # in the correct type
+    # in the correct dtype
     var c_dummy = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
     ](
@@ -331,16 +288,16 @@ fn matmul_dynamic_scaled_fp8[
     @__copy_capture(c, a, b, a_scales, b_scales)
     @always_inline
     fn scaled_output_fn[
-        type_: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[type_, width]):
-        var a_scale = a_scales.load[width=1](idx[0], 0).cast[type_]()
-        var b_scale: SIMD[type_, width]
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
+        var a_scale = a_scales.load[width=1](idx[0], 0).cast[dtype]()
+        var b_scale: SIMD[dtype, width]
 
         @parameter
         if transpose_b:
-            b_scale = b_scales.load[width=width](idx[1], 0).cast[type_]()
+            b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
         else:
-            b_scale = b_scales.load[width=width](0, idx[1]).cast[type_]()
+            b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
 
         var scaled_val = val * a_scale * b_scale
 

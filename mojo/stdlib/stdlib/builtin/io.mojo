@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import InlineArray
 from collections.string.string_slice import get_static_string
 from sys import _libc as libc
 from sys import (
@@ -30,12 +29,12 @@ from sys import (
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 from utils.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
@@ -411,13 +410,16 @@ fn print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.data[buffer.pos] = 0
-            file.write_bytes(
-                Span[Byte, ImmutableAnyOrigin](
-                    ptr=buffer.data, length=buffer.pos + 1
-                )
-            )
+            buffer.nul_terminate()
 
+            @parameter
+            if is_nvidia_gpu():
+                _printf["%s"](buffer.data)
+            else:
+                var msg = printf_begin()
+                _ = printf_append_string_n(
+                    msg, Span(ptr=buffer.data, length=buffer.pos), is_last=True
+                )
         else:
             var buffer = _WriteBufferStack(file)
             alias length = values.__len__()

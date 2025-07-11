@@ -13,8 +13,6 @@
 # REQUIRES: has_not
 # RUN: not --crash mojo -D ASSERT=all %s 2>&1
 
-from testing import assert_equal
-
 
 # CHECK: test_range_uint_bad_step_size
 def test_range_uint_bad_step_size():

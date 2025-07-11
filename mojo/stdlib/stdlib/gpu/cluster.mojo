@@ -24,7 +24,6 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 from sys.info import _is_sm_9x_or_newer
 from sys.info import _is_sm_100x_or_newer
 from sys._assembly import inlined_assembly
-from memory import UnsafePointer
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from sys import sizeof, _RegisterPackType
 
@@ -245,17 +244,17 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
     var ret_val = inlined_assembly[
         """
     {
-    .reg .b128 %result;
-    mov.b128 %result, {$1, $2};
-    .reg .pred %ret_val;
-    clusterlaunchcontrol.query_cancel.is_canceled.pred.b128 %ret_val, %result;
-    selp.b32 $0, 1, 0, %ret_val;
+    .reg .pred p1;
+    .reg .b128 clc_result;
+    ld.shared.b128 clc_result, [$1];
+    clusterlaunchcontrol.query_cancel.is_canceled.pred.b128 p1, clc_result;
+    selp.b32 $0, 1, 0, p1;
     }
     """,
         UInt32,
         has_side_effect=True,
-        constraints="=r,l,l",
-    ](result[0], result[1])
+        constraints="=r,r",
+    ](Int32(Int(result)))
     return ret_val
 
 
@@ -383,4 +382,4 @@ fn clusterlaunchcontrol_try_cancel[
         NoneType,
         has_side_effect=True,
         constraints="r,r",
-    ](result, mbar)
+    ](Int32(Int(result)), Int32(Int(mbar)))

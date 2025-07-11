@@ -11,17 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from collections.string import StaticString
 from os import abort
 
 from builtin._format_float import _write_float
 from builtin.simd import Float8_e4m3fn, Float8_e5m2
 from gpu.host import DeviceContext
-from memory import Span, memcmp, memcpy
-from testing import assert_true
-
-from utils.write import _WriteBufferStack
+from memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
@@ -56,7 +51,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
             args[i].write_to(self)
 
 
-fn check_float[type: DType, //, expected: StaticString](f8: Scalar[type]):
+fn check_float[dtype: DType, //, expected: StaticString](f8: Scalar[dtype]):
     var f8_str = Buffer[len(expected)]()
     _write_float(f8_str, f8)
     var res = memcmp(

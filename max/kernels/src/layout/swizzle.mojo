@@ -473,7 +473,7 @@ struct Swizzle(LayoutTrait, Movable, Stringable, Writable):
 
 @always_inline
 fn make_ldmatrix_swizzle[
-    type: DType, row_size: Int, log2_vector_width: Int = 0
+    dtype: DType, row_size: Int, log2_vector_width: Int = 0
 ]() -> Swizzle:
     """Make swizzle to avoid bank conflict for ldmatrix ops.
 
@@ -482,7 +482,7 @@ fn make_ldmatrix_swizzle[
     Calculates swizzle parameters based on data type and row size.
 
     Parameters:
-        type: The data type of the elements.
+        dtype: The data type of the elements.
         row_size: Size of each row in elements.
         log2_vector_width: Log2 of the vector width (default: 0).
 
@@ -491,7 +491,7 @@ fn make_ldmatrix_swizzle[
     """
     # For Nvidia GPU, 32 banks of 4B each.
     alias bytes_32_banks = 128
-    alias type_size = sizeof[type]()
+    alias type_size = sizeof[dtype]()
     alias bytes_row = row_size * type_size
 
     constrained[
@@ -511,7 +511,7 @@ fn make_ldmatrix_swizzle[
 
     # Apply one swizzle bit pattern (^01) to same row if row > 32 banks
     # or multiple rows fit in 32 banks.
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
     alias shifts = log2_floor(max(row_size // simd_size, 8))
 
     return Swizzle(bits, log2_vector_width, shifts)
@@ -542,20 +542,20 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
 
 
 @always_inline
-fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
+fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 
     Returns a swizzle pattern based on standard modes (32B, 64B,
     128B, none), adjusted for data type.
 
     Parameters:
-        type: The data type of the elements.
+        dtype: The data type of the elements.
         mode: The swizzle mode to use (TensorMapSwizzle enum).
 
     Returns:
         A `Swizzle` object configured by the specified mode.
     """
-    alias type_size = sizeof[type]()
+    alias type_size = sizeof[dtype]()
 
     @parameter
     if mode in (

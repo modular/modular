@@ -22,12 +22,17 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
+from pathlib import Path
+from random import randint
 from time import perf_counter_ns
 from typing import Any, Literal, Optional, Union, cast
+from urllib.parse import unquote, urlparse
 
+import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
+from max.interfaces import SamplingParams
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
@@ -37,13 +42,14 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
+from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.router.json_utils import parse_json_from_text
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
@@ -97,7 +103,7 @@ _NUM_CONCURRENT_PARSING_TASKS = int(
 _request_parsing_semaphore = asyncio.Semaphore(_NUM_CONCURRENT_PARSING_TASKS)
 
 
-def record_request_start():
+def record_request_start() -> None:
     METRICS.reqs_running(1)
 
 
@@ -115,10 +121,10 @@ class OpenAIResponseGenerator(ABC):
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+    ) -> None:
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAIResponseGenerator"
+        )
         self.pipeline = pipeline
 
     @abstractmethod
@@ -321,21 +327,8 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
 
     def _parse_resp_to_json(self, text: str) -> Optional[list[dict]]:
         """Parse the response message to valid tool call JSON objects."""
-        segments = [
-            segment.strip() for segment in text.splitlines() if segment.strip()
-        ]
-        split_segments = []
-        for segment in segments:
-            split_segments.extend(segment.split(";"))
 
-        # Filter out empty segments and parse as JSON
-        json_objects = []
-        for segment in split_segments:
-            if segment.strip():  # Ignore empty segments
-                try:
-                    json_objects.append(json.loads(segment))
-                except json.JSONDecodeError as e:
-                    return None
+        json_objects = parse_json_from_text(text)
 
         if not json_objects:
             return None
@@ -383,7 +376,7 @@ class OpenAIEmbeddingsResponseGenerator:
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
+    ) -> None:
         self.pipeline = pipeline
 
     async def encode(
@@ -431,8 +424,10 @@ class OpenAISpeechResponseGenerator:
     def __init__(
         self,
         pipeline: AudioGeneratorPipeline,
-    ):
-        self.logger = logging.getLogger(self.__class__.__name__)
+    ) -> None:
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAISpeechResponseGenerator"
+        )
         self.pipeline = pipeline
 
     async def synthesize_speech(
@@ -489,7 +484,9 @@ def openai_parse_chat_completion_request(
     return messages, image_refs
 
 
-async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
+async def resolve_image_from_url(
+    image_ref: AnyUrl, settings: Settings
+) -> bytes:
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
         async with AsyncClient() as client:
@@ -506,6 +503,67 @@ async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
             "ResolvedImageB64: %s -> %d bytes",
             str(image_ref)[:16],
             len(images_bytes),
+        )
+        return images_bytes
+    elif image_ref.scheme == "file":
+        if settings is None:
+            raise ValueError("Settings required for file URI resolution")
+
+        # Parse the file URI.
+        parsed = urlparse(str(image_ref))
+
+        # Check host - only allow empty or localhost.
+        if parsed.netloc and parsed.netloc not in ("", "localhost"):
+            raise ValueError(
+                f"File URI with remote host '{parsed.netloc}' is not supported"
+            )
+
+        # Extract and decode the path.
+        file_path = Path(unquote(parsed.path))
+
+        # Validate against allowed roots.
+        allowed_roots = [Path(root) for root in settings.allowed_image_roots]
+        if not allowed_roots:
+            raise ValueError(
+                "File URI access denied: no allowed roots configured"
+            )
+
+        # Resolve the path, following symlinks.
+        try:
+            resolved_path = file_path.resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"File not found: {file_path}") from e
+
+        # Check if it's a directory.
+        if resolved_path.is_dir():
+            raise ValueError(f"Path is a directory: {resolved_path}")
+
+        # Check if path is within allowed roots.
+        path_allowed = False
+        for root in allowed_roots:
+            try:
+                resolved_path.relative_to(root)
+                path_allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not path_allowed:
+            raise ValueError(
+                f"Path forbidden: {resolved_path} is outside allowed roots"
+            )
+
+        # Read the file with size limit.
+        max_bytes = settings.max_local_image_bytes
+
+        async with aiofiles.open(resolved_path, "rb") as f:
+            images_bytes = await f.read(max_bytes + 1)
+            if len(images_bytes) > max_bytes:
+                raise ValueError(
+                    f"File exceeds size limit of {max_bytes} bytes"
+                )
+        logger.debug(
+            "ResolvedFileUri: %s -> %d bytes", resolved_path, len(images_bytes)
         )
         return images_bytes
     raise ValueError(f"Invalid image ref '{image_ref}'")
@@ -541,8 +599,9 @@ async def openai_create_chat_completion(
 
         request_images = None
         if request_images_urls:
+            settings: Settings = request.app.state.settings
             resolve_image_tasks = [
-                resolve_image_from_url(image_url)
+                resolve_image_from_url(image_url, settings)
                 for image_url in request_images_urls
             ]
             request_images = await asyncio.gather(*resolve_image_tasks)
@@ -562,9 +621,18 @@ async def openai_create_chat_completion(
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
         sampling_params = SamplingParams(
+            top_k=completion_request.top_k,
+            top_p=completion_request.top_p,
+            temperature=completion_request.temperature,
+            frequency_penalty=completion_request.frequency_penalty,
+            presence_penalty=completion_request.presence_penalty,
+            repetition_penalty=completion_request.repetition_penalty,
             max_new_tokens=completion_request.max_tokens,
-            stop=completion_request.stop,
+            min_new_tokens=completion_request.min_tokens,
             ignore_eos=completion_request.ignore_eos,
+            seed=completion_request.seed or randint(0, 2**63 - 1),
+            stop_token_ids=completion_request.stop_token_ids,
+            stop=completion_request.stop,
         )
         token_request = TokenGeneratorRequest(
             id=request_id,
@@ -967,8 +1035,18 @@ async def openai_create_completion(
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
             sampling_params = SamplingParams(
+                top_k=completion_request.top_k,
+                top_p=completion_request.top_p,
+                temperature=completion_request.temperature,
+                frequency_penalty=completion_request.frequency_penalty,
+                presence_penalty=completion_request.presence_penalty,
+                repetition_penalty=completion_request.repetition_penalty,
                 max_new_tokens=completion_request.max_tokens,
+                min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
+                seed=completion_request.seed or randint(0, 2**63 - 1),
+                stop_token_ids=completion_request.stop_token_ids,
+                stop=completion_request.stop,
             )
             tgr = TokenGeneratorRequest(
                 # Generate a unique id for each prompt in the request

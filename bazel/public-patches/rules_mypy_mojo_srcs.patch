@@ -1,0 +1,29 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+index 7fea3be..1e7ae2b 100644
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -81,6 +81,15 @@ def _mypy_impl(target, ctx):
+     if not hasattr(ctx.rule.files, "srcs"):
+         return []
+
++    # Exclude non-python sources from custom rules that return PyInfo
++    lintable_srcs = [
++        s
++        for s in ctx.rule.files.srcs
++        if "/_virtual_imports/" not in s.short_path and s.extension in ("py", "pyi")
++    ]
++    if not lintable_srcs:
++        return []
++
+     # we need to help mypy map the location of external deps by setting
+     # MYPYPATH to include the site-packages directories.
+     external_deps = {}
+@@ -179,7 +188,7 @@ def _mypy_impl(target, ctx):
+         outputs = [output_file]
+
+     args.add_all([c.path for c in upstream_caches], before_each = "--upstream-cache")
+-    args.add_all([s for s in ctx.rule.files.srcs if "/_virtual_imports/" not in s.short_path])
++    args.add_all(lintable_srcs)
+
+     if hasattr(ctx.attr, "_mypy_ini"):
+         args.add("--mypy-ini", ctx.file._mypy_ini.path)

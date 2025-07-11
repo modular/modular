@@ -20,7 +20,6 @@ from layout.layout import (
     coalesce,
     complement,
     composition,
-    cosize,
     expand_modes_alike,
     format_layout,
     is_row_major,
@@ -34,7 +33,7 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
 from utils import IndexList
 
 

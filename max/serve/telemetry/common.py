@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import logging
+import logging.handlers
 import os
 import platform
 import uuid
@@ -59,7 +61,7 @@ def _getCloudProvider() -> str:
 
 def _getGPUInfo() -> str:
     try:
-        import torch  # type: ignore
+        import torch
 
         device_properties = torch.cuda.get_device_properties(0)
         return f"{torch.cuda.device_count()}:{device_properties.total_memory}:{device_properties.name}"
@@ -117,33 +119,98 @@ def get_log_level(settings: Settings) -> Union[int, str, None]:
     return otlp_level
 
 
+# Create a logger that buffers logs in memory and prints them to the console in batches.
+# The returned logger is a no op if logging has not yet been configured.
+def get_batch_logger(
+    parent_logger: logging.Logger, capacity: int = 10
+) -> logging.Logger:
+    batch_logger = logging.getLogger(parent_logger.name)
+    console_handlers = [
+        h
+        for h in logging.getLogger().handlers
+        if type(h) is logging.StreamHandler
+    ]
+    memory_handler = logging.handlers.MemoryHandler(
+        capacity=capacity,
+        target=console_handlers[0] if len(console_handlers) > 0 else None,
+    )
+    batch_logger.addHandler(memory_handler)
+    batch_logger.propagate = False
+    return batch_logger
+
+
+# Force a flush of the batch given logger.
+def flush_batch_logger(logger: logging.Logger) -> None:
+    for handler in logger.handlers:
+        if type(handler) is logging.handlers.MemoryHandler:
+            handler.flush()
+
+
+COLOR_MAP = {
+    "green": "\033[92m",
+    "blue": "\033[94m",
+    "red": "\033[91m",
+}
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configure_logging(settings: Settings) -> None:
+# Note that the color is not propagated to subprocesses. eg: ModelWorker
+def configure_logging(settings: Settings, color: str | None = None) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry
 
     logging_handlers: list[logging.Handler] = []
 
+    # Set up log filtering
+    components_to_log = [
+        "root",
+        "max.entrypoints",
+        "max.pipelines",
+        "max.serve",
+    ]
+    try:
+        if settings.logs_enable_components is not None:
+            components = settings.logs_enable_components.split(",")
+            components_to_log.extend(components)
+    except Exception:
+        print(
+            "ERROR: Failed to parse logging components setting!  Using default."
+        )
+
+    def LogFilter(record):
+        return record.name in components_to_log
+
     # Create a console handler
     if settings.logs_console_level is not None:
+        if color is not None:
+            if color not in COLOR_MAP:
+                raise ValueError(f"Invalid color: {color}")
+            color_code = COLOR_MAP[color]
+            color_terminator = "\033[0m"
+        else:
+            color_code = ""
+            color_terminator = ""
+
         console_handler = logging.StreamHandler()
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                f"{color_code}%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s{color_terminator}",
                 timestamp=True,
             )
         else:
             console_formatter = logging.Formatter(
                 (
-                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    " %(name)s: %(message)s"
+                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
+                    f" %(name)s:{color_terminator} %(message)s"
                 ),
                 datefmt="%H:%M:%S",
             )
         console_handler.setFormatter(console_formatter)
         console_handler.setLevel(settings.logs_console_level)
+        console_handler.addFilter(LogFilter)
+
         logging_handlers.append(console_handler)
 
     if (
@@ -155,7 +222,7 @@ def configure_logging(settings: Settings) -> None:
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
                 timestamp=True,
             )
         else:
@@ -168,6 +235,7 @@ def configure_logging(settings: Settings) -> None:
             )
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(settings.logs_file_level)
+        file_handler.addFilter(LogFilter)
         logging_handlers.append(file_handler)
 
     if egress_enabled and otlp_level is not None:
@@ -182,6 +250,7 @@ def configure_logging(settings: Settings) -> None:
             level=logging.getLevelName(otlp_level),
             logger_provider=logger_provider,
         )
+        otlp_handler.addFilter(LogFilter)
         logging_handlers.append(otlp_handler)
 
     # Configure root logger level
@@ -208,7 +277,7 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
-def configure_metrics(settings: Settings):
+def configure_metrics(settings: Settings) -> None:
     egress_enabled = not settings.disable_telemetry
 
     meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
@@ -229,7 +298,7 @@ def configure_metrics(settings: Settings):
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
-def send_telemetry_log(model_name: str):
+def send_telemetry_log(model_name: str) -> None:
     request_body = f"""{{
   "resourceLogs": [
     {{

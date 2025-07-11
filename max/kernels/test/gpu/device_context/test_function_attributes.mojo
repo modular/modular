@@ -14,8 +14,7 @@
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.func_attribute import Attribute
-from memory import UnsafePointer, stack_allocation
-from testing import *
+from testing import assert_equal
 
 
 # CHECK-LABEL: test_function_attributes
@@ -25,7 +24,7 @@ def test_function_attributes():
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function[kernel]()
-        assert_equal(func.get_attribute(Attribute.CONST_SIZE_BYTES), 0)
+        assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 
 def main():

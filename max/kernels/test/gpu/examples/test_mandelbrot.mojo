@@ -15,11 +15,10 @@ from math import ceildiv, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils.index import Index

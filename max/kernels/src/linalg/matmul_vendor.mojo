@@ -17,11 +17,11 @@ from sys import alignof, simdwidthof
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 
 from utils import Index, IndexList
 
-from .utils import apply_epilogue, elementwise_epilogue_type
+from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .vendor_blas import matmul as vendor_matmul
 
@@ -52,11 +52,13 @@ fn matmul[
     if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated"
-        vendor_matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
+        vendor_matmul[use_tf32=True](
+            ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
+        )
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
-        alias simd_size = simdwidthof[c.type, target = _get_gpu_target()]()
+        alias simd_size = simdwidthof[c.type, target = get_gpu_target()]()
 
         @parameter
         @__copy_capture(c)
@@ -76,7 +78,7 @@ fn matmul[
 
             # For D = alpha * A * B + beta * C, vendor matmul currently sets
             # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
-            vendor_matmul(
+            vendor_matmul[use_tf32=True](
                 ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
             )
             elementwise[epilogue_wrapper, simd_size, target="gpu"](

@@ -41,6 +41,9 @@ from .registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
 
+# Default target number of tokens for chunked prefill and memory estimation.
+DEFAULT_TARGET_NUM_NEW_TOKENS = 8192
+
 
 @dataclass(frozen=False)
 class PipelineConfig(MAXConfig):
@@ -120,9 +123,9 @@ class PipelineConfig(MAXConfig):
     pad_to_multiple_of: int = 2
     """Pad input tensors to be a multiple of value provided."""
 
-    target_num_new_tokens: Optional[int] = None
+    target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
     """The target number of un-encoded tokens to include in each batch.
-    If not set, this will be set to a best-guess optimal value based on model, hardware, and available memory."""
+    This value is used for chunked prefill and memory estimation."""
 
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""
@@ -134,11 +137,8 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
-    pdl_level: str = os.environ.get("PDL_LEVEL", "1")
+    pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
-
-    ignore_eos: bool = False
-    """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
     custom_architectures: list[str] = field(default_factory=list)
     """A list of custom architecture implementations to register.
@@ -168,6 +168,158 @@ class PipelineConfig(MAXConfig):
     _lora_manager: Optional[LoRAManager] = None
     """The LoRA Manager"""
 
+    @staticmethod
+    def _extract_kwargs_for_config(
+        kwargs: dict[str, Any],
+        config_class: type[MAXConfig],
+        key_prefix: str = "",
+        strip_prefix: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract kwargs that match a config class's fields.
+
+        Args:
+            kwargs: Source kwargs dictionary (modified in place)
+            config_class: The MAXConfig dataclass to match fields against
+            key_prefix: Optional prefix to filter keys (e.g., "draft_")
+            strip_prefix: Whether to strip the prefix from extracted keys
+
+        Returns:
+            Dictionary of extracted kwargs
+        """
+        extracted = {}
+        keys_to_remove = []
+
+        for key, value in kwargs.items():
+            # Check if key matches the prefix filter
+            if key_prefix and not key.startswith(key_prefix):
+                continue
+
+            # Determine the field name to check
+            field_name = key.replace(key_prefix, "") if strip_prefix else key
+
+            # Check if this field exists in the config class
+            if field_name in config_class.__dataclass_fields__:
+                # Use original key or stripped key as specified
+                extracted_key = field_name if strip_prefix else key
+                extracted[extracted_key] = value
+                keys_to_remove.append(key)
+
+        # Remove extracted keys from original kwargs
+        for key in keys_to_remove:
+            del kwargs[key]
+
+        return extracted
+
+    def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
+        """Extract LoRA kwargs and create LoRAConfig if lora_paths provided."""
+        lora_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, LoRAConfig
+        )
+
+        if lora_kwargs.get("lora_paths", []):
+            self._lora_config = LoRAConfig(**lora_kwargs)
+        # TODO: We should add an elif to check / error out if other LoRA params
+        # are provided, but lora_paths is not. We can't do this today as our
+        # click PipelineConfig autogenerates defaults for all fields, including
+        # required ones.
+
+    def _create_draft_model_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract draft model kwargs and create MAXModelConfig if model_path provided."""
+        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, MAXModelConfig, key_prefix="draft_", strip_prefix=True
+        )
+
+        if draft_kwargs.get("model_path", "") != "":
+            self._draft_model_config = MAXModelConfig(**draft_kwargs)
+        # TODO: We should add an elif to check / error out if other draft model
+        # params are provided, but model_path is not. We can't do this today
+        # as our click PipelineConfig autogenerates defaults for all fields,
+        # including required ones.
+
+    def _process_remaining_config_classes(
+        self, unmatched_kwargs: dict[str, Any]
+    ) -> None:
+        """
+        Process remaining kwargs for other config classes.
+
+        Args:
+            unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
+        """
+        # TODO(zheng): Make this more efficient by using MaxConfig instance
+        # instead of hardcoding the config names.
+        config_mappings = [
+            "_sampling_config",
+            "_profiling_config",
+            # TODO(zheng): Remove this once backward compatibility is no
+            # longer needed for MAXModelConfig.
+            "_model_config",
+        ]
+
+        for config_name in config_mappings:
+            config_class = get_type_hints(self.__class__)[config_name]
+            matched_kwargs = {}
+            kv_cache_kwargs = {}
+
+            for key, value in unmatched_kwargs.items():
+                if key in config_class.__dataclass_fields__:
+                    matched_kwargs[key] = value
+                # Check if this is a KVCache config param
+                elif (
+                    config_name == "_model_config"
+                    and key in KVCacheConfig.__dataclass_fields__
+                ):
+                    kv_cache_kwargs[key] = value
+
+            if matched_kwargs:
+                self._create_and_set_config(
+                    config_name, config_class, matched_kwargs, kv_cache_kwargs
+                )
+
+                # Remove matched kwargs
+                for key in matched_kwargs:
+                    del unmatched_kwargs[key]
+                for key in kv_cache_kwargs:
+                    del unmatched_kwargs[key]
+
+    def _create_and_set_config(
+        self,
+        config_name: str,
+        config_class: type,
+        matched_kwargs: dict[str, Any],
+        kv_cache_kwargs: dict[str, Any],
+    ) -> None:
+        """
+        Create and set a config object with special handling for different config types.
+
+        Args:
+            config_name: Name of the config attribute (e.g., "_model_config")
+            config_class: The config class to instantiate
+            matched_kwargs: kwargs that matched the config class fields
+            kv_cache_kwargs: kwargs for KVCache config (model config only)
+        """
+        if config_name == "_model_config" and kv_cache_kwargs:
+            # Create new model config with updated KVCache config
+            model_config = config_class(**matched_kwargs)
+            model_config._kv_cache_config = KVCacheConfig(**kv_cache_kwargs)
+            setattr(self, config_name, model_config)
+
+            if self._draft_model_config:
+                self._draft_model_config._kv_cache_config = KVCacheConfig(
+                    **kv_cache_kwargs
+                )
+
+        elif config_name == "_sampling_config" and (
+            self.enable_echo or self._draft_model_config
+        ):
+            sampling_config = config_class(**matched_kwargs)
+            sampling_config.enable_variable_logits = True
+            setattr(self, config_name, sampling_config)
+        else:
+            setattr(self, config_name, config_class(**matched_kwargs))
+
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all fields with their defaults first
         for curr_field in fields(self.__class__):
@@ -176,30 +328,9 @@ class PipelineConfig(MAXConfig):
             elif curr_field.default_factory is not MISSING:
                 setattr(self, curr_field.name, curr_field.default_factory())
 
-        lora_kwargs = {}
-        for k, v in list(kwargs.items()):
-            if k in LoRAConfig.__dataclass_fields__:
-                lora_kwargs[k] = v
-                del kwargs[k]
-
-        if lora_kwargs.get("lora_paths", []):
-            self._lora_config = LoRAConfig(**lora_kwargs)
-        else:
-            self._lora_config = None
-
-        # Check against draft model first
-        draft_kwargs = {}
-        for k, v in list(kwargs.items()):
-            if k.startswith("draft"):
-                field_name = k.replace("draft_", "")
-                if field_name in MAXModelConfig.__dataclass_fields__:
-                    draft_kwargs[field_name] = v
-                    del kwargs[k]
-
-        if draft_kwargs.get("model_path", "") != "":
-            self._draft_model_config = MAXModelConfig(**draft_kwargs)
-        else:
-            self._draft_model_config = None
+        # Process specialized config creation
+        self._create_lora_config_if_needed(kwargs)
+        self._create_draft_model_config_if_needed(kwargs)
 
         # Check if any kwargs are meant for other MAXConfig classes
         unmatched_kwargs: dict[str, Any] = {}
@@ -211,61 +342,9 @@ class PipelineConfig(MAXConfig):
             else:
                 unmatched_kwargs[key] = value
 
-        # Try to match unmatched kwargs with other config classes
+        # Process remaining config classes
         if unmatched_kwargs:
-            # TODO(zheng): Make this more efficient by using MaxConfig instance
-            # instead of hardcoding the config names.
-            for config_name in [
-                "_sampling_config",
-                "_profiling_config",
-                # TODO(zheng): Remove this once backward compatibility is no
-                # longer needed for MAXModelConfig.
-                "_model_config",
-            ]:
-                config_class = get_type_hints(self.__class__)[config_name]
-                matched_kwargs = {}
-                kv_cache_kwargs = {}
-
-                for key, value in unmatched_kwargs.items():
-                    if key in config_class.__dataclass_fields__:
-                        matched_kwargs[key] = value
-                    # Check if this is a KVCache config param
-                    elif (
-                        config_name == "_model_config"
-                        and key in KVCacheConfig.__dataclass_fields__
-                    ):
-                        kv_cache_kwargs[key] = value
-
-                if matched_kwargs:
-                    if config_name == "_model_config" and kv_cache_kwargs:
-                        # Create new model config with updated KVCache config
-                        model_config = config_class(**matched_kwargs)
-                        model_config._kv_cache_config = KVCacheConfig(
-                            **kv_cache_kwargs
-                        )
-                        setattr(self, config_name, model_config)
-
-                        if self._draft_model_config:
-                            self._draft_model_config._kv_cache_config = (
-                                KVCacheConfig(**kv_cache_kwargs)
-                            )
-
-                    elif config_name == "_sampling_config" and (
-                        self.enable_echo or self._draft_model_config
-                    ):
-                        sampling_config = config_class(**matched_kwargs)
-                        sampling_config.enable_variable_logits = True
-                        setattr(self, config_name, sampling_config)
-                    else:
-                        setattr(
-                            self, config_name, config_class(**matched_kwargs)
-                        )
-
-                    # Remove matched kwargs
-                    for key in matched_kwargs:
-                        del unmatched_kwargs[key]
-                    for key in kv_cache_kwargs:
-                        del unmatched_kwargs[key]
+            self._process_remaining_config_classes(unmatched_kwargs)
 
         # NOTE: Do not use this directly after instantiating PipelineConfig. We
         # only keep this here to support backward compatibility of the draft_model
@@ -278,14 +357,10 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
-    def resolve(self) -> None:
+    def _import_custom_architectures(self) -> None:
         """
-        Validates and resolves the config.
-
-        This method is called after the config is initialized, to ensure that all
-        config fields have been initialized to a valid state.
+        Import custom model modules to add them to the registry.
         """
-        # Before anything else, import custom model modules to add them to the registry.
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
@@ -314,16 +389,59 @@ class PipelineConfig(MAXConfig):
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
 
+    def resolve(self) -> None:
+        """
+        Validates and resolves the config.
+
+        This method is called after the config is initialized, to ensure that all
+        config fields have been initialized to a valid state.
+        """
+        # Before anything else, import custom model modules to add them to the registry.
+        self._import_custom_architectures()
+
         self.model_config.resolve()
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
 
-        # Set sensible defaults. These are platform-specific.
+        self._validate_and_resolve_max_num_steps()
+
+        if (
+            self.sampling_config.enable_structured_output
+            and self.model_config.default_device_spec.device_type == "cpu"
+        ):
+            raise ValueError(
+                "enable_structured_output is not currently supported on CPU."
+            )
+
+        if self.sampling_config.do_penalties and self.draft_model_config:
+            raise ValueError(
+                "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
+            )
+
+        # By this point, we should have a valid model_path.
+
+        # Run Baseline Validation
+        self._validate_and_resolve_remaining_pipeline_config(
+            model_config=self.model_config
+        )
+
+        # Run Additional Checks for Speculative Decoding
+        if self.draft_model_config:
+            self._validate_and_resolve_remaining_pipeline_config(
+                model_config=self.draft_model_config
+            )
+
+            self._validate_pipeline_config_for_speculative_decoding()
+
+    def _validate_and_resolve_max_num_steps(self) -> None:
+        """
+        Validate and resolve the max_num_steps field. These are platform-specific.
+        """
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self.model_config.device_specs[0] == DeviceSpec.cpu()
+                or self.model_config.default_device_spec == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -336,28 +454,6 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "max_num_steps > 1 not supported when enable_structured_output = True"
             )
-
-        if self.sampling_config.enable_structured_output:
-            if self.model_config.device_specs[0] == DeviceSpec.cpu():
-                raise ValueError(
-                    "enable_structured_output is not currently supported on CPU."
-                )
-
-        if self.sampling_config.do_penalties:
-            if self.draft_model_config:
-                raise ValueError(
-                    "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
-                )
-        # Run Baseline Validation
-        self._validate_and_resolve_remaining_pipeline_config(self.model_config)
-
-        # Run Additional Checks for Speculative Decoding
-        if self.draft_model_config:
-            self._validate_and_resolve_remaining_pipeline_config(
-                self.draft_model_config
-            )
-
-            self._validate_pipeline_config_for_speculative_decoding()
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """
@@ -446,7 +542,6 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
             )
-
         elif not arch:
             msg = (
                 "MAX-optimized architecture not available for"
@@ -471,10 +566,9 @@ class PipelineConfig(MAXConfig):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        # The remainder of this function, assumes we have both a valid model_path,
-        # and a SupportedArchitecture. We should then validate the details of the existing architecture
-        # and fallback to HuggingFace if needed.
-
+        # We have now made sure that we have a valid SupportedArchitecture.
+        # We should then validate the details of the existing architecture and
+        # fallback to HuggingFace if needed.
         model_config.validate_and_resolve_quantization_encoding_weight_path(
             default_encoding=arch.default_encoding
         )
@@ -495,7 +589,7 @@ class PipelineConfig(MAXConfig):
                 self.engine = PipelineEngine.HUGGINGFACE
                 return
 
-        model_config.validate_and_resolve_with_set_quantization_encoding(
+        model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
@@ -608,9 +702,16 @@ class PrependPromptSpeechTokens(str, Enum):
     ONCE = "once"
     """Prepend the prompt speech tokens to the first block of the audio decoder."""
 
-    ALWAYS = "always"
-    """Prepend the prompt speech tokens to all blocks of speech tokens sent to
-    the audio decoder."""
+
+class PrometheusMetricsMode(str, Enum):
+    INSTRUMENT_ONLY = "instrument_only"
+    """Instrument metrics through the Prometheus client library, relying on the application to handle the metrics server."""
+
+    LAUNCH_SERVER = "launch_server"
+    """Launch a Prometheus server to handle metrics requests."""
+
+    LAUNCH_MULTIPROC_SERVER = "launch_multiproc_server"
+    """Launch a Prometheus server in multiprocess mode to report metrics."""
 
 
 @dataclass
@@ -660,6 +761,11 @@ class AudioGenerationConfig(PipelineConfig):
     the model, such as leaving the audio decoder weights empty or using a
     dummy speech language model."""
 
+    prometheus_metrics_mode: PrometheusMetricsMode = (
+        PrometheusMetricsMode.INSTRUMENT_ONLY
+    )
+    """The mode to use for Prometheus metrics."""
+
     def __init__(
         self,
         audio_decoder: str,
@@ -670,6 +776,7 @@ class AudioGenerationConfig(PipelineConfig):
         prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
         prepend_prompt_speech_tokens_causal: bool = False,
         run_model_test_mode: bool = False,
+        prometheus_metrics_mode: PrometheusMetricsMode = PrometheusMetricsMode.INSTRUMENT_ONLY,
         **kwargs: Any,
     ) -> None:
         # Must call the superclass's __init__ first, otherwise PipelineConfig's
@@ -692,14 +799,7 @@ class AudioGenerationConfig(PipelineConfig):
             prepend_prompt_speech_tokens_causal
         )
         self._run_model_test_mode = run_model_test_mode
-
-        minimum_max_num_steps = 1024
-        if self.max_num_steps < minimum_max_num_steps:
-            logger.warning(
-                f"max-num-steps of {self.max_num_steps} is less than {minimum_max_num_steps},"
-                f" which is not recommended for audio generation. Overriding to {minimum_max_num_steps}."
-            )
-            self.max_num_steps = minimum_max_num_steps
+        self.prometheus_metrics_mode = prometheus_metrics_mode
 
     @classmethod
     def from_flags(
@@ -739,6 +839,10 @@ class AudioGenerationConfig(PipelineConfig):
             "run_model_test_mode",
         )
 
+        prometheus_metrics_mode = PrometheusMetricsMode(
+            audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
+        )
+
         if audio_flags:
             raise ValueError(
                 f"Unknown audio generation option(s): {audio_flags}"
@@ -753,5 +857,6 @@ class AudioGenerationConfig(PipelineConfig):
             prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
             prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
             run_model_test_mode=run_model_test_mode,
+            prometheus_metrics_mode=prometheus_metrics_mode,
             **config_flags,
         )

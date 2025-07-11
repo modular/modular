@@ -13,7 +13,6 @@
 
 from os import abort
 
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
 
@@ -25,6 +24,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
         _ = (
             b.add_type[Person]("Person")
+            .def_init_defaultable[Person]()
             # def_method with return, raising
             .def_method[Person.get_name]("get_name")
             .def_method[Person.split_name]("split_name")
@@ -33,14 +33,19 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_method[Person.get_age]("get_age")
             .def_method[Person._get_birth_year]("_get_birth_year")
             .def_method[Person._with_first_last_name]("_with_first_last_name")
-            # # def_method with no return, raising
+            # def_method with no return, raising
             .def_method[Person.erase_name]("erase_name")
             .def_method[Person.set_age]("set_age")
             .def_method[Person.set_name_and_age]("set_name_and_age")
-            # # def_method with no return, not raising
+            # def_method with no return, not raising
             .def_method[Person.reset]("reset")
             .def_method[Person.set_name]("set_name")
             .def_method[Person._set_age_from_dates]("_set_age_from_dates")
+            # def_method using automatic self downcasting
+            .def_method[Person.set_name_auto]("set_name_auto")
+            .def_method[Person.get_name_auto]("get_name_auto")
+            .def_method[Person.increment_age_auto]("increment_age_auto")
+            .def_method[Person.reset_auto]("reset_auto")
         )
         return b.finalize()
     except e:
@@ -89,7 +94,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
 
         var s = Python().evaluate("hasattr(sys.modules[__name__], 'deny_name')")
         if s:
-            raise "name cannot be accessed"
+            raise String("name cannot be accessed")
 
         return PythonObject(self_ptr[].name)
 
@@ -137,7 +142,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
     fn erase_name(py_self: PythonObject) raises:
         var self_ptr = Self._get_self_ptr(py_self)
         if not self_ptr[].name:
-            raise "cannot erase name if it's already empty"
+            raise String("cannot erase name if it's already empty")
 
         self_ptr[].name = String()
 
@@ -147,7 +152,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
         try:
             self_ptr[].age = Int(age)
         except e:
-            raise "cannot set age to " + String(age)
+            raise String("cannot set age to ") + String(age)
 
     @staticmethod
     fn set_name_and_age(
@@ -180,3 +185,26 @@ struct Person(Copyable, Defaultable, Movable, Representable):
             self_ptr[].age = Int(this_year) - Int(birth_year)
         except e:
             abort(String("failed to set age: ", e))
+
+    @staticmethod
+    fn set_name_auto(self_ptr: UnsafePointer[Self], name: PythonObject):
+        try:
+            self_ptr[].name = String(name)
+        except e:
+            abort(String("failed to set name: ", e))
+
+    @staticmethod
+    fn get_name_auto(self_ptr: UnsafePointer[Self]) raises -> PythonObject:
+        return PythonObject(self_ptr[].name)
+
+    @staticmethod
+    fn increment_age_auto(
+        self_ptr: UnsafePointer[Self], increment: PythonObject
+    ) raises -> PythonObject:
+        self_ptr[].age += Int(increment)
+        return PythonObject(self_ptr[].age)
+
+    @staticmethod
+    fn reset_auto(self_ptr: UnsafePointer[Self]):
+        self_ptr[].name = "Auto Reset Person"
+        self_ptr[].age = 999

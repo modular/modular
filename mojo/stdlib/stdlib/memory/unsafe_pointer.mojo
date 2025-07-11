@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implement a generic unsafe pointer type.
 
-You can import these APIs from the `memory` package. For example:
-
-```mojo
-from memory import UnsafePointer
-```
+These APIs are imported automatically, just like builtins.
 """
 
 from sys import alignof, is_gpu, is_nvidia_gpu, sizeof
@@ -64,7 +60,7 @@ struct UnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[type](),
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
     ImplicitlyBoolable,
     Copyable,
@@ -575,37 +571,20 @@ struct UnsafePointer[
 
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
-
-                @parameter
-                if volatile:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isVolatile = __mlir_attr.unit,
-                    ]((self + i).address)
-                elif invariant:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isInvariant = __mlir_attr.unit,
-                    ]((self + i).address)
-                else:
-                    v[i] = __mlir_op.`pop.load`[alignment = alignment.value](
-                        (self + i).address
-                    )
+                v[i] = __mlir_op.`pop.load`[
+                    alignment = alignment.value,
+                    isVolatile = volatile.value,
+                    isInvariant = invariant.value,
+                ]((self + i).address)
             return v
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
-        @parameter
-        if volatile:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](address)
-        elif invariant:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isInvariant = __mlir_attr.unit
-            ](address)
-        else:
-            return __mlir_op.`pop.load`[alignment = alignment.value](address)
+        return __mlir_op.`pop.load`[
+            alignment = alignment.value,
+            isVolatile = volatile.value,
+            isInvariant = invariant.value,
+        ](address)
 
     @always_inline("nodebug")
     fn load[
@@ -788,15 +767,9 @@ struct UnsafePointer[
             alignment > 0, "alignment must be a positive integer value"
         ]()
 
-        @parameter
-        if volatile:
-            __mlir_op.`pop.store`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](val, self.bitcast[SIMD[dtype, width]]().address)
-        else:
-            __mlir_op.`pop.store`[alignment = alignment.value](
-                val, self.bitcast[SIMD[dtype, width]]().address
-            )
+        __mlir_op.`pop.store`[
+            alignment = alignment.value, isVolatile = volatile.value
+        ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
     fn strided_load[
@@ -1019,7 +992,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
@@ -1223,3 +1196,7 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)
+
+
+alias OpaquePointer = UnsafePointer[NoneType]
+"""An opaque pointer, equivalent to the C `void*` type."""

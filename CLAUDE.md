@@ -213,3 +213,27 @@ Other areas are not open for external contributions.
 - Mojo API docs: <https://docs.modular.com/llms-mojo.txt>
 - Python API docs: <https://docs.modular.com/llms-python.txt>
 - Comprehensive docs: <https://docs.modular.com/llms-full.txt>
+
+## Git commit style
+
+- **Atomic Commits:** Keep commits small and focused. Each commit should
+address a single, logical change. This makes it easier to understand the
+history and revert changes if needed.
+- **Descriptive Commit Messages:** Write clear, concise, and informative commit
+messages. Explain the *why* behind the change, not just *what* was changed. Use
+a consistent format (e.g., imperative mood: "Fix bug", "Add feature").
+- **Commit titles:** git commit titles should have the `[Stdlib]` or `[Kernel]`
+depending on whether the kernel is modified and if they are modifying GPU
+functions then they should use `[GPU]` tag as well.
+- The commit messages should be surrounded by BEGIN_PUBLIC and END_PUBLIC
+- Here is an example template a git commit
+
+```git
+[Kernels] Some new feature
+
+BEGIN_PUBLIC
+[Kernels] Some new feature
+
+This add a new feature for [xyz] to enable [abc]
+END_PUBLIC
+```

@@ -17,7 +17,8 @@ from gpu.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from testing import assert_true
 
 
@@ -38,14 +39,14 @@ def test_grid_control_primitives():
         _compile_code_asm[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
     print(
         _compile_code_asm[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = _get_gpu_target["sm_90a"](),
+            target = get_gpu_target["sm_90a"](),
         ]()
     )
 
@@ -64,7 +65,7 @@ def test_grid_control_primitives_context():
         _compile_code_asm[
             control_dep_grids_kernel_context,
             emission_kind="asm",
-            target = _get_gpu_target["sm_90a"](),
+            target = get_gpu_target["sm_90a"](),
         ]()
     )
 

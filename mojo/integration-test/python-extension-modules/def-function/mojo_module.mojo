@@ -19,43 +19,37 @@ from python.bindings import PythonModuleBuilder
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
-    var b: PythonModuleBuilder
     try:
-        b = PythonModuleBuilder("mojo_module")
-    except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        var b = PythonModuleBuilder("mojo_module")
 
-    # def_function with return, raising
-    b.def_function[takes_zero_raises_returns]("takes_zero_raises_returns")
-    b.def_function[takes_one_raises_returns]("takes_one_raises_returns")
-    b.def_function[takes_two_raises_returns]("takes_two_raises_returns")
-    b.def_function[takes_three_raises_returns]("takes_three_raises_returns")
+        # def_function with return, raising
+        b.def_function[takes_zero_raises_returns]("takes_zero_raises_returns")
+        b.def_function[takes_one_raises_returns]("takes_one_raises_returns")
+        b.def_function[takes_two_raises_returns]("takes_two_raises_returns")
+        b.def_function[takes_three_raises_returns]("takes_three_raises_returns")
 
-    # def_function with return, not raising
-    b.def_function[takes_zero_returns]("takes_zero_returns")
-    b.def_function[takes_one_returns]("takes_one_returns")
-    b.def_function[takes_two_returns]("takes_two_returns")
-    b.def_function[takes_three_returns]("takes_three_returns")
+        # def_function with return, not raising
+        b.def_function[takes_zero_returns]("takes_zero_returns")
+        b.def_function[takes_one_returns]("takes_one_returns")
+        b.def_function[takes_two_returns]("takes_two_returns")
+        b.def_function[takes_three_returns]("takes_three_returns")
 
-    # def_function with no return, raising
-    b.def_function[takes_zero_raises]("takes_zero_raises")
-    b.def_function[takes_one_raises]("takes_one_raises")
-    b.def_function[takes_two_raises]("takes_two_raises")
-    b.def_function[takes_three_raises]("takes_three_raises")
+        # def_function with no return, raising
+        b.def_function[takes_zero_raises]("takes_zero_raises")
+        b.def_function[takes_one_raises]("takes_one_raises")
+        b.def_function[takes_two_raises]("takes_two_raises")
+        b.def_function[takes_three_raises]("takes_three_raises")
 
-    # def_function with no return, not raising
-    b.def_function[takes_zero]("takes_zero")
-    b.def_function[takes_one]("takes_one")
-    b.def_function[takes_two]("takes_two")
-    b.def_function[takes_three]("takes_three")
+        # def_function with no return, not raising
+        b.def_function[takes_zero]("takes_zero")
+        b.def_function[takes_one]("takes_one")
+        b.def_function[takes_two]("takes_two")
+        b.def_function[takes_three]("takes_three")
 
-    try:
         return b.finalize()
     except e:
         return abort[PythonObject](
-            String("failed to finalize Python module: ", e)
+            String("failed to create Python module: ", e)
         )
 
 
@@ -63,7 +57,7 @@ fn PyInit_mojo_module() -> PythonObject:
 fn takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
     if s != "just a python string":
-        raise "`s` must be 'just a python string'"
+        raise String("`s` must be 'just a python string'")
 
     return PythonObject("just another python string")
 
@@ -71,7 +65,7 @@ fn takes_zero_raises_returns() raises -> PythonObject:
 @export
 fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise "input must be 'foo'"
+        raise String("input must be 'foo'")
     return a
 
 
@@ -80,7 +74,7 @@ fn takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise "first input must be 'foo'"
+        raise String("first input must be 'foo'")
     return a + b
 
 
@@ -89,7 +83,7 @@ fn takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise "first input must be 'foo'"
+        raise String("first input must be 'foo'")
     return a + b + c
 
 
@@ -131,7 +125,7 @@ fn takes_three_returns(
 fn takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
     if s != "just a python string":
-        raise "`s` must be 'just a python string'"
+        raise String("`s` must be 'just a python string'")
 
     _ = Python().eval(
         "setattr(sys.modules[__name__], 's', 'Hark! A mojo function calling"
@@ -142,14 +136,14 @@ fn takes_zero_raises() raises:
 @export
 fn takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise "list_obj must have length 3"
+        raise String("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
 @export
 fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise "list_obj must have length 3"
+        raise String("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
@@ -158,7 +152,7 @@ fn takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
     if len(list_obj) != 3:
-        raise "list_obj must have length 3"
+        raise String("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj + obj2
 
 

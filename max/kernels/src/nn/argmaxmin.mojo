@@ -23,9 +23,7 @@ from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
 from builtin.math import max as _max
 from builtin.math import min as _min
-from layout import Layout, LayoutTensor
-
-from utils.index import IndexList
+from layout import LayoutTensor
 
 
 fn _argn[
@@ -99,8 +97,8 @@ fn _argn[
         @parameter
         @always_inline
         fn cmpeq[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter
@@ -112,8 +110,8 @@ fn _argn[
         @parameter
         @always_inline
         fn cmp[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter

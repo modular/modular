@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections import InlineArray, List
 from math import (
     align_down,
     align_up,
@@ -38,9 +37,8 @@ from math import (
     trunc,
     ulp,
 )
-from sys.info import has_neon
+from sys import CompilationTarget
 
-from memory import Span
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -55,7 +53,7 @@ fn test_cos() raises:
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
@@ -217,6 +215,18 @@ def test_exp2():
     assert_equal(exp2(Float32(0)), 1.0)
     assert_equal(exp2(Float32(-1)), 0.5)
     assert_equal(exp2(Float32(2)), 4.0)
+    assert_almost_equal(exp2(Float32(-125)), 2.3509887e-38)
+    assert_almost_equal(exp2(Float32(125)), 4.2535296e37)
+
+    assert_equal(exp2(Float64(1)), 2.0)
+    assert_almost_equal(exp2(Float64(0.2)), 1.148696)
+    assert_equal(exp2(Float64(0)), 1.0)
+    assert_equal(exp2(Float64(-1)), 0.5)
+    assert_equal(exp2(Float64(2)), 4.0)
+    assert_almost_equal(exp2(Float64(-127)), 5.877471754111438e-39)
+    assert_almost_equal(exp2(Float64(127)), 1.7014118346046923e38)
+    assert_almost_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
+    assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
 
 
 def test_iota():
@@ -318,8 +328,8 @@ def test_isqrt():
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = frexp(Scalar[type](123.45))
+def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol
     )
@@ -327,7 +337,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res0[1].cast[DType.float32](), 7.0, atol=atol, rtol=rtol
     )
 
-    var res1 = frexp(Scalar[type](0.1))
+    var res1 = frexp(Scalar[dtype](0.1))
     assert_almost_equal(
         res1[0].cast[DType.float32](), 0.8, atol=atol, rtol=rtol
     )
@@ -335,7 +345,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res1[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res2 = frexp(Scalar[type](-0.1))
+    var res2 = frexp(Scalar[dtype](-0.1))
     assert_almost_equal(
         res2[0].cast[DType.float32](), -0.8, atol=atol, rtol=rtol
     )
@@ -343,7 +353,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res2[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res3 = frexp(SIMD[type, 4](0, 2, 4, 5))
+    var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
         res3[0].cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
@@ -358,18 +368,18 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log(Scalar[type](123.45))
+def _test_log_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol
     )
 
-    var res1 = log(Scalar[type](0.1))
+    var res1 = log(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -2.3025, atol=atol, rtol=rtol
     )
 
-    var res2 = log(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
@@ -377,25 +387,25 @@ def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
         rtol=rtol,
     )
 
-    var res3 = log(Scalar[type](2.7182818284590452353602874713526624977572))
+    var res3 = log(Scalar[dtype](2.7182818284590452353602874713526624977572))
     assert_almost_equal(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol)
 
-    var res4 = isinf(log(SIMD[type, 4](0, 1, 0, 0)))
+    var res4 = isinf(log(SIMD[dtype, 4](0, 1, 0, 0)))
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log2(Scalar[type](123.45))
+def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
     )
 
-    var res1 = log2(Scalar[type](0.1))
+    var res1 = log2(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -3.3219, atol=atol, rtol=rtol
     )
 
-    var res2 = log2(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log2(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
@@ -410,7 +420,7 @@ def test_frexp():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -420,7 +430,7 @@ def test_log():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -430,7 +440,7 @@ def test_log2():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 

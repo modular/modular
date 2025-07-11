@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from sys import simdwidthof
 
 from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -31,9 +29,7 @@ fn test_elementwise_print[
 ](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
-    alias simd_width = simdwidthof[
-        c_type, target = _get_gpu_target["sm_80"]()
-    ]()
+    alias simd_width = simdwidthof[c_type, target = get_gpu_target["sm_80"]()]()
 
     @always_inline
     @__copy_capture(c01, N)
@@ -46,6 +42,9 @@ fn test_elementwise_print[
     print("about to call elementwise, M=", M, "N=", N)
     elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
     print("called elementwise")
+    # Avoid exiting in the middle of the call to the kernel that is printing the test messages.
+    ctx.synchronize()
+    print("finished elementwise")
 
 
 fn runtime_row_major[

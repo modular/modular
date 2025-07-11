@@ -15,7 +15,7 @@ import math
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._ndbuffer_stub import (
     ElementLayout,
@@ -34,9 +34,6 @@ from layout._ndbuffer_stub import (
     from_ndbuffer_row_major,
     vectorize,
 )
-from layout.layout import LayoutList
-from memory import UnsafePointer
-from testing import assert_equal
 
 from utils import Index, IndexList, StaticTuple
 

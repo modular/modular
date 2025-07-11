@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import ceildiv, exp, iota
 from sys import alignof, simdwidthof, sizeof
 
@@ -35,12 +34,12 @@ from gpu import (
     warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from memory import Span, UnsafePointer, stack_allocation
+from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from runtime.asyncrt import DeviceContextPtr
@@ -51,11 +50,11 @@ from utils.numerics import max_or_inf, min_or_neg_inf
 
 @always_inline
 fn top_k_shape_impl[
-    type: DType,
+    dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     max_k: Int,
     axis: Int,
 ) raises -> IndexList[
@@ -65,7 +64,7 @@ fn top_k_shape_impl[
     Compute the output shape of a top/bottom k operation.
 
     Parameters:
-        type: Data type of the input buffer.
+        dtype: Data type of the input buffer.
         rank: Rank of the input.
         single_thread_blocking_override: If this function can block.
 
@@ -89,11 +88,11 @@ fn top_k_shape_impl[
 
 @always_inline
 fn top_k_shape[
-    type: DType,
+    dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     max_k: Int,
     axis: Int,
 ) raises -> IndexList[
@@ -106,11 +105,11 @@ fn top_k_shape[
 
 @always_inline
 fn bottom_k_shape[
-    type: DType,
+    dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     max_k: Int,
     axis: Int,
 ) raises -> IndexList[
@@ -147,15 +146,15 @@ fn _adjust_top_p[
 
 fn top_k[
     rank: Int,
-    type: DType,
+    dtype: DType,
     out_idx_type: DType, //,
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     max_k: Int,
     axis: Int,
-    out_vals: NDBuffer[mut=True, type, rank],
+    out_vals: NDBuffer[mut=True, dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     sorted: Bool,
     ctx: DeviceContextPtr,
@@ -167,8 +166,8 @@ fn top_k[
 
     Parameters:
         rank: Rank of the input.
-        type: Data type of the input buffer.
-        out_idx_type: The data type of the output indices (default is DType.int64).
+        dtype: Data type of the input buffer.
+        out_idx_type: The data dtype of the output indices (default is DType.int64).
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
         target: The target to run on.
 
@@ -224,14 +223,14 @@ fn top_k[
 
 fn _top_k_cpu[
     rank: Int,
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
     largest: Bool,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     max_k: Int,
     axis: Int,
-    out_vals: NDBuffer[mut=True, type, rank],
+    out_vals: NDBuffer[mut=True, dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
@@ -256,7 +255,7 @@ fn _top_k_cpu[
 
             @parameter
             @always_inline
-            fn indices_to_val(idx: Int64) -> Scalar[type]:
+            fn indices_to_val(idx: Int64) -> Scalar[dtype]:
                 indices[axis] = Int(idx)
                 return input[indices]
 
@@ -322,12 +321,12 @@ fn _top_k_cpu[
 
 @always_inline
 fn fused_token_sampling_cpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType,
 ](
     max_k: Int,
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     k: OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]] = None,
     temperature: OptionalReg[
@@ -342,13 +341,13 @@ fn fused_token_sampling_cpu[
     tensor for each row/subvolume.
 
     Parameters:
-        type: Data type of the input buffer.
+        dtype: Data type of the input buffer.
         rank: Rank of the input.
         out_idx_type: Data type of the output indices.
 
     Args:
         max_k: Largest number of top elements.
-        input: NDBuffer[type, rank] (Any shape)- The input tensor.
+        input: NDBuffer[dtype, rank] (Any shape)- The input tensor.
         out_idxs: NDBuffer[out_idx_type, rank] (shape of [input_shape[:-1]] + [1]) - The output indices.
         k: Optional device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
@@ -359,8 +358,8 @@ fn fused_token_sampling_cpu[
     # materialize the out_vals which is of shape [input[:-1]] + [k]
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = max_k
-    var out_vals = NDBuffer[type, rank](
-        UnsafePointer[Scalar[type]].alloc(out_vals_shape.flattened_length()),
+    var out_vals = NDBuffer[dtype, rank](
+        UnsafePointer[Scalar[dtype]].alloc(out_vals_shape.flattened_length()),
         out_vals_shape,
     )
 
@@ -379,12 +378,12 @@ fn fused_token_sampling_cpu[
 
 
 fn _top_k_sampling[
-    type: DType,
+    dtype: DType,
     rank: Int,
 ](
     max_k: Int,
-    input: NDBuffer[type, rank],
-    out_vals: NDBuffer[mut=True, type, rank],
+    input: NDBuffer[dtype, rank],
+    out_vals: NDBuffer[mut=True, dtype, rank],
     out_idxs: NDBuffer[mut=True, DType.int64, rank],
     k: OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]] = None,
     temperature: OptionalReg[
@@ -399,13 +398,13 @@ fn _top_k_sampling[
     tensor for each row/subvolume.
 
     Parameters:
-        type: Data type of the input buffer.
+        dtype: Data type of the input buffer.
         rank: Rank of the input.
 
     Args:
         max_k: Largest number of top elements.
-        input: NDBuffer[type, rank] (Any shape)- The input tensor.
-        out_vals: NDBuffer[type, rank] (shape of [input[:-1]] + [k]) - The output values.
+        input: NDBuffer[dtype, rank] (Any shape)- The input tensor.
+        out_vals: NDBuffer[dtype, rank] (shape of [input[:-1]] + [k]) - The output values.
         out_idxs: NDBuffer[DType.int64, rank] (shape of [input[:-1]] + [1]) - The output indices.
         k: Optional buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
@@ -445,7 +444,7 @@ fn _top_k_sampling[
         UnsafePointer[Int64].alloc(Int(out_vals.size())),
         internal_out_shape,  # topk returns K as last dim
     )
-    _top_k_cpu[rank=internal_rank, type=type, largest=True](
+    _top_k_cpu[rank=internal_rank, dtype=dtype, largest=True](
         reshape(input, internal_in_shape),
         max_k,
         axis=internal_rank - 1,  # Always operate on the last axis
@@ -468,9 +467,9 @@ fn _top_k_sampling[
 
         # Calculate softmax normalization
         var max_val = internal_out_vals[batch, 0]
-        var sum_exp = Scalar[type](0)
-        var exp_vals = UnsafePointer[Scalar[type]].alloc(k_val)
-        var temp_val = temperature_val.cast[type]()
+        var sum_exp = Scalar[dtype](0)
+        var exp_vals = UnsafePointer[Scalar[dtype]].alloc(k_val)
+        var temp_val = temperature_val.cast[dtype]()
         for i in range(k_val):
             var val = internal_out_vals[batch, i]
             var exp_val = exp((val - max_val) / max(temp_val, 1e-6))
@@ -478,10 +477,10 @@ fn _top_k_sampling[
             sum_exp += exp_val
 
         # Handle top_p parameter - extract scalar value from buffer
-        var top_p_val = Scalar[type](1.0)
+        var top_p_val = Scalar[dtype](1.0)
         if top_p:
-            top_p_val = top_p.value()[batch].cast[type]()
-        var _top_p = _adjust_top_p[type](top_p_val, exp_vals, k_val, sum_exp)
+            top_p_val = top_p.value()[batch].cast[dtype]()
+        var _top_p = _adjust_top_p[dtype](top_p_val, exp_vals, k_val, sum_exp)
 
         # Handle seed parameter - extract scalar value from buffer
         var seed_val = UInt64(0)
@@ -489,13 +488,11 @@ fn _top_k_sampling[
             seed_val = seed.value()[batch]
 
         # Use the same RNG as the GPU sampling implementation
-        var rng_state = Random(
-            seed=seed_val, offset=out_idxs_tmp[batch, 0].cast[DType.uint64]()
-        )
+        var rng_state = Random(seed=seed_val)
         var rng = rng_state.step_uniform()
 
         # Sample using the normalized probabilities
-        var r = sum_exp * _top_p * rng[0].cast[type]()
+        var r = sum_exp * _top_p * rng[0].cast[dtype]()
         for i in range(k_val):
             r -= exp_vals[i]
             if r <= 0 or i == k_val - 1:
@@ -508,7 +505,7 @@ fn _top_k_sampling[
         for remaining_k in range(k_val, max_k):
             if remaining_k < internal_out_vals.get_shape()[1]:
                 internal_out_vals[batch, remaining_k] = _topk_dead_val[
-                    type, True
+                    dtype, True
                 ]()
             # Note: out_idxs for sampling only has 1 element in last dim, so no need to fill indices
     out_idxs_tmp.data.free()
@@ -585,9 +582,17 @@ fn _warp_reduce_topk[
     ) -> TopK_2[T, largest]:
         @parameter
         if largest:
-            return a if a.u > b.u else b
+            if a.u > b.u:
+                return a
+            elif a.u < b.u:
+                return b
+            return a if a.p < b.p else b
         else:
-            return a if a.u < b.u else b
+            if a.u < b.u:
+                return a
+            elif a.u > b.u:
+                return b
+            return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
     alias limit = log2_floor(WARP_SIZE)
@@ -613,7 +618,7 @@ fn _block_reduce_topk[
     and warp-level reductions to efficiently compute the block-wide maximum.
 
     Parameters:
-        T: DType - The data type of the values being compared.
+        T: DType - The data dtype of the values being compared.
         largest: Bool - Whether to find the maximum or minimum value.
 
     Arguments:
@@ -706,7 +711,7 @@ fn _topk_stage1[
 
     Parameters:
         T: Data type of the elements.
-        out_idx_type: DType - The data type of the output indices.
+        out_idx_type: DType - The data dtype of the output indices.
         largest: Bool - Whether to find the maximum or minimum value.
 
     Args:
@@ -783,9 +788,9 @@ fn _topk_stage1[
 
 
 @always_inline("nodebug")
-fn _get_shmem_size_stg_1[type: DType](block_size: Int) -> Int:
+fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     # Get dynamic shared memory size for stage 1
-    return Int(block_size * sizeof[TopK_2[type]]())
+    return Int(block_size * sizeof[TopK_2[dtype]]())
 
 
 fn _topk_stage2[
@@ -821,7 +826,7 @@ fn _topk_stage2[
 
     Parameters:
         T: Data type of the elements.
-        out_idx_type: DType - The data type of the output indices.
+        out_idx_type: DType - The data dtype of the output indices.
         sampling: Bool - Whether to sample a token from the top-K distribution.
         largest: Bool - Whether to find the maximum or minimum value.
 
@@ -980,10 +985,7 @@ fn _topk_stage2[
                 var seed_val = UInt64(0)
                 if seed:
                     seed_val = seed[batch_id]
-                var rng_state = Random(
-                    seed=seed_val,
-                    offset=_local_topk_idxs[0].cast[DType.uint64](),
-                )
+                var rng_state = Random(seed=seed_val)
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
                 var r = softmax_norm * _top_p * rng[0].cast[T]()
@@ -1000,7 +1002,7 @@ fn _topk_stage2[
 
 
 fn _topk_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
     sampling: Bool = True,
@@ -1008,10 +1010,10 @@ fn _topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input_buf: NDBuffer[type, rank],
-    device_local_topk_vals: NDBuffer[type, rank],
+    input_buf: NDBuffer[dtype, rank],
+    device_local_topk_vals: NDBuffer[dtype, rank],
     device_local_topk_idxs: NDBuffer[out_idx_type, rank],
-    out_vals: NDBuffer[mut=True, type, rank],
+    out_vals: NDBuffer[mut=True, dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     k: OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]] = None,
     temperature: OptionalReg[
@@ -1029,9 +1031,9 @@ fn _topk_gpu[
     2. Stage 2 (_topk_stage2): Merges the local Top-K results to obtain the global Top-K.
 
     Parameters:
-        type: DType - The data type of the input tensor.
+        dtype: DType - The data dtype of the input tensor.
         rank: Int - The rank of the input tensor.
-        out_idx_type: DType - The data type of the output indices (default is DType.index).
+        out_idx_type: DType - The data dtype of the output indices (default is DType.index).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
 
@@ -1040,13 +1042,13 @@ fn _topk_gpu[
             The context for GPU execution.
         max_k: Int
             Largest number of top elements to keep for each batch element.
-        input_buf: NDBuffer[type, rank, DimList(batch_size,N)]
+        input_buf: NDBuffer[dtype, rank, DimList(batch_size,N)]
             Input tensor as a device NDBuffer.
-        device_local_topk_vals: NDBuffer[type, 2, DimList(batch_size, num_blocks_per_input * max(K))]
+        device_local_topk_vals: NDBuffer[dtype, 2, DimList(batch_size, num_blocks_per_input * max(K))]
             Temporary buffer for locally reduced top-K values from stage 1.
         device_local_topk_idxs: NDBuffer[DType.index, 2, DimList(batch_size, num_blocks_per_input * max(K))]
             Temporary buffer for locally reduced top-K indices from stage 1.
-        out_vals: NDBuffer[type, 2, DimList(batch_size, max(K))]
+        out_vals: NDBuffer[dtype, 2, DimList(batch_size, max(K))]
             Output buffer on device for the K largest values.
         out_idxs: NDBuffer[DType.index, 2, DimList(batch_size, 1 if sampling else max(K))]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
@@ -1086,7 +1088,7 @@ fn _topk_gpu[
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
-    var shared_mem_bytes_1 = _get_shmem_size_stg_1[type](block_size)
+    var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
 
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = Dim(num_blocks_per_input_ * batch_size)
@@ -1100,7 +1102,7 @@ fn _topk_gpu[
         k_ptr = UnsafePointer[Scalar[DType.int64]]()  # null pointer
 
     # Enqueue the first kernel (stage 1)
-    ctx.enqueue_function[_topk_stage1[type, out_idx_type, largest]](
+    ctx.enqueue_function[_topk_stage1[dtype, out_idx_type, largest]](
         k_ptr,
         max_k,
         N,
@@ -1118,10 +1120,10 @@ fn _topk_gpu[
         ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
     )
     var num_bytes_sample_cache = max_k * (
-        sizeof[Scalar[type]]() + 2 * sizeof[DType.index]()
+        sizeof[Scalar[dtype]]() + 2 * sizeof[DType.index]()
     )
     var shared_mem_bytes_2 = (
-        num_elem_reduced * (sizeof[Scalar[type]]() + sizeof[DType.index]())
+        num_elem_reduced * (sizeof[Scalar[dtype]]() + sizeof[DType.index]())
         + num_bytes_sample_cache
     )
     shared_mem_bytes_2 = Int(
@@ -1162,7 +1164,7 @@ fn _topk_gpu[
         seed_ptr = UnsafePointer[Scalar[DType.uint64]]()  # null pointer
 
     # Enqueue the second kernel (stage 2)
-    ctx.enqueue_function[_topk_stage2[type, out_idx_type, sampling, largest]](
+    ctx.enqueue_function[_topk_stage2[dtype, out_idx_type, sampling, largest]](
         k_ptr,
         max_k,
         num_blocks_per_input_,
@@ -1182,7 +1184,7 @@ fn _topk_gpu[
 
 @always_inline
 fn topk_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
     sampling: Bool = True,
@@ -1190,8 +1192,8 @@ fn topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input: NDBuffer[type, rank],
-    out_vals: NDBuffer[mut=True, type, rank],
+    input: NDBuffer[dtype, rank],
+    out_vals: NDBuffer[mut=True, dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
@@ -1208,9 +1210,9 @@ fn topk_gpu[
     tensor for each row/subvolume or the top K values and indices across the tensor.
 
     Parameters:
-        type: DType - The data type of the input tensor.
+        dtype: DType - The data dtype of the input tensor.
         rank: Int - The rank of the input tensor.
-        out_idx_type: DType - The data type of the output indices (default is DType.index).
+        out_idx_type: DType - The data dtype of the output indices (default is DType.index).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
 
@@ -1219,9 +1221,9 @@ fn topk_gpu[
             The context for GPU execution.
         max_k: Int
             Largest number of top elements to keep for each batch element.
-        input: NDBuffer[type, rank]
+        input: NDBuffer[dtype, rank]
             Input tensor as a device NDBuffer.
-        out_vals: NDBuffer[type, rank]
+        out_vals: NDBuffer[dtype, rank]
             Output buffer on device for the K largest values.
         out_idxs: NDBuffer[DType.index, rank]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
@@ -1256,11 +1258,11 @@ fn topk_gpu[
     # This section handles different input ranks by reshaping to a 2D tensor
     var internal_bs: Int  # Internal batch size
     alias internal_rank = 2  # We always reshape to 2D for internal processing
-    var internal_input: NDBuffer[type, internal_rank, MutableAnyOrigin]
+    var internal_input: NDBuffer[dtype, internal_rank, MutableAnyOrigin]
     var internal_out_idxs: NDBuffer[
         out_idx_type, internal_rank, MutableAnyOrigin
     ]
-    var internal_out_vals: NDBuffer[type, internal_rank, MutableAnyOrigin]
+    var internal_out_vals: NDBuffer[dtype, internal_rank, MutableAnyOrigin]
 
     @parameter
     if rank == 1:
@@ -1276,14 +1278,14 @@ fn topk_gpu[
     elif rank == internal_rank:
         # Input is already 2D, no reshaping needed
         internal_bs = orig_in_shape[0]
-        internal_input = rebind[NDBuffer[type, internal_rank, input.origin]](
+        internal_input = rebind[NDBuffer[dtype, internal_rank, input.origin]](
             input
         )
         internal_out_idxs = rebind[
             NDBuffer[out_idx_type, internal_rank, out_idxs.origin]
         ](out_idxs)
         internal_out_vals = rebind[
-            NDBuffer[type, internal_rank, out_vals.origin]
+            NDBuffer[dtype, internal_rank, out_vals.origin]
         ](out_vals)
     else:  # rank > 2
         # Handle higher dimensional inputs by flattening all but the last dimension
@@ -1314,10 +1316,10 @@ fn topk_gpu[
     )
 
     # Create temporary buffer for local top-K values
-    var internal_vals_buf = ctx.enqueue_create_buffer[type](
+    var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
         Int(internal_cache_shape.product())
     )
-    var device_local_topk_vals = NDBuffer[type, internal_rank](
+    var device_local_topk_vals = NDBuffer[dtype, internal_rank](
         internal_vals_buf._unsafe_ptr(), internal_cache_shape
     )
 
@@ -1330,7 +1332,7 @@ fn topk_gpu[
     )
 
     _topk_gpu[
-        type=type,
+        dtype=dtype,
         rank=internal_rank,
         out_idx_type=out_idx_type,
         sampling=sampling,
@@ -1358,13 +1360,13 @@ fn topk_gpu[
 
 @always_inline
 fn fused_token_sampling_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
@@ -1382,10 +1384,10 @@ fn fused_token_sampling_gpu[
     """
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = max_k
-    var out_vals_buf = ctx.enqueue_create_buffer[type](
+    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
-    var out_vals = NDBuffer[type, rank](
+    var out_vals = NDBuffer[dtype, rank](
         out_vals_buf._unsafe_ptr(), out_vals_shape
     )
 

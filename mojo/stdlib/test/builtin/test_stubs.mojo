@@ -14,7 +14,7 @@
 
 from sys.intrinsics import _type_is_eq
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_false, assert_true
 
 
 def test_uint_for():

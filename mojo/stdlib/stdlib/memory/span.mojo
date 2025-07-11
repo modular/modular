@@ -20,10 +20,9 @@ from memory import Span
 ```
 """
 
-from collections import InlineArray
 from sys.info import simdwidthof
 
-from memory import Pointer, UnsafePointer
+from memory import Pointer
 from memory.unsafe_pointer import _default_alignment
 
 
@@ -56,7 +55,7 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(mut self) -> ref [origin, address_space] T:
+    fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
             self.index += 1
@@ -99,9 +98,9 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin].result]
+    alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
     # Fields
     var _data: UnsafePointer[
@@ -128,7 +127,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(
         other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin].result],
+        out self: Span[T, ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

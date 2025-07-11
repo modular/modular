@@ -17,8 +17,6 @@ environment.
 
 from sys import external_call
 
-from memory import UnsafePointer
-
 
 # TODO: When we have global variables, this should be a global list.
 fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:

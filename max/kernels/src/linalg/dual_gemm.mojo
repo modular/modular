@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import ceildiv, exp
 from os import abort
 from sys import alignof, is_defined, simdwidthof
@@ -41,7 +40,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_dram,
@@ -311,7 +310,7 @@ fn multistage_dual_mma[
     ]() if swizzle_a else OptionalReg[Swizzle](None)
 
     @parameter
-    for i in range(Int(k_group_size)):
+    for i in range(k_group_size):
         mma_op.load_a[swizzle_a_pattern](
             a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
         )
@@ -332,10 +331,10 @@ fn multistage_dual_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma0 in range(Int(num_k_mma_iters)):
+        for k_mma0 in range(num_k_mma_iters):
 
             @parameter
-            for k_mma1 in range(Int(k_group_size)):
+            for k_mma1 in range(k_group_size):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 alias k_mma_next = k_mma + k_group_size
@@ -424,7 +423,7 @@ fn multistage_dual_mma[
                 )
 
             @parameter
-            for k_mma1 in range(Int(k_group_size)):
+            for k_mma1 in range(k_group_size):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 mma_op.mma(
@@ -653,7 +652,10 @@ fn multistage_dual_gemm_kernel[
             .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c0_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -693,7 +695,7 @@ fn multistage_dual_gemm_kernel[
                 )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_layout.all_dims_known():
@@ -738,7 +740,7 @@ fn multistage_dual_gemm_kernel[
             for i in range(__type_of(c_gmem_frag).layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
                 alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_layout.all_dims_known():
@@ -1211,7 +1213,7 @@ fn dual_gemv_kernel[
     for idxK in range(tid * simd_width, k, tile_k):
 
         @parameter
-        for i in range(Int(tile_n_per_B)):
+        for i in range(tile_n_per_B):
             var b0_vec = b0.data.load[width=simd_width, alignment=align_weight](
                 weight_idx + i * k + idxK
             )
@@ -1219,7 +1221,7 @@ fn dual_gemv_kernel[
             tile_b0.store[alignment=align_weight](i * simd_width, b0_vec)
 
         @parameter
-        for i in range(Int(tile_n_per_B)):
+        for i in range(tile_n_per_B):
             var b1_vec = b1.data.load[width=simd_width, alignment=align_weight](
                 weight_idx + i * k + idxK
             )
@@ -1227,7 +1229,7 @@ fn dual_gemv_kernel[
             tile_b1.store[alignment=align_weight](i * simd_width, b1_vec)
 
         @parameter
-        for i in range(Int(tile_m)):
+        for i in range(tile_m):
             var a_vec = a.data.load[width=simd_width, alignment=align_act](
                 act_idx + i * k + idxK
             )
@@ -1235,10 +1237,10 @@ fn dual_gemv_kernel[
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
             @parameter
-            for j in range(Int(tile_n)):
+            for j in range(tile_n):
 
                 @parameter
-                for l in range(Int(simd_width)):
+                for l in range(simd_width):
                     acc[i * tile_n + j] += (
                         tile_a[l].cast[s_type]()
                         * tile_w[j * simd_width + l].cast[s_type]()
@@ -1257,10 +1259,10 @@ fn dual_gemv_kernel[
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
     @parameter
-    for mi in range(Int(tile_m)):
+    for mi in range(tile_m):
 
         @parameter
-        for ni in range(Int(tile_n)):
+        for ni in range(tile_n):
             var val = warp.sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
@@ -1275,7 +1277,7 @@ fn dual_gemv_kernel[
         var val1 = Scalar[s_type]()
 
         @parameter
-        for jj in range(Int(k_warp_num)):
+        for jj in range(k_warp_num):
             val0 += shmem[jj * tile_m * tile_n + mid * tile_n + nid]
             val1 += shmem[
                 jj * tile_m * tile_n + mid * tile_n + nid + tile_n_per_B
@@ -1380,7 +1382,7 @@ fn swishGLU[
     @parameter
     fn description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
-        return String(";").join(
+        return ";".join(
             String(target),
             trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
             trace_arg("B0", IndexList[2](shape.K, shape.N), b0.type),

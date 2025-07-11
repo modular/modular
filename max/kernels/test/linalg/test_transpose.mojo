@@ -19,7 +19,7 @@ from linalg.transpose import (
     transpose_inplace,
 )
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4

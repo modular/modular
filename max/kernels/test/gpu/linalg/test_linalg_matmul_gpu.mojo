@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -74,31 +71,36 @@ fn _create_host_buffer_like[
 
 
 fn _get_test_name[
-    type: DType, shape_c: DimList, shape_a: DimList, shape_b: DimList
+    dtype: DType, shape_c: DimList, shape_a: DimList, shape_b: DimList
 ](
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var str = String("test-case(")
-    str += type.__str__()
-    str += ") : "
-    str += shape_c_dim[0].__str__()
-    str += (
-        "_dynamic"
-        + " x "
-        + shape_b_dim[1].__str__() if shape_c.at[0]().is_dynamic() else " x "
-        + shape_b_dim[1].__str__()
+    return String(
+        "test-case(",
+        dtype.__str__(),
+        ") : ",
+        shape_c_dim[0].__str__(),
+        (
+            "_dynamic"
+            + " x "
+            + shape_b_dim[1]
+            .__str__() if shape_c.at[0]()
+            .is_dynamic() else " x "
+            + shape_b_dim[1].__str__()
+        ),
+        (
+            "_dynamic"
+            + " x "
+            + shape_a_dim[1]
+            .__str__() if shape_b.at[1]()
+            .is_dynamic() else " x "
+            + shape_a_dim[1].__str__()
+        ),
+        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
+        ", ... ",
     )
-    str += (
-        "_dynamic"
-        + " x "
-        + shape_a_dim[1].__str__() if shape_b.at[1]().is_dynamic() else " x "
-        + shape_a_dim[1].__str__()
-    )
-    str += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
-    str += ", ... "
-    return str
 
 
 fn matmul_test_case[

@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, nan
+from math import nan
 
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from memory import bitcast
 
 
@@ -555,10 +554,10 @@ fn test_simd_f32_to_e4m3():
 
 
 fn test_simd_float8[
-    type: DType,
+    dtype: DType,
     size: Int,
     target: DType,
-](x: SIMD[type, size]):
+](x: SIMD[dtype, size]):
     var x_casted = x.cast[target]()
 
     alias M = 32

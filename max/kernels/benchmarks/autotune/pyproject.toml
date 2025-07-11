@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "kbench"
+version = "0.1.0"
+description = "Kernel benchmarking toolkit for Mojo"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Modular Inc.", email = "hello@modular.com"}
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Testing",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "click",
+    "pandas",
+    "rich",
+    "numpy",
+    "plotly",
+    "pyyaml",
+]
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+
+[project.scripts]
+kbench = "kbench:main"
+kplot = "kplot:main"
+kprofile = "kprofile:main"
+kdiff = "kdiff:main"
+
+
+[project.urls]
+Documentation = "https://docs.modular.com"
+
+
+[tool.setuptools]
+py-modules = ["kbench", "kplot", "kprofile", "kdiff", "utils", "kbench_shim"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml"]
+
+
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]

@@ -31,7 +31,7 @@ from max.serve.queue.zmq_queue import (
     is_valid_zmq_address,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 Payload = TypeVar("Payload")
 
@@ -165,7 +165,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
         instance_id: str,
         payload_type: Any,
         default_destination_address: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Initialize dynamic ZMQ transport with ROUTER/DEALER sockets.
         """

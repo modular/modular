@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
 
 modular_py_binary(
     name = "main",
@@ -12,4 +12,9 @@ modular_py_binary(
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "//SDK/lib/API/python/max/nn",
     ],
+)
+
+modular_run_binary_test(
+    name = "main_test",
+    binary = "main",
 )

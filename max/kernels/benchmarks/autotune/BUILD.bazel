@@ -1,23 +1,15 @@
-load(
-    "//bazel:api.bzl",
-    "modular_py_library",
-    "modular_py_test",
-    "pkg_files",
-    "requirement",
-)
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
 
 modular_py_library(
     name = "autotune",
+    testonly = True,
     srcs = [
         "kbench.py",
         "kplot.py",
         "kprofile.py",
+        "utils.py",
     ],
-    imports = ["autotune"],
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
     deps = [
-        # Deps required for kbench/kplot/kprofile
         requirement("numpy"),
         requirement("click"),
         requirement("pandas"),
@@ -25,7 +17,39 @@ modular_py_library(
         requirement("plotly"),
         requirement("kaleido"),
         requirement("pyyaml"),
-        "//GenericML/tools/model:lib",
+    ],
+)
+
+modular_py_binary(
+    name = "kbench",
+    srcs = [
+        "__init__.py",
+        "kbench.py",
+        "utils.py",
+    ],
+    env = {
+        "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
+    },
+    imports = ["."],
+    main = "kbench.py",
+    mojo_deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    use_sitecustomize = True,
+    deps = [
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
+        requirement("pygments"),
+        requirement("pyyaml"),
+        requirement("rich"),
     ],
 )
 
@@ -43,6 +67,8 @@ pkg_files(
         "kbench.py",
         "kplot.py",
         "kprofile.py",
+        "pyproject.toml",
+        "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
     visibility = ["//visibility:public"],

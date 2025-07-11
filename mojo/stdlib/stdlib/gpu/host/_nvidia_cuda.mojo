@@ -22,7 +22,7 @@ from gpu.host.device_context import (
     _DeviceContextPtr,
     _DeviceStreamPtr,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
@@ -75,6 +75,17 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
         ](
             UnsafePointer(to=result),
             stream._handle,
+        )
+    )
+    return result
+
+
+fn CUDA_get_current_context() raises -> CUcontext:
+    var result = CUcontext()
+    # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
+    _checked(
+        external_call["AsyncRT_DeviceContext_cuda_current_context", _CharPtr,](
+            UnsafePointer(to=result),
         )
     )
     return result
@@ -202,11 +213,15 @@ struct TMADescriptor:
     var data: StaticTuple[UInt8, 128]
 
     @always_inline
+    fn __init__(out self):
+        self.data = StaticTuple[UInt8, 128]()
+
+    @always_inline
     fn __copyinit__(out self, other: Self):
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
     __mlir_op.`nvvm.prefetch.tensormap`(
         to_llvm_ptr(desc_ptr),
     )
@@ -259,7 +274,7 @@ fn create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CharPtr,
-            UnsafePointer[NoneType],  # tensorMap
+            OpaquePointer,  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             _DeviceBufferPtr,  #  globalAddress

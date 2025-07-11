@@ -55,12 +55,12 @@ from sys import (
     sizeof,
 )
 
-from gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout._utils import load_to_simd
-from layout.int_tuple import IntTuple, product
+from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import (
@@ -988,8 +988,8 @@ struct TensorCore[
                     )
                     fragments[i, 0] = rebind[frag_type](
                         SIMD[warp_tile.dtype, 2](
-                            rebind[Scalar[warp_tile.dtype]](frag[0]),
-                            rebind[Scalar[warp_tile.dtype]](frag[1]),
+                            rebind[Scalar[warp_tile.dtype]](frag[0, 0]),
+                            rebind[Scalar[warp_tile.dtype]](frag[1, 0]),
                         )
                     )
             elif in_type.is_float8():
@@ -1141,20 +1141,20 @@ struct TensorCore[
         ](0, mma_tile_coord_k)
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[thread_idx.x % WARP_SIZE]
+            mma_tile.vectorize[1, 4]()[0, thread_idx.x % WARP_SIZE]
         )
 
         @parameter
         for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
-            var v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i]))
+            var v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
             q_int >>= 4
-            var v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i]))
+            var v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
             fragments[i, 0] = rebind[frag_type](v1.join(v2))
             q_int >>= 4
-            v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1]))
+            v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
             q_int >>= 4
-            v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1]))
+            v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
             fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @always_inline

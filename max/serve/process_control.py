@@ -23,9 +23,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol, Union
 
-logger = logging.getLogger(__name__)
-# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-logger.propagate = False
+logger = logging.getLogger("max.serve.process_control")
 
 
 class EventCreator(Protocol):
@@ -96,7 +94,7 @@ class ProcessControl:
         name: str,
         # TODO: we temporarily set it to 1 minute to handle long context input
         health_fail_s: float = 60.0,
-    ):
+    ) -> None:
         self.name = name
         self.started_event = ctx.Event()
         self.completed_event = ctx.Event()
@@ -206,7 +204,7 @@ class ProcessMonitor:
             self.unhealthy_max_time_s,
         )
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         logger.info("Shutting down")
         self.pc.set_canceled()
         if not self.proc.is_alive():
@@ -238,7 +236,7 @@ class ProcessMonitor:
 
     async def shutdown_if_unhealthy(
         self, cb: Optional[Callable[[], None]] = None
-    ):
+    ) -> None:
         try:
             await self.until_unhealthy()
         except asyncio.CancelledError:
@@ -258,7 +256,9 @@ class ProcessMonitor:
                     pass
             await self.shutdown()
 
-    async def shutdown_if_dead(self, cb: Optional[Callable[[], None]] = None):
+    async def shutdown_if_dead(
+        self, cb: Optional[Callable[[], None]] = None
+    ) -> None:
         try:
             await self.until_dead_no_timeout()
         except asyncio.CancelledError:

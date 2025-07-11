@@ -29,7 +29,7 @@ from max.serve.kvcache_agent.dispatcher_transport import (
 )
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 DispatcherMessagePayload = TypeVar("DispatcherMessagePayload")
 
@@ -70,7 +70,7 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         transport: DispatcherTransport[DispatcherMessagePayload],
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         """Initialize dispatcher service with local sockets and remote transport."""
         self.transport = transport
 

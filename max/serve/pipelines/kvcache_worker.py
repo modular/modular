@@ -30,9 +30,7 @@ from max.serve.kvcache_agent.kvcache_agent import (
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_logging
 
-logger = logging.getLogger(__name__)
-# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-logger.propagate = False
+logger = logging.getLogger("max.serve")
 
 
 async def run_kvcache_agent_process(

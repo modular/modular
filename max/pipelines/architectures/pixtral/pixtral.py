@@ -71,7 +71,7 @@ class PixtralInputs(ModelInputs):
         pixel_values: Tensor | None = None,
         attention_mask: Tensor | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-    ):
+    ) -> None:
         self.input_ids = input_ids
         self.input_row_offsets = input_row_offsets
         self._pixel_values = pixel_values
@@ -94,7 +94,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):
+class PixtralModel(PipelineModel[TextAndVisionContext]):  # type: ignore
     """The overall interface to the Pixtral model."""
 
     def __init__(

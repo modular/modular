@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 import torch
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    PipelineTask,
     PipelineTokenizer,
 )
 from transformers import (
@@ -108,7 +108,7 @@ class SupportedArchitecture:
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
-    ):
+    ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
 
         This class defines all the necessary components and settings required to
@@ -208,7 +208,7 @@ class SupportedArchitecture:
 
 
 class PipelineRegistry:
-    def __init__(self, architectures: list[SupportedArchitecture]):
+    def __init__(self, architectures: list[SupportedArchitecture]) -> None:
         self.architectures = {arch.name: arch for arch in architectures}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
         self._cached_huggingface_tokenizers: dict[
@@ -351,6 +351,13 @@ class PipelineRegistry:
         )
 
         devices_str = ", ".join(f"{d.label}[{d.id}]" for d in devices)
+
+        quantization_encoding_str = str(
+            pipeline_config.model_config.quantization_encoding
+        )
+        if pipeline_config.model_config._applied_dtype_cast_from:
+            quantization_encoding_str = f"{quantization_encoding_str} (cast from {pipeline_config.model_config._applied_dtype_cast_from})"
+
         message = f"""
 
         Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
@@ -359,7 +366,7 @@ class PipelineRegistry:
             devices:                {devices_str}
             model_path:             {pipeline_config.model_config.model_path}{weights_repo_str}
             huggingface_revision:   {pipeline_config.model_config.huggingface_model_revision}
-            quantization_encoding:  {pipeline_config.model_config.quantization_encoding}
+            quantization_encoding:  {quantization_encoding_str}
             cache_strategy:         {pipeline_config.model_config.kv_cache_config.cache_strategy}
             weight_path:            [
         {weight_path}
@@ -378,6 +385,75 @@ class PipelineRegistry:
             KVCacheStrategy.CONTINUOUS
         )
         return pipeline_config
+
+    def retrieve_tokenizer(
+        self,
+        pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+    ) -> PipelineTokenizer:
+        """Retrieves a tokenizer for the given pipeline configuration.
+
+        Args:
+            pipeline_config: Configuration for the pipeline
+            override_architecture: Optional architecture override string
+
+        Returns:
+            PipelineTokenizer: The configured tokenizer
+
+        Raises:
+            ValueError: If no architecture is found or if engine is not MAX
+        """
+        if pipeline_config.engine == PipelineEngine.MAX:
+            # MAX pipeline
+            arch: SupportedArchitecture | None = None
+            if override_architecture:
+                arch = self.architectures[override_architecture]
+            else:
+                arch = self.retrieve_architecture(
+                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                )
+
+            if arch is None:
+                raise ValueError(
+                    f"No architecture found for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+                )
+
+            # Calculate Max Length
+            huggingface_config = pipeline_config.model_config.huggingface_config
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            )
+
+            tokenizer: PipelineTokenizer
+            if (
+                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
+                and arch.tokenizer is TextTokenizer
+            ):
+                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
+                tokenizer = text_tokenizer(
+                    pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_model_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    enable_llama_whitespace_fix=True,
+                )
+            else:
+                tokenizer = arch.tokenizer(
+                    model_path=pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_model_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    pipeline_config=pipeline_config,
+                )
+
+            return tokenizer
+
+        else:
+            raise ValueError(
+                "PipelineTokenizer's can only be retrieved for MAX Models"
+            )
 
     def retrieve_factory(
         self,

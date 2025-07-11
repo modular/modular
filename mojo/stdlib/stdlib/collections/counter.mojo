@@ -20,11 +20,15 @@ from collections import Counter
 """
 from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
 
+from hashlib import Hasher, default_hasher
+
 from utils import Variant
 
 
 @fieldwise_init
-struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
+struct Counter[V: KeyElement, H: Hasher = default_hasher](
+    Boolable, Copyable, Defaultable, Movable, Sized
+):
     """A container for counting hashable items.
 
     The value type must be specified statically, unlike a Python
@@ -43,10 +47,11 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
     ```
     Parameters:
         V: The value type to be counted. Currently must be KeyElement.
+        H: The type of the hasher in the dict.
     """
 
     # Fields
-    var _data: Dict[V, Int]
+    var _data: Dict[V, Int, H]
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -54,9 +59,9 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
 
     fn __init__(out self):
         """Create a new, empty Counter object."""
-        self._data = Dict[V, Int]()
+        self._data = Dict[V, Int, H]()
 
-    fn __init__(out self, owned *values: V):
+    fn __init__(out self, var *values: V):
         """Create a new Counter from a list of values.
 
         Args:
@@ -70,7 +75,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         print(c["b"])  # print 2
         ```
         """
-        self._data = Dict[V, Int]()
+        self._data = Dict[V, Int, H]()
         for item in values:
             self._data[item] = self._data.get(item, 0) + 1
 
@@ -90,7 +95,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         print(c["b"]) # prints 2
         ```
         """
-        self._data = Dict[V, Int]()
+        self._data = Dict[V, Int, H]()
         for item in items:
             self._data[item] = self._data.get(item, 0) + 1
 
@@ -118,7 +123,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
             value >= 0,
             "value must be non-negative",
         )
-        var result = Counter[V]()
+        var result = Counter[V, H]()
         for key in keys:
             result[key] = value
         return result
@@ -147,7 +152,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         self._data[value] = count
 
-    fn __iter__(self) -> _DictKeyIter[V, Int, __origin_of(self._data)]:
+    fn __iter__(self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
@@ -291,7 +296,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         Returns:
             A new Counter with the counts from both Counters added together.
         """
-        var result = Counter[V]()
+        var result = Counter[V, H]()
 
         result.update(self)
         result.update(other)
@@ -342,7 +347,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
             A new Counter with the common elements and the minimum count of
             the two Counters.
         """
-        var result = Counter[V]()
+        var result = Counter[V, H]()
 
         for key in self.keys():
             if key in other:
@@ -377,7 +382,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
             A new Counter with all elements and the maximum count of the two
             Counters.
         """
-        var result = Counter[V]()
+        var result = Counter[V, H]()
 
         for key in self.keys():
             var newcount = max(self.get(key, 0), other.get(key, 0))
@@ -421,7 +426,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         Returns:
             A shallow copy of the Counter.
         """
-        var result = Counter[V]()
+        var result = Counter[V, H]()
         for item in self.items():
             if item.value > 0:
                 result[item.key] = item.value
@@ -434,7 +439,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         Returns:
             A new Counter with stripped counts and negative counts.
         """
-        var result = Counter[V]()
+        var result = Counter[V, H]()
         for item in self.items():
             if item.value < 0:
                 result[item.key] = -item.value
@@ -482,7 +487,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         return self._data.pop(value)
 
-    fn pop(mut self, value: V, owned default: Int) raises -> Int:
+    fn pop(mut self, value: V, var default: Int) raises -> Int:
         """Remove a value from the Counter by value.
 
         Args:
@@ -500,7 +505,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         return self._data.pop(value, default)
 
-    fn keys(ref self) -> _DictKeyIter[V, Int, __origin_of(self._data)]:
+    fn keys(ref self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
         """Iterate over the Counter's keys as immutable references.
 
         Returns:
@@ -508,7 +513,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         return self._data.keys()
 
-    fn values(ref self) -> _DictValueIter[V, Int, __origin_of(self._data)]:
+    fn values(ref self) -> _DictValueIter[V, Int, H, __origin_of(self._data)]:
         """Iterate over the Counter's values as references.
 
         Returns:
@@ -516,7 +521,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         return self._data.values()
 
-    fn items(self) -> _DictEntryIter[V, Int, __origin_of(self._data)]:
+    fn items(self) -> _DictEntryIter[V, Int, H, __origin_of(self._data)]:
         """Iterate over the dict's entries as immutable references.
 
         Returns:

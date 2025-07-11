@@ -271,7 +271,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
             True if logging at the target level is disabled, False otherwise.
         """
         if level == Level.NOTSET:
-            return False
+            return True
         return level > target_level
 
     fn debug[*Ts: Writable](self, *values: *Ts):

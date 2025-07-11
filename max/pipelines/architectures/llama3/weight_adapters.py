@@ -60,6 +60,20 @@ def convert_safetensor_state_dict(
                 key.endswith("bias") or key.endswith("scales")
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
+
+    if pipeline_config.model_config._applied_dtype_cast_from:
+        assert pipeline_config.model_config._applied_dtype_cast_to, (
+            "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
+            "This should not happen."
+        )
+        for key, weight_data in new_state_dict.items():
+            if (
+                weight_data.dtype
+                == pipeline_config.model_config._applied_dtype_cast_from.dtype
+            ):
+                new_state_dict[key] = weight_data.astype(
+                    pipeline_config.model_config._applied_dtype_cast_to.dtype
+                )
     return new_state_dict
 
 

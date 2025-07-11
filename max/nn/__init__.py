@@ -33,6 +33,7 @@ from .linear import (
     MLP,
     MLPV1,
     ColumnParallelLinear,
+    DistributedGemmConfig,
     DistributedMLP,
     Float8Config,
     Float8InputScaleSpec,
@@ -43,6 +44,7 @@ from .linear import (
     Linear,
     LinearV1,
 )
+from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
     DistributedRMSNorm,
     GroupNorm,
@@ -52,9 +54,12 @@ from .norm import (
     RMSNormV1,
 )
 from .rotary_embedding import (
+    DynamicRotaryEmbedding,
     LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
     RotaryEmbedding,
 )
 from .sequential import Sequential
@@ -108,8 +113,11 @@ __all__ = [
     "LinearV1",
     "Linear",
     "LinearScalingParams",
+    "LinearLoRA",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
+    "LongRoPEScalingParams",
+    "LongRoPERotaryEmbedding",
     "MLPV1",
     "MLP",
     "Module",
@@ -120,6 +128,7 @@ __all__ = [
     "Sequential",
     "Signals",
     "Shardable",
+    "SupportsLoRA",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",

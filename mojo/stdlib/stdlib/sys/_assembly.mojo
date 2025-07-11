@@ -33,35 +33,17 @@ fn inlined_assembly[
 
     @parameter
     if _mlirtype_is_eq[result_type, NoneType]():
-
-        @parameter
-        if has_side_effect:
-            __mlir_op.`pop.inline_asm`[
-                _type=None,
-                assembly=asm_kgen_string,
-                constraints=constraints_kgen_string,
-                hasSideEffects = __mlir_attr.unit,
-            ](loaded_pack)
-        else:
-            __mlir_op.`pop.inline_asm`[
-                _type=None,
-                assembly=asm_kgen_string,
-                constraints=constraints_kgen_string,
-            ](loaded_pack)
+        __mlir_op.`pop.inline_asm`[
+            _type=None,
+            assembly=asm_kgen_string,
+            constraints=constraints_kgen_string,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
         return rebind[result_type](None)
     else:
-
-        @parameter
-        if has_side_effect:
-            return __mlir_op.`pop.inline_asm`[
-                _type=result_type,
-                assembly=asm_kgen_string,
-                constraints=constraints_kgen_string,
-                hasSideEffects = __mlir_attr.unit,
-            ](loaded_pack)
-        else:
-            return __mlir_op.`pop.inline_asm`[
-                _type=result_type,
-                assembly=asm_kgen_string,
-                constraints=constraints_kgen_string,
-            ](loaded_pack)
+        return __mlir_op.`pop.inline_asm`[
+            _type=result_type,
+            assembly=asm_kgen_string,
+            constraints=constraints_kgen_string,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)

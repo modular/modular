@@ -15,11 +15,13 @@ from sys.info import simdwidthof
 
 from algorithm import stencil, stencil_gpu
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeTuple
+from gpu.host.info import is_cpu, is_gpu
+from layout import LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
+from runtime.asyncrt import DeviceContextPtr
 
 from .shapes import get_sliding_window_out_dim
 
@@ -176,15 +178,15 @@ fn pool_shape_impl[
 
 
 @always_inline
-fn max_pool[
-    type: DType, int_type: DType
+fn max_pool_cpu[
+    dtype: DType, int_type: DType
 ](
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
 ):
     """Computes fp32 pooling.
@@ -213,7 +215,7 @@ fn max_pool[
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -260,8 +262,8 @@ fn max_pool[
     @always_inline
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        simd_width: Int, dtype: DType
+    ](point: IndexList[output.rank, **_]) -> SIMD[dtype, simd_width]:
         var indices = IndexList[
             output.rank, element_type = input.layout_int_type
         ]()
@@ -276,14 +278,14 @@ fn max_pool[
                 element_type = input.layout_int_type,
             ](indices)
         )
-        return rebind[SIMD[type, simd_width]](
+        return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
     @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
-        return min_or_neg_inf[type]()
+    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return min_or_neg_inf[dtype]()
 
     @always_inline
     @parameter
@@ -291,16 +293,16 @@ fn max_pool[
         simd_width: Int
     ](
         point: IndexList[output.rank, **_],
-        val: SIMD[type, simd_width],
-        result: SIMD[type, simd_width],
-    ) -> SIMD[type, simd_width]:
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
         ]()
@@ -328,7 +330,7 @@ fn max_pool[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -342,7 +344,7 @@ fn max_pool[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -374,15 +376,15 @@ fn max_pool[
 
 @always_inline
 fn max_pool_gpu[
-    type: DType, int_type: DType
+    dtype: DType, int_type: DType
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
 ) raises:
     """Computes max pooling on GPU.
@@ -461,8 +463,8 @@ fn max_pool_gpu[
     @always_inline
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        simd_width: Int, dtype: DType
+    ](point: IndexList[output.rank, **_]) -> SIMD[dtype, simd_width]:
         var indices = IndexList[
             output.rank, element_type = input.layout_int_type
         ]()
@@ -477,14 +479,14 @@ fn max_pool_gpu[
                 element_type = input.layout_int_type,
             ](indices)
         )
-        return rebind[SIMD[type, simd_width]](
+        return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
     @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
-        return min_or_neg_inf[type]()
+    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return min_or_neg_inf[dtype]()
 
     @always_inline
     @parameter
@@ -492,16 +494,16 @@ fn max_pool_gpu[
         simd_width: Int
     ](
         point: IndexList[output.rank, **_],
-        val: SIMD[type, simd_width],
-        result: SIMD[type, simd_width],
-    ) -> SIMD[type, simd_width]:
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var indices = IndexList[
             output.rank, element_type = input.layout_int_type
         ]()
@@ -535,7 +537,7 @@ fn max_pool_gpu[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -555,18 +557,18 @@ fn max_pool_gpu[
 
 
 @always_inline
-fn avg_pool[
-    type: DType,
+fn avg_pool_cpu[
+    dtype: DType,
     int_type: DType,
     rank: Int = 4,
     count_boundary: Bool = False,
 ](
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
 ):
     """Computes the average pool.
@@ -619,7 +621,7 @@ fn avg_pool[
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
 
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
 
     var output_height = output.dim[1]()
     var output_width = output.dim[2]()
@@ -670,8 +672,8 @@ fn avg_pool[
     @always_inline
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        simd_width: Int, dtype: DType
+    ](point: IndexList[output.rank, **_]) -> SIMD[dtype, simd_width]:
         var indices = IndexList[
             output.rank, element_type = input.layout_int_type
         ]()
@@ -687,14 +689,14 @@ fn avg_pool[
             ](indices)
         )
 
-        return rebind[SIMD[type, simd_width]](
+        return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
-        return SIMD[type, simd_width](0)
+    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
@@ -702,9 +704,9 @@ fn avg_pool[
         simd_width: Int
     ](
         point: IndexList[output.rank, **_],
-        val: SIMD[type, simd_width],
-        result: SIMD[type, simd_width],
-    ) -> SIMD[type, simd_width]:
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     # Returns the size of the pooling window at dim excluding the
@@ -734,7 +736,7 @@ fn avg_pool[
     @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -769,7 +771,7 @@ fn avg_pool[
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var res = val / (pool_window_h * pool_window_w)
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
@@ -797,7 +799,7 @@ fn avg_pool[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -811,7 +813,7 @@ fn avg_pool[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -825,7 +827,7 @@ fn avg_pool[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -872,17 +874,17 @@ fn avg_pool[
 
 @always_inline
 fn avg_pool_gpu[
-    type: DType,
+    dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
 ) raises:
     """Computes the average pool on GPU.
@@ -989,8 +991,8 @@ fn avg_pool_gpu[
     @always_inline
     @parameter
     fn load_fn[
-        simd_width: Int, type: DType
-    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        simd_width: Int, dtype: DType
+    ](point: IndexList[output.rank, **_]) -> SIMD[dtype, simd_width]:
         var indices = IndexList[
             output.rank, element_type = input.layout_int_type
         ]()
@@ -1005,14 +1007,14 @@ fn avg_pool_gpu[
                 element_type = input.layout_int_type,
             ](indices)
         )
-        return rebind[SIMD[type, simd_width]](
+        return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
-        return SIMD[type, simd_width](0)
+    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
@@ -1020,9 +1022,9 @@ fn avg_pool_gpu[
         simd_width: Int
     ](
         point: IndexList[output.rank, **_],
-        val: SIMD[type, simd_width],
-        result: SIMD[type, simd_width],
-    ) -> SIMD[type, simd_width]:
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     # Returns the size of the pooling window at dim excluding the
@@ -1052,7 +1054,7 @@ fn avg_pool_gpu[
     @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -1085,7 +1087,7 @@ fn avg_pool_gpu[
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+    ](point: IndexList[output.rank, **_], val: SIMD[dtype, simd_width],):
         var res = val / (pool_window_h * pool_window_w)
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
@@ -1120,7 +1122,7 @@ fn avg_pool_gpu[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -1134,7 +1136,7 @@ fn avg_pool_gpu[
         stencil_rank,
         stencil_axis,
         simd_width,
-        type,
+        dtype,
         map_fn[stencil_rank],
         dilation_fn,
         load_fn,
@@ -1180,3 +1182,62 @@ fn avg_pool_gpu[
                     IndexList[output.rank, element_type = input.layout_int_type]
                 ](input.runtime_layout.shape.value),
             )
+
+
+@always_inline
+fn avg_pool[
+    type: DType,
+    int_type: DType,
+    count_boundary: Bool = False,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        avg_pool_cpu[count_boundary=count_boundary](
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        avg_pool_gpu[count_boundary=count_boundary](
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, "Unknown target " + target]()
+
+
+@always_inline
+fn max_pool[
+    type: DType,
+    int_type: DType,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        max_pool_cpu(
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        max_pool_gpu(
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, "Unknown target " + target]()

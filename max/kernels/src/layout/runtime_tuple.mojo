@@ -29,9 +29,7 @@ coordinate transformations (`idx2crd`, `crd2idx`), and specialized tensor operat
 like shape division and prefix products.
 """
 
-from collections import InlineArray
 from os import abort
-from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
@@ -42,7 +40,7 @@ from layout.int_tuple import shape_div as shape_div_int_tuple
 from utils import IndexList
 
 
-fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
+fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     """Concatenates two `IntTuple` instances into a single `IntTuple`.
 
     This function appends all elements from the right-hand side tuple to the
@@ -50,7 +48,7 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     the hierarchical structure of both tuples.
 
     Args:
-        lhs: The left-hand side `IntTuple` that will be modified (owned parameter).
+        lhs: The left-hand side `IntTuple` that will be modified (var parameter).
         rhs: The right-hand side `IntTuple` whose elements will be appended.
 
     Returns:
@@ -342,19 +340,21 @@ struct RuntimeTuple[
         return l
 
     @always_inline
-    fn cast[type: DType](self, out result: RuntimeTuple[S, element_type=type]):
+    fn cast[
+        dtype: DType
+    ](self, out result: RuntimeTuple[S, element_type=dtype]):
         """Casts the RuntimeTuple to use a different numeric type.
         This method creates a new RuntimeTuple with the same structure and values
         but using a different underlying numeric type for storage. This is useful
         for changing precision or signedness of the data.
 
         Parameters:
-            type: The target DType to cast the elements to.
+            dtype: The target DType to cast the elements to.
 
         Returns:
             A new `RuntimeTuple` with elements cast to the specified type.
         """
-        return __type_of(result)(self.value.cast[type]())
+        return __type_of(result)(self.value.cast[dtype]())
 
     @always_inline
     fn __int__(self) -> Int:

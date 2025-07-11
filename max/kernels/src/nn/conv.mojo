@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.ffi import _get_global_or_null, external_call
 from sys.info import alignof, simdwidthof
 
 from algorithm import (
@@ -62,13 +61,11 @@ from gpu._cudnn.infer import (
     cudnnTensorStruct,
     cudnnMathType_t,
 )
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from gpu.host.device_context import _DeviceBufferPtr
 from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -300,12 +297,12 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    type: DType, //,
+    dtype: DType, //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: UnsafePointer[Scalar[type]],
-    output: UnsafePointer[Scalar[type]],
+    scratch: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype]],
     N: Int,
     output_space_dims: IndexList,
     F: Int,
@@ -2957,14 +2954,14 @@ fn conv_nhwc_direct[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        return ";".join(
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
             "group=" + String(num_groups),
-            "stride=" + String("x").join(stride),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
+            "stride=" + "x".join(stride),
+            "padding_h=" + "x".join(pad_h),
+            "padding_w=" + "x".join(pad_w),
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -3164,8 +3161,8 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     Returns:
         The cuDNN metadata.
     """
-    alias name = String("CUDA_CUDNN_META")
-    if ptr_meta := _get_global_or_null[name]().bitcast[CuDNNConvMeta]():
+    var name = "CUDA_CUDNN_META"
+    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
@@ -3307,16 +3304,16 @@ fn conv_cudnn[
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
             ptr_meta[].ptr_input_desc,
-            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
             ptr_meta[].ptr_filter_desc,
-            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
             ptr_meta[].ptr_conv_desc,
             algo,
             workspace_buffer.unsafe_ptr().bitcast[NoneType](),
             workspace_size_var,
             UnsafePointer(to=beta).bitcast[NoneType](),
             ptr_meta[].ptr_output_desc,
-            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
         )
     )
     _ = workspace_buffer^

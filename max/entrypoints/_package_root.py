@@ -20,26 +20,22 @@ from pathlib import Path
 
 def get_package_root() -> Path | None:
     """Returns the package root of this installation, or None if running in a Bazel environment"""
-    # max/entrypoints/_package_root.py -> max
-    pypi_root = Path(__file__).parent.parent
-    # .magic/envs/default/lib/python3.12/site-packages/max/entrypoints/_package_root.py ->
-    # .magic/envs/default/
-    conda_root = Path(__file__).parent.parent.parent.parent.parent.parent
+    current_path = Path(__file__).parent
 
-    # NOTE:
-    #   MAX is currently available in two formats: as a set of Conda packages,
-    #   and as a monolithic Pip wheel. This is a best-effort heuristic to guess
-    #   which way MAX was installed, because that will change where we look to
-    #   resolve the locations of the various important assets in MAX.
-    if (pypi_root / "lib" / "liborc_rt.a").exists():
-        logging.debug("Located MAX SDK assets assuming MAX PyPi package layout")
-        return pypi_root
-    elif (conda_root / "lib" / "liborc_rt.a").exists():
-        logging.debug(
-            "Located MAX SDK assets assuming MAX Conda package layout"
-        )
-        return conda_root
-    elif "BAZEL_WORKSPACE" in os.environ:
+    # Walk up the directory tree until we find lib/liborc_rt.a or hit root
+    # This is currently supposed to work for two cases:
+    # - Set of Conda packages.
+    # - Monolithic Pip wheel installation.
+    while current_path != current_path.parent:  # Stop at root directory
+        if (current_path / "lib" / "liborc_rt.a").exists():
+            logging.debug(f"Located MAX SDK assets at {current_path}")
+            return current_path
+        current_path = current_path.parent
+
+    if (
+        "BUILD_WORKSPACE_DIRECTORY" in os.environ
+        or "BAZEL_WORKSPACE" in os.environ
+    ):
         # We're running in a Modular internal Bazel test, so let Bazel handle
         # the environment variables.
         return None

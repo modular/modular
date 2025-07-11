@@ -13,7 +13,6 @@
 
 from buffer import DimList
 from internal_utils import TestTensor, assert_with_measure, correlation, kl_div
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 
@@ -22,10 +21,10 @@ def test_assert_with_custom_measure():
     var t1 = TestTensor[DType.float32, 1](DimList(100), List[Float32](1))
 
     fn always_zero[
-        type: DType
+        dtype: DType
     ](
-        lhs: UnsafePointer[Scalar[type]],
-        rhs: UnsafePointer[Scalar[type]],
+        lhs: UnsafePointer[Scalar[dtype]],
+        rhs: UnsafePointer[Scalar[dtype]],
         n: Int,
     ) -> Float64:
         return 0

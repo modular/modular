@@ -13,7 +13,7 @@
 
 from sys import simdwidthof
 
-from algorithm import parallelize, sync_parallelize, vectorize
+from algorithm import sync_parallelize, vectorize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

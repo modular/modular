@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from pathlib import Path, _dir_of_current_file
+from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
 
 from builtin.sort import _quicksort, _small_sort, _SortWrapper
@@ -574,7 +574,7 @@ def test_sort_comparamble_elements_list():
     fn gen_list(count: Int):
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
-        var names = [String("Maxim"), "Max", "Alex", "Bob", "Joe"]
+        var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]
         for age in ages:
             var name = names[Int(age) % len(names)]
             list.append(Person(name, Int(age)))

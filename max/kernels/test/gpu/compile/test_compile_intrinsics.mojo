@@ -13,17 +13,17 @@
 
 from math import exp2
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.host.info import A100
 from gpu.intrinsics import *
 
 
 fn kernel[
-    type: DType, memory: Bool = True
+    dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[type]],
-    ptr: UnsafePointer[Scalar[type]],
-    val: Scalar[type],
+    output: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype]],
+    val: Scalar[dtype],
 ):
     store_release[memory=memory](ptr, val)
     output[] = load_acquire[memory=memory](ptr)

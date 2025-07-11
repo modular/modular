@@ -1,0 +1,3 @@
+{% macro escape_quotes(s) -%}
+  {{ s | replace('"', '\\"') }}
+{%- endmacro %}

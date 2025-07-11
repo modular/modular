@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import ceildiv, erf, exp, tanh
-from sys.info import num_physical_cores, simdwidthof
+from math import erf, exp, tanh
+from sys.info import simdwidthof
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils.index import IndexList
 

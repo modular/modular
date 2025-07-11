@@ -1,0 +1,50 @@
+import platform
+
+from pathlib import Path
+
+# Generic config options for all Modular lit tests.
+config.modular_obj_root = "."
+config.modular_tools_dir = "."
+
+config.llvm_tools_dir = "../+llvm_configure+llvm-project/llvm"
+
+# Note: ldflags can contain double-quoted paths, so must use single quotes here.
+config.llvm_use_sanitizer = "@LLVM_USE_SANITIZER@"
+config.mlir_tools_dir = "external/+llvm_configure+llvm-project/mlir"
+if @ENABLE_ASSERTIONS@:
+    config.available_features.add("ASSERTIONS")
+
+config.substitutions.append(("%modelsdir", str(Path(".").absolute() / "Models")))
+
+config.llvm_tools_dir = lit_config.substitute(config.llvm_tools_dir)
+
+# Support substitution of the tools_dir with user parameters. This is
+# used when we can't determine the tool dir at configuration time.
+try:
+    config.llvm_tools_dir = config.llvm_tools_dir % lit_config.params
+except KeyError:
+    e = sys.exc_info()[1]
+    key, = e.args
+    lit_config.fatal("unable to find %r parameter, use '--param=%s=VALUE'" % (key,key))
+
+import lit.llvm
+lit.llvm.initialize(lit_config, config)
+
+lit.llvm.llvm_config.with_system_environment([
+  "HOME",
+  "INCLUDE",
+  "LIB",
+  "TMP",
+  "TEMP",
+  "AWS_PROFILE",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "MODULAR_PATH",
+  "MODULAR_DERIVED_PATH"
+])
+
+lit.llvm.llvm_config.use_default_substitutions()
+
+# Setup attributes common for all top-level directories
+lit_config.load_config(config, "./bazel/internal/llvm-lit/lit.common.cfg.py")

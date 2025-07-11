@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string.string_slice import StringSlice
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator, sizeof
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys import has_amd_gpu_accelerator, sizeof
+from sys.ffi import _get_global_or_null, external_call
 
 import gpu._rocblas
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu._cublas.cublas import (
     Algorithm,
     ComputeType,
@@ -58,7 +57,6 @@ from gpu._cublas.cublaslt import (
     cublasLtMatrixLayoutDestroy,
 )
 from gpu._cublas.dtype import DataType
-from gpu._cublas.result import Result
 from gpu._rocblas.hipblaslt import (
     _check_hipblas_error,
     _convert_to_hip_datatype,
@@ -87,8 +85,6 @@ from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from gpu.host.info import DEFAULT_GPU, H100
-from layout import Layout
-from memory import UnsafePointer
 
 from utils.variant import Variant
 
@@ -141,13 +137,15 @@ struct Backend(Copyable, EqualityComparable, Movable, Writable):
         writer.write("HIPBLASLT")
 
 
-fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
+fn _resolve_backend[
+    backend: Backend, dtype: DType = DType.invalid
+]() -> Backend:
     @parameter
     if backend is not Backend.AUTOMATIC:
         return backend
     elif has_amd_gpu_accelerator():
-        return Backend.ROCBLAS
-    elif type.is_float8() or (DEFAULT_GPU > H100 and type.is_half_float()):
+        return Backend.HIPBLASLT
+    elif dtype.is_float8():
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -290,10 +288,11 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 
 
 fn _get_global_handle[
-    backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
+    dtype: DType,
+    backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    alias HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
-    if global_ptr := _get_global_or_null[HANDLE_NAME]().bitcast[
+    var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend, "_", ctx.id())
+    if global_ptr := _get_global_or_null(HANDLE_NAME).bitcast[
         Handle[backend]
     ]():
         _attach_handle_to_stream(ctx, global_ptr[])
@@ -330,18 +329,21 @@ fn matmul[
     Matmul using the vendor BLAS library. With a global handle.
     """
 
-    return matmul[use_tf32](
-        ctx,
-        _get_global_handle(ctx),
-        c,
-        a,
-        b,
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-    )
+    # Push the device context to ensure correct CUDA context is current for all
+    # vendor BLAS calls.
+    with ctx.push_context() as cur_ctx:
+        return matmul[use_tf32](
+            cur_ctx,
+            _get_global_handle[a.type](ctx),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
+        )
 
 
 fn matmul[
@@ -905,7 +907,7 @@ fn _cublasLt_matmul(
                 a.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -927,7 +929,7 @@ fn _cublasLt_matmul(
                 b.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -1101,7 +1103,7 @@ fn _hipblasLt_matmul(
             _ddata,
             _ddesc,
             UnsafePointer(to=heuristicResult.algo),
-            UnsafePointer[NoneType](),
+            OpaquePointer(),
             0,
             HIP(ctx.stream()),
         )

@@ -14,13 +14,11 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from python import Python, PythonObject
-from testing import assert_equal
+from python import Python
 
 
 def test_create_module():
-    var module_name = "test_module"
-    var module = Python.create_module(module_name)
+    var module = Python.create_module("test_module")
 
     # TODO: inspect properties about the module
     # First though, let's see if we can even import it

@@ -14,8 +14,6 @@
 from layout import LayoutTensor, Layout
 from nn.broadcast import broadcast
 
-from utils.index import IndexList
-
 
 # CHECK-LABEL: test_broadcast_empty_shape
 fn test_broadcast_empty_shape():

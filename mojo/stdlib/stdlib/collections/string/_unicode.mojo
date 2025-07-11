@@ -13,7 +13,7 @@
 
 from collections.string._unicode_lookups import *
 
-from memory import Span, UnsafePointer, memcpy
+from memory import Span, memcpy
 
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -105,7 +105,7 @@ fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
         return None
 
 
-fn is_uppercase(s: StringSlice) -> Bool:
+fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
     """Returns True if all characters in the string are uppercase, and
         there is at least one cased character.
 
@@ -134,7 +134,7 @@ fn is_uppercase(s: StringSlice) -> Bool:
     return found
 
 
-fn is_lowercase(s: StringSlice) -> Bool:
+fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
     """Returns True if all characters in the string are lowercase, and
         there is at least one cased character.
 
@@ -165,7 +165,7 @@ fn is_lowercase(s: StringSlice) -> Bool:
     return found
 
 
-fn to_lowercase(s: StringSlice) -> String:
+fn to_lowercase(s: StringSlice[mut=False]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -174,15 +174,18 @@ fn to_lowercase(s: StringSlice) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var data = s.as_bytes()
+    var result = String(capacity=_estimate_needed_size(len(data)))
     var input_offset = 0
-    while input_offset < s.byte_length():
+    while input_offset < len(data):
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s._slice[input_offset:]
+            data[input_offset:]
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            result += s[input_offset : input_offset + rune_and_size[1]]
+            result.write_bytes(
+                data[input_offset : input_offset + rune_and_size[1]]
+            )
         else:
             result += String(lowercase_char_opt.unsafe_value())
 
@@ -191,7 +194,7 @@ fn to_lowercase(s: StringSlice) -> String:
     return result^
 
 
-fn to_uppercase(s: StringSlice) -> String:
+fn to_uppercase(s: StringSlice[mut=False]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -200,11 +203,12 @@ fn to_uppercase(s: StringSlice) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var data = s.as_bytes()
+    var result = String(capacity=_estimate_needed_size(len(data)))
     var input_offset = 0
-    while input_offset < s.byte_length():
+    while input_offset < len(data):
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s._slice[input_offset:]
+            data[input_offset:]
         )
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
@@ -219,7 +223,9 @@ fn to_uppercase(s: StringSlice) -> String:
             for char_idx in range(count):
                 result += String(uppercase_replacement_chars[char_idx])
         else:
-            result += s[input_offset : input_offset + rune_and_size[1]]
+            result.write_bytes(
+                data[input_offset : input_offset + rune_and_size[1]]
+            )
 
         input_offset += rune_and_size[1]
 

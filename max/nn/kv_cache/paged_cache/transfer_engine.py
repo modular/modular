@@ -18,16 +18,21 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from dataclasses import dataclass
 from uuid import uuid4
 
+import msgspec
 import torch
-from max import driver
 from max._core import nixl
-from max.driver import CPU
+from max.driver import Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _enable_ucx_logging() -> None:
+    import os
+
+    os.environ["UCX_LOG_LEVEL"] = "debug"
 
 
 def _get_tensor_base_addr(tensor: Tensor) -> int:
@@ -35,8 +40,9 @@ def _get_tensor_base_addr(tensor: Tensor) -> int:
     return torch.from_dlpack(tensor).data_ptr()
 
 
-@dataclass
-class KVTransferEngineMetadata:
+class KVTransferEngineMetadata(
+    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
+):
     """Metadata associated with a transfer engine.
 
     This is safe to send between threads/processes."""
@@ -47,10 +53,10 @@ class KVTransferEngineMetadata:
     bytes_per_page: int
     base_addr: int
     memory_type: nixl.MemoryType
+    device_id: int
 
 
-@dataclass
-class XferReqData:
+class XferReqData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """Metadata associated with a transfer request.
 
     This is safe to send between threads/processes."""
@@ -100,9 +106,6 @@ class KVTransferEngine:
     completed_xfers: dict[str, set[str]]
     """Map of agent names to completed transfers."""
 
-    cpu_staging_buffer: Tensor | None
-    """CPU staging buffer for GPU->GPU transfers."""
-
     def __init__(
         self,
         name: str,
@@ -110,7 +113,10 @@ class KVTransferEngine:
         total_num_pages: int,
         *,
         listen_port: int = 8040,
-    ):
+    ) -> None:
+        # Comment out the below to enable UCX logging
+        # _enable_ucx_logging()
+
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
@@ -120,6 +126,18 @@ class KVTransferEngine:
             raise ValueError(
                 f"Tensor num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
             )
+
+        # Regardless of whether the tensor is on CPU / GPU, we must ensure that
+        # CUDADriver.cpp is called which loads the libcuda.so.1 and libnvidia-ml.so.1
+        # symbols PRIOR to loading the UCX CUDA backend.
+        acc = Accelerator()
+        if acc.api != "cuda":
+            raise NotImplementedError(
+                "Currently UCX only supports CUDA devices."
+            )
+        # This device is unused. It is created for the sole purpose of loading
+        # the CUDA symbols.
+        del acc
 
         # Create agent
         self.name = name
@@ -148,45 +166,26 @@ class KVTransferEngine:
                 "UCX not currently available, please ensure it is supported by your system."
             )
 
-        ucx_params = self.agent.get_plugin_params("ucx")
-        self.ucx_backend = self.agent.create_backend(
-            type="ucx", init_params=ucx_params[0]
-        )
-
-        if not tensor.device.is_host and driver.accelerator_api() != "cuda":
-            # TODO(E2EOPT-228): Support HIP
-            raise ValueError(
-                "Non-NVIDIA GPUs are not yet supported with NIXL Transfer Engine."
-            )
-
-        # TODO(E2EOPT-216) Delete CPU staging buffer after GPU->GPU is supported
-        # Maybe allocate a CPU staging buffer for GPU->GPU transfers
-        # So GPU->GPU would actually be GPU->CPU->CPU->GPU.
-        self.cpu_staging_buffer = None
-        if not tensor.device.is_host:
-            logger.warning(
-                "TransferEngine does not support GPUDirect, "
-                "falling back to slow CPU TCP transfers until it is supported."
-            )
-            self.cpu_staging_buffer = Tensor(
-                shape=(self.total_num_pages, self.elts_per_page),
-                dtype=tensor.dtype,
-                device=CPU(),
-                pinned=True,
-            )
-
-        # Determine base address
-        if self.cpu_staging_buffer is None:
-            self.base_addr = _get_tensor_base_addr(self.tensor)
+        # Determine device ID
+        device = self.tensor.device
+        if not device.is_host:
+            self.device_id = device.id
         else:
-            self.base_addr = _get_tensor_base_addr(self.cpu_staging_buffer)
+            self.device_id = 0
+
+        ucx_params = self.agent.get_plugin_params("ucx")[0]
+        if not device.is_host:
+            ucx_params["gpu_device_id"] = str(self.device_id)
+        self.ucx_backend = self.agent.create_backend(
+            type="ucx",
+            init_params=ucx_params,
+        )
 
         # Register memory
         self.memory_type = (
-            nixl.MemoryType.DRAM
-            if self.tensor.device.is_host
-            else nixl.MemoryType.VRAM
+            nixl.MemoryType.DRAM if device.is_host else nixl.MemoryType.VRAM
         )
+        self.base_addr = _get_tensor_base_addr(self.tensor)
         num_bytes = self.tensor.num_elements * self.tensor.dtype.size_in_bytes
         self.reg_dlist = nixl.RegistrationDescriptorList(
             type=self.memory_type,
@@ -194,7 +193,7 @@ class KVTransferEngine:
                 (
                     self.base_addr,
                     num_bytes,
-                    self.memory_type.value,
+                    self.device_id,
                     "",
                 )
             ],
@@ -230,6 +229,7 @@ class KVTransferEngine:
             bytes_per_page=self.bytes_per_page,
             base_addr=self.base_addr,
             memory_type=self.memory_type,
+            device_id=self.device_id,
         )
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
@@ -301,21 +301,13 @@ class KVTransferEngine:
                     f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
                 )
 
-        # Stage data to CPU staging buffer before xfer
-        if self.cpu_staging_buffer is not None:
-            for src_idx in src_idxs:
-                self.cpu_staging_buffer[src_idx, :].inplace_copy_from(
-                    self.tensor[src_idx, :]
-                )
-            self.cpu_staging_buffer.device.synchronize()
-
         bytes_per_page = self.bytes_per_page
 
         # Prepare source descriptor list
         descs_src: list[tuple[int, int, int]] = []
         for src_idx in src_idxs:
             src_addr = self.base_addr + src_idx * bytes_per_page
-            descs_src.append((src_addr, bytes_per_page, self.memory_type.value))
+            descs_src.append((src_addr, bytes_per_page, self.device_id))
         xfer_dlist_src = nixl.TransferDescriptorList(
             type=self.memory_type, descs=descs_src
         )
@@ -324,9 +316,7 @@ class KVTransferEngine:
         descs_dst: list[tuple[int, int, int]] = []
         for dst_idx in dst_idxs:
             dst_addr = remote.base_addr + dst_idx * bytes_per_page
-            descs_dst.append(
-                (dst_addr, bytes_per_page, remote.memory_type.value)
-            )
+            descs_dst.append((dst_addr, bytes_per_page, remote.device_id))
         xfer_dlist_dst = nixl.TransferDescriptorList(
             type=remote.memory_type, descs=descs_dst
         )
@@ -388,25 +378,50 @@ class KVTransferEngine:
                     f"Transfer request failed with status {status}"
                 )
 
+    def get_transfer_status(self, xfer_req_data: XferReqData) -> nixl.Status:
+        """Get the current status of a transfer request.
+
+        This API can only be used by the initiating transfer engine.
+        """
+        return self.agent.get_transfer_status(xfer_req_data.xfer_id)
+
+    def update_completed_xfers(self) -> None:
+        """Update the completed transfers by processing notifications from the agent.
+
+        This method retrieves notifications from the transfer agent and updates
+        the internal completed_xfers tracking for each remote connection.
+        Notifications contain transfer names that have completed, which are
+        decoded from bytes to strings and added to the appropriate remote's
+        completed transfers set.
+        """
+        notifs = self.agent.get_notifs()
+
+        for remote in notifs:
+            completed_xfer_names = [x.decode() for x in notifs[remote]]
+            self.completed_xfers[remote].update(completed_xfer_names)
+
+    def is_complete(self, xfer_req_id: XferReqData) -> bool:
+        """Check if a transfer request has completed.
+
+        This method is primarily expected to be used by the receiver of a transfer
+        to check if data has been successfully transferred from the source.
+
+        Args:
+            xfer_req_id: The transfer request data containing transfer metadata.
+
+        Returns:
+            True if the transfer has completed, False otherwise.
+        """
+        return (
+            xfer_req_id.xfer_name in self.completed_xfers[xfer_req_id.src_name]
+        )
+
     def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
         """Wait for a transfer initiated by remote engine to complete."""
-        while (
-            xfer_req_id.xfer_name
-            not in self.completed_xfers[xfer_req_id.src_name]
-        ):
-            notifs = self.agent.get_notifs()
+        while not self.is_complete(xfer_req_id):
+            self.update_completed_xfers()
 
-            for remote in notifs:
-                completed_xfer_names = [x.decode() for x in notifs[remote]]
-                self.completed_xfers[remote].update(completed_xfer_names)
-
-        # move data from CPU staging buffer to tensor after xfer
-        if self.cpu_staging_buffer is not None:
-            for dst_idx in xfer_req_id.dst_idxs:
-                self.tensor[dst_idx, :].inplace_copy_from(
-                    self.cpu_staging_buffer[dst_idx, :]
-                )
-            self.cpu_staging_buffer.device.synchronize()
+        self.completed_xfers[xfer_req_id.src_name].remove(xfer_req_id.xfer_name)
 
     def cleanup(self) -> None:
         """Release all resources associated with the transfer engine.

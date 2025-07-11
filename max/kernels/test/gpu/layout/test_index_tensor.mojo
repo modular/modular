@@ -13,12 +13,10 @@
 
 from random import random_ui64
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import stack_allocation
-from nn.index_tensor import _index_tensor_impl, index_tensor_shape
+from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
 from utils import IndexList
@@ -35,24 +33,24 @@ def execute_index_tensor_test[
 ):
     # create device-side buffers and copy data to them
     var data_device = DeviceNDBuffer[
-        data_host.type, data_host.rank, data_host.shape
+        data_host.dtype, data_host.rank, data_host.shape
     ](
         data_host.tensor.get_shape(),
         ctx=ctx,
     )
     var indices_device = DeviceNDBuffer[
-        indices_host.type, indices_host.rank, indices_host.shape
+        indices_host.dtype, indices_host.rank, indices_host.shape
     ](
         indices_host.tensor.get_shape(),
         ctx=ctx,
     )
     var actual_output_host = HostNDBuffer[
-        expected_output.type, expected_output.rank, expected_output.shape
+        expected_output.dtype, expected_output.rank, expected_output.shape
     ](
         expected_output.tensor.get_shape(),
     )
     var actual_output_device = DeviceNDBuffer[
-        expected_output.type, expected_output.rank, expected_output.shape
+        expected_output.dtype, expected_output.rank, expected_output.shape
     ](
         expected_output.tensor.get_shape(),
         ctx=ctx,

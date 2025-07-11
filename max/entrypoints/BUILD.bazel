@@ -55,6 +55,26 @@ modular_py_library(
     deps = [":_package_root"],
 )
 
+modular_py_library(
+    name = "_pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        requirement("click"),
+        requirement("huggingface-hub"),
+        requirement("pillow"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+    ],
+)
+
 modular_py_binary(
     name = "pipelines",
     srcs = [
@@ -74,16 +94,8 @@ modular_py_binary(
         "//conditions:default": {},
     }),
     deps = [
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/serve",
+        ":_pipelines",
         requirement("click"),
-        requirement("huggingface-hub"),
-        requirement("pillow"),
-        requirement("transformers"),
-        requirement("uvicorn"),
     ],
 )
 

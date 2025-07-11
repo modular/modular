@@ -11,23 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string import StaticString
 from math import ceildiv
 from sys import simdwidthof
 from sys.info import _current_target
 
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
-from memory import UnsafePointer, memcpy, memset_zero
-from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList
 
 
 @always_inline
@@ -153,7 +148,7 @@ fn index_tensor_shape[
 
 
 fn index_tensor[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -162,16 +157,16 @@ fn index_tensor[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: NDBuffer[type, data_rank],
+    data: NDBuffer[dtype, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[mut=True, type, output_rank],
+    output: NDBuffer[mut=True, dtype, output_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """
     Index_tensor operation; based on modified implementation of gather_nd.
 
     Parameters:
-        type: Type of data tensor.
+        dtype: Type of data tensor.
         indices_type: Type of indices tensor.
         data_rank: Rank of data tensor (data_rank >= 1).
         indices_rank: Rank of indices tensor (indices_rank >= 1).
@@ -211,7 +206,7 @@ fn index_tensor[
 # the [:, :, x, y] case where x and y are 1D tensors.
 # Batch dims refer to the number of sliced dimensions at the beginning
 fn _index_tensor_1d[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -220,9 +215,9 @@ fn _index_tensor_1d[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: NDBuffer[type, data_rank],
+    data: NDBuffer[dtype, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[mut=True, type, output_rank],
+    output: NDBuffer[mut=True, dtype, output_rank],
     ctx: Optional[DeviceContext] = None,
 ):
     constrained[
@@ -295,7 +290,7 @@ fn _index_tensor_1d[
 
 
 fn _index_tensor_impl[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -304,9 +299,9 @@ fn _index_tensor_impl[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: NDBuffer[type, data_rank],
+    data: NDBuffer[dtype, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[mut=True, type, output_rank],
+    output: NDBuffer[mut=True, dtype, output_rank],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     constrained[
@@ -353,8 +348,8 @@ fn _index_tensor_impl[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    ]() else get_gpu_target()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -556,7 +551,7 @@ fn advanced_indexing_getitem[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
@@ -637,7 +632,7 @@ fn advanced_indexing_setitem_inplace[
         IndexList[index_rank]
     ) capturing -> SIMD[index_type, 1],
 ](
-    input_tensor: NDBuffer[mut=True, type=input_type, rank=input_rank],
+    input_tensor: NDBuffer[mut=True, dtype=input_type, rank=input_rank],
     index_tensor_shape: IndexList[index_rank, **_],
     updates_tensor_strides: IndexList[updates_rank],
     ctx: DeviceContextPtr,
@@ -781,7 +776,7 @@ fn advanced_indexing_setitem_inplace[
     alias last_indexed_dim = start_axis + num_index_tensors - 1
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank

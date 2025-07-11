@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Callable, Optional, Union
 
@@ -29,6 +30,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.weight import _compute_shard_range
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -162,7 +164,7 @@ class AttentionWithRope(Module):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        devices: list[DeviceRef] | None = None,
+        devices: Sequence[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
@@ -170,7 +172,7 @@ class AttentionWithRope(Module):
         has_bias: bool = False,
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -495,7 +497,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -675,7 +677,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         dtype: DType = DType.float32,
         scale: float | None = None,
         linear_cls: Callable[..., Linear] = Linear,
-    ):
+    ) -> None:
         # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
         Module.__init__(self)
@@ -863,7 +865,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        devices: list[DeviceRef] | None = None,
+        devices: Sequence[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
@@ -906,10 +908,6 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             float8_config=float8_config,
             clip_qkv=clip_qkv,
         )
-        if not self.devices or len(self.devices) < 2:
-            raise ValueError(
-                f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
-            )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
                 "DistributedAttentionWithRope does not support CPU devices"
@@ -919,8 +917,8 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         self.allreduce = Allreduce(num_devices)
 
         if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.columnwise(
-                num_devices
+            self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
+                num_devices, self.n_heads, self.kv_params.head_dim
             )
         else:
             self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
@@ -932,23 +930,22 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
-        self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
+        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
+            num_devices, self.n_heads, self.kv_params.head_dim
+        )
 
         self.list_of_attentions = []
 
-        if num_attention_heads % len(self.devices) != 0:
-            # TODO(MODELS-601): Support non-divisible numbers of attention heads.
-            raise ValueError(
-                f"Number of attention heads ({num_attention_heads}) "
-                f"must be divisible by the number of devices ({len(self.devices)})"
-            )
-
-        sharded_num_heads = num_attention_heads // len(self.devices)
-
         for n, device in enumerate(self.devices):
+            # Calculate the number of heads for this device
+            head_start, head_end = _compute_shard_range(
+                num_attention_heads, n, len(self.devices)
+            )
+            device_num_heads = head_end - head_start
+
             layer = AttentionWithRope(
                 rope=rope,
-                num_attention_heads=sharded_num_heads,
+                num_attention_heads=device_num_heads,
                 num_key_value_heads=num_key_value_heads,
                 hidden_size=hidden_size,
                 kv_params=kv_params,
@@ -974,12 +971,13 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
     def __call__(  # type: ignore[override]
         self,
         layer_idx: TensorValue,
-        x: list[TensorValue],
-        signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
-        input_row_offsets: list[TensorValue],
+        x: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: (
+            Sequence[ContinuousBatchingKVCacheCollection]
+            | Sequence[PagedKVCacheCollection]
+        ),
+        input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")

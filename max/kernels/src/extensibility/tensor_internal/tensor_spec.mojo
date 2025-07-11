@@ -18,17 +18,15 @@ from max.tensor import RuntimeTensorSpec
 ```
 """
 
-from collections import List
 from sys import sizeof
 
-from memory import UnsafePointer
 
 from utils import IndexList, product
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct RuntimeTensorSpec[type: DType, rank: Int](Copyable, Movable):
+struct RuntimeTensorSpec[dtype: DType, rank: Int](Copyable, Movable):
     var shape: IndexList[rank]
 
     fn __getitem__(self, idx: Int) -> Int:
@@ -41,4 +39,4 @@ struct RuntimeTensorSpec[type: DType, rank: Int](Copyable, Movable):
         Returns:
           The total byte count.
         """
-        return product(self.shape) * sizeof[type]()
+        return product(self.shape) * sizeof[dtype]()

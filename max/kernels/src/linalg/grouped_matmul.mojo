@@ -12,27 +12,26 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from pathlib import Path
-from sys import alignof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from sys import simdwidthof, sizeof
 
-import linalg.vendor_blas
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from buffer.dimlist import DimList, _make_tuple
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
+from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (
@@ -54,18 +53,14 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from gpu.sync import cp_async_bulk_wait_group, named_barrier
-from gpu.warp import broadcast
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_local_to_dram,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     st_matrix_n_layout,
@@ -81,13 +76,10 @@ from linalg.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
-    producer_main_loop,
     warp_specialized_gemm_output,
 )
-from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
-from memory import bitcast, stack_allocation
+from linalg.matmul_loadop_sm90 import async_load_AB
 from memory.pointer import _GPUAddressSpace
-from stdlib.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -96,8 +88,7 @@ from utils.static_tuple import StaticTuple
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
+alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -311,7 +302,7 @@ fn grouped_matmul_sm90[
         swizzle_mode=c_swizzle,
     ](ctx, c_tensor)
 
-    alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * sizeof[a_type]()
         + BN * BK * sizeof[b_type]()
@@ -504,8 +495,8 @@ fn grouped_matmul_kernel[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
+    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
+    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
     alias num_k_iters = K // BK
 
     var rank_m = block_id_in_cluster.y
@@ -548,7 +539,7 @@ fn grouped_matmul_kernel[
                 + UInt(block_idx_swizzle[0]) * BN
             )
 
-            producer_main_loop[
+            async_load_AB[
                 block_tile_shape=block_tile_shape,
                 cluster_shape=cluster_shape,
                 partitioned_multicast=False,
@@ -634,13 +625,9 @@ fn grouped_matmul_kernel[
             address_space = AddressSpace.GENERIC,
         ]
 
-        c_gmem_runtime_layout = RuntimeLayout[
-            c_gmem_layout,
-            element_type = c_gmem_type.layout_int_type,
-            linear_idx_type = c_gmem_type.linear_idx_type,
-        ](
-            Index[dtype = c_gmem_type.layout_int_type](M, N),
-            Index[dtype = c_gmem_type.linear_idx_type](N, 1),
+        # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
+        var c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout](
+            Index(M, N), Index(N, 1)
         )
 
         var c_by_expert = c_gmem_type(
@@ -661,7 +648,7 @@ fn grouped_matmul_kernel[
             c_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
-            thread_idx.x - WARP_GROUP_SIZE,
+            thread_idx.x - WARPGROUP_SIZE,
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )

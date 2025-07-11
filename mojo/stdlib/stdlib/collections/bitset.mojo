@@ -19,12 +19,14 @@ is called (not implemented yet).
 
 Example:
 ```mojo
-    var bs = BitSet[128]()      # 128-bit set, all clear
-    bs.set(42)                  # Mark value 42 as present.
-    if bs.test(42):             # Check membership.
-        print("hit")            # Prints "hit".
-    bs.clear(42)                # Remove 42.
-    print(bs.count())           # Prints 0.
+from collections import BitSet
+
+var bs = BitSet[128]()  # 128-bit set, all clear
+bs.set(42)              # Mark value 42 as present.
+if bs.test(42):         # Check membership.
+    print("hit")        # Prints "hit".
+bs.clear(42)            # Remove 42.
+print(len(bs))          # Prints 0.
 ```
 """
 # ---------------------------------------------------------------------------
@@ -114,7 +116,7 @@ struct BitSet[size: UInt](
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
     fn __init__(init: SIMD[DType.bool], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
@@ -122,10 +124,10 @@ struct BitSet[size: UInt](
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
         @parameter
-        for i in range(Int(size)):
+        for i in range(size):
             if init[i]:
                 self.set(i)
 
@@ -147,7 +149,7 @@ struct BitSet[size: UInt](
         var total: UInt = 0
 
         @parameter
-        for i in range(Int(self._words_size)):
+        for i in range(self._words_size):
             total += UInt(pop_count(self._words.unsafe_get(i)))
 
         return total
@@ -319,7 +321,7 @@ struct BitSet[size: UInt](
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter
-            for i in range(Int(Self._words_size)):
+            for i in range(Self._words_size):
                 res._words.unsafe_get(i) = func(
                     left._words.unsafe_get(i),
                     right._words.unsafe_get(i),

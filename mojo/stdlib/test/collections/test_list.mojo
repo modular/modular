@@ -14,13 +14,11 @@
 
 from sys.info import sizeof
 
-from memory import Span, UnsafePointer
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
-    __g_dtor_count,
 )
 from testing import (
     assert_equal,
@@ -73,7 +71,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, owned *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: T, __list_literal__: ()):
         pass
 
 
@@ -254,7 +252,7 @@ def test_list_reverse():
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2 = [String("one"), "two", "three"]
+    vec2 = ["one", "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -743,7 +741,7 @@ def test_converting_list_to_string():
     var my_list = [1, 2, 3]
     assert_equal(my_list.__str__(), "[1, 2, 3]")
 
-    var my_list4 = [String("a"), "b", "c", "foo"]
+    var my_list4 = ["a", "b", "c", "foo"]
     assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
 
 
@@ -837,9 +835,9 @@ def test_list_eq_ne():
     assert_true(l4 == l5)
     assert_true(l1 != l4)
 
-    var l6 = [String("a"), "b", "c"]
-    var l7 = [String("a"), "b", "c"]
-    var l8 = [String("a"), "b"]
+    var l6 = ["a", "b", "c"]
+    var l7 = ["a", "b", "c"]
+    var l8 = ["a", "b"]
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
@@ -866,39 +864,29 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    __g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
     var l = List[DelCounter]()
-    assert_equal(__g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(__g_dtor_count, 0)
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(__g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(__g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 # Verify we skip calling destructors for the trivial elements
 def test_destructor_trivial_elements():
-    # explicitly reset global counter
-    __g_dtor_count = 0
+    var dtor_count = 0
 
     var l = List[DelCounter, hint_trivial_type=True]()
-    l.append(DelCounter())
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
 
     l^.__del__()
 
-    assert_equal(__g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
 
 def test_list_repr():

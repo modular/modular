@@ -15,11 +15,7 @@ from math import align_down, align_up, ceildiv
 from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
-    has_avx2,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
+    CompilationTarget,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
@@ -31,17 +27,16 @@ from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 
 alias elementwise_epilogue_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> None
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> None
 
 alias elementwise_compute_lambda_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -187,9 +182,9 @@ fn calculate_tile_n_k[
     given the cache size and desired data layout.
 
     Parameters:
-        a_type: The type of the A tensor.
-        b_type: The type of the B tensor.
-        c_type: The type of the C tensor.
+        a_type: The dtype of the A tensor.
+        b_type: The dtype of the B tensor.
+        c_type: The dtype of the C tensor.
         kernel_cols: The umber of columns of the micro kernel.
 
     Returns:
@@ -261,7 +256,7 @@ fn _get_tile_n_k[
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
 fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
 
         @parameter
         if kernel_type:
@@ -306,7 +301,7 @@ fn get_matmul_kernel_shape[
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return get_matmul_kernel_shape_ARM[
             a_type, b_type, c_type, kernel_type
         ]()
@@ -326,7 +321,7 @@ fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
 # prefetching at least on the Graviton 2 performs worse than without.
 fn get_matmul_prefetch_b_distance_k() -> Int:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return 0
     return 4
 
@@ -516,7 +511,7 @@ fn get_partitioned_matmul_mojo_shape[
     return Index(num_row_tasks, num_col_tasks)
 
 
-fn get_pack_data_size[type: DType]() -> Int:
+fn get_pack_data_size[dtype: DType]() -> Int:
     """Utility to compute the number of elements to pack in each tile.
     Returns:
         The number of elements to pack.
@@ -528,22 +523,22 @@ fn get_pack_data_size[type: DType]() -> Int:
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
-        return 4 * KB // sizeof[type]()
+        return 4 * KB // sizeof[dtype]()
 
     @parameter
     if os_is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
-        return 64 * KB // sizeof[type]()
+        return 64 * KB // sizeof[dtype]()
 
     @parameter
-    if has_neon() or has_avx512f():
+    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
-        return 512 * KB // sizeof[type]()
+        return 512 * KB // sizeof[dtype]()
 
-    return 256 * KB // sizeof[type]()
+    return 256 * KB // sizeof[dtype]()
 
 
 @always_inline
@@ -575,12 +570,15 @@ fn get_kernel_config[
 @always_inline
 fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     @parameter
-    if has_neon_int8_dotprod() and not has_neon_int8_matmul():
+    if (
+        CompilationTarget.has_neon_int8_dotprod()
+        and not CompilationTarget.has_neon_int8_matmul()
+    ):
         return (
             (a_type is DType.int8 and b_type is DType.int8)
             or (a_type is DType.uint8 and b_type is DType.uint8)
         ) and c_type is DType.int32
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         return (
             a_type is DType.uint8
             and b_type is DType.int8
@@ -595,7 +593,7 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
     return (
         # Return False for now until i8mm is fully ready.
-        has_neon_int8_matmul()
+        CompilationTarget.has_neon_int8_matmul()
         and (
             (a_type is DType.uint8 and b_type is DType.uint8)
             or (a_type is DType.uint8 and b_type is DType.int8)
@@ -609,9 +607,9 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         return m > 0 and m <= 32
-    elif has_neon():
+    elif CompilationTarget.has_neon():
 
         @parameter
         if is_neoverse_n1():
@@ -705,9 +703,9 @@ fn select_inner_kernel[
     @parameter
     if use_i8mm:
         return InnerKernelID.I8MM
-    elif has_neon() and not use_vnni and not use_i8mm:
+    elif CompilationTarget.has_neon() and not use_vnni and not use_i8mm:
         return InnerKernelID.NEON
-    elif not use_vnni and not has_neon():
+    elif not use_vnni and not CompilationTarget.has_neon():
         return InnerKernelID.DEFAULT
     else:
         return InnerKernelID.VNNI

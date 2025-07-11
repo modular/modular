@@ -62,7 +62,7 @@ from gpu.host import DeviceContext
 from gpu.id import block_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 from python import Python, PythonObject

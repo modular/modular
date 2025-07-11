@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import Pointer, UnsafePointer
+from memory import Pointer
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
@@ -23,12 +23,14 @@ from memory import Pointer, UnsafePointer
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     """Const Iterator for VariadicList.
 
     Parameters:
         type: The type of the elements in the list.
     """
+
+    alias Element = type
 
     var index: Int
     var src: VariadicList[type]
@@ -133,7 +135,8 @@ struct _VariadicListMemIter[
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
         list_origin: The origin of the VariadicListMem.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias variadic_list_type = VariadicListMem[
@@ -152,7 +155,7 @@ struct _VariadicListMemIter[
         self.index = index
         self.src = Pointer(to=list)
 
-    fn __next__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -181,7 +184,8 @@ struct VariadicListMem[
                         mut or owned argument.
         element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias reference_type = Pointer[element_type, origin]
@@ -253,9 +257,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable]
-        .cast_from[__origin_of(origin, self)]
-        .result
+        Origin[elt_is_mutable].cast_from[__origin_of(origin, self)]
     ] element_type:
         """Gets a single element on the variadic list.
 
@@ -331,6 +333,10 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
+    # This disables nested origin exclusivity checking because it is taking a
+    # raw variadic pack which can have nested origins in it (which this does not
+    # dereference).
+    @__unsafe_disable_nested_origin_exclusivity
     fn __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 

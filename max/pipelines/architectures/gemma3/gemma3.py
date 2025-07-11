@@ -48,7 +48,7 @@ class TransformerBlock(Module):
         post_attention_layernorm: Module,
         pre_feedforward_layernorm: Module,
         post_feedforward_layernorm: Module,
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
@@ -80,17 +80,17 @@ class TransformerBlock(Module):
 class Gemma3TextModel(Module):
     """The Gemma 3 language model."""
 
-    def __init__(self, config: Gemma3Config):
+    def __init__(self, config: Gemma3Config) -> None:
         assert len(config.devices) == 1, (
             "Only single-device configuration is supported."
         )
 
-        # Use Llama3RotaryEmbedding for both cases (with and without scaling)
+        # Use scaling_params for both cases (with and without scaling)
         scaling_params = (
             Llama3RopeScalingParams(
                 factor=config.rope_scaling.factor,
-                low_freq_factor=1.0,  # No special scaling for low frequencies
-                high_freq_factor=1.0,  # No special scaling for high frequencies
+                low_freq_factor=1e38,  # This degenerates to linear scaling
+                high_freq_factor=1e38,
                 orig_max_position=config.max_position_embeddings,
             )
             if config.rope_scaling is not None
@@ -162,6 +162,7 @@ class Gemma3TextModel(Module):
                     dtype=config.dtype,
                     devices=config.devices,
                     qk_norm_eps=config.rms_norm_eps,
+                    local_window_size=config.sliding_window,
                 ),
                 mlp=MLP(
                     dtype=config.dtype,
@@ -214,7 +215,7 @@ class Gemma3TextModel(Module):
 class Gemma3(Module):
     """The Gemma model (currently text-only)."""
 
-    def __init__(self, config: Gemma3Config):
+    def __init__(self, config: Gemma3Config) -> None:
         super().__init__()
         self.language_model = Gemma3TextModel(config)
 

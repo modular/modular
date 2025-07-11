@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from memory import UnsafePointer
-from testing import assert_false, assert_true
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
+from testing import assert_true
 
-alias A100_TARGET = _get_gpu_target["sm_80"]()
-alias MI300X_TARGET = _get_gpu_target["mi300x"]()
+alias A100_TARGET = get_gpu_target["sm_80"]()
+alias MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
 def test_abs():
     fn do_abs[
-        type: DType, *, width: Int = 1
-    ](val: SIMD[type, width]) -> __type_of(val):
+        dtype: DType, *, width: Int = 1
+    ](val: SIMD[dtype, width]) -> __type_of(val):
         return abs(val)
 
     # AMD GPU kernels cannot have a return value
     fn do_abs_noreturn[
-        type: DType, *, width: Int = 1
-    ](val: SIMD[type, width], x: UnsafePointer[Scalar[type]]):
+        dtype: DType, *, width: Int = 1
+    ](val: SIMD[dtype, width], x: UnsafePointer[Scalar[dtype]]):
         x.store(0, abs(val))
 
     # Check the NVIDIA PTX.

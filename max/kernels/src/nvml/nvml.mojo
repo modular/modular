@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections import List
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -369,11 +367,11 @@ struct ClockType(Copyable, EqualityComparable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct _DeviceImpl(Copyable, Defaultable, Movable):
-    var handle: UnsafePointer[NoneType]
+    var handle: OpaquePointer
 
     @always_inline
     fn __init__(out self):
-        self.handle = UnsafePointer[NoneType]()
+        self.handle = OpaquePointer()
 
     @always_inline
     fn __bool__(self) -> Bool:

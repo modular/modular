@@ -10,24 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import (
     CompilationTarget,
     alignof,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
     is_apple_silicon,
     simdwidthof,
     sizeof,
 )
 from sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile, vectorize
+from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
@@ -36,7 +31,7 @@ from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -100,7 +95,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int4(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -127,7 +122,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             src_ptr += Self._packed_stride
 
     @always_inline
-    fn _unpack_int4(mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -156,7 +151,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     #     [ d5 d6 c5 c4 c3 c2 c1 c0 ]
 
     @always_inline
-    fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -188,7 +183,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn _unpack_int6[
         zero_point: UInt8
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -221,7 +216,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             dst_ptr += Self._packed_stride * 4
 
     @always_inline
-    fn pack(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn pack(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         """Packs the supplied external buffer to local storage."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -236,7 +231,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         """Unpacks the local storage to the supplied external buffer."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -274,8 +269,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 
 fn _quantize_a_Q8_K[
-    group_size: Int, type: DType, *, interleave_group_sums: Bool = False
-](a: NDBuffer[type, 2, **_]) -> UnsafePointer[
+    group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
+](a: NDBuffer[dtype, 2, **_]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
     alias quantized_k = _block_QK_K.quantized_k
@@ -307,7 +302,7 @@ fn _quantize_a_Q8_K[
             var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
 
             for row in range(tile_m):
-                var max_value_simd = SIMD[type, group_size](Scalar[type].MIN)
+                var max_value_simd = SIMD[dtype, group_size](Scalar[dtype].MIN)
 
                 for g in range(group_count):
                     var fp_data = am_ptr.load[width=group_size](g * group_size)
@@ -512,7 +507,7 @@ fn _pack_block_Q4_K[
                 var reorder_idx = g * block_n + n * 2
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
-            elif has_neon():
+            elif CompilationTarget.has_neon():
                 alias split_width = simdwidthof[DType.int32]()
                 var n_idx_hi = n // split_width
                 var n_idx_lo = n % split_width
@@ -655,7 +650,7 @@ fn _matmul_group_stream_x86[
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
-    ](0)
+    ](fill=0)
 
     @parameter
     for k in range(0, group_size, tile_k * 4):
@@ -703,11 +698,13 @@ fn _matmul_group_stream_neon_dotprod[
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
-    ](0)
+    ](fill=0)
 
     @parameter
     for k in range(0, group_size, 16):
-        var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](0)
+        var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](
+            uninitialized=True
+        )
 
         @parameter
         for row in range(tile_m):
@@ -756,7 +753,7 @@ fn _matmul_group_stream[
         return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
             a_q_bits_ptr, c_int32_group
         )
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _matmul_group_stream_neon_dotprod[group_size, stream_b_vals_fn](
             a_q_bits_ptr, c_int32_group
         )
@@ -864,7 +861,7 @@ fn _apply_zero_point_correction[
                         bitcast[DType.int32, 1](a_group_sums),
                     )
 
-        elif has_neon():
+        elif CompilationTarget.has_neon():
             # Use `smull(2)` and `smlal(2)` instructions to do an `int16*int16`
             # widening multiply/add to an int32 accumulator.
             var group_sums = (a_group_sums_ptr + g * tile_m).load[
@@ -934,7 +931,7 @@ fn _apply_a_scales[
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # NEON supports a multiply instruction that can broadcast from a
         # vector element, so help the compiler produce that by doing a
         # vector load.
@@ -1401,7 +1398,7 @@ fn _matmul_Q6_K_columns[
 
     # NEON has support for s8s8 dot products, so shift the quantized bits down
     # to avoid performing any zero point corrections.
-    alias b_zero_point = 32 if has_neon() else 0
+    alias b_zero_point = 32 if CompilationTarget.has_neon() else 0
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:

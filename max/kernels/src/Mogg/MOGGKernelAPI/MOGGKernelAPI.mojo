@@ -15,8 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray, List, Optional, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import (
     atanh,
     ceil,
@@ -54,7 +53,7 @@ from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
 from gpu.comm.allgather import allgather
 from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -64,6 +63,7 @@ from kv_cache.types import (
 )
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.distributed_matmul import matmul_allreduce
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
@@ -83,11 +83,10 @@ from linalg.utils import (
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
 from nn._ragged_utils import merge_ragged_tensors
 from nn.activations import gelu, relu
-from nn.arange import arange, arange_shape
+from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
@@ -109,7 +108,6 @@ from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
-from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
     _unsafe_normalize_neg_index,
@@ -219,7 +217,7 @@ from quantization.qmatmul_k import (
 )
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
@@ -233,6 +231,7 @@ from tensor_internal import (
     _input_fusion_hook_impl,
     _mixed_precision_input_fusion_hook_impl,
     _mixed_precision_output_fusion_hook_impl,
+    _mixed_precision_compute_output_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
@@ -443,8 +442,8 @@ fn reshape_contiguous_buffer[
         static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
-) -> DynamicTensor[dtype, new_rank].Type:
-    return DynamicTensor[dtype, new_rank].Type(buffer._ptr, shape)
+) -> DynamicTensor[dtype, new_rank]:
+    return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#
@@ -774,6 +773,7 @@ fn export():
     alias __output_fusion_hook_impl = _output_fusion_hook_impl
     alias __mixed_precision_input_fusion_hook_impl = _mixed_precision_input_fusion_hook_impl
     alias __mixed_precision_output_fusion_hook_impl = _mixed_precision_output_fusion_hook_impl
+    alias __mixed_precision_compute_output_fusion_hook_impl = _mixed_precision_compute_output_fusion_hook_impl
 
 
 # ===-----------------------------------------------------------------------===#
@@ -787,7 +787,6 @@ struct Range:
     fn execute[
         dtype: DType,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=1],
@@ -804,7 +803,6 @@ struct Range:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](output, ctx)
 
@@ -853,7 +851,6 @@ struct Add:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -871,7 +868,6 @@ struct Add:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -881,7 +877,6 @@ struct Sub:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -899,7 +894,6 @@ struct Sub:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -909,7 +903,6 @@ struct Mul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -927,7 +920,6 @@ struct Mul:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -937,7 +929,6 @@ struct Div:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -955,7 +946,6 @@ struct Div:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -965,7 +955,6 @@ struct Mod:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -983,7 +972,6 @@ struct Mod:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -993,7 +981,6 @@ struct Equal:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1011,7 +998,6 @@ struct Equal:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1021,7 +1007,6 @@ struct Greater:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1039,7 +1024,6 @@ struct Greater:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1049,7 +1033,6 @@ struct GreaterEqual:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1067,7 +1050,6 @@ struct GreaterEqual:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1077,7 +1059,6 @@ struct NotEqual:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1095,7 +1076,6 @@ struct NotEqual:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1105,7 +1085,6 @@ struct And:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1123,7 +1102,6 @@ struct And:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1133,7 +1111,6 @@ struct Or:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1151,7 +1128,6 @@ struct Or:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1161,7 +1137,6 @@ struct Xor:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1179,7 +1154,6 @@ struct Xor:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1189,7 +1163,6 @@ struct Pow:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1207,7 +1180,6 @@ struct Pow:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1217,7 +1189,6 @@ struct Max:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1235,7 +1206,6 @@ struct Max:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1245,7 +1215,6 @@ struct Min:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1263,7 +1232,6 @@ struct Min:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1278,7 +1246,6 @@ struct Cast:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1292,7 +1259,6 @@ struct Cast:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1302,7 +1268,6 @@ struct Negative:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1315,7 +1280,6 @@ struct Negative:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1325,7 +1289,6 @@ struct ReLU:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1338,7 +1301,6 @@ struct ReLU:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1348,7 +1310,6 @@ struct GeLU:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1361,7 +1322,6 @@ struct GeLU:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1371,7 +1331,6 @@ struct Ceil:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1384,7 +1343,6 @@ struct Ceil:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1394,7 +1352,6 @@ struct Floor:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1409,7 +1366,6 @@ struct Floor:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1419,7 +1375,6 @@ struct Tanh:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1432,7 +1387,6 @@ struct Tanh:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1442,7 +1396,6 @@ struct ATanh:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1457,7 +1410,6 @@ struct ATanh:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1467,7 +1419,6 @@ struct Cos:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1480,7 +1431,6 @@ struct Cos:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1490,7 +1440,6 @@ struct Sin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1503,7 +1452,6 @@ struct Sin:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1513,7 +1461,6 @@ struct Erf:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1526,7 +1473,6 @@ struct Erf:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1536,7 +1482,6 @@ struct Exp:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1549,7 +1494,6 @@ struct Exp:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1559,7 +1503,6 @@ struct Round:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1574,7 +1517,6 @@ struct Round:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1584,7 +1526,6 @@ struct Sqrt:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1597,7 +1538,6 @@ struct Sqrt:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1607,7 +1547,6 @@ struct Isqrt:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1622,7 +1561,6 @@ struct Isqrt:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1632,7 +1570,6 @@ struct Select:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
@@ -1658,7 +1595,6 @@ struct Select:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](output, ctx)
 
@@ -1668,7 +1604,6 @@ struct Trunc:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1686,7 +1621,6 @@ struct Trunc:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1696,7 +1630,6 @@ struct Log:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1709,7 +1642,6 @@ struct Log:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1719,7 +1651,6 @@ struct Log1p:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1734,7 +1665,6 @@ struct Log1p:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1744,7 +1674,6 @@ struct IsNan:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1759,7 +1688,6 @@ struct IsNan:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1769,7 +1697,6 @@ struct IsInf:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1784,7 +1711,6 @@ struct IsInf:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1794,7 +1720,6 @@ struct Not:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1808,7 +1733,6 @@ struct Not:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1818,7 +1742,6 @@ struct Abs:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1831,7 +1754,6 @@ struct Abs:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1841,7 +1763,6 @@ struct SqueezeShape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         indices_type: DType,
     ](
@@ -1910,7 +1831,6 @@ struct UnsqueezeShape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         indices_type: DType,
     ](
@@ -1982,7 +1902,6 @@ struct ScatterND:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2001,7 +1920,7 @@ struct ScatterND:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
         ](
             input_ndbuffer,
@@ -2012,14 +1931,12 @@ struct ScatterND:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2031,7 +1948,6 @@ struct ScatterNDAdd:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2060,7 +1976,7 @@ struct ScatterNDAdd:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
@@ -2073,14 +1989,12 @@ struct ScatterNDAdd:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2092,7 +2006,6 @@ struct ScatterNDMul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2121,7 +2034,7 @@ struct ScatterNDMul:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
@@ -2134,14 +2047,12 @@ struct ScatterNDMul:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2153,7 +2064,6 @@ struct ScatterNDMin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2182,7 +2092,7 @@ struct ScatterNDMin:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
@@ -2195,14 +2105,12 @@ struct ScatterNDMin:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2214,7 +2122,6 @@ struct ScatterNDMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2243,7 +2150,7 @@ struct ScatterNDMax:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -2256,14 +2163,12 @@ struct ScatterNDMax:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2277,14 +2182,13 @@ struct ScatterSetConstant:
         data_type: DType,
         index_type: DType, //,
         target: StaticString,
-        _synchronous: Bool,
     ](
         data: MutableInputTensor[dtype=data_type, rank=2],
         indices: InputTensor[dtype=index_type, rank=2],
         fill_value: Scalar[data_type],
         ctx: DeviceContextPtr,
     ) raises:
-        scatter_set_constant[target, _synchronous](
+        scatter_set_constant[target, False](
             data.to_layout_tensor(),
             indices.to_layout_tensor(),
             fill_value,
@@ -2302,7 +2206,6 @@ struct Scatter:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2348,7 +2251,6 @@ struct ScatterAdd:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2394,7 +2296,6 @@ struct ScatterMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2440,7 +2341,6 @@ struct ScatterMin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2486,7 +2386,6 @@ struct ScatterMul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2754,7 +2653,6 @@ struct StaticBroadcastTo:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -2773,7 +2671,6 @@ struct StaticBroadcastTo:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](z, x_view, ctx)
 
 
@@ -2827,7 +2724,6 @@ struct StaticReshape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         output_rank: Int,
@@ -2844,7 +2740,6 @@ struct StaticReshape:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -2935,7 +2830,6 @@ struct Transpose:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         static_permutations: DimList,
         dtype: DType,
@@ -2953,7 +2847,6 @@ struct Transpose:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view, ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
@@ -3043,7 +2936,6 @@ struct Slice:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         static_steps: DimList,
         dtype: DType,
@@ -3063,7 +2955,6 @@ struct Slice:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
     @staticmethod
@@ -3086,7 +2977,6 @@ struct MutableStore:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         buffer: MutableInputTensor,
@@ -3112,7 +3002,6 @@ struct MutableStore:
             func,
             out_func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](buffer, ctx)
 
@@ -3122,7 +3011,6 @@ struct MutableStoreSlice:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         rank: Int,
     ](
@@ -3202,7 +3090,6 @@ struct SliceDim:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         rank: Int,
@@ -3223,7 +3110,6 @@ struct SliceDim:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -3337,7 +3223,7 @@ struct ArgNonZero:
 struct Mean:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StaticString
+        target: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
@@ -3369,7 +3255,7 @@ struct Mean:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, output.shape(), ctx)
 
@@ -3388,7 +3274,7 @@ struct Mean:
 struct ReduceAdd:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StaticString, _trace_name: StaticString
+        target: StaticString, _trace_name: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
@@ -3421,7 +3307,7 @@ struct ReduceAdd:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3440,7 +3326,6 @@ struct ReduceAdd:
 struct ReduceMul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3475,7 +3360,7 @@ struct ReduceMul:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3494,7 +3379,6 @@ struct ReduceMul:
 struct ReduceMax:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3529,7 +3413,7 @@ struct ReduceMax:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3548,7 +3432,6 @@ struct ReduceMax:
 struct ReduceMin:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3583,7 +3466,7 @@ struct ReduceMin:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3603,7 +3486,6 @@ struct ReduceMinMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         rank: Int,
@@ -3699,7 +3581,7 @@ struct ReduceMinMax:
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](
                 input.shape(),
@@ -3729,6 +3611,7 @@ struct AvgPool:
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3736,8 +3619,9 @@ struct AvgPool:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        avg_pool[count_boundary=count_boundary](
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3745,6 +3629,7 @@ struct AvgPool:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             False,
+            ctx,
         )
 
     @staticmethod
@@ -3776,6 +3661,7 @@ struct AvgPoolCeilModeTrue:
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3783,8 +3669,9 @@ struct AvgPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        avg_pool[count_boundary=count_boundary](
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3792,6 +3679,7 @@ struct AvgPoolCeilModeTrue:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             True,
+            ctx,
         )
 
     @staticmethod
@@ -3804,7 +3692,6 @@ struct AvgPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-        ctx: DeviceContextPtr,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
@@ -3823,6 +3710,7 @@ struct MaxPool:
     fn execute[
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3830,8 +3718,9 @@ struct MaxPool:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        max_pool(
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3839,6 +3728,7 @@ struct MaxPool:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             False,
+            ctx,
         )
 
     @staticmethod
@@ -3869,6 +3759,7 @@ struct MaxPoolCeilModeTrue:
     fn execute[
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3876,8 +3767,9 @@ struct MaxPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        max_pool(
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3885,6 +3777,7 @@ struct MaxPoolCeilModeTrue:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             True,
+            ctx,
         )
 
     @staticmethod
@@ -3947,7 +3840,7 @@ struct PadConstant:
                 ctx.get_device_context(),
             )
         else:
-            constrained[False, String("Unknown target ") + target]()
+            constrained[False, "Unknown target " + target]()
 
     @staticmethod
     fn shape[
@@ -4047,7 +3940,6 @@ struct GatherND:
     fn execute[
         batchDims: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: OutputTensor,
@@ -4067,7 +3959,7 @@ struct GatherND:
 
     @staticmethod
     fn shape[
-        batch_dims: Int, output_rank: Int, _synchronous: Bool
+        batch_dims: Int, output_rank: Int
     ](
         data: InputTensor,
         indices: InputTensor,
@@ -4077,7 +3969,7 @@ struct GatherND:
         return gather_nd_shape[
             batch_dims=batch_dims,
             output_rank=output_rank,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
         ](
             managed_tensor_slice_to_ndbuffer(data),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -4089,7 +3981,6 @@ struct Gather:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
@@ -4128,13 +4019,13 @@ struct Gather:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             gather[
-                type = output.dtype,
+                dtype = output.dtype,
                 indices_type = indices.dtype,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
                 output_fn=output_fn,
                 target=target,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
             ](
                 Axis(Int(axis), input.rank),
                 input.shape(),
@@ -4199,13 +4090,16 @@ struct LayerNorm:
         rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
         input: FusedInputTensor[dtype=dtype, rank=rank],
         gamma: FusedInputTensor[dtype=dtype, rank=1],
         beta: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
         @parameter
         @always_inline
         fn input_fn[
@@ -4222,15 +4116,23 @@ struct LayerNorm:
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
 
-        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
 
-        layer_norm[dtype, rank, input_fn, gamma_fn, target=target](
+        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
+
+        layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
             input.shape(),
             gamma.shape(),
             beta_buf,
             epsilon,
-            output_buf,
             ctx,
         )
 
@@ -4256,13 +4158,16 @@ struct RMSNorm:
         target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
         input: FusedInputTensor[dtype=dtype, rank=rank],
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
         @parameter
         @always_inline
         fn input_fn[
@@ -4272,13 +4177,23 @@ struct RMSNorm:
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         rms_norm[
             dtype,
             rank,
             input_fn,
+            output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
@@ -4286,7 +4201,6 @@ struct RMSNorm:
             gamma_buf,
             epsilon,
             weight_offset,
-            output_buf,
             ctx,
         )
 
@@ -4516,7 +4430,6 @@ struct Matmul:
         packed_b: Bool,
         lambdas_have_fusion: Bool,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=2],
@@ -4541,8 +4454,8 @@ struct Matmul:
         @parameter
         @always_inline
         fn epilgue_fn[
-            _type: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_type, _width]):
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[c.dtype, _width]](val),
@@ -4551,11 +4464,11 @@ struct Matmul:
         @parameter
         @always_inline
         fn output_compute_fn[
-            _type: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_type, _width]) -> SIMD[
-            _type, _width
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
         ]:
-            return rebind[SIMD[_type, _width]](
+            return rebind[SIMD[_dtype, _width]](
                 c._fused_compute_output_lambda(
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
@@ -4576,7 +4489,7 @@ struct Matmul:
             ) if lambdas_have_fusion
             and has_compute_lambda else None,
             saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
             _trace_description=_trace_name,
         ](c_buffer, a_buffer, b_buffer, ctx)
@@ -4590,7 +4503,6 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
-        _synchronous: Bool,
     ](
         c: _FusedComputeOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
@@ -4632,7 +4544,7 @@ struct BatchMatmul:
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](c_buffer, a_buffer, b_buffer, context=ctx)
 
@@ -4657,7 +4569,6 @@ struct LinalgBandPart:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         int_type: DType,
         rank: Int,
@@ -4686,7 +4597,7 @@ struct LinalgBandPart:
         matrix_band_part[
             input_0_fn=input_fn,
             simd_width = simdwidthof[dtype](),
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](
             input.shape(),
@@ -5133,11 +5044,10 @@ struct CumSum:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ):
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-
-        cumsum[rank, dtype, exclusive, reverse](
-            output_buf, input_buf, _unsafe_normalize_neg_index(Int(axis), rank)
+        cumsum[dtype, exclusive, reverse](
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            _unsafe_normalize_neg_index(Int(axis), rank),
         )
 
 
@@ -5191,7 +5101,6 @@ struct Concat:
         dtype: DType,
         rank: Int,
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
         axis: Scalar,
@@ -5223,8 +5132,8 @@ struct Concat:
         @always_inline
         @parameter
         fn epilogue_wrapper[
-            _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_type, width]):
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
                 rebind[SIMD[output.dtype, width]](value),
@@ -5233,7 +5142,7 @@ struct Concat:
         fused_concat[
             dtype,
             rank,
-            _synchronous,
+            False,
             inputs_lambda,
             epilogue_wrapper,
             target,
@@ -5248,7 +5157,6 @@ struct Concat:
     fn shape[
         dtype: DType,
         rank: Int,
-        _synchronous: Bool,
     ](
         axis: Scalar, inputs: InputVariadicTensors[dtype, rank, *_]
     ) raises -> IndexList[rank]:
@@ -5261,7 +5169,7 @@ struct Concat:
 fn to_managed_tensor_slice_list[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
-    raw_list_ptr: UnsafePointer[NoneType],
+    raw_list_ptr: OpaquePointer,
 ) -> List[
     ManagedTensorSlice[
         io_spec = IOSpec[mut, input](),
@@ -5272,7 +5180,7 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr
     ).__int__()
 
-    var data_ptrs = List[UnsafePointer[NoneType]](capacity=num_elements)
+    var data_ptrs = List[OpaquePointer](capacity=num_elements)
     var dim_values = List[Int64](capacity=num_elements * rank)
 
     # Collect the data pointers and dimensions of each element from the list.
@@ -5356,7 +5264,6 @@ struct ConcatFromList:
         dtype: DType,
         rank: Int,
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         inputs: List[
@@ -5381,7 +5288,7 @@ struct ConcatFromList:
                 managed_tensor_slice_to_ndbuffer(inputs[i])
             )
 
-        _concat_cpu[rank, dtype, None, _synchronous](
+        _concat_cpu[rank, dtype, None, False](
             output_buf,
             normalize_neg_index(Int(axis), rank),
             input_as_ndbuffer,
@@ -5391,7 +5298,6 @@ struct ConcatFromList:
     fn shape[
         dtype: DType,
         rank: Int,
-        _synchronous: Bool,
     ](
         inputs: List[
             InputTensor[
@@ -5467,7 +5373,6 @@ struct SplitOutputShapeHelper:
         rank: Int,
         input_type: DType,
         split_size_type: DType,
-        _synchronous: Bool,
     ](
         input_buf: InputTensor[dtype=input_type, rank=rank],
         split_sizes_buf: InputTensor[dtype=split_size_type, rank=1],
@@ -5516,6 +5421,7 @@ struct Conv:
         static_dilations: DimList,
         static_padding: DimList,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5529,8 +5435,8 @@ struct Conv:
         @parameter
         @always_inline
         fn output_fn[
-            _type: DType, _rank: Int, _width: Int
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
@@ -5597,79 +5503,82 @@ struct Conv:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        @parameter
-        if is_cpu[target]():
-            constrained[
-                not filter_is_fcrs, "Filter layout FCRS is not supported on CPU"
-            ]()
-            conv_nhwc_direct[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                filter_packed,
-                conv_attr,
-                lambdas_have_fusion,
-                output_fn,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_d_tuple,
-                pad_h_tuple,
-                pad_w_tuple,
-                Int(num_groups),
-            )
-        else:
-            constrained[
-                (input.rank == 4 and filter.rank == 4)
-                or (input.rank == 5 and filter.rank == 5),
-                "only rank 4 or 5 tensor is supported on cuda gpu",
-            ]()
-            constrained[
-                filter_packed == False,
-                "only unpacked filter is supported on cuda gpu",
-            ]()
-
-            var cuda_ctx = ctx.get_device_context()
-            var pad_tuple = IndexList[input.rank - 2](0)
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
-            if input.rank == 4:
-                pad_tuple[0] = pad_h_tuple[0]
-                pad_tuple[1] = pad_w_tuple[0]
-            elif input.rank == 5:
-                pad_tuple[0] = pad_d_tuple[0]
-                pad_tuple[1] = pad_h_tuple[0]
-                pad_tuple[2] = pad_w_tuple[0]
+            if is_cpu[target]():
+                constrained[
+                    not filter_is_fcrs,
+                    "Filter layout FCRS is not supported on CPU",
+                ]()
+                conv_nhwc_direct[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    filter_packed,
+                    conv_attr,
+                    lambdas_have_fusion,
+                    output_fn,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_d_tuple,
+                    pad_h_tuple,
+                    pad_w_tuple,
+                    Int(num_groups),
+                )
+            else:
+                constrained[
+                    (input.rank == 4 and filter.rank == 4)
+                    or (input.rank == 5 and filter.rank == 5),
+                    "only rank 4 or 5 tensor is supported on cuda gpu",
+                ]()
+                constrained[
+                    filter_packed == False,
+                    "only unpacked filter is supported on cuda gpu",
+                ]()
 
-            conv_gpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                output_fn,
-                filter_is_fcrs,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                Int(num_groups),
-                cuda_ctx,
-            )
+                var cuda_ctx = ctx.get_device_context()
+                var pad_tuple = IndexList[input.rank - 2](0)
+
+                @parameter
+                if input.rank == 4:
+                    pad_tuple[0] = pad_h_tuple[0]
+                    pad_tuple[1] = pad_w_tuple[0]
+                elif input.rank == 5:
+                    pad_tuple[0] = pad_d_tuple[0]
+                    pad_tuple[1] = pad_h_tuple[0]
+                    pad_tuple[2] = pad_w_tuple[0]
+
+                conv_gpu[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    output_fn,
+                    filter_is_fcrs,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_tuple,
+                    Int(num_groups),
+                    cuda_ctx,
+                )
 
     @staticmethod
     fn shape[
@@ -5763,8 +5672,8 @@ struct ConvTranspose:
         @parameter
         @always_inline
         fn output_fn[
-            _type: DType, _rank: Int, _width: Int
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
@@ -5945,6 +5854,7 @@ struct IRFFT:
         dtype: DType,
         rank: Int,
         n: Int,
+        buffer_size_mb: Int,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         input: InputTensor[dtype=dtype, rank=rank],
@@ -5952,13 +5862,11 @@ struct IRFFT:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
-        irfft[input.rank, input.dtype, output.dtype,](
-            input_buf,
-            output_buf,
+        irfft(
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
             n,
+            buffer_size_mb,
             ctx.get_device_context(),
         )
 
@@ -7330,13 +7238,17 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-    dtype: DType, //, *, interleaved: Bool, target: StaticString
+    dtype: DType,
+    freq_dtype: DType, //,
+    *,
+    interleaved: Bool,
+    target: StaticString,
 ](
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
@@ -7358,7 +7270,11 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        dtype: DType,
+        freq_dtype: DType,
+        num_heads: Int,
+        head_dim: Int, //,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
@@ -7367,7 +7283,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
             dtype,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -7386,7 +7302,8 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-    dtype: DType, //,
+    dtype: DType,
+    freq_dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -7397,7 +7314,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         dtype,
         *_,
     ],
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     context: DeviceContextPtr,
@@ -7421,6 +7338,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
@@ -7434,7 +7352,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
@@ -7862,10 +7780,18 @@ struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
     fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
         target: StaticString,
     ](
         max_seq_len: OutputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
         context: DeviceContextPtr,
     ) raises:
         # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
@@ -8114,7 +8040,6 @@ struct PackConvFilterShape:
         dilations: DimList,
         paddings: DimList,
         num_groups: Int,
-        _synchronous: Bool,
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) -> IndexList[
         rank + 1
     ]:
@@ -8131,7 +8056,6 @@ struct PackConvFilterShape:
             dilations: Should be rank 1 size 2.
             paddings: Should be rank 1 size 4.
             num_groups: The number of groups in the convolution.
-            _synchronous: If True, then reduction is run sync with 1 thread.
 
         Args:
             filter_buf: The filter to be packed.
@@ -8149,7 +8073,7 @@ struct PackConvFilterShape:
             dilations,
             paddings,
             num_groups,
-            _synchronous,
+            False,
         ](managed_tensor_slice_to_ndbuffer(filter_buf))
 
 
@@ -8313,7 +8237,6 @@ struct PackMatmulBShapeFunc:
         c_type: DType,
         c_shape: DimList,
         transpose_in_0: Bool,
-        _synchronous: Bool,
     ](b_input: InputTensor[dtype=b_type, rank=2]) -> IndexList[2]:
         return pack_matmul_b_shape_func[
             a_type,
@@ -8323,7 +8246,7 @@ struct PackMatmulBShapeFunc:
             c_type,
             c_shape,
             transpose_in_0,
-            _synchronous,
+            False,
         ](managed_tensor_slice_to_ndbuffer(b_input))
 
 
@@ -8813,9 +8736,9 @@ struct Struct_min_p_sampling:
                 var cuda_ctx = ctx.get_device_context()
                 min_p_sampling_gpu(
                     cuda_ctx,
-                    min_ps_buf,
-                    input_buf,
-                    out_token_ids_buf,
+                    min_ps.to_layout_tensor(),
+                    input.to_layout_tensor(),
+                    out_token_ids.to_layout_tensor(),
                     temperature,
                 )
 
@@ -8946,7 +8869,6 @@ struct DistributedAllReduceSum:
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
-
         Args:
             outputs: Output tensors (one per GPU) to store reduced results.
             inputs: Input tensors (one per GPU) containing values to reduce.
@@ -8983,7 +8905,7 @@ struct DistributedAllReduceSum:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8991,15 +8913,13 @@ struct DistributedAllReduceSum:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9009,12 +8929,12 @@ struct DistributedAllReduceSum:
         @parameter
         fn outputs_lambda[
             input_index: Int,
-            _type: DType,
+            _dtype: DType,
             _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
             constrained[
                 input_index < num_devices, "tensor index out of bounds"
             ]()
@@ -9035,26 +8955,36 @@ struct DistributedAllGather:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype, rank, *_],
         inputs: InputVariadicTensors[dtype, rank, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, *_
+        ],
         dev_ctxs_input: DeviceContextPtrList,
-    ) raises:
+    ) capturing raises:
         """Distributed allgather operation implementation.
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
             inputs: Input tensors (one per GPU) containing values to gather.
+            signal_buffers: Device buffer values used for synchronization.
             dev_ctxs_input: Device contexts for participating GPUs.
         """
         alias num_devices = inputs.size
         constrained[
-            outputs.size == num_devices * num_devices,
+            signal_buffers.size == num_devices
+            and outputs.size == num_devices * num_devices,
             (
-                "expected allgather output buffers to have num_devices *"
-                " num_devices elements for variadic output"
+                "expected allgather inputs, signal buffers to have the same"
+                " number of elements and outputs to have num_devices *"
+                " num_devices"
             ),
         ]()
+
+        var input_size_bytes = inputs[0].size() * sizeof[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
@@ -9063,7 +8993,7 @@ struct DistributedAllGather:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -9071,12 +9001,156 @@ struct DistributedAllGather:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-        allgather[ngpus=num_devices](in_bufs, out_bufs, dev_ctxs)
+
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.matmul_allreduce")
+struct DistributedMatmulAllReduce:
+    @staticmethod
+    fn execute[
+        a_type: DType,
+        b_type: DType,
+        c_type: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: FusedOutputVariadicTensors[c_type, 2, *_],
+        inputs: InputVariadicTensors[a_type, 2, *_],
+        weights: InputVariadicTensors[b_type, 2, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, *_
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Distributed allreduce operation implementation for sum reduction.
+
+
+        Args:
+            outputs: Output tensors (one per GPU) to store reduced results.
+            inputs: Input tensors (one per GPU) containing matmul inputs.
+            weights: Input tensors (one per GPU) containing matmul inputs.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Implementation Notes:
+            1. Uses naive reduction implementation when P2P access unavailable.
+            2. Requires input/output buffers to be device-allocated and aligned.
+            3. Signal buffers must be device-allocated and large enough to fit
+               the buffer + signals metadata.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
+            - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        alias num_devices = inputs.size
+        constrained[
+            weights.size == num_devices
+            and signal_buffers.size == num_devices
+            and outputs.size == num_devices,
+            (
+                "expected allreduce inputs, weights, outputs, and signal"
+                " buffers to all have the same number of elements"
+            ),
+        ]()
+
+        var input_size_bytes = outputs[0].size() * sizeof[c_type]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
+
+        # Get the static buffer dimensions
+        alias n_dim = weights.static_specs[0].shape.at[0]()
+        alias k_dim = weights.static_specs[0].shape.at[1]()
+        constrained[not n_dim.is_dynamic(), "n dimension should be static"]()
+        constrained[not k_dim.is_dynamic(), "k dimension should be static"]()
+
+        alias A_static_shape = DimList(Dim(), k_dim)
+        alias B_static_shape = DimList(n_dim, k_dim)
+        alias C_static_shape = DimList(Dim(), n_dim)
+
+        # Marshal input and output variadic tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
+        ](fill={})
+        var weight_bufs = InlineArray[
+            NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
+        ](fill={})
+
+        @parameter
+        for i in range(num_devices):
+            in_bufs[i] = rebind[
+                NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]
+            ](managed_tensor_slice_to_ndbuffer(inputs[i]))
+            weight_bufs[i] = managed_tensor_slice_to_ndbuffer(weights[i])
+
+        var out_bufs = InlineArray[
+            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+        ](fill={})
+
+        @parameter
+        for i in range(num_devices):
+            out_bufs[i] = rebind[
+                NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
+            ](managed_tensor_slice_to_ndbuffer(outputs[i]))
+
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[2]](coords), rebind[SIMD[c_type, _width]](val))
+
+        # Allocate temporarie buffers to store the matmul outputs
+        var c_temp_bufs = InlineArray[
+            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+        ](uninitialized=True)
+
+        @parameter
+        for i in range(num_devices):
+            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
+                out_bufs[i].num_elements()
+            )
+            c_temp_bufs[i] = NDBuffer[
+                c_type, 2, MutableAnyOrigin, C_static_shape
+            ](device_buffer.unsafe_ptr(), out_bufs[i].dynamic_shape)
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            matmul_allreduce[
+                ngpus=num_devices,
+                outputs_lambda=outputs_lambda,
+            ](in_bufs, weight_bufs, c_temp_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
@@ -9131,7 +9205,6 @@ struct AdvancedIndexingGetItem:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         out_tensor: OutputTensor[
@@ -9165,7 +9238,7 @@ struct AdvancedIndexingGetItem:
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             trace_description=_trace_name,
             input_tensor_fn=input_tensor_fn,
             indices_fn=indices_fn,
@@ -9208,7 +9281,6 @@ struct AdvancedIndexingSetItemInplace:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         input_tensor: MutableInputTensor[dtype=input_type, rank=input_rank],
@@ -9239,7 +9311,7 @@ struct AdvancedIndexingSetItemInplace:
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             trace_description=_trace_name,
             updates_tensor_fn=updates_tensor_fn,
             indices_fn=indices_fn,
@@ -9264,7 +9336,6 @@ struct AdvancedIndexingSetItem:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output_tensor: OutputTensor[dtype=input_type, rank=input_rank],
@@ -9291,7 +9362,6 @@ struct AdvancedIndexingSetItem:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name = _trace_name + "_p1/2_copy",
         ](output_tensor, ctx)
 
@@ -9309,7 +9379,6 @@ struct AdvancedIndexingSetItem:
         AdvancedIndexingSetItemInplace.execute[
             target=target,
             start_axis=start_axis,
-            _synchronous=_synchronous,
             _trace_name = _trace_name + "_p2/2_update",
         ](tensor, updates, indices, ctx)
 
@@ -9347,7 +9416,7 @@ struct ArgSort[*, ascending: Bool]:
 
 
 @compiler.register("mo.quantize_static_scaled_float8")
-struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
+struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @always_inline
     @staticmethod
     fn execute[
@@ -9362,7 +9431,7 @@ struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
         var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[is_scale_inverted=is_scale_inverted](
+        quantize_static_scaled_fp8[scale_is_inverted=scale_is_inverted](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             scale_loaded,

@@ -23,7 +23,7 @@ from sys import (
 
 import gpu.warp as warp
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import Dim
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -34,7 +34,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import FuncAttribute
 from gpu.memory import (
     CacheEviction,
     Fill,
@@ -42,15 +41,14 @@ from gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
+from gpu.mma import mma
 from gpu.semaphore import Semaphore
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
@@ -62,7 +60,6 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import StaticTuple
@@ -70,9 +67,8 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
-from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
+from .utils_gpu import MatmulConfig, block_swizzle
 
 
 @always_inline
@@ -123,7 +119,7 @@ fn warp_split_k_reduction[
             .vectorize[1, c_frag_size]()
         )
         if i_red <= warp_k_part_id < 2 * i_red:
-            copy[thread_layout=red_layout](
+            copy_local_to_shared[thread_layout=red_layout](
                 red_tb_smem,
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
@@ -902,7 +898,7 @@ fn multistage_gemm_kernel[
         for i in range(__type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
             alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-            var dst_idx = 0
+            var dst_idx: Int
 
             @parameter
             if c_gmem_frag.layout.all_dims_known():
@@ -947,7 +943,10 @@ fn multistage_gemm_kernel[
             .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -987,7 +986,7 @@ fn multistage_gemm_kernel[
                 )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_gmem_frag.layout.all_dims_known():

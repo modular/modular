@@ -10,7 +10,7 @@ high-performance computing, you shouldn't have to rewrite the whole thing in
 Mojo. Instead, you can write just the performance-critical parts your code in
 Mojo and then call it from Python.
 
-:::caution Early preview
+:::experiment Beta feature
 
 Calling Mojo code from Python is in early development. You should expect a lot
 of changes to the API and ergonomics. Likewise, this documentation is still a
@@ -90,7 +90,6 @@ work (but this will improve soon):
 
 ```python title="main.py"
 import max.mojo.importer
-import os
 import sys
 
 sys.path.insert(0, "")
@@ -148,7 +147,7 @@ your Python with Mojo.
 
 ## Binding Mojo types
 
-All Mojo type are eligible to be bound for use from Python.
+All Mojo types are eligible to be bound for use from Python.
 
 :::note
 
@@ -215,7 +214,7 @@ object type had not previously been registered using
 {/*
 TODO: How to distinguish this constructor from the converting constructor?
 TODO: Maybe `PythonObject.mojo()` / `PythonObject(mojo_object=)`?
-TODO: `PythonObject.__init__[T: AnyType](out self, *, owned alloc: T)
+TODO: `PythonObject.__init__[T: AnyType](out self, *, var alloc: T)
 */}
 
 

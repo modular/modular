@@ -14,8 +14,6 @@
 
 import sys
 
-from utils import Writable, Writer
-
 
 fn main() raises:
     test_write_to_stdout()

@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import os
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
@@ -32,6 +33,7 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.graph.ops.allreduce import matmul_allreduce
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
@@ -324,7 +326,7 @@ class Linear(Module, Shardable):
             # shape (1,), replicate it across devices when weight sharding is
             # colwise.
             should_replicate = self.float8_config.weight_scale.is_tensor or (
-                strategy.is_colwise
+                (strategy.is_colwise or strategy.is_head_aware_colwise)
                 and self.float8_config.weight_scale.is_rowwise
             )
             self.weight_scale.sharding_strategy = (
@@ -334,7 +336,12 @@ class Linear(Module, Shardable):
             )
 
         if self.bias:
-            # Only shard the bias when the weight sharding is rowwise.
+            # Only truly shard the bias across devices when the weight sharding
+            # is rowwise.
+            # Otherwise, when the weight sharding is columnwise, set the bias to
+            # replicate so that it is complete on device 0.
+            # Linear.shard handles setting bias to None on devices >= 1 to
+            # prevent bias duplication, which would be incorrect.
             self.bias.sharding_strategy = (
                 strategy
                 if strategy.is_rowwise
@@ -380,7 +387,16 @@ class Linear(Module, Shardable):
 
         # Handle bias sharding
         if self.bias is not None:
-            sharded.bias = self.bias.shard(shard_idx, device)
+            # For columnwise sharding with allreduce.sum, only add bias on device 0
+            # to avoid adding it multiple times.
+            is_colwise = (
+                self.weight.sharding_strategy.is_colwise
+                or self.weight.sharding_strategy.is_head_aware_colwise
+            )
+            if is_colwise and (shard_idx > 0):
+                sharded.bias = None
+            else:
+                sharded.bias = self.bias.shard(shard_idx, device)
 
         # Handle float8 scales.
         if self.float8_config:
@@ -563,7 +579,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers.append(layer)
 
     def __call__(  # type: ignore[override]
-        self, x: Sequence[TensorValue]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 
@@ -571,7 +587,7 @@ class ColumnParallelLinear(Linear):
             x: Input tensor of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on :obj:`device`.
-            signal_buffers: Buffers for peer-to-peer communication in allreduce.
+            signal_buffers: Buffers for peer-to-peer communication in allgather.
 
         Returns:
             Output tensor of shape ``(..., out_dim)``.
@@ -584,7 +600,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers[i](x[i])
             for i in range(self.num_devices)
         ]
-        return ops.allgather(linear_outs, axis=-1)
+        return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 
 def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
@@ -946,6 +962,26 @@ _ACTIVATION_FUNCTIONS = {
 }
 
 
+@dataclass
+class DistributedGemmConfig:
+    """Configure how distributed GEMM is executed"""
+
+    # Required fields
+
+    # If True, use the matmul + all_reduce kernel
+    enable_matmul_allreduce: bool
+
+    @staticmethod
+    def generate() -> DistributedGemmConfig | None:
+        """Returns the default DistributedGemmConfig"""
+        opts_env = os.getenv("LLAMA_ENABLE_DIST_GEMM_KERNELS")
+        if opts_env is None:
+            return DistributedGemmConfig(True)
+
+        enable_matmul_allreduce = bool(opts_env)
+        return DistributedGemmConfig(enable_matmul_allreduce)
+
+
 class MLP(Module):
     """
     Simple multi-layer perceptron composed of three linear layers.
@@ -963,7 +999,8 @@ class MLP(Module):
         has_bias: bool = False,
         activation_function: str = "silu",
         float8_config: Float8Config | None = None,
-    ):
+        dist_gemm_config: DistributedGemmConfig | None = None,
+    ) -> None:
         """
         Args:
             dtype: DType to use for the layer weights, which should match the
@@ -985,6 +1022,7 @@ class MLP(Module):
         """
         super().__init__()
         self.devices = devices
+        self.dist_gemm_config = dist_gemm_config
         self.gate_proj = linear_cls(  # [ffl, hidden]
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
@@ -1068,7 +1106,16 @@ class MLP(Module):
             gate_out, up_out = ops.split(
                 output, [feed_forward_length, feed_forward_length], axis=1
             )
-            return self.down_proj(self.activation_function(gate_out) * up_out)
+
+            hidden = self.activation_function(gate_out) * up_out
+            # If we overlap GEMM / AllReduce, the last linear layer is skipped.
+            if (
+                self.dist_gemm_config is None
+                or not self.dist_gemm_config.enable_matmul_allreduce
+            ):
+                return self.down_proj(hidden)
+            else:
+                return hidden
 
 
 class DistributedMLP(MLP):
@@ -1111,7 +1158,7 @@ class DistributedMLP(MLP):
         self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def __call__(  # type: ignore[override]
-        self, x: list[TensorValue], signal_buffers: list[BufferValue]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 
@@ -1129,4 +1176,16 @@ class DistributedMLP(MLP):
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
-        return self.allreduce(mlp_outs, signal_buffers)
+
+        dist_gemm_cfg = self.list_of_mlps[0].dist_gemm_config
+        if dist_gemm_cfg is None or not dist_gemm_cfg.enable_matmul_allreduce:
+            return self.allreduce(mlp_outs, signal_buffers)
+
+        # Special matmul + allreduce split version
+        # extract the sharded weights from the last linear layers
+        weights = [layer.down_proj.weight for layer in self.list_of_mlps]
+        return matmul_allreduce(
+            mlp_outs,
+            weights,
+            signal_buffers,
+        )

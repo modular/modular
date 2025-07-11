@@ -12,13 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import argv
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
@@ -122,7 +119,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     alias kernel = _concat_inner_most_single_dim[
         rank=rank,
-        type=dtype,
+        dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
         epilogue_fn = OptionalReg[elementwise_epilogue_type](

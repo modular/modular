@@ -44,30 +44,30 @@ from utils.static_tuple import StaticTuple
 @always_inline
 fn block_reduce[
     BLOCK_SIZE: Int,
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
-    type: DType,
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
+    dtype: DType,
     simd_width: Int,
-](val: SIMD[type, simd_width], init: Scalar[type]) -> Scalar[type]:
+](val: SIMD[dtype, simd_width], init: Scalar[dtype]) -> Scalar[dtype]:
     alias num_reductions = 1
 
     @always_inline
     @parameter
     fn reduce_wrapper[
-        type: DType, width: Int, reduction_idx: Int
-    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        dtype: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         constrained[reduction_idx < num_reductions, "invalid reduction index"]()
         return reduce_fn(lhs, rhs)
 
-    var val_tup = StaticTuple[SIMD[type, simd_width], num_reductions](val)
-    var init_tup = StaticTuple[Scalar[type], num_reductions](init)
+    var val_tup = StaticTuple[SIMD[dtype, simd_width], num_reductions](val)
+    var init_tup = StaticTuple[Scalar[dtype], num_reductions](init)
 
     return block_reduce[
         BLOCK_SIZE,
         num_reductions,
         reduce_wrapper,
-        type,
+        dtype,
         simd_width,
     ](val_tup, init_tup)[0]
 
@@ -76,15 +76,15 @@ fn block_reduce[
 fn block_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
-    type: DType,
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
+    dtype: DType,
     simd_width: Int,
 ](
-    val: StaticTuple[SIMD[type, simd_width], num_reductions],
-    init: StaticTuple[Scalar[type], num_reductions],
-) -> StaticTuple[Scalar[type], num_reductions]:
+    val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
+    init: StaticTuple[Scalar[dtype], num_reductions],
+) -> StaticTuple[Scalar[dtype], num_reductions]:
     constrained[
         BLOCK_SIZE % WARP_SIZE == 0,
         "block size must be a multiple of the warp size",
@@ -93,9 +93,9 @@ fn block_reduce[
     @always_inline
     @parameter
     fn do_warp_reduce(
-        val: StaticTuple[SIMD[type, simd_width], num_reductions]
-    ) -> StaticTuple[SIMD[type, simd_width], num_reductions]:
-        var result = StaticTuple[SIMD[type, simd_width], num_reductions]()
+        val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
+    ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
+        var result = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
 
         @parameter
         for i in range(num_reductions):
@@ -103,11 +103,11 @@ fn block_reduce[
             @always_inline
             @parameter
             fn reduce_wrapper[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
+                dtype: DType, width: Int
+            ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+                dtype, width
             ]:
-                return reduce_fn[type, width, i](lhs, rhs)
+                return reduce_fn[dtype, width, i](lhs, rhs)
 
             result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
 
@@ -115,7 +115,7 @@ fn block_reduce[
 
     var shared = stack_allocation[
         (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
-        type,
+        dtype,
         address_space = AddressSpace.SHARED,
     ]()
 
@@ -135,7 +135,7 @@ fn block_reduce[
 
     barrier()
 
-    var last_accum = StaticTuple[SIMD[type, simd_width], num_reductions]()
+    var last_accum = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
 
     if thread_idx.x < (block_dim.x // WARP_SIZE):
 
@@ -151,11 +151,11 @@ fn block_reduce[
             last_accum[i] = init[i]
 
     var result_packed = do_warp_reduce(last_accum)
-    var result = StaticTuple[Scalar[type], num_reductions]()
+    var result = StaticTuple[Scalar[dtype], num_reductions]()
 
     @parameter
     for i in range(num_reductions):
-        result[i] = result_packed[i].reduce[reduce_fn[type, reduction_idx=i]]()
+        result[i] = result_packed[i].reduce[reduce_fn[dtype, reduction_idx=i]]()
 
     return result
 
@@ -163,20 +163,20 @@ fn block_reduce[
 @always_inline
 fn row_reduce[
     BLOCK_SIZE: Int,
-    input_fn: fn[type: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing [_] -> SIMD[type, width],
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
-    type: DType,
+    ) capturing [_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
+    dtype: DType,
     simd_width: Int,
     rank: Int,
-    accum_type: DType = get_accum_type[type](),
+    accum_type: DType = get_accum_type[dtype](),
 ](
     mut row_coords: IndexList[rank],
     axis: Int,
-    init: Scalar[type],
+    init: Scalar[dtype],
     row_size: Int,
 ) -> Scalar[accum_type]:
     alias num_reductions = 1
@@ -184,19 +184,19 @@ fn row_reduce[
     @always_inline
     @parameter
     fn reduce_wrapper[
-        type: DType, width: Int, reduction_idx: Int
-    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        dtype: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         constrained[reduction_idx < num_reductions, "invalid reduction index"]()
         return reduce_fn(lhs, rhs)
 
-    var init_tup = StaticTuple[Scalar[type], num_reductions](init)
+    var init_tup = StaticTuple[Scalar[dtype], num_reductions](init)
 
     return row_reduce[
         BLOCK_SIZE,
         num_reductions,
         input_fn,
         reduce_wrapper,
-        type,
+        dtype,
         simd_width,
         rank,
         accum_type=accum_type,
@@ -207,20 +207,20 @@ fn row_reduce[
 fn row_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    input_fn: fn[type: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing [_] -> SIMD[type, width],
-    reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
-    type: DType,
+    ) capturing [_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
+    dtype: DType,
     simd_width: Int,
     rank: Int,
-    accum_type: DType = get_accum_type[type](),
+    accum_type: DType = get_accum_type[dtype](),
 ](
     mut row_coords: IndexList[rank],
     axis: Int,
-    init: StaticTuple[Scalar[type], num_reductions],
+    init: StaticTuple[Scalar[dtype], num_reductions],
     row_size: Int,
 ) -> StaticTuple[Scalar[accum_type], num_reductions]:
     var num_tail_values = row_size % simd_width
@@ -243,7 +243,7 @@ fn row_reduce[
             break
 
         row_coords[axis] = Int(idx_in_padded_row)
-        var val = input_fn[type, simd_width, rank](row_coords).cast[
+        var val = input_fn[dtype, simd_width, rank](row_coords).cast[
             accum_type
         ]()
 
@@ -262,7 +262,7 @@ fn row_reduce[
     # handle trailing values
     for idx_in_padded_row in range(rounded_row_size, row_size):
         row_coords[axis] = idx_in_padded_row
-        var val = input_fn[type, 1, rank](row_coords).cast[accum_type]()
+        var val = input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
 
         @parameter
         for i in range(num_reductions):
@@ -278,22 +278,22 @@ fn reduce_kernel[
     rank: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: fn[type: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing [_] -> SIMD[type, width],
-    output_fn: fn[type: DType, width: Int, rank: Int] (
-        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
+    ) capturing [_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing [_] -> SIMD[ty, width],
-    type: DType,
+    dtype: DType,
     simd_width: Int,
-    accum_type: DType = get_accum_type[type](),
+    accum_type: DType = get_accum_type[dtype](),
 ](
     shape: IndexList[rank],
     axis: Int,
-    init: StaticTuple[Scalar[type], num_reductions],
+    init: StaticTuple[Scalar[dtype], num_reductions],
 ):
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
@@ -318,21 +318,21 @@ fn reduce_kernel[
             num_reductions,
             input_fn,
             reduce_fn,
-            type,
+            dtype,
             simd_width,
             rank,
             accum_type=accum_type,
         ](row_coords, axis, init, row_size)
 
         if thread_idx.x == 0:
-            var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
+            var row_accum_cast = StaticTuple[Scalar[dtype], num_reductions]()
 
             @parameter
             for i in range(num_reductions):
-                row_accum_cast[i] = row_accum[i].cast[type]()
+                row_accum_cast[i] = row_accum[i].cast[dtype]()
 
             row_coords[axis] = 0
-            output_fn[type, 1, rank](row_coords, row_accum_cast)
+            output_fn[dtype, 1, rank](row_coords, row_accum_cast)
 
     @parameter
     if PDLLevel() == PDLLevel.OVERLAP_AT_END:
@@ -341,21 +341,21 @@ fn reduce_kernel[
 
 fn reduce_launch[
     num_reductions: Int,
-    input_fn: fn[type: DType, width: Int, rank: Int] (
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing [_] -> SIMD[type, width],
-    output_fn: fn[type: DType, width: Int, rank: Int] (
-        IndexList[rank], StaticTuple[SIMD[type, width], num_reductions]
+    ) capturing [_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing [_] -> None,
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing [_] -> SIMD[ty, width],
     rank: Int,
-    type: DType,
+    dtype: DType,
 ](
     shape: IndexList[rank],
     axis: Int,
-    init: StaticTuple[Scalar[type], num_reductions],
+    init: StaticTuple[Scalar[dtype], num_reductions],
     ctx: DeviceContext,
 ) raises:
     alias BLOCK_SIZE = 128
@@ -376,7 +376,7 @@ fn reduce_launch[
             input_fn,
             output_fn,
             reduce_fn,
-            type,
+            dtype,
             packing_factor,
         ]
     ](

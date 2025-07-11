@@ -53,8 +53,8 @@ Example:
 
 ```mojo
 # String creation and basic operations
-var s1 = String("Hello")
-var s2 = String("World")
+var s1 = "Hello"
+var s2 = "World"
 var combined = s1 + " " + s2  # "Hello World"
 
 # String-to-number conversion
@@ -66,14 +66,14 @@ var char = chr(65)  # "A"
 var code = ord("A")  # 65
 
 # String formatting
-print(String("Codepoint {} is {}").format(code, char)) # Codepoint 65 is A
+print("Codepoint {} is {}".format(code, char)) # Codepoint 65 is A
 
 # ASCII utilities
 var ascii_str = ascii("Hello")  # ASCII-only string
 ```
 """
 
-from collections import KeyElement, List, Optional
+from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
@@ -89,165 +89,20 @@ from collections.string.string_slice import (
     _to_string_list,
     _utf8_byte_type,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from os import PathLike, abort
 from os.atomic import Atomic
-from sys import bitwidthof, is_compile_time, sizeof
+from sys import bitwidthof, sizeof
+from sys.info import is_32bit
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer, memcpy, memset
+from memory import memcpy, memset, memcmp
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils import IndexList, Variant, Writable, Writer
+from utils import IndexList, Variant
 from utils._select import _select_register_value as select
 from utils.write import _WriteBufferStack
-
-# ===----------------------------------------------------------------------=== #
-# String Implementation Details
-# ===----------------------------------------------------------------------=== #
-
-
-# This is a private struct used to store the capacity and bitflags for a String.
-# It is not exported and should not be used directly.
-@register_passable("trivial")
-struct _StringCapacityField:
-    # When not-inline, this maintains the capacity of the string shifted right
-    # by 3 bits, with 3 top bits used for flags. When inline is the length of
-    # the string.
-    var _storage: UInt
-
-    # This is the number of bytes that can be stored inline in the string value.
-    # 'String' is 3 words in size and we use the top byte of the capacity field
-    # to store flags.
-    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
-    # The start of the length field in the storage: this is the top byte, which
-    # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
-    alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
-
-    # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
-    # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # UNUSED_FLAG is not used, but might be used in the future.
-    alias UNUSED_FLAG = UInt(1) << (UInt.BITWIDTH - 2)
-    # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
-    # of the string value (the "Small string optimization").
-    alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
-
-    # Initialize with a specified capacity.  Note that the provided value may
-    # be rounded up, so clients should check the capacity() after construction.
-    @always_inline("nodebug")
-    fn __init__(out self, capacity: UInt):
-        # If the capacity needed fits inline, use the inline form.
-        if capacity <= Self.INLINE_CAPACITY and not is_compile_time():
-            self._storage = Self.FLAG_IS_INLINE
-        else:
-            self = Self(out_of_line_capacity=capacity)
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, out_of_line_capacity: UInt):
-        # memory allocators work on this granularity anyway, so we might as well
-        # use it. We store the capacity with the top 3 bits of the storage used
-        # for flags.
-        self._storage = (out_of_line_capacity + 7) >> 3
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, static_const_length: Int):
-        # Short constant strings that can fit inline *with a nul terminator*
-        # added are stored inline.
-        if static_const_length < Self.INLINE_CAPACITY and not is_compile_time():
-            self._storage = Self.FLAG_IS_INLINE
-        else:
-            # We set the capacity to 0 to always force reallocation if we
-            # want the capacity to change.
-            self._storage = 0
-
-    @always_inline("nodebug")
-    fn capacity(self) -> UInt:
-        # In the inline form, we hold the data inline.
-        if self.is_inline():
-            return Self.INLINE_CAPACITY
-        return self._storage << 3
-
-    @always_inline("nodebug")
-    fn has_nul_terminator(self) -> Bool:
-        return self._storage & Self.FLAG_HAS_NUL_TERMINATOR != 0
-
-    @always_inline("nodebug")
-    fn set_has_nul_terminator(mut self, value: Bool):
-        var unset = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
-        self._storage = unset | select(value, Self.FLAG_HAS_NUL_TERMINATOR, 0)
-
-    @always_inline("nodebug")
-    fn is_inline(self) -> Bool:
-        return self._storage & Self.FLAG_IS_INLINE != 0
-
-    @always_inline("nodebug")
-    fn get_len(self, len_or_data: Int) -> Int:
-        if self.is_inline():
-            return (
-                self._storage & Self.INLINE_LENGTH_MASK
-            ) >> Self.INLINE_LENGTH_START
-        else:
-            return len_or_data
-
-    @always_inline("nodebug")
-    fn set_len(mut self, new_len: Int, mut len_or_data: Int):
-        if self.is_inline():
-            debug_assert(new_len <= Self.INLINE_CAPACITY)
-            self._storage = (self._storage & ~Self.INLINE_LENGTH_MASK) | (
-                new_len << Self.INLINE_LENGTH_START
-            )
-        else:
-            len_or_data = new_len
-
-
-# This is a private struct used to store the reference count of a out-of-line
-# mutable string buffer.
-struct _StringOutOfLineHeader(Defaultable):
-    var refcount: Atomic[DType.index]
-    alias _SIZE = sizeof[Self]()
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        """Create an initialized instance of this with a refcount of 1."""
-        self.refcount = Scalar[DType.index](1)
-
-    @always_inline("nodebug")
-    fn add_ref(mut self):
-        """Atomically increment the refcount."""
-        _ = self.refcount.fetch_add(1)
-
-    @always_inline("nodebug")
-    fn drop_ref(mut self):
-        """Atomically decrement the refcount and deallocate self if the result
-        hits zero."""
-        if self.refcount.fetch_sub(1) == 1:
-            UnsafePointer(to=self).bitcast[Byte]().free()
-
-    @always_inline("nodebug")
-    fn is_unique(mut self) -> Bool:
-        """Return true if the refcount is 1."""
-        return self.refcount.load() == 1
-
-    @staticmethod
-    fn alloc(capacity: Int) -> UnsafePointer[Byte]:
-        """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(capacity + Self._SIZE)
-
-        # Initialize the header.
-        __get_address_as_uninit_lvalue(ptr.bitcast[Self]().address) = Self()
-
-        # Return a pointer to right after the header, which is where the string
-        # data will be stored.
-        return ptr + Self._SIZE
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn get(ptr: UnsafePointer[Byte, origin=_]) -> ref [ptr.origin] Self:
-        # The header is stored before the string data.
-        return (ptr - Self._SIZE).bitcast[Self]()[]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -272,7 +127,6 @@ struct String(
     Writable,
     Writer,
     _CurlyEntryFormattable,
-    _HashableWithHasher,
 ):
     """Represents a mutable string.
 
@@ -287,8 +141,8 @@ struct String(
     var _ptr_or_data: UnsafePointer[UInt8]
     """The underlying storage for the string data."""
     var _len_or_data: Int
-    """The number of elements in the string data."""
-    var _capacity_or_data: _StringCapacityField
+    """The number of bytes in the string data."""
+    var _capacity_or_data: UInt
     """The capacity and bit flags for this String."""
 
     # Useful string aliases.
@@ -302,86 +156,92 @@ struct String(
     alias PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
 
     # ===------------------------------------------------------------------=== #
+    # String Implementation Details
+    # ===------------------------------------------------------------------=== #
+    # This is the number of bytes that can be stored inline in the string value.
+    # 'String' is 3 words in size and we use the top byte of the capacity field
+    # to store flags.
+    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
+    # is known to be an accessible 'nul' terminator.
+    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
+    # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
+    # that may have other references to it.
+    alias FLAG_IS_REF_COUNTED = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_INLINE is set, the string is inline or "Short String
+    # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
+    # data
+    alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
+    # gives us 5 bits for the length.
+    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
+    alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
+    # This is the size to offset the pointer by, to get access to the
+    # atomic reference count prepended to the UTF-8 data.
+    alias REF_COUNT_SIZE = sizeof[Atomic[DType.index]]()
+
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroy the string data."""
-        if self._has_mutable_buffer():
-            _StringOutOfLineHeader.get(self._ptr_or_data).drop_ref()
+        self._drop_ref()
 
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self = Self(capacity=0)
+        self._capacity_or_data = Self.FLAG_IS_INLINE
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, *, capacity: Int):
         """Construct an empty string with a given capacity.
 
         Args:
             capacity: The capacity of the string to allocate.
         """
-        var cap_field = _StringCapacityField(capacity)
-        if cap_field.is_inline():
-            # Tell mojo it is ok for this to be uninitialized.
+        if capacity <= Self.INLINE_CAPACITY:
+            self._capacity_or_data = Self.FLAG_IS_INLINE
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(self)
             )
-            self._capacity_or_data = cap_field
         else:
+            self._capacity_or_data = (capacity + 7) >> 3
+            self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
-            self._ptr_or_data = _StringOutOfLineHeader.alloc(
-                cap_field.capacity()
-            )
-            self._capacity_or_data = cap_field
+            self._set_ref_counted()
 
-    @always_inline
+    @always_inline("nodebug")
     @implicit  # does not allocate.
     fn __init__(out self, data: StaticString):
-        """Construct a string from a static constant string without allocating.
+        """Construct a `String` from a `StaticString` without allocating.
 
         Args:
             data: The static constant string to refer to.
         """
-        var length = data.byte_length()
-        var cap_field = _StringCapacityField(static_const_length=length)
-        # NOTE: we can't set set_has_nul_terminator(True) because there is no
-        # guarantee that this wasn't constructed from a
-        # Span[Byte, StaticConstantOrigin] without a nul terminator.
-        if cap_field.is_inline():
-            # Tell mojo it is ok for this to be uninitialized.
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
-            cap_field.set_len(length, self._len_or_data)
-            self._capacity_or_data = cap_field
-            memcpy(
-                UnsafePointer(to=self).bitcast[Byte](),
-                data.unsafe_ptr(),
-                length,
-            )
-        else:
-            self._ptr_or_data = data.unsafe_ptr()
-            self._len_or_data = length
-            self._capacity_or_data = cap_field
+        self._len_or_data = data._slice._len
+        self._ptr_or_data = data._slice._data
+        # Always use static constant representation initially, defer inlining
+        # decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = 0
 
-    @always_inline
+    @always_inline("nodebug")
     @implicit  # does not allocate.
     fn __init__(out self, data: StringLiteral):
-        """Construct a string from a string literal without allocating.
+        """Construct a `String` from a `StringLiteral` without allocating.
 
         Args:
             data: The static constant string to refer to.
         """
-        self = StaticString(data)
-        # All string literals are nul terminated by the compiler but the inline
-        # String overwrites it at any given point
-        if not self._is_inline():
-            self._capacity_or_data.set_has_nul_terminator(True)
+        self._len_or_data = __mlir_op.`pop.string.size`(data.value)
+        self._ptr_or_data = UnsafePointer(
+            __mlir_op.`pop.string.address`(data.value)
+        ).bitcast[Byte]()
+        # Always use static constant representation initially, defer inlining
+        # decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    @always_inline
     fn __init__(out self, *, bytes: Span[Byte, *_]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
@@ -393,7 +253,6 @@ struct String(
         self = Self(unsafe_uninit_length=length)
         memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
-    @no_inline
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
 
@@ -405,7 +264,6 @@ struct String(
         """
         self = value.__str__()
 
-    @no_inline
     fn __init__[T: StringableRaising](out self, value: T) raises:
         """Initialize from a type conforming to `StringableRaising`.
 
@@ -420,7 +278,6 @@ struct String(
         """
         self = value.__str__()
 
-    @no_inline
     fn __init__[
         *Ts: Writable
     ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
@@ -462,7 +319,6 @@ struct String(
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
     @staticmethod
-    @no_inline
     fn __init__[
         *Ts: Writable
     ](
@@ -511,6 +367,7 @@ struct String(
         end.write_to(buffer)
         buffer.flush()
 
+    @always_inline("nodebug")
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
@@ -519,6 +376,7 @@ struct String(
         """
         return self  # Just use the implicit copyinit.
 
+    @always_inline("nodebug")
     fn __init__(out self, *, unsafe_uninit_length: UInt):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
@@ -529,9 +387,8 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=unsafe_uninit_length)
-        self._capacity_or_data.set_len(unsafe_uninit_length, self._len_or_data)
+        self.set_byte_length(unsafe_uninit_length)
 
-    @always_inline
     fn __init__(
         out self,
         *,
@@ -549,7 +406,6 @@ struct String(
         # Copy the data.
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
-    @always_inline
     fn __init__(
         out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
     ):
@@ -576,7 +432,7 @@ struct String(
         self._len_or_data = other._len_or_data
         self._capacity_or_data = other._capacity_or_data
 
-    @always_inline
+    @always_inline("nodebug")
     fn __copyinit__(out self, other: Self):
         """Copy initialize the string from another string.
 
@@ -588,40 +444,98 @@ struct String(
         self._len_or_data = other._len_or_data
         self._capacity_or_data = other._capacity_or_data
 
-        # If the other string is out-of-line and not static, increment the
-        # refcount of the out-of-line representation.
-        if other._has_mutable_buffer():
-            _StringOutOfLineHeader.get(self._ptr_or_data).add_ref()
+        # Increment the refcount if it has a mutable buffer.
+        self._add_ref()
 
     # ===------------------------------------------------------------------=== #
-    # Field getters
+    # Capacity Field Helpers
     # ===------------------------------------------------------------------=== #
+
+    # This includes getting and setting flags from the capcity field such as
+    # null terminator, inline, and indirect. If indirect the length is also
+    # stored in the capacity field.
 
     @always_inline("nodebug")
     fn capacity(self) -> UInt:
-        """Get the capacity of the string.
+        # Max inline capacity before reallocation.
+        if self._is_inline():
+            return Self.INLINE_CAPACITY
+        if not self._is_ref_counted():
+            return self._len_or_data
+        return self._capacity_or_data << 3
 
-        Returns:
-            The capacity of the string.
-        """
-        return self._capacity_or_data.capacity()
+    @always_inline("nodebug")
+    fn _has_nul_terminator(self) -> Bool:
+        return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
+
+    @always_inline("nodebug")
+    fn _clear_nul_terminator(mut self):
+        self._capacity_or_data &= ~Self.FLAG_HAS_NUL_TERMINATOR
 
     @always_inline("nodebug")
     fn _is_inline(self) -> Bool:
-        return self._capacity_or_data.is_inline()
+        return Bool(self._capacity_or_data & Self.FLAG_IS_INLINE)
 
     @always_inline("nodebug")
-    fn _is_indirect_static_constant(self) -> Bool:
-        """Checks if the string is a static constant.
-
-        Returns:
-            True if the string is a static constant, False otherwise.
-        """
-        return Bool(self._ptr_or_data) & (self.capacity() == 0)
+    fn _set_ref_counted(mut self):
+        self._capacity_or_data |= Self.FLAG_IS_REF_COUNTED
 
     @always_inline("nodebug")
-    fn _has_mutable_buffer(self) -> Bool:
-        return ~(self._is_indirect_static_constant() | self._is_inline())
+    fn _is_ref_counted(self) -> Bool:
+        return Bool(self._capacity_or_data & Self.FLAG_IS_REF_COUNTED)
+
+    # ===------------------------------------------------------------------=== #
+    # Pointer Field Helpers
+    # ===------------------------------------------------------------------=== #
+
+    # This includes helpers for the allocated atomic ref count used for
+    # out-of-line strings, which is stored before the UTF-8 data.
+
+    @always_inline("nodebug")
+    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.index]:
+        # The header is stored before the string data.
+        return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
+            Atomic[DType.index]
+        ]()[]
+
+    @always_inline("nodebug")
+    fn _is_unique(mut self) -> Bool:
+        """Return true if the refcount is 1."""
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            return self._refcount().load() == 1
+        else:
+            return False
+
+    @always_inline("nodebug")
+    fn _add_ref(mut self):
+        """Atomically increment the refcount."""
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            _ = self._refcount().fetch_add(1)
+
+    @always_inline("nodebug")
+    fn _drop_ref(mut self):
+        """Atomically decrement the refcount and deallocate self if the result
+        hits zero."""
+        # If indirect or inline we don't need to do anything.
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
+            var refcount = ptr.bitcast[Atomic[DType.index]]()
+            if refcount[].fetch_sub(1) == 1:
+                ptr.free()
+
+    @staticmethod
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
+        """Allocate space for a new out-of-line string buffer."""
+        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
+
+        # Initialize the Atomic refcount into the header.
+        __get_address_as_uninit_lvalue(
+            ptr.bitcast[Atomic[DType.index]]().address
+        ) = Atomic[DType.index](1)
+
+        # Return a pointer to right after the header, which is where the string
+        # data will be stored.
+        return ptr + Self.REF_COUNT_SIZE
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -651,7 +565,6 @@ struct String(
             args[i].write_to(self)
 
     @staticmethod
-    @no_inline
     fn write[
         *Ts: Writable
     ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
@@ -737,19 +650,29 @@ struct String(
             result.append_byte(ptr[i])
         return result^
 
-    @always_inline
-    fn __eq__(self, other: String) -> Bool:
+    fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
         Args:
-            other: The rhs of the operation.
+            rhs: The rhs of the operation.
 
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return self.as_string_slice() == other.as_string_slice()
+        # Early exit if lengths differ
+        var self_len = self.byte_length()
+        var other_len = rhs.byte_length()
+        if self_len != other_len:
+            return False
+        var self_ptr = self.unsafe_ptr()
+        var rhs_ptr = rhs.unsafe_ptr()
+        # same pointer and length, so equal
+        if self_len == 0 or self_ptr == rhs_ptr:
+            return True
+        # Compare memory directly
+        return memcmp(self_ptr, rhs_ptr, self_len) == 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn __eq__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -761,7 +684,7 @@ struct String(
         """
         return self.as_string_slice() == other
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, other: String) -> Bool:
         """Compares two Strings if they do not have the same values.
 
@@ -773,7 +696,7 @@ struct String(
         """
         return not (self == other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -785,7 +708,7 @@ struct String(
         """
         return self.as_string_slice() != other
 
-    @always_inline
+    @always_inline("nodebug")
     fn __lt__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using LT comparison.
 
@@ -798,7 +721,7 @@ struct String(
         """
         return self.as_string_slice() < rhs.as_string_slice()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __le__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using LE comparison.
 
@@ -810,7 +733,7 @@ struct String(
         """
         return not (rhs < self)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __gt__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using GT comparison.
 
@@ -822,7 +745,7 @@ struct String(
         """
         return rhs < self
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ge__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using GE comparison.
 
@@ -845,7 +768,6 @@ struct String(
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
 
-    @always_inline
     fn __add__(self, other: StringSlice) -> String:
         """Creates a string by appending a string slice at the end.
 
@@ -863,13 +785,12 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        self._capacity_or_data.set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         var len = self.byte_length()
         self.reserve(len + 1)
-        (self.unsafe_ptr_mut() + len).init_pointee_move(byte)
-        self._capacity_or_data.set_len(len + 1, self._len_or_data)
+        self.unsafe_ptr_mut()[len] = byte
+        self.set_byte_length(len + 1)
 
-    @always_inline
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
 
@@ -885,15 +806,16 @@ struct String(
         var other_len = len(other)
         if other_len == 0:
             return
-        # remove the nul terminator if it exists.
-        self._capacity_or_data.set_has_nul_terminator(False)
         var old_len = self.byte_length()
         var new_len = old_len + other_len
-        self.reserve(new_len)
-        memcpy(self.unsafe_ptr_mut() + old_len, other.unsafe_ptr(), other_len)
-        self._capacity_or_data.set_len(new_len, self._len_or_data)
+        memcpy(
+            self.unsafe_ptr_mut(new_len) + old_len,
+            other.unsafe_ptr(),
+            other_len,
+        )
+        self.set_byte_length(new_len)
+        self._clear_nul_terminator()
 
-    @always_inline
     fn __iadd__(mut self, other: StringSlice[mut=False]):
         """Appends another string slice to this string.
 
@@ -923,7 +845,7 @@ struct String(
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Checks if the string is not empty.
 
@@ -932,7 +854,6 @@ struct String(
         """
         return self.byte_length() > 0
 
-    @always_inline
     fn __len__(self) -> Int:
         """Get the string length of in bytes.
 
@@ -952,7 +873,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("ನಮಸ್ಕಾರ")
+        var s = "ನಮಸ್ಕಾರ"
 
         assert_equal(len(s), 21)
         assert_equal(len(s.codepoints()), 7)
@@ -964,7 +885,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("abc")
+        var s = "abc"
 
         assert_equal(len(s), 3)
         assert_equal(len(s.codepoints()), 3)
@@ -973,7 +894,7 @@ struct String(
         """
         return self.byte_length()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
 
@@ -993,6 +914,7 @@ struct String(
         """
         return StringSlice(self).__repr__()
 
+    @always_inline("nodebug")
     fn __fspath__(self) -> String:
         """Return the file system path representation (just the string itself).
 
@@ -1001,7 +923,7 @@ struct String(
         """
         return self
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1037,8 +959,9 @@ struct String(
         Args:
             writer: The object to write to.
         """
-
-        writer.write_bytes(self.as_bytes())
+        writer.write_bytes(
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+        )
 
     fn join[*Ts: Writable](self, *elems: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
@@ -1053,42 +976,39 @@ struct String(
             The joined string.
         """
         var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
         return String(elems, sep=sep)
 
     fn join[
-        T: Copyable & Movable & Writable, //, buffer_size: Int = 4096
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
         directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64, but you can increase this if
-        you're joining a very large `List` of elements to write into the stack
-        instead of the heap.
+        the default page size on arm64 and x86-64.
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
                 `Movable` and `Writable` traits.
-            buffer_size: The max size of the stack buffer.
 
         Args:
             elems: The input values.
 
         Returns:
             The joined string.
-        """
-        var result = String()
-        if not len(elems):
-            return result^
-        result.write(elems[0])
-        for i in range(1, len(elems)):
-            result.write(self)
-            result.write(elems[i])
-        return result^
 
-    @always_inline
+        Notes:
+            - Defaults to writing directly to the string if the bytes
+            fit in an inline `String`, otherwise will process it by chunks.
+            - The `buffer_size` defaults to 4096 bytes to match the default
+            page size on arm64 and x86-64, but you can increase this if you're
+            joining a very large `List` of elements to write into the stack
+            instead of the heap.
+        """
+        return self.as_string_slice().join(elems)
+
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
@@ -1103,7 +1023,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("abc")
+        var s = "abc"
         var iter = s.codepoints()
         assert_equal(iter.__next__(), Codepoint.ord("a"))
         assert_equal(iter.__next__(), Codepoint.ord("b"))
@@ -1118,7 +1038,7 @@ struct String(
         from testing import assert_equal
 
         # A visual character composed of a combining sequence of 2 codepoints.
-        var s = String("á")
+        var s = "á"
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
@@ -1147,7 +1067,7 @@ struct String(
         ```mojo
         from testing import assert_equal, assert_true
 
-        var s = String("abc")
+        var s = "abc"
         var iter = s.codepoint_slices()
         assert_true(iter.__next__() == "a")
         assert_true(iter.__next__() == "b")
@@ -1167,29 +1087,43 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        if self._capacity_or_data.is_inline():
+
+        if self._is_inline():
             # The string itself holds the data.
-            return UnsafePointer(to=self).bitcast[Byte]()
+            return (
+                UnsafePointer(to=self)
+                .bitcast[Byte]()
+                .origin_cast[False, __origin_of(self)]()
+            )
         else:
-            return self._ptr_or_data
+            return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
 
     fn unsafe_ptr_mut(
-        mut self,
+        mut self, var capacity: UInt = 0
     ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
-        """Retrieves a mutable pointer to the underlying memory, copying to a
-        new buffer if this was previously pointing to a static constant.
+        """Retrieves a mutable pointer to the unique underlying memory. Passing
+        a larger capacity will reallocate the string to the new capacity if
+        larger than the existing capacity, allowing you to write more data.
+
+        Args:
+            capacity: The new capacity of the string.
 
         Returns:
             The pointer to the underlying memory.
         """
-        # If out of line, make sure it is uniquely owned and mutable.
-        if not self._is_inline():
-            self._make_unique_mutable()
+        var new_cap = max(self.capacity(), capacity)
+        # Decide on strategy for making the string mutable
+        if new_cap <= Self.INLINE_CAPACITY:
+            if not self._is_inline():
+                self._inline_string()
+        elif not self._is_unique() or new_cap > self.capacity():
+            self._realloc_mutable(new_cap)
+
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=True, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1197,19 +1131,16 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        # Add a nul terminator.
-        # Reallocate the out-of-line static strings to ensure mutability.
-        if not self._capacity_or_data.has_nul_terminator() or (
-            self._is_indirect_static_constant()
-        ):
+        # Add a nul terminator, making the string mutable if not already
+        if not self._has_nul_terminator():
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
             var len = self.byte_length()
-            self.reserve(len + 1)  # This will reallocate if constant.
-            self.unsafe_ptr_mut()[len] = 0
-            self._capacity_or_data.set_has_nul_terminator(True)
+            ptr[len] = 0
+            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
+            return self.unsafe_ptr().bitcast[c_char]()
 
-        return self.unsafe_ptr_mut().bitcast[c_char]()
+        return self.unsafe_ptr().bitcast[c_char]()
 
-    @always_inline
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
@@ -1221,7 +1152,6 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    @always_inline
     fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
@@ -1234,7 +1164,6 @@ struct String(
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
-    @always_inline
     fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
@@ -1246,7 +1175,6 @@ struct String(
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    @always_inline
     fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
         """Returns a mutable string slice of the data owned by this string.
 
@@ -1255,14 +1183,26 @@ struct String(
         """
         return StringSlice(unsafe_from_utf8=self.as_bytes_mut())
 
-    @always_inline
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
 
         Returns:
             The length of this string in bytes.
         """
-        return self._capacity_or_data.get_len(self._len_or_data)
+        if self._is_inline():
+            return (
+                self._capacity_or_data & Self.INLINE_LENGTH_MASK
+            ) >> Self.INLINE_LENGTH_START
+        else:
+            return self._len_or_data
+
+    fn set_byte_length(mut self, new_len: Int):
+        if self._is_inline():
+            self._capacity_or_data = (
+                self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
+            ) | (new_len << Self.INLINE_LENGTH_START)
+        else:
+            self._len_or_data = new_len
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -1346,13 +1286,13 @@ struct String(
 
         ```mojo
         # Splitting a space
-        _ = String("hello world").split(" ") # ["hello", "world"]
+        _ = "hello world".split(" ") # ["hello", "world"]
         # Splitting adjacent separators
-        _ = String("hello,,world").split(",") # ["hello", "", "world"]
+        _ = "hello,,world".split(",") # ["hello", "", "world"]
         # Splitting with maxsplit
-        _ = String("1,2,3").split(",", 1) # ['1', '2,3']
+        _ = "1,2,3".split(",", 1) # ['1', '2,3']
         # Splitting with an empty separator
-        _ = StringSlice("123").split("") # ["", "1", "2", "3", ""]
+        _ = "123".split("") # ["", "1", "2", "3", ""]
         ```
         """
         return _to_string_list(
@@ -1374,17 +1314,14 @@ struct String(
 
         ```mojo
         # Splitting an empty string or filled with whitespaces
-        _ = String("      ").split() # []
-        _ = String("").split() # []
+        _ = "      ".split() # []
+        _ = "".split() # []
 
         # Splitting a string with leading, trailing, and middle whitespaces
-        _ = String("      hello    world     ").split() # ["hello", "world"]
+        _ = "      hello    world     ".split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
-        _ = String(
-            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
-        ).split()  # ["hello", "world"]
+        _ = "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world".split()  # ["hello", "world"]
         ```
-        .
         """
         return _to_string_list(
             self.as_string_slice().split(sep, maxsplit=maxsplit)
@@ -1484,17 +1421,7 @@ struct String(
         """
         return self.as_string_slice().lstrip()
 
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self.as_string_slice())
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -1503,7 +1430,7 @@ struct String(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
+        hasher.update(self.as_string_slice())
 
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1557,7 +1484,6 @@ struct String(
         """
         return self.as_string_slice().endswith(suffix, start, end)
 
-    @always_inline
     fn removeprefix(
         self, prefix: StringSlice, /
     ) -> StringSlice[__origin_of(self)]:
@@ -1579,7 +1505,6 @@ struct String(
         """
         return self.as_string_slice().removeprefix(prefix)
 
-    @always_inline
     fn removesuffix(
         self, suffix: StringSlice, /
     ) -> StringSlice[__origin_of(self)]:
@@ -1601,7 +1526,6 @@ struct String(
         """
         return self.as_string_slice().removesuffix(suffix)
 
-    @always_inline
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
         If the string cannot be parsed as an int, an error is raised.
@@ -1611,7 +1535,6 @@ struct String(
         """
         return atol(self)
 
-    @always_inline
     fn __float__(self) raises -> Float64:
         """Parses the string as a float point number and returns that value. If
         the string cannot be parsed as a float, an error is raised.
@@ -1632,7 +1555,6 @@ struct String(
         """
         return self.as_string_slice() * n
 
-    @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
@@ -1658,9 +1580,9 @@ struct String(
 
         ```mojo
         # Manual indexing:
-        print(String("{0} {1} {0}").format("Mojo", 1.125)) # Mojo 1.125 Mojo
+        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
         # Automatic indexing:
-        print(String("{} {}").format(True, "hello world")) # True hello world
+        print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
         return _FormatCurlyEntry.format(self, args)
@@ -1754,14 +1676,16 @@ struct String(
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
-        self._capacity_or_data.set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
-            self.reserve(length)
-            memset(self.unsafe_ptr_mut() + old_len, fill_byte, length - old_len)
-        self._capacity_or_data.set_len(length, self._len_or_data)
+            memset(
+                self.unsafe_ptr_mut(length) + old_len,
+                fill_byte,
+                length - old_len,
+            )
+        self.set_byte_length(length)
 
-    @always_inline
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
         uninitialized.
@@ -1773,12 +1697,11 @@ struct String(
         Args:
             unsafe_uninit_length: The new size.
         """
-        self._capacity_or_data.set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
-        self._capacity_or_data.set_len(unsafe_uninit_length, self._len_or_data)
+        self.set_byte_length(unsafe_uninit_length)
 
-    @always_inline
     fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
 
@@ -1793,45 +1716,34 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called when the string is known to be indirect. This checks to
-    # make sure the indirect representation is uniquely owned and mutable,
-    # copying if necessary.
-    fn _make_unique_mutable(mut self):
-        debug_assert(not self._is_inline())
-
-        # If already mutable and uniquely owned, we're done.
-        if (
-            not self._is_indirect_static_constant()
-            and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
-        ):
-            return
-
-        # Otherwise, copy to a new buffer to ensure mutability.
-        self._realloc_mutable(self.byte_length())
+    # Make a string mutable on the stack.
+    fn _inline_string(mut self):
+        var length = len(self)
+        var new_string = Self()
+        new_string.set_byte_length(length)
+        var dst = UnsafePointer(to=new_string).bitcast[Byte]()
+        var src = self.unsafe_ptr()
+        for i in range(length):
+            dst[i] = src[i]
+        self = new_string^
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string. Make sure our capacity at least
     # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
-    @no_inline
     fn _realloc_mutable(mut self, capacity: UInt):
         # Get these fields before we change _capacity_or_data
-        var len = self.byte_length()
-        var ptr = self.unsafe_ptr()
-        var should_drop_ref = self._has_mutable_buffer()
-
-        # We always use the inline representation for short strings (even when
-        # they are constant) so any need to grow will use an indirect represent.
-        var new_capacity = _StringCapacityField(
-            out_of_line_capacity=max(capacity, self.capacity() * 2)
-        )
-        var new_ptr = _StringOutOfLineHeader.alloc(new_capacity.capacity())
-        memcpy(new_ptr, ptr, len)
-        if should_drop_ref:
-            _StringOutOfLineHeader.get(ptr.origin_cast[mut=True]()).drop_ref()
-
-        self._len_or_data = len
+        var byte_len = self.byte_length()
+        var old_ptr = self.unsafe_ptr()
+        var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
+        var new_ptr = self._alloc(new_capacity << 3)
+        memcpy(new_ptr, old_ptr, byte_len)
+        # If mutable buffer drop the ref count
+        self._drop_ref()
+        self._len_or_data = byte_len
         self._ptr_or_data = new_ptr
+        # Assign directly to clear existing flags
         self._capacity_or_data = new_capacity
+        self._set_ref_counted()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1948,7 +1860,6 @@ fn _repr_ascii(c: UInt8) -> String:
             return hex(uc, prefix=r"\x")
 
 
-@always_inline
 fn ascii(value: StringSlice) -> String:
     """Get the ASCII representation of the object.
 
@@ -1961,9 +1872,10 @@ fn ascii(value: StringSlice) -> String:
     alias ord_squote = ord("'")
     var result = String()
     var use_dquote = False
+    var data = value.as_bytes()
 
-    for idx in range(len(value._slice)):
-        var char = value._slice[idx]
+    for idx in range(len(data)):
+        var char = data[idx]
         result += _repr_ascii(char)
         use_dquote = use_dquote or (char == ord_squote)
 
@@ -2112,7 +2024,6 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
-@always_inline
 fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """Trims leading whitespace, handles the sign of the number in the string.
 
@@ -2134,7 +2045,6 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     return start + (Int(p) or Int(n)), n
 
 
-@always_inline
 fn _handle_base_prefix(
     pos: Int, str_slice: StringSlice, str_len: Int, base: Int
 ) -> (Int, Bool):
@@ -2335,10 +2245,9 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
     if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 > 0 else 1
-        alias is_32bit_system = Int.BITWIDTH == 32
 
         @parameter
-        if is_32bit_system or bitwidthof[dtype]() <= 32:
+        if is_32bit() or bitwidthof[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

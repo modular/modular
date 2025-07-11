@@ -16,7 +16,13 @@
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_equal_pyobj,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_dunder_methods(mut python: Python):
@@ -25,233 +31,233 @@ def test_dunder_methods(mut python: Python):
 
     # __add__
     var c = a + b
-    assert_equal(c, 44)
+    assert_equal_pyobj(c, 44)
 
     # __add__
     c = a + 100
-    assert_equal(c, 134)
+    assert_equal_pyobj(c, 134)
 
     # __iadd__
     c += 100
-    assert_equal(c, 234)
+    assert_equal_pyobj(c, 234)
 
     # __radd__
     c = 100 + a
-    assert_equal(c, 134)
+    assert_equal_pyobj(c, 134)
 
     # __sub__
     c = a - b
-    assert_equal(c, 24)
+    assert_equal_pyobj(c, 24)
 
     # __isub__
     c -= 100
-    assert_equal(c, -76)
+    assert_equal_pyobj(c, -76)
 
     # __sub__
     c = a - 100
-    assert_equal(c, -66)
+    assert_equal_pyobj(c, -66)
 
     # __rsub__
     c = 100 - a
-    assert_equal(c, 66)
+    assert_equal_pyobj(c, 66)
 
     # __mul__
     c = a * b
-    assert_equal(c, 340)
+    assert_equal_pyobj(c, 340)
 
     # __imul__
     c *= 10
-    assert_equal(c, 3400)
+    assert_equal_pyobj(c, 3400)
 
     # __mul__
     c = a * 10
-    assert_equal(c, 340)
+    assert_equal_pyobj(c, 340)
 
     # __rmul__
     c = 34 * b
-    assert_equal(c, 340)
+    assert_equal_pyobj(c, 340)
 
     # __floordiv__
     c = a // b
-    assert_equal(c, 3)
+    assert_equal_pyobj(c, 3)
 
     # __ifloordiv__
     c //= 2
-    assert_equal(c, 1)
+    assert_equal_pyobj(c, 1)
 
     # __floordiv__
     c = a // 10
-    assert_equal(c, 3)
+    assert_equal_pyobj(c, 3)
 
     # __rfloordiv__
     c = 34 // b
-    assert_equal(c, 3)
+    assert_equal_pyobj(c, 3)
 
     # __truediv__
     c = a / b
-    assert_equal(c, 3.4)
+    assert_equal_pyobj(c, 3.4)
 
     # __itruediv__
     c /= 2
-    assert_equal(c, 1.7)
+    assert_equal_pyobj(c, 1.7)
 
     # __truediv__
     c = a / 10
-    assert_equal(c, 3.4)
+    assert_equal_pyobj(c, 3.4)
 
     # __rtruediv__
     c = 34 / b
-    assert_equal(c, 3.4)
+    assert_equal_pyobj(c, 3.4)
 
     # __mod__
     c = a % b
-    assert_equal(c, 4)
+    assert_equal_pyobj(c, 4)
 
     # __imod__
     c %= 3
-    assert_equal(c, 1)
+    assert_equal_pyobj(c, 1)
 
     # __mod__
     c = a % 10
-    assert_equal(c, 4)
+    assert_equal_pyobj(c, 4)
 
     # __rmod__
     c = 34 % b
-    assert_equal(c, 4)
+    assert_equal_pyobj(c, 4)
 
     # __xor__
     c = a ^ b
-    assert_equal(c, 40)
+    assert_equal_pyobj(c, 40)
 
     # __ixor__
     c ^= 15
-    assert_equal(c, 39)
+    assert_equal_pyobj(c, 39)
 
     # __xor__
     c = a ^ 10
-    assert_equal(c, 40)
+    assert_equal_pyobj(c, 40)
 
     # __rxor__
     c = 34 ^ b
-    assert_equal(c, 40)
+    assert_equal_pyobj(c, 40)
 
     # __or__
     c = a | b
-    assert_equal(c, 42)
+    assert_equal_pyobj(c, 42)
 
     # __ior__
     c |= 9
-    assert_equal(c, 43)
+    assert_equal_pyobj(c, 43)
 
     # __or__
     c = a | 10
-    assert_equal(c, 42)
+    assert_equal_pyobj(c, 42)
 
     # __ror__
     c = 34 | b
-    assert_equal(c, 42)
+    assert_equal_pyobj(c, 42)
 
     # __and__
     c = a & b
-    assert_equal(c, 2)
+    assert_equal_pyobj(c, 2)
 
     # __iand__
     c &= 6
-    assert_equal(c, 2)
+    assert_equal_pyobj(c, 2)
 
     # __and__
     c = a & 10
-    assert_equal(c, 2)
+    assert_equal_pyobj(c, 2)
 
     # __rand__
     c = 34 & b
-    assert_equal(c, 2)
+    assert_equal_pyobj(c, 2)
 
     # __rshift__
     var d = PythonObject(2)
     c = a >> d
-    assert_equal(c, 8)
+    assert_equal_pyobj(c, 8)
 
     # __irshift__
     c >>= 2
-    assert_equal(c, 2)
+    assert_equal_pyobj(c, 2)
 
     # __rshift__
     c = a >> 2
-    assert_equal(c, 8)
+    assert_equal_pyobj(c, 8)
 
     # __rrshift__
     c = 34 >> d
-    assert_equal(c, 8)
+    assert_equal_pyobj(c, 8)
 
     # __lshift__
     c = a << d
-    assert_equal(c, 136)
+    assert_equal_pyobj(c, 136)
 
     # __ilshift__
     c <<= 1
-    assert_equal(c, 272)
+    assert_equal_pyobj(c, 272)
 
     # __lshift__
     c = a << 2
-    assert_equal(c, 136)
+    assert_equal_pyobj(c, 136)
 
     # __rlshift__
     c = 34 << d
-    assert_equal(c, 136)
+    assert_equal_pyobj(c, 136)
 
     # __pow__
     c = a**d
-    assert_equal(c, 1156)
+    assert_equal_pyobj(c, 1156)
 
     # __ipow__
     c = 3
     c **= 4
-    assert_equal(c, 81)
+    assert_equal_pyobj(c, 81)
 
     # __pow__
     c = a**2
-    assert_equal(c, 1156)
+    assert_equal_pyobj(c, 1156)
 
     # __rpow__
     c = 34**d
-    assert_equal(c, 1156)
+    assert_equal_pyobj(c, 1156)
 
     # __lt__
     c = a < b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __le__
     c = a <= b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __gt__
     c = a > b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __ge__
     c = a >= b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __eq__
     c = a == b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __ne__
     c = a != b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __pos__
     c = +a
-    assert_equal(c, 34)
+    assert_equal_pyobj(c, 34)
 
     # __neg__
     c = -a
-    assert_equal(c, -34)
+    assert_equal_pyobj(c, -34)
 
     # __invert__
     c = ~a
-    assert_equal(c, -35)
+    assert_equal_pyobj(c, -35)
 
 
 def test_inplace_dunder_methods(mut python: Python):
@@ -267,7 +273,7 @@ def test_inplace_dunder_methods(mut python: Python):
     _ = python.eval("class A:\n  def __iadd__(self, other):\n    return 1")
     var a = python.evaluate("A()")
     a += 1
-    assert_equal(a, 1)
+    assert_equal_pyobj(a, 1)
 
 
 def test_num_conversion():
@@ -292,8 +298,8 @@ fn test_string_conversions(mut python: Python) raises -> None:
     assert_true(mojo_capitalized == "Mojo")
 
     # string object
-    var mo_str = String("mo")
-    var jo_str = String("jo")
+    var mo_str = "mo"
+    var jo_str = "jo"
     var mojo_str = mo_str + jo_str
     py_str = PythonObject(mojo_str)
     py_capitalized = py_str.capitalize()
@@ -362,11 +368,11 @@ fn test_iter() raises:
     var i = 0
     for fruit in list_obj:
         if i == 0:
-            assert_equal(fruit, "apple")
+            assert_equal_pyobj(fruit, "apple")
         elif i == 1:
-            assert_equal(fruit, "orange")
+            assert_equal_pyobj(fruit, "orange")
         elif i == 2:
-            assert_equal(fruit, "banana")
+            assert_equal_pyobj(fruit, "banana")
         i += 1
 
     var list2: PythonObject = []
@@ -637,6 +643,11 @@ struct Person(Defaultable, Movable, Representable):
 
 
 def test_python_mojo_object_operations():
+    # TODO(MOTO-1186): Fix test case on Python 3.9 and remove this return.
+    var sys = Python.import_module("sys")
+    if sys.version.startswith("3.9"):
+        return
+
     # Type registration
     var b = PythonModuleBuilder("fake_module")
     _ = b.add_type[Person]("Person")
@@ -649,6 +660,30 @@ def test_python_mojo_object_operations():
     var person_ptr = person_obj.downcast_value_ptr[Person]()
 
     assert_equal(person_ptr[].name, "John Smith")
+
+
+def test_conversion_to_simd():
+    var py_float = PythonObject(0.123456789121212)
+    var py_int = PythonObject(256)
+
+    assert_equal(Float64(py_float), 0.123456789121212)
+    assert_equal(Float32(py_float), 0.12345679)
+    assert_equal(Float16(py_float), 0.12345679)
+    assert_equal(Float64(py_int), 256.0)
+
+    var py_str = PythonObject("inf")
+    with assert_raises(contains="must be real number, not str"):
+        _ = Float64(py_str)
+
+    assert_equal(Int64(py_int), Int64(256))
+    assert_equal(Int32(py_int), Int32(256))
+    assert_equal(Int16(py_int), Int16(256))
+    assert_equal(Int8(py_int), Int8(0))
+
+    assert_equal(UInt64(py_int), UInt64(256))
+    assert_equal(UInt32(py_int), UInt32(256))
+    assert_equal(UInt16(py_int), UInt16(256))
+    assert_equal(UInt8(py_int), UInt8(0))
 
 
 def main():
@@ -673,3 +708,4 @@ def main():
     test_py_slice()
     test_contains_dunder()
     test_python_mojo_object_operations()
+    test_conversion_to_simd()

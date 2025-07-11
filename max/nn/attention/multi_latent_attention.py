@@ -66,7 +66,7 @@ class LatentAttentionWithRope(Module):
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
         buffer_size: int = 16384,
-    ):
+    ) -> None:
         """Initializes the latent attention layer.
 
         Args:
@@ -123,7 +123,10 @@ class LatentAttentionWithRope(Module):
                 device=self.devices[0],
             )
             self.q_a_layernorm = RMSNorm(
-                dim=self.q_lora_rank, dtype=dtype, eps=1e-6
+                dim=self.q_lora_rank,
+                dtype=dtype,
+                eps=1e-6,
+                multiply_before_cast=False,
             )
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
@@ -326,7 +329,7 @@ class LatentAttentionWithRope(Module):
 
         # TODO: use max_lengths[0, 0] cause a CUDA_INVALID_MEMORY_ACCESS error,
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len = kv_cache_get_max_seq_len(kv_collection)
+        max_seq_len = kv_cache_get_max_seq_len(self.kv_params, kv_collection)
 
         result = ops.cond(
             max_seq_len > 1,
@@ -387,6 +390,7 @@ class LatentAttentionWithRope(Module):
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.kv_lora_rank,
             weight_offset=0.0,
+            multiply_before_cast=False,
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))

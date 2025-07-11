@@ -32,7 +32,7 @@ from max.serve.queue.zmq_queue import (
     is_valid_zmq_address,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class DispatcherClient(Generic[DispatcherMessagePayload]):

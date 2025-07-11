@@ -29,7 +29,6 @@ from math import ceil, log10
 
 import bit
 import memory
-from memory import UnsafePointer
 from testing import assert_equal
 
 from .constants import (
@@ -79,8 +78,8 @@ fn _get_w_and_q_from_float_string(
     exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
-    significand = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+    significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     prt_to_array = UnsafePointer(to=exponent)
     array_index = CONTAINER_SIZE
@@ -118,7 +117,7 @@ fn _get_w_and_q_from_float_string(
             if prt_to_array == UnsafePointer(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent
-                exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+                exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
                 prt_to_array = UnsafePointer(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
@@ -145,7 +144,7 @@ fn _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent
-        exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     exponent_as_integer = (
         exponent_multiplier * to_integer(exponent) - additional_exponent
@@ -211,7 +210,7 @@ fn create_float64(m: UInt64, p: Int64) -> Float64:
     return memory.bitcast[DType.float64](representation_as_int)
 
 
-fn lemire_algorithm(owned w: UInt64, owned q: Int64) -> Float64:
+fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
     # Step 1

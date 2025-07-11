@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.host.info import H100
 from gpu.memory import *
 from testing import *

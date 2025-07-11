@@ -13,10 +13,110 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from memory import UnsafePointer
 from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from python._cpython import Py_eval_input, Py_ssize_t, PyMethodDef, PyObjectPtr
+from testing import (
+    assert_false,
+    assert_equal,
+    assert_equal_pyobj,
+    assert_raises,
+    assert_true,
+)
+
+
+def test_very_high_level_api(python: Python):
+    var cpy = python.cpython()
+
+    assert_equal(cpy.PyRun_SimpleString("None"), 0)
+
+    var d = cpy.PyDict_New()
+    assert_true(cpy.PyRun_String("42", Py_eval_input, d, d))
+
+    var co = cpy.Py_CompileString("5", "test", Py_eval_input)
+    assert_true(co)
+
+    assert_true(cpy.PyEval_EvalCode(co, d, d))
+
+
+def test_Py_IncRef_DecRef(mut python: Python):
+    var cpy = python.cpython()
+
+    # this is the smallest integer that's GC'd by the Python interpreter
+    var n = cpy.PyLong_FromSsize_t(257)
+    assert_equal(cpy._Py_REFCNT(n), 1)
+
+    cpy.Py_IncRef(n)
+    assert_equal(cpy._Py_REFCNT(n), 2)
+
+    cpy.Py_DecRef(n)
+    assert_equal(cpy._Py_REFCNT(n), 1)
+
+
+def test_PyErr(python: Python):
+    var cpy = python.cpython()
+
+    var ValueError = cpy.get_error_global("PyExc_ValueError")
+    var msg = "some error message"
+
+    assert_false(cpy.PyErr_Occurred())
+
+    cpy.PyErr_SetNone(ValueError)
+    assert_true(cpy.PyErr_Occurred())
+    cpy.PyErr_Clear()
+
+    cpy.PyErr_SetString(ValueError, msg.unsafe_cstr_ptr())
+    assert_true(cpy.PyErr_Occurred())
+
+    if cpy.version.minor < 12:
+        # PyErr_Fetch is deprecated since Python 3.12.
+        assert_true(cpy.PyErr_Fetch())
+        # Manually clear the error indicator.
+        cpy.PyErr_Clear()
+    else:
+        # PyErr_GetRaisedException is new in Python 3.12.
+        # PyErr_GetRaisedException clears the error indicator.
+        assert_true(cpy.PyErr_GetRaisedException())
+
+    _ = msg
+
+
+def test_PyThread(python: Python):
+    var cpy = python.cpython()
+
+    var gstate = cpy.PyGILState_Ensure()
+    var save = cpy.PyEval_SaveThread()
+    cpy.PyEval_RestoreThread(save)
+    cpy.PyGILState_Release(gstate)
+
+
+def test_PyImport(python: Python):
+    var cpy = python.cpython()
+
+    assert_true(cpy.PyImport_ImportModule("builtins"))
+    assert_true(cpy.PyImport_AddModule("test"))
+
+
+def test_PyModule(python: Python):
+    var cpy = python.cpython()
+
+    var mod = cpy.PyModule_Create("module")
+    assert_true(mod)
+
+    assert_true(cpy.PyModule_GetDict(mod))
+
+    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    _ = funcs
+
+    if cpy.version.minor >= 10:
+        var n = cpy.PyLong_FromSsize_t(0)
+        var name = "n"
+        # returns 0 on success, -1 on failure
+        assert_equal(
+            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
+        )
+        _ = name
 
 
 def test_PyObject_HasAttrString(mut python: Python):
@@ -24,16 +124,52 @@ def test_PyObject_HasAttrString(mut python: Python):
 
     var the_object = PythonObject(0)
     var result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(0, result)
 
     the_object = Python.list(1, 2, 3)
     result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object._obj_ptr, "__contains__"
     )
     assert_equal(1, result)
     _ = the_object
+
+
+def test_PyDict(mut python: Python):
+    var cpy = python.cpython()
+
+    var d = cpy.PyDict_New()
+    var b = cpy.PyBool_FromLong(0)
+
+    assert_true(cpy.PyDict_CheckExact(d))
+    assert_false(cpy.PyDict_CheckExact(b))
+
+    assert_equal(cpy.PyDict_SetItem(d, b, b), 0)
+    assert_equal(cpy.PyDict_GetItemWithError(d, b), b)
+
+    var key = PyObjectPtr()
+    var value = PyObjectPtr()
+    var pos: Py_ssize_t = 0
+
+    var succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_equal(pos, 1)
+    assert_equal(key, b)
+    assert_equal(value, b)
+    assert_true(succ)
+
+    succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_false(succ)
 
 
 fn destructor(capsule: PyObjectPtr) -> None:
@@ -48,7 +184,7 @@ def test_PyCapsule(mut python: Python):
     with assert_raises(
         contains="PyCapsule_GetPointer called with invalid PyCapsule object"
     ):
-        _ = cpython_env.PyCapsule_GetPointer(the_object.py_object, "some_name")
+        _ = cpython_env.PyCapsule_GetPointer(the_object._obj_ptr, "some_name")
 
     # Build a capsule and retrieve a pointer to it.
     var capsule_impl = UnsafePointer[UInt64].alloc(1)
@@ -62,11 +198,33 @@ def test_PyCapsule(mut python: Python):
     with assert_raises(
         contains="PyCapsule_GetPointer called with incorrect name"
     ):
-        _ = cpython_env.PyCapsule_GetPointer(capsule, "some_other_name")
+        _ = cpython_env.PyCapsule_GetPointer(
+            capsule, "this name does not exist in the capsule"
+        )
 
 
 def main():
     # initializing Python instance calls init_python
     var python = Python()
+
+    # The Very High Level Layer
+    test_very_high_level_api(python)
+
+    # Reference Counting
+    test_Py_IncRef_DecRef(python)
+
+    # Exception Handling
+    test_PyErr(python)
+
+    # Initialization, Finalization, and Threads
+    test_PyThread(python)
+
+    # Importing Modules
+    test_PyImport(python)
+
+    # Module Objects
+    test_PyModule(python)
+
     test_PyObject_HasAttrString(python)
+    test_PyDict(python)
     test_PyCapsule(python)

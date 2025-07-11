@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
-from pathlib import Path
-from sys import bitwidthof, simdwidthof
+from sys import simdwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -23,7 +21,6 @@ from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
-    async_copy_wait_group,
 )
 from layout import *
 from layout._fillers import arange
@@ -31,18 +28,13 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
-    binary_op_type,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_local,
     copy_sram_to_dram,
-    copy_sram_to_local,
 )
-from memory import UnsafePointer
-from testing import assert_almost_equal
 
 from utils import IndexList
 
@@ -165,21 +157,21 @@ def run_dynamic_async_copy_tests(ctx: DeviceContext):
 
 
 fn swizzle_copy[
-    type: DType,
+    dtype: DType,
     layout: Layout,
     BM: Int,
     BK: Int,
     num_threads: Int,
 ](
-    a: LayoutTensor[type, layout, MutableAnyOrigin],
-    b: LayoutTensor[type, layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
 
     # Double buffer in shared memory.
     var a_smem_tile = (
         LayoutTensor[
-            type,
+            dtype,
             Layout.row_major(BM, BK),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,

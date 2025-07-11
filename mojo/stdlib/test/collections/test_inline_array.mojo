@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from sys.info import sizeof
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import DelRecorder
-from testing import assert_equal, assert_false, assert_true
+from test_utils import DelRecorder, MoveCounter
+from testing import assert_equal, assert_true
 
 
 def test_array_unsafe_get():
@@ -75,7 +73,7 @@ def test_array_int():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[Int, 3](5)
+    var arr2 = InlineArray[Int, 3](fill=5)
     assert_equal(arr2[0], 5)
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
@@ -147,7 +145,7 @@ def test_array_str():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[String, 3]("hi")
+    var arr2 = InlineArray[String, 3](fill="hi")
     assert_equal(arr2[0], "hi")
     assert_equal(arr2[1], "hi")
     assert_equal(arr2[2], "hi")
@@ -217,8 +215,8 @@ def test_array_unsafe_assume_initialized_constructor_string():
 
 def test_array_contains():
     var arr = InlineArray[String, 3]("hi", "hello", "hey")
-    assert_true(String("hi") in arr)
-    assert_true(not String("greetings") in arr)
+    assert_true("hi" in arr)
+    assert_true(not "greetings" in arr)
 
 
 def test_inline_array_runs_destructors():
@@ -265,6 +263,24 @@ def test_sizeof_array[current_type: Copyable & Movable, capacity: Int]():
         sizeof[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
+
+
+def test_move():
+    """Test that moving an InlineArray works correctly."""
+    var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
+    var copied_arr = arr.copy()
+
+    for i in range(len(arr)):
+        # The elements were moved into the array
+        assert_equal(arr[i].move_count, 1)
+
+    var moved_arr = arr^
+
+    for i in range(len(moved_arr)):
+        # Check that the moved array has the same elements as the copied array
+        assert_equal(copied_arr[i].value, moved_arr[i].value)
+        # Check that the move constructor was called exactly again for each element
+        assert_equal(moved_arr[i].move_count, 2)
 
 
 def main():

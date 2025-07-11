@@ -33,8 +33,6 @@ from layout.tensor_core_async import (
 )
 from testing import assert_almost_equal
 
-from utils.index import Index
-
 
 fn wgmma_kernel_rs[
     a_type: DType,

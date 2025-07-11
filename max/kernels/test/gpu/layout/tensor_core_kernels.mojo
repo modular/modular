@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.io import _printf
-from gpu import WARP_SIZE, barrier, lane_id
+from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
 from gpu.id import thread_idx
 from gpu.memory import _GPUAddressSpace as AddressSpace
@@ -22,7 +22,7 @@ from layout._utils import ManagedLayoutTensor, load_to_simd
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn mma_load_and_multiply[

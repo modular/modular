@@ -14,10 +14,8 @@
 
 
 from pathlib import Path, _dir_of_current_file
-from sys import os_is_windows
 from tempfile import gettempdir
 
-from memory import UnsafePointer
 from testing import assert_equal, assert_true
 
 alias DUMMY_FILE_SIZE: UInt = 954
@@ -54,7 +52,7 @@ def test_file_read_bytes_multi():
         assert_equal(len(bytes1), 12, "12 bytes")
         var string1 = String(bytes=bytes1)
         assert_equal(len(string1), 12, "12 chars")
-        assert_equal(string1, String("Lorem ipsum "))
+        assert_equal(string1, "Lorem ipsum ")
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")

@@ -29,12 +29,12 @@ class BlockCopyType(Enum):
 
 
 class BlockCopyMetrics:
-    def __init__(self):
+    def __init__(self) -> None:
         self.d2d = 0
         self.h2d = 0
         self.d2h = 0
 
-    def reset(self):
+    def reset(self) -> None:
         self.d2d = 0
         self.h2d = 0
         self.d2h = 0
@@ -48,7 +48,7 @@ class BlockCopyEngine:
         device_tensors: list[Tensor],
         num_host_blocks: int,
         host_tensor: Tensor | None,
-    ):
+    ) -> None:
         if num_host_blocks > 0 and host_tensor is None:
             raise ValueError(
                 "Host tensor must be non-null if there are host blocks"
@@ -89,7 +89,7 @@ class BlockCopyEngine:
     def supports_multistream(self) -> bool:
         return self.d2h_auxiliary_stream is not None
 
-    def memcpy_d2d(self, dst: int, src: int, num_tokens: int):
+    def memcpy_d2d(self, dst: int, src: int, num_tokens: int) -> None:
         """Copy a block between two blocks on the same device.
 
         This is primarily used for Copy-on-Write so a num_tokens argument can
@@ -109,7 +109,7 @@ class BlockCopyEngine:
                 device_tensor[src, :, :, :, :, :]
             )
 
-    def memcpy_h2d(self, dst: int, src: int):
+    def memcpy_h2d(self, dst: int, src: int) -> None:
         if self.host_tensor is None:
             raise ValueError(
                 "Attempted to enqueue h2d copy but there is no host tensor"
@@ -122,7 +122,7 @@ class BlockCopyEngine:
                 self.host_tensor[src, :, :, :, :, :]
             )
 
-    def memcpy_d2h(self, dst: int, src: int):
+    def memcpy_d2h(self, dst: int, src: int) -> None:
         if self.host_tensor is None:
             raise ValueError(
                 "Attempted to enqueue d2h copy but there is no host tensor"
@@ -140,7 +140,7 @@ class BlockCopyEngine:
 
         dst_block.inplace_copy_from(src_block)
 
-    def wait_for_completion(self):
+    def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.
 
         This ensures that the d2h copies from BatchN completes before

@@ -275,10 +275,10 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    D: DType
+    dtype: DType
 ](
-    lhs: List[Scalar[D]],
-    rhs: List[Scalar[D]],
+    lhs: List[Scalar[dtype]],
+    rhs: List[Scalar[dtype]],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
@@ -286,7 +286,7 @@ fn assert_equal[
     """Asserts that two lists are equal.
 
     Parameters:
-        D: A DType.
+        dtype: A DType.
 
     Args:
         lhs: The left-hand side list.
@@ -311,14 +311,14 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal(
+fn assert_equal_pyobj(
     lhs: PythonObject,
     rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that the input values are equal. If it is not then an Error
+    """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
 
     Args:

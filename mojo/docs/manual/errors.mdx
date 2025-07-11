@@ -48,8 +48,11 @@ a non-zero exit code and prints the error message. For example:
 Unhandled exception caught during execution: integer overflow
 ```
 
-If a function you define using the `fn` keyword can raise an error, you must
-include the `raises` keyword in the function definition. For example:
+## Declare a raising function
+
+A function defined using the `fn` keyword is *non-raising* by default. So if it
+can raise an error, you must include the `raises` keyword in the function
+definition. For example:
 
 ```mojo
 fn incr(n: Int) raises -> Int:
@@ -59,7 +62,7 @@ fn incr(n: Int) raises -> Int:
         return n + 1
 ```
 
-If you don't include the `raises` keyword when defining a function with `fn`,
+If you don't include the `raises` keyword on an `fn` function,
 then the function must explicitly handle any errors that might occur in code
 that it executes. For example:
 
@@ -76,10 +79,9 @@ fn handled_error(n: Int):
         print("Handled an error:", e)
 ```
 
-In contrast, you **cannot** use the `raises` keyword when defining a
-function using the `def` keyword, because `def` always implies that the
-function might raise an error. So the following is equivalent to the `incr`
-function defined above with `fn`:
+In contrast, a `def` function is *raising* by default. So the following
+`incr()` function is equivalent to the `incr()` function defined above with
+`fn`:
 
 ```mojo
 def incr(n: Int) -> Int:
@@ -169,7 +171,7 @@ def main():
             print("try     =>", value)
             if value == 1:
                 continue
-            result = StaticString("{} incremented is {}").format(value, incr(value))
+            result = "{} incremented is {}".format(value, incr(value))
         except e:
             print("except  =>", e)
         else:
@@ -311,7 +313,7 @@ amount of time spent executing the `with` code block:
 import sys
 import time
 
-@value
+@fieldwise_init
 struct Timer:
     var start_time: Int
 
@@ -384,8 +386,7 @@ type of error condition and propagates all others:
 import sys
 import time
 
-@value
-struct ConditionalTimer:
+struct ConditionalTimer(Copyable):
     var start_time: Int
 
     fn __init__(out self):

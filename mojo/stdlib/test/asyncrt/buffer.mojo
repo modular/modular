@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
 
 
 fn _run_badbuf(ctx: DeviceContext) raises:

@@ -24,7 +24,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from transformers import AutoConfig
+from transformers.models.auto.configuration_auto import AutoConfig
 
 
 @dataclass
@@ -61,12 +61,26 @@ class VisionConfig:
     qk_normalization: bool
     """Whether to use QK normalization in attention."""
 
+    qkv_bias: bool
+    """Whether to use bias in the QKV projection. Default: False."""
+
+    o_proj_bias: bool
+    """Whether to use bias in the out projection."""
+
+    num_hidden_layers: int
+    """Number of hidden layers in the vision encoder."""
+
     @staticmethod
-    def generate(vision_config: AutoConfig, dtype: DType) -> VisionConfig:
+    def generate(
+        vision_config: AutoConfig,
+        dtype: DType,
+        state_dict: dict[str, WeightData],
+    ) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
 
         Args:
             vision_config: HuggingFace vision configuration object.
+            state_dict: The model's state dictionary.
 
         Returns:
             Configured VisionConfig instance.
@@ -74,6 +88,12 @@ class VisionConfig:
         num_attention_heads = vision_config.num_attention_heads
         hidden_size = vision_config.hidden_size
         head_dim = hidden_size // num_attention_heads
+
+        # InternVL o_proj_bias is not in the config, check checkpoint.
+        # Check for the presence of the o_proj.bias key dynamically across all layers
+        o_proj_bias = any(
+            key.endswith(".attn.o_proj.bias") for key in state_dict.keys()
+        )
 
         return VisionConfig(
             dtype=dtype,
@@ -86,6 +106,9 @@ class VisionConfig:
             head_dim=head_dim,
             layer_norm_eps=getattr(vision_config, "layer_norm_eps", 1e-6),
             qk_normalization=getattr(vision_config, "qk_normalization", True),
+            qkv_bias=getattr(vision_config, "qkv_bias", False),
+            o_proj_bias=o_proj_bias,
+            num_hidden_layers=getattr(vision_config, "num_hidden_layers", 32),
         )
 
 
@@ -103,13 +126,13 @@ class InternVLConfigBase:
     num_image_token: int
     """Number of image tokens per patch."""
 
-    # Composed language model configuration.
-    llm_config: Llama3Config
-    """Language model configuration using Llama3 architecture."""
-
     # Vision encoder configuration.
     vision_config: VisionConfig
     """Vision encoder configuration."""
+
+    # Composed language model configuration.
+    llm_config: Llama3Config
+    """Language model configuration using Llama3 architecture."""
 
 
 @dataclass
@@ -134,7 +157,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
             huggingface_config, "llm_config", huggingface_config
         )
         return Llama3Config.get_kv_params(
-            huggingface_config=huggingface_config.llm_config,
+            huggingface_config=llm_config,
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -159,7 +182,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         )
         return Llama3Config.calculate_max_seq_len(
             pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config.llm_config,
+            huggingface_config=llm_config,
         )
 
     @staticmethod
@@ -167,6 +190,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         llm_state_dict: dict[str, WeightData],
+        vision_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
@@ -181,6 +205,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
             pipeline_config: Pipeline configuration.
             huggingface_config: HuggingFace model configuration.
             llm_state_dict: Model weights dictionary.
+            vision_state_dict: Vision model weights dictionary.
             dtype: Data type for model parameters.
             n_devices: Number of devices.
             logits_postprocessor: Optional logits postprocessor.
@@ -196,7 +221,9 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = VisionConfig.generate(hf_vision_config, dtype)
+        vision_config = VisionConfig.generate(
+            hf_vision_config, dtype, vision_state_dict
+        )
 
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
         hf_llm_config = getattr(

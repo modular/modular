@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,6 @@ from sys import num_physical_cores, simdwidthof
 import benchmark
 from algorithm import parallelize, vectorize
 from complex import ComplexFloat64, ComplexSIMD
-from memory import UnsafePointer
 
 alias float_type = DType.float32
 alias int_type = DType.int32

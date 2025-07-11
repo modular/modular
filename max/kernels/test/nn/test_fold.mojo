@@ -53,7 +53,6 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.fold import fold
 from runtime.asyncrt import DeviceContextPtr
 

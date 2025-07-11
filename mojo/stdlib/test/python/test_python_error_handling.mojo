@@ -48,7 +48,7 @@ fn test_python_exception_call() raises:
     ):
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
-            var person = my_module.AbstractPerson()
+            _ = my_module.AbstractPerson()
 
 
 def main():

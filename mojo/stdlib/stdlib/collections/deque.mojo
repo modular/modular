@@ -23,7 +23,6 @@ from collections import Deque
 
 
 from bit import next_power_of_two
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -131,9 +130,7 @@ struct Deque[ElementType: Copyable & Movable](
         if elements is not None:
             self.extend(elements.value())
 
-    fn __init__(
-        out self, owned *values: ElementType, __list_literal__: () = ()
-    ):
+    fn __init__(out self, var *values: ElementType, __list_literal__: () = ()):
         """Constructs a deque from the given values.
 
         Args:
@@ -142,7 +139,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, owned elements: VariadicListMem[ElementType, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:
@@ -482,7 +479,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn append(mut self, owned value: ElementType):
+    fn append(mut self, var value: ElementType):
         """Appends a value to the right side of the deque.
 
         Args:
@@ -499,7 +496,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn appendleft(mut self, owned value: ElementType):
+    fn appendleft(mut self, var value: ElementType):
         """Appends a value to the left side of the deque.
 
         Args:
@@ -552,7 +549,7 @@ struct Deque[ElementType: Copyable & Movable](
                 count += 1
         return count
 
-    fn extend(mut self, owned values: List[ElementType]):
+    fn extend(mut self, var values: List[ElementType]):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
@@ -584,7 +581,7 @@ struct Deque[ElementType: Copyable & Movable](
             (src + i).move_pointee_into(self._data + self._tail)
             self._tail = self._physical_index(self._tail + 1)
 
-    fn extendleft(mut self, owned values: List[ElementType]):
+    fn extendleft(mut self, var values: List[ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -667,7 +664,7 @@ struct Deque[ElementType: Copyable & Movable](
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    fn insert(mut self, idx: Int, owned value: ElementType) raises:
+    fn insert(mut self, idx: Int, var value: ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -1006,7 +1003,7 @@ struct _DequeIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [deque_lifetime] ElementType:
+    fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
         if forward:
             var idx = self.index
@@ -1015,6 +1012,9 @@ struct _DequeIter[
         else:
             self.index -= 1
             return self.src[][self.index]
+
+    fn __next__(mut self) -> ElementType:
+        return self.__next_ref__()
 
     fn __len__(self) -> Int:
         @parameter

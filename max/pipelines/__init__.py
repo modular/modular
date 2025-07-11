@@ -17,29 +17,22 @@ from .architectures import register_all_models
 from .core import (
     AudioGenerationResponse,
     EmbeddingsGenerator,
-    EmbeddingsResponse,
-    InputContext,
-    LogProbabilities,
     PipelinesFactory,
-    PipelineTask,
-    SamplingParams,
     TextAndVisionContext,
     TextContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
     TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
+    TTSContext,
 )
 from .lib.config import (
     AudioGenerationConfig,
     PipelineConfig,
     PrependPromptSpeechTokens,
+    PrometheusMetricsMode,
 )
 from .lib.config_enums import (
     PipelineEngine,
@@ -49,11 +42,7 @@ from .lib.config_enums import (
     SupportedEncoding,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline
-from .lib.hf_utils import (
-    HuggingFaceFile,
-    download_weight_files,
-    repo_exists_with_retry,
-)
+from .lib.hf_utils import download_weight_files
 from .lib.max_config import (
     KVCacheConfig,
     ProfilingConfig,
@@ -88,12 +77,8 @@ __all__ = [
     "AudioGenerationResponse",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
-    "EmbeddingsResponse",
-    "HuggingFaceFile",
     "IdentityPipelineTokenizer",
-    "InputContext",
     "KVCacheConfig",
-    "LogProbabilities",
     "MAXModelConfig",
     "MEMORY_ESTIMATOR",
     "ModelInputs",
@@ -104,16 +89,14 @@ __all__ = [
     "PipelineRole",
     "PipelineModel",
     "PipelinesFactory",
-    "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
+    "PrometheusMetricsMode",
     "ProfilingConfig",
-    "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
-    "SamplingParams",
     "SpeculativeDecodingTextGenerationPipeline",
     "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
@@ -122,11 +105,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
-    "TextGenerationResponse",
-    "TextGenerationStatus",
-    "TextResponse",
     "TextTokenizer",
-    "TokenGenerator",
     "TokenGeneratorContext",
     "TokenGeneratorRequest",
     "TokenGeneratorRequestFunction",
@@ -134,4 +113,5 @@ __all__ = [
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
     "upper_bounded_default",
+    "TTSContext",
 ]

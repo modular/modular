@@ -17,7 +17,7 @@ from buffer.dimlist import DimList
 from layout import IntTuple, Layout
 from sys import alignof
 
-from utils import IndexList, StaticTuple
+from utils import IndexList
 
 
 fn __mogg_intrinsic_attr(intrin: StaticString):

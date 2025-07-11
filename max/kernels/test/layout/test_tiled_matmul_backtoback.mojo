@@ -14,16 +14,15 @@
 from math import fma, isclose
 from os import abort
 from random import rand
-from sys import CompilationTarget, argv, has_avx512f, simdwidthof, sizeof
+from sys import CompilationTarget, argv, simdwidthof, sizeof
 
 import benchmark
 from algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
-from layout.layout import coalesce, expand_modes_alike, flatten
+from layout import Layout, RuntimeLayout
+from layout.int_tuple import IntTuple, size
+from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from layout.math import outer_product_acc
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from memory import stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple
@@ -949,14 +948,14 @@ fn bench_b2b[
 
 fn getMr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 9
     return 6
 
 
 fn getNr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 3
         else:
             return 2

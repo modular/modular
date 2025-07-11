@@ -18,14 +18,13 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
-alias hipblasLtHandle_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]
-alias hipblasLtMatrixLayout_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulPreference_t = UnsafePointer[NoneType]
+alias hipblasLtHandle_t = OpaquePointer
+alias hipblasLtMatmulDesc_t = OpaquePointer
+alias hipblasLtMatrixLayout_t = OpaquePointer
+alias hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
@@ -151,10 +150,55 @@ struct hipblasOperation_t:
 
 @fieldwise_init
 @register_passable("trivial")
+struct hipblasLtOrder_t:
+    var _value: Int32
+    alias COL = Self(0)
+    alias ROW = Self(1)
+    alias COL16_4R16 = Self(100)
+    alias COL16_4R8 = Self(101)
+    alias COL16_4R4 = Self(102)
+    alias COL16_4R2 = Self(103)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
 struct hipblasLtMatmulDescAttributes_t:
     var _value: Int32
     alias TRANSA = Self(0)
     alias TRANSB = Self(1)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct hipblasLtMatmulLayoutAttribute_t:
+    var _value: Int32
+    alias BATCH_COUNT = Self(0)
+    alias STRIDED_BATCH_COUNT = Self(1)
+    alias TYPE = Self(2)
+    alias ORDER = Self(3)
+    alias ROWS = Self(4)
+    alias COLS = Self(5)
+    alias LD = Self(6)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -258,7 +302,7 @@ fn hipblasLtMatmulDescCreate(
 fn hipblasLtMatmulDescSetAttribute(
     matmul_desc: hipblasLtMatmulDesc_t,
     attr: hipblasLtMatmulDescAttributes_t,
-    buf: UnsafePointer[NoneType],
+    buf: OpaquePointer,
     size_in_bytes: Int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -266,7 +310,7 @@ fn hipblasLtMatmulDescSetAttribute(
         fn (
             hipblasLtMatmulDesc_t,
             hipblasLtMatmulDescAttributes_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
         ) -> Status,
     ]()(matmul_desc, attr, buf, size_in_bytes)
@@ -297,6 +341,23 @@ fn hipblasLtMatrixLayoutCreate(
             Int64,
         ) -> Status,
     ]()(mat_layout, type, rows, cols, ld)
+
+
+fn hipblasLtMatrixLayoutSetAttribute(
+    mat_layout: hipblasLtMatrixLayout_t,
+    attr: hipblasLtMatmulLayoutAttribute_t,
+    buf: OpaquePointer,
+    size_in_bytes: Int,
+) raises -> Status:
+    return _get_dylib_function[
+        "hipblasLtMatrixLayoutSetAttribute",
+        fn (
+            hipblasLtMatrixLayout_t,
+            hipblasLtMatmulLayoutAttribute_t,
+            OpaquePointer,
+            Int,
+        ) -> Status,
+    ]()(mat_layout, attr, buf, size_in_bytes)
 
 
 fn hipblasLtMatrixLayoutDestroy(
@@ -368,18 +429,18 @@ fn hipblasLtMatmulPreferenceDestroy(
 fn hipblasLtMatmul(
     light_handle: hipblasLtHandle_t,
     compute_desc: hipblasLtMatmulDesc_t,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _adesc: hipblasLtMatrixLayout_t,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _bdesc: hipblasLtMatrixLayout_t,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _cdesc: hipblasLtMatrixLayout_t,
-    _d: UnsafePointer[NoneType],
+    _d: OpaquePointer,
     _ddesc: hipblasLtMatrixLayout_t,
     algo: UnsafePointer[hipblasLtMatmulAlgo_t],
-    workspace: UnsafePointer[NoneType],
+    workspace: OpaquePointer,
     workspace_size_in_bytes: Int,
     stream: hipStream_t,
 ) raises -> Status:
@@ -388,18 +449,18 @@ fn hipblasLtMatmul(
         fn (
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
             UnsafePointer[hipblasLtMatmulAlgo_t],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
             hipStream_t,
         ) -> Status,
@@ -435,18 +496,18 @@ fn _check_hipblas_error(status: Status) raises:
 
 
 @always_inline
-fn _convert_to_hip_datatype[type: DType]() -> hipDataType_t:
+fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     @parameter
-    if type is DType.float32:
+    if dtype is DType.float32:
         return hipDataType_t.R_32F
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return hipDataType_t.R_16F
     else:
         constrained[
-            type is DType.bfloat16,
+            dtype is DType.bfloat16,
             (
                 "Only support FP32, FP16, BF16. Please extend"
-                " it if more types are needed."
+                " it if more dtypes are needed."
             ),
         ]()
         return hipDataType_t.R_16BF

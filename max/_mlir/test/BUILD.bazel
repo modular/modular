@@ -8,8 +8,8 @@ lit_tests(
         "MODULAR_MAX_MLIRC_LIB": "$(rootpath //ModularFramework/tools/max)",
     },
     mojo_deps = [
+        "@mojo//:_mlir",
         "@mojo//:stdlib",
-        "//open-source/max/max/_mlir/src:_mlir",
     ],
     tools = [
         "//KGEN/tools/mojo",

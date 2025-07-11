@@ -18,188 +18,89 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import (
     BufferValue,
-    DeviceRef,
     ShardingStrategy,
     TensorValue,
     Weight,
     ops,
 )
 from max.nn.comm import Allreduce
-from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.moe import MoE, MoEGate
 
 
-class MoE(Module):
-    hidden_dim: int
-    """Hidden dimension size."""
+class Llama4MoEGate(MoEGate):
+    """Mixture of Experts Gate Layer for Llama-4."""
 
-    top_k: int
-    """Number of experts to route each token to."""
+    def __call__(
+        self, hidden_states: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """Compute expert routing weights and indices for input hidden states.
 
-    num_experts: int
-    """Total number of experts."""
-
-    intermediate_size: int
-    """Hidden dimension size for MoE intermediate layer."""
-
-    intermediate_size_mlp: int
-    """Hidden dimension size for MoE experts mlp layer."""
-
-    dtype: DType
-    """Data type for weights."""
-
-    def __init__(
-        self,
-        devices: list[DeviceRef],
-        hidden_dim: int = 5120,
-        top_k: int = 1,
-        num_experts: int = 16,
-        intermediate_size: int = 8192,
-        intermediate_size_mlp: int = 16384,
-        dtype: DType = DType.bfloat16,
-    ):
-        """
         Args:
-            devices: The devices to use to run this layer.
-            hidden_dim: Hidden dimension size.
-            top_k: Number of experts to route each token to.
-            num_experts: Total number of experts.
-            intermediate_size: Hidden dimension size for MoE intermediate layer.
-            intermediate_size_mlp: Hidden dimension size for MoE MLP layer.
-            dtype: Data type for weights.
+            hidden_states: Input tensor of shape (seq_len, hidden_dim)
+
+        Returns:
+            tuple containing:
+                - topk_idx: Indices of top-k selected experts of shape (seq_len, num_experts_per_token)
+                - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
-        super().__init__()
+        # compute gating score
+        logits = self.gate_score(hidden_states)
+        # (seq_len, num_experts)
+        top_idx = ops.squeeze(ops.argmax(logits, axis=-1), axis=1)
+        # (seq_len,)
+        router_probs = ops.sigmoid(
+            ops.max(logits, axis=-1).cast(DType.float32)
+        ).cast(hidden_states.dtype)
 
-        self.top_k = top_k
-        self.hidden_dim = hidden_dim
-        self.num_experts = num_experts
-        self.intermediate_size = intermediate_size
-        self.intermediate_size_mlp = intermediate_size_mlp
-        self.devices = devices
+        return top_idx, router_probs
 
-        if self.top_k > 1:
-            raise NotImplementedError(
-                "Multiple expert routing (top-k > 1) is not yet implemented. "
-                "This layer currently only supports single expert routing (top-k = 1) "
-                "as used in the Llama-4-Scout-17B-16E-Instruct model."
-            )
 
-        # Routed experts weights.
-        self.down_proj = Weight(
-            name="experts.down_proj",
-            shape=(
-                self.num_experts,
-                self.intermediate_size,
-                self.hidden_dim,
-            ),
-            dtype=dtype,
-            device=devices[0],
-        )
+class Llama4MoE(MoE):
+    """Mixture of Experts Layer for Llama-4. The key difference is that all the
+    experts' weights are concatenated together.
+    """
 
-        self.gate_up_proj = Weight(
+    def _init_experts(self):
+        # the routed experts' weights are concatenated together, and
+        # stored in a non-transposed format.
+        self.gate_up_weight = Weight(
             name="experts.gate_up_proj",
             shape=(
                 self.num_experts,
                 self.hidden_dim,
-                self.intermediate_size_mlp,
+                self.moe_dim * 2,
             ),
-            dtype=dtype,
-            device=devices[0],
+            dtype=self.dtype,
+            device=self.devices[0],
         )
 
-        # Shared experts weights
-        self.shared_expert_up_proj = Linear(
-            in_dim=self.hidden_dim,
-            out_dim=self.intermediate_size,
-            dtype=dtype,
-            device=devices[0],
-        )
-        self.shared_expert_down_proj = Linear(
-            in_dim=self.intermediate_size,
-            out_dim=self.hidden_dim,
-            dtype=dtype,
-            device=devices[0],
-        )
-        self.shared_expert_gate_proj = Linear(
-            in_dim=self.hidden_dim,
-            out_dim=self.intermediate_size,
-            dtype=dtype,
-            device=devices[0],
+        self.down_weight = Weight(
+            name="experts.down_proj",
+            shape=(
+                self.num_experts,
+                self.moe_dim,
+                self.hidden_dim,
+            ),
+            dtype=self.dtype,
+            device=self.devices[0],
         )
 
-        self.router = Linear(
-            in_dim=self.hidden_dim,
-            out_dim=self.num_experts,
-            dtype=dtype,
-            device=devices[0],
-        )
+    @property
+    def gate_up_proj(self) -> TensorValue:
+        return ops.transpose(self.gate_up_weight, 1, 2)
 
-    def __call__(
-        self,
-        hidden_states: TensorValue,
-        **unused_kwargs,
-    ) -> TensorValue:
-        hidden_states = ops.reshape(hidden_states, (-1, self.hidden_dim))
-        router_logits = self.router(hidden_states)
-        # (batch * seq_len, num_experts)
-        top_idx = ops.squeeze(ops.argmax(router_logits, axis=-1), axis=1)
-        # (batch * seq_len,)
-        router_probs = ops.sigmoid(
-            ops.max(router_logits, axis=-1).cast(DType.float32)
-        ).cast(hidden_states.dtype)
-        # (batch * seq_len, 1)
-
-        (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-        ) = moe_create_indices(
-            ops.cast(top_idx, DType.uint32), self.num_experts
-        )
-
-        permutated_states = ops.gather(
-            router_probs, token_expert_order, axis=0
-        ) * ops.gather(hidden_states, token_expert_order, axis=0)
-        gate_up_projs = grouped_matmul_ragged(
-            permutated_states,
-            ops.transpose(self.gate_up_proj, 1, 2),
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-        )
-
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.intermediate_size])
-            * gate_up_projs[:, self.intermediate_size :]
-        )
-
-        down_projs = grouped_matmul_ragged(
-            gate_up_projs,
-            ops.transpose(self.down_proj, 1, 2),
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-        )
-
-        routed_expert_out = ops.gather(down_projs, restore_token_order, axis=0)
-
-        shared_expert_out = self.shared_expert_down_proj(
-            ops.silu(self.shared_expert_gate_proj(hidden_states))
-            * self.shared_expert_up_proj(hidden_states)
-        )
-        return routed_expert_out + shared_expert_out
+    @property
+    def down_proj(self) -> TensorValue:
+        return ops.transpose(self.down_weight, 1, 2)
 
 
-class DistributedMoE(MoE):
-    """A distributed Mixture of Experts layer.
+class DistributedLlama4MoE(Llama4MoE):
+    """A distributed Mixture of Experts layer for Llama-4.
 
-    This class has the same state keys as the non-distributed MoE Layer.
+    This class implements tensor parallelism for the MoE layer.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(
@@ -207,24 +108,14 @@ class DistributedMoE(MoE):
             )
         self.num_devices = len(self.devices)
 
-        # Sharding strategies for the shared expert's weights, similar
-        # to the sharding strategy in the DistributedMLP layer.
-        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
-            col_size = int(weight.shape[1]) // self.num_devices
-            return weight[:, i * col_size : (i + 1) * col_size]
-
-        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
-            row_size = int(weight.shape[0]) // self.num_devices
-            return weight[i * row_size : (i + 1) * row_size, :]
-
-        self.shared_expert_gate_proj.sharding_strategy = (
+        self.shared_experts.gate_proj.sharding_strategy = (
             ShardingStrategy.rowwise(self.num_devices)
         )
-        self.shared_expert_down_proj.sharding_strategy = (
+        self.shared_experts.down_proj.sharding_strategy = (
             ShardingStrategy.columnwise(self.num_devices)
         )
-        self.shared_expert_up_proj.sharding_strategy = ShardingStrategy.rowwise(
-            self.num_devices
+        self.shared_experts.up_proj.sharding_strategy = (
+            ShardingStrategy.rowwise(self.num_devices)
         )
 
         # Sharding strategies for the routed experts' weights. The key differences are:
@@ -251,49 +142,48 @@ class DistributedMoE(MoE):
             ]
             return ops.concat((sharded_gate_proj, sharded_up_proj), axis=2)
 
-        self.down_proj.sharding_strategy = ShardingStrategy(
+        self.down_weight.sharding_strategy = ShardingStrategy(
             self.num_devices, down_sharding_strategy
         )
-        self.gate_up_proj.sharding_strategy = ShardingStrategy(
+        self.gate_up_weight.sharding_strategy = ShardingStrategy(
             self.num_devices, gate_up_sharding_strategy
         )
 
         # we clone the router weights for each device
-        self.router.sharding_strategy = ShardingStrategy.replicate(
+        self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(
             self.num_devices
         )
 
         # Create a separate MoE layer for each device.
         kwargs = kwargs.copy()
-        kwargs["intermediate_size"] = self.intermediate_size // self.num_devices
-        kwargs["intermediate_size_mlp"] = (
-            self.intermediate_size_mlp // self.num_devices
-        )
+        kwargs["moe_dim"] = self.moe_dim // self.num_devices
         self.moe_layers = []
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
-            layer = MoE(*args, **kwargs)
+            layer = Llama4MoE(*args, **kwargs)
 
-            layer.shared_expert_gate_proj.device = device
-            layer.shared_expert_gate_proj.weight = (
-                self.shared_expert_gate_proj.weight.shard(n, device)
+            layer.shared_experts.gate_proj.device = device
+            layer.shared_experts.gate_proj.weight = (
+                self.shared_experts.gate_proj.weight.shard(n, device)
             )
 
-            layer.shared_expert_down_proj.device = device
-            layer.shared_expert_down_proj.weight = (
-                self.shared_expert_down_proj.weight.shard(n, device)
+            layer.shared_experts.down_proj.device = device
+            layer.shared_experts.down_proj.weight = (
+                self.shared_experts.down_proj.weight.shard(n, device)
             )
 
-            layer.shared_expert_up_proj.device = device
-            layer.shared_expert_up_proj.weight = (
-                self.shared_expert_up_proj.weight.shard(n, device)
+            layer.shared_experts.up_proj.device = device
+            layer.shared_experts.up_proj.weight = (
+                self.shared_experts.up_proj.weight.shard(n, device)
             )
 
-            layer.down_proj = self.down_proj.shard(n, device)
-            layer.gate_up_proj = self.gate_up_proj.shard(n, device)
+            layer.down_weight = self.down_weight.shard(n, device)
+            layer.gate_up_weight = self.gate_up_weight.shard(n, device)
 
-            layer.router.device = device
-            layer.router.weight = self.router.weight.shard(n, device)
+            layer.gate.gate_score.device = device
+            layer.gate.gate_score.weight = self.gate.gate_score.weight.shard(
+                n, device
+            )
 
             self.moe_layers.append(layer)
 

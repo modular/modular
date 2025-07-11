@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import *
-from gpu.host import DeviceContext, Dim
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from testing import *
 
 

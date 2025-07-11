@@ -12,21 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
 from sys import argv, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100
-from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
+from gpu.host import DeviceContext
+from gpu.host.info import A100, H100, B200
+from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
 from testing import assert_almost_equal
+
+from bit import count_trailing_zeros
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -170,7 +171,9 @@ fn test[
         num_heads,
         depth,
         BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
-        num_pipeline_stages=2,
+        num_pipeline_stages=4 if (
+            ctx.device_info is H100 or ctx.device_info is B200
+        ) else 2,
     )
 
     @parameter
@@ -270,31 +273,39 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        alias is_sm90orsm100 = ctx.device_info is H100 or ctx.device_info is B200
+        alias min_depth = 64
+        alias max_depth = 256 if is_sm90orsm100 else 128
 
         @parameter
-        for d in range(2):
-            alias depth = 64 * (d + 1)
-            # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-            test[
-                DType.float32,
-                DType.float32,
-                depth,
-                1,
-            ](128, 128, ctx, is_benchmark())
+        for d in range(
+            count_trailing_zeros(min_depth), count_trailing_zeros(max_depth) + 1
+        ):
+            alias depth = 1 << d
 
-            test[
-                DType.float32,
-                DType.float32,
-                depth,
-                3,
-            ](14, 14, ctx, is_benchmark())
+            @parameter
+            if depth <= 128:
+                # fp32 tf32-fp32 mma
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    1,
+                ](128, 128, ctx, is_benchmark())
 
-            test[
-                DType.float32,
-                DType.float32,
-                depth,
-                1,
-            ](178, 178, ctx, is_benchmark())
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    3,
+                ](14, 14, ctx, is_benchmark())
+
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    1,
+                ](178, 178, ctx, is_benchmark())
 
             # bf16 depth == 128, bf16-fp32 mma
             test[
@@ -385,7 +396,7 @@ def main():
             test[
                 DType.bfloat16,
                 DType.bfloat16,
-                64,
+                depth,
                 32,
                 group=4,
             ](201, 600, ctx)
@@ -484,7 +495,7 @@ def main():
             ](1, 600, ctx)
 
             @parameter
-            if ctx.device_info is A100 or ctx.device_info is H100:
+            if ctx.device_info is A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
                     DType.bfloat16,

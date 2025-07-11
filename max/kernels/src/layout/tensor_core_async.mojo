@@ -36,9 +36,7 @@ This implementation is specifically optimized for NVIDIA GPUs with Tensor Core s
 """
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -60,9 +58,8 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
-from memory.unsafe_pointer import UnsafePointer
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -804,7 +801,7 @@ struct TensorCoreAsync[
         if num_warp_groups > 1:
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
-        alias layout_b = "col" if transpose_b else StaticString("row")
+        alias layout_b = "col" if transpose_b else "row"
         alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
 
         @parameter
@@ -946,7 +943,7 @@ struct TensorCoreAsync[
         b_desc = _wgmma_descriptor[b_canonical_layout, transpose_b, b_swizzle](
             b_smem_tile.ptr
         )
-        alias layout_b = "col" if transpose_b else StaticString("row")
+        alias layout_b = "col" if transpose_b else "row"
 
         @parameter
         for k_mma in range(num_k_mmas):

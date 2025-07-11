@@ -12,26 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from collections.string import StaticString
 
 from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import TraceLevel
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 @always_inline
 fn matrix_band_part[
-    type: DType,
+    dtype: DType,
     int_type: DType,
     cond_type: DType,
     rank: Int,
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [
         _
-    ] -> SIMD[type, width],
+    ] -> SIMD[dtype, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
@@ -40,7 +37,7 @@ fn matrix_band_part[
     num_lower: NDBuffer[int_type, 1],
     num_upper: NDBuffer[int_type, 1],
     exclude_buf: NDBuffer[cond_type, 1],
-    output: NDBuffer[mut=True, type, rank],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContextPtr,
 ) raises:
     var lower_diagonal_index = Int(num_lower[0])
@@ -52,7 +49,7 @@ fn matrix_band_part[
     @parameter
     fn dispatch[exclude: Bool]() raises:
         _matrix_band_part_impl[
-            type,
+            dtype,
             int_type,
             cond_type,
             rank,
@@ -68,13 +65,13 @@ fn matrix_band_part[
 
 @always_inline
 fn _matrix_band_part_impl[
-    type: DType,
+    dtype: DType,
     int_type: DType,
     cond_type: DType,
     rank: Int,
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing [
         _
-    ] -> SIMD[type, width],
+    ] -> SIMD[dtype, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
     exclude: Bool,
@@ -83,7 +80,7 @@ fn _matrix_band_part_impl[
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
-    output: NDBuffer[mut=True, type, rank],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContextPtr,
 ) raises:
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
@@ -106,7 +103,7 @@ fn _matrix_band_part_impl[
             in_band = not in_band
 
         if in_band:
-            output[idx] = rebind[Scalar[type]](
+            output[idx] = rebind[Scalar[dtype]](
                 input_0_fn[simd_width, rank](idx)
             )
         else:

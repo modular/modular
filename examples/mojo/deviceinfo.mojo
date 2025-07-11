@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,12 +15,7 @@
 from collections.string import StaticString
 from sys import (
     CompilationTarget,
-    has_avx,
-    has_avx2,
-    has_avx512f,
     has_intel_amx,
-    has_neon,
-    has_vnni,
     is_apple_m1,
     is_apple_m2,
     is_apple_m3,
@@ -49,20 +44,20 @@ def main():
     var cpu_features = String()
     if CompilationTarget.has_sse4():
         cpu_features += " sse4"
-    if has_avx():
+    if CompilationTarget.has_avx():
         cpu_features += " avx"
-    if has_avx2():
+    if CompilationTarget.has_avx2():
         cpu_features += " avx2"
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         cpu_features += " avx512f"
-    if has_vnni():
-        if has_avx512f():
+    if CompilationTarget.has_vnni():
+        if CompilationTarget.has_avx512f():
             cpu_features += " avx512_vnni"
         else:
             cpu_features += " avx_vnni"
     if has_intel_amx():
         cpu_features += " intel_amx"
-    if has_neon():
+    if CompilationTarget.has_neon():
         cpu_features += " neon"
     if is_apple_m1():
         cpu_features += " Apple M1"

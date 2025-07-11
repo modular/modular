@@ -15,10 +15,12 @@ from __future__ import annotations
 import copy
 import csv
 import functools
+import logging
 import os
 import pickle
 import shutil
 import string
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -27,6 +29,7 @@ from enum import Enum, auto
 from itertools import product
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
+from subprocess import list2cmdline
 from time import time
 from typing import Any
 
@@ -34,10 +37,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
-from model.utils.exceptions import CLIException, pretty_exception_handler
-from modular.utils import logging, yaml
-from modular.utils.subprocess import list2cmdline, run_shell_command
-from modular.utils.yaml import YAML
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -47,6 +47,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from utils import pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -86,7 +87,7 @@ def configure_logging(
     logging.getLogger().setLevel(log_level)
 
     if verbose and pretty_output:
-        traceback.install(suppress=[click, yaml, rich])
+        traceback.install(suppress=[click, rich])
     elif pretty_output:
         sys.excepthook = pretty_exception_handler
 
@@ -117,6 +118,7 @@ def flatten(value: int | object | Iterable) -> list[Any]:
     ]
 
 
+# TODO: remove and replace directly with subprocess.run
 def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     """Execute a shell command with error handling."""
     try:
@@ -124,21 +126,22 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        output = run_shell_command(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
+
     except Exception as exc:
-        raise CLIException(
-            cmd=cmd, err=f"Unable to run command {list2cmdline(cmd)}"
-        ) from exc
+        raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
 
 @dataclass
 class ParamSpace:
     name: str
     value: Any
-    value_set: set[Any] = field(default_factory=set)
+    value_set: list[Any] = field(default_factory=list)
     length: int = 0
 
     def __post_init__(self) -> None:
@@ -150,7 +153,8 @@ class ParamSpace:
             self.value = [eval(x) for x in self.value]
         except:
             pass
-        self.value_set = set(sorted(set(flatten(self.value))))
+        # Note: as of python3.7+ the built-in dict is guaranteed to maintain insertion order.
+        self.value_set = list(dict.fromkeys(flatten(self.value)))
         self.value = None
         self.length = len(self.value_set)
 
@@ -161,11 +165,11 @@ class ProcessOutput:
     stderr: str | None = None
     path: Path | None = None
 
-    def log(self):
+    def log(self) -> None:
         if self.stdout:
-            logging.debug("output" + self.stdout + LINE)
+            logging.debug("output " + self.stdout + LINE)
         if self.stderr:
-            logging.debug("error" + self.stderr + LINE)
+            logging.debug("error " + self.stderr + LINE)
 
 
 class KBENCH_MODE(Enum):
@@ -186,7 +190,7 @@ class KbenchCache:
         """Remove cache file if it exists."""
         if self.path.exists():
             logging.debug(f"Removing kbench-cache: {self.path}")
-            run_shell_command(["rm", str(self.path)])
+            subprocess.run(["rm", str(self.path)])
 
     def load(self) -> None:
         """Load cache from file."""
@@ -227,6 +231,15 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MOJO_BINARY_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MOJO_BINARY_PATH '{mojo_path}' does not exist."
+                )
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")
@@ -342,7 +355,7 @@ class SpecInstance:
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params):
+    def __init__(self, name, file, params) -> None:
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -378,10 +391,10 @@ class GridSearchStrategy:
     def __getitem__(self, i):
         return self.instances[i]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other):
+    def extend(self, other) -> None:
         self.instances.extend(other.instances)
 
 
@@ -464,7 +477,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list: list[str]):
+    def extend_params(self, param_list: list[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -475,7 +488,8 @@ class Spec:
                 found = False
                 for ps in cfg:
                     if ps.name == k:
-                        ps.value_set.update(v)
+                        ps.value_set.append(v)
+                        ps.value_set = list(dict.fromkeys(ps.value_set))
                         found = True
                         break
                 if not found:
@@ -483,7 +497,7 @@ class Spec:
 
         self.setup_mesh()
 
-    def extend_shape_params(self, param_set: list[Param]):
+    def extend_shape_params(self, param_set: list[Param]) -> None:
         # TODO: check for collisions in param-names
 
         extra_params: list[ParamSpace] = []
@@ -498,7 +512,7 @@ class Spec:
             self.params = [extra_params]
         self.setup_mesh()
 
-    def dump_yaml(self, out_path: Path):
+    def dump_yaml(self, out_path: Path) -> None:
         assert self.mesh, "There are no instances to write to YAML!"
         obj = {
             "name": self.name,
@@ -506,7 +520,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -520,7 +534,7 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
         if "name" not in obj.keys():
             logging.warning("Field [name] is not set in YAML")
@@ -543,7 +557,7 @@ class Spec:
             params=params,
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         assert self.mesh
         return len(self.mesh)
 
@@ -552,7 +566,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
@@ -585,7 +601,7 @@ class Spec:
         self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
         return len(self.mesh)
 
-    def join(self, other: Spec):
+    def join(self, other: Spec) -> None:
         assert self.name == other.name
         assert self.file == other.file
         assert len(other.mesh) > 0
@@ -594,7 +610,7 @@ class Spec:
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
 
-    def filter(self, filter_list: list[str]):
+    def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
         for f in filter_list:
             if "=" in f:
@@ -723,7 +739,7 @@ class Scheduler:
         dryrun: bool,
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
-    ):
+    ) -> None:
         self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
@@ -758,7 +774,7 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
-    def mk_output_dirs(self):
+    def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
@@ -872,7 +888,7 @@ class Scheduler:
 
     def execute_all(
         self, unique_build_paths, profile, exec_prefix, exec_suffix
-    ):
+    ) -> None:
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
             "run",
@@ -937,7 +953,7 @@ def run(
     verbose=False,
     output_dir=None,
     num_cpu=1,
-):
+) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
         assert len(yaml_path_list), "There should be at least 1 YAML as input."
@@ -1145,18 +1161,18 @@ def get_nvidia_smi():
     return shutil.which("nvidia-smi")
 
 
-def reset_gpu():
+def reset_gpu() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    run_shell_command([nvidia_smi, "-r"])
+    subprocess.check_call([nvidia_smi, "-r"])
 
 
-def check_gpu_clock():
+def check_gpu_clock() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    output = run_shell_command(
+    output = subprocess.check_output(
         [
             nvidia_smi,
             "--query-gpu",
@@ -1164,15 +1180,13 @@ def check_gpu_clock():
             "--format",
             "csv",
         ],
-        check=False,
-        capture_output=True,
     )
 
     # We check for persistence here as a proxy to check if setup-gpu-benchmarking
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
-    if "Disabled" in output.stdout.decode("utf-8"):
+    if "Disabled" in output.decode("utf-8"):
         raise Exception(
             "the clock frequency for the GPU is not locked, please use"
             " `setup-gpu-benchmarking` to ensure that the frequencies and power"
@@ -1193,7 +1207,7 @@ class FileGlobArg:
     def __iter__(self):
         return (Path(file).resolve() for file in self._files)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._files)
 
 
@@ -1453,12 +1467,15 @@ def cli(
     return True
 
 
-def main():
+def main() -> None:
     try:
         cli()
     except Exception:
-        CONSOLE.print_exception(suppress=[click, yaml, rich])
+        CONSOLE.print_exception(suppress=[click, rich])
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
+
     main()

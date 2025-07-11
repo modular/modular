@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from collections.string import StaticString
-from sys import external_call, simdwidthof
+from sys import simdwidthof
 from sys.info import _current_target
 
 from algorithm import elementwise
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor, Layout, RuntimeTuple, UNKNOWN_VALUE
 from layout.int_tuple import fill_like
-from memory import memcpy
 
 from utils import IndexList, StaticTuple
-from utils.index import product
 
 # ===-----------------------------------------------------------------------===#
 # split
@@ -120,7 +117,7 @@ fn split[
     if axis != input.rank - 1:
         alias compile_target = _current_target() if is_cpu[
             target
-        ]() else _get_gpu_target()
+        ]() else get_gpu_target()
         alias target_simd_width = simdwidthof[type, target=compile_target]()
 
         elementwise[

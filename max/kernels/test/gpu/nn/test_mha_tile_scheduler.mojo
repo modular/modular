@@ -17,17 +17,13 @@ from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.id import block_idx
 from gpu.memory import AddressSpace
-from memory import UnsafePointer
 from nn.mha_tile_scheduler import (
     MHASchedule,
     MHASchedulerSynchronization,
-    MHATileState,
     MHATileSummary,
     TileScheduler,
     WorkInfo,
 )
-
-from utils.index import Index, IndexList
 
 
 fn test_kernel[schedule: MHASchedule]():

@@ -46,8 +46,7 @@ from collections.string.string import (
     _calc_format_buffer_size,
     _calc_initial_buffer_size,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from hashlib.hash import _hash_simd
+from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
 from os import abort
@@ -57,7 +56,6 @@ from sys import (
     _RegisterPackType,
     alignof,
     bitwidthof,
-    has_neon,
     is_amd_gpu,
     is_big_endian,
     is_gpu,
@@ -73,12 +71,11 @@ from sys.info import _is_sm_9x_or_newer
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
-from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from builtin.math import Powable
 from documentation import doc_private
-from memory import Span, UnsafePointer, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 from python import PythonConvertible, PythonObject, Python
 
 from utils import IndexList, StaticTuple
@@ -96,6 +93,7 @@ from .dtype import (
     _get_dtype_printf_format,
     _integral_type_of,
     _scientific_notation_digits,
+    _uint_type_of_width,
     _unsigned_integral_type_of,
 )
 
@@ -215,7 +213,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
     ]()
     constrained[size.is_power_of_two(), "simd width must be power of 2"]()
     constrained[
-        not (dtype is DType.bfloat16 and has_neon()),
+        not (dtype is DType.bfloat16 and CompilationTarget.has_neon()),
         "bf16 is not supported for ARM architectures",
     ]()
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
@@ -232,10 +230,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
 
 @always_inline("nodebug")
 fn _unchecked_zero[dtype: DType, size: Int]() -> SIMD[dtype, size]:
-    var zero = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](
-        __mlir_attr.`#pop.simd<0> : !pop.scalar<index>`
-    )
-    return Scalar[dtype](zero)
+    return SIMD[dtype, size](__mlir_attr.`0 : index`)
 
 
 @always_inline("nodebug")
@@ -260,12 +255,10 @@ struct SIMD[dtype: DType, size: Int](
     Boolable,
     CeilDivable,
     Ceilable,
-    Ceilable,
     Copyable,
     Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
-    Floatable,
     Floorable,
     Hashable,
     Indexer,
@@ -278,7 +271,6 @@ struct SIMD[dtype: DType, size: Int](
     Stringable,
     Truncable,
     Writable,
-    _HashableWithHasher,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 
@@ -296,7 +288,7 @@ struct SIMD[dtype: DType, size: Int](
     alias device_type: AnyTrivialRegType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -327,13 +319,9 @@ struct SIMD[dtype: DType, size: Int](
         return Self.get_type_name()
 
     # Fields
-    alias _Mask = SIMD[DType.bool, size]
-
-    alias element_type = dtype
     alias _mlir_type = __mlir_type[
         `!pop.simd<`, size.value, `, `, dtype.value, `>`
     ]
-
     var value: Self._mlir_type
     """The underlying storage for the vector."""
 
@@ -349,6 +337,7 @@ struct SIMD[dtype: DType, size: Int](
     alias MIN_FINITE = Self(_min_finite[dtype]())
     """Returns the minimum (lowest) finite value of SIMD value."""
 
+    alias _Mask = SIMD[DType.bool, size]
     alias _default_alignment = alignof[Scalar[dtype]]() if is_gpu() else 1
 
     # ===-------------------------------------------------------------------===#
@@ -436,11 +425,12 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The input value.
         """
+        _simd_construction_checks[dtype, size]()
 
         @parameter
         if bitwidthof[dtype]() > bitwidthof[DType.index]():
             alias dt = _unsigned_integral_type_of[DType.index]()
-            self = Self(bitcast[dt](Scalar[DType.index](value)))
+            self = bitcast[dt](Scalar[DType.index](value.value)).cast[dtype]()
         else:
             self = Self(value.value)
 
@@ -455,18 +445,23 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The input value.
         """
+        _simd_construction_checks[dtype, size]()
         self = Self(value.value)
 
     @doc_private
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: __mlir_type.index, /):
-        _simd_construction_checks[dtype, size]()
-        var t0 = __mlir_op.`pop.cast_from_builtin`[
+        var index = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value)
-        var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](t0)
-        self = Scalar[dtype](casted)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](index)
+
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
@@ -495,35 +490,39 @@ struct SIMD[dtype: DType, size: Int](
         """
         self = value.__float__()
 
+    # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
     fn __init__[
         *, `_`: Int = 0
-    ](out self: Float64, value: PythonObject, /) raises:
-        """Initialize a Float64 from a PythonObject.
+    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+        """Initialize a SIMD value from a PythonObject.
 
         Parameters:
             _: A dummy parameter to ensure this overload has lower priority than
                 the others. Its value is ignored.
 
         Args:
-            value: The PythonObject to convert.
+            obj: The PythonObject to convert.
 
         Raises:
             If the conversion to double fails.
         """
-        # TODO(MSTDL-1587): Remove the dummy parameter.
-        var float_obj = value.__float__()
-        var cpython = Python().cpython()
-        self = Float64(cpython.PyFloat_AsDouble(float_obj.py_object))
-        if self == -1.0 and cpython.PyErr_Occurred():
-            # Note that -1.0 does not guarantee an error, it just means we need
-            # to check if there was an exception. This is also very unlikely,
-            # since the __float__ call above will throw if the underlying Python
-            # method fails. Therefore this can only happen if a custom __float__
-            # implementation is incorrect, and returns a non-double value.
-            raise cpython.get_error()
 
-        _ = float_obj
+        @parameter
+        if dtype.is_floating_point():
+            var cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[dtype](float_value)
+        elif dtype.is_integral() and dtype.bitwidth() <= 64:
+            self = Int(obj)
+        else:
+            self = Scalar[dtype]()
+            constrained[False, "unsupported dtype"]()
 
     @always_inline("nodebug")
     @implicit
@@ -537,15 +536,19 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[dtype, size]()
-
-        var tn1 = __mlir_attr[
+        var si128_ = __mlir_attr[
             `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
         ]
-        var t0 = __mlir_op.`pop.cast_from_builtin`[
+        var si128 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<si128>`
-        ](tn1)
-        var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](t0)
-        self = Scalar[dtype](casted)
+        ](si128_)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
+
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
     @always_inline("nodebug")
     @implicit
@@ -558,12 +561,19 @@ struct SIMD[dtype: DType, size: Int](
             value: The bool value.
         """
         _simd_construction_checks[dtype, size]()
-
-        var casted = __mlir_op.`pop.cast_from_builtin`[
+        var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
         ](value.value)
-        self = Scalar[DType.bool](casted)
 
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._Mask._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[
+                _type = Self._Mask._mlir_type
+            ](s)
+
+    @doc_private
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: Self._mlir_type, /):
@@ -586,8 +596,6 @@ struct SIMD[dtype: DType, size: Int](
             value: The value to splat to the elements of the vector.
         """
         _simd_construction_checks[dtype, size]()
-
-        # Construct by broadcasting a scalar.
         self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
             value.value
         )
@@ -640,13 +648,8 @@ struct SIMD[dtype: DType, size: Int](
         constrained[
             dtype.is_floating_point(), "the SIMD type must be floating point"
         ]()
-
-        # float_literal_convert implicitly splats to !pop.simd as needed.
         return __mlir_attr[
-            `#pop<float_literal_convert<`,
-            value.value,
-            `>> : `,
-            Self._mlir_type,
+            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
 
     @staticmethod
@@ -665,7 +668,12 @@ struct SIMD[dtype: DType, size: Int](
             The bitcast SIMD vector.
         """
         constrained[int_dtype.is_integral(), "the SIMD type must be integral"]()
-        return bitcast[dtype, size](value)
+
+        @parameter
+        if dtype is DType.bool and int_dtype in (DType.uint8, DType.int8):
+            return (value != 0)._refine[dtype]()
+        else:
+            return bitcast[dtype, size](value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -913,7 +921,7 @@ struct SIMD[dtype: DType, size: Int](
         # TODO(KERN-228): support BF16 on neon systems.
         # As a workaround, we roll our own implementation
         @parameter
-        if has_neon() and dtype is DType.bfloat16:
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
             return self.to_bits() == rhs.to_bits()
         else:
             return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
@@ -936,7 +944,7 @@ struct SIMD[dtype: DType, size: Int](
         # TODO(KERN-228): support BF16 on neon systems.
         # As a workaround, we roll our own implementation.
         @parameter
-        if has_neon() and dtype is DType.bfloat16:
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
             return self.to_bits() != rhs.to_bits()
         else:
             return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
@@ -1476,7 +1484,7 @@ struct SIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1692,17 +1700,7 @@ struct SIMD[dtype: DType, size: Int](
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
-    fn __hash__(self) -> UInt:
-        """Hash the value using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return _hash_simd(self)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 
         Parameters:
@@ -1840,7 +1838,9 @@ struct SIMD[dtype: DType, size: Int](
             return _convert_float8_to_f32(self).cast[target]()
 
         @parameter
-        if has_neon() and (dtype is DType.bfloat16 or target is DType.bfloat16):
+        if CompilationTarget.has_neon() and (
+            dtype is DType.bfloat16 or target is DType.bfloat16
+        ):
             # TODO(KERN-228): support BF16 on neon systems.
             return _unchecked_zero[target, size]()
 
@@ -1924,37 +1924,44 @@ struct SIMD[dtype: DType, size: Int](
         if size > 1:
             writer.write("]")
 
-    # FIXME: `_integral_type_of` doesn't work with `DType.bool`.
     @always_inline
     fn to_bits[
-        int_dtype: DType = _integral_type_of[dtype]()
-    ](self) -> SIMD[int_dtype, size]:
+        dtype: DType = _uint_type_of_width[bitwidthof[dtype]()]()
+    ](self) -> SIMD[dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
         Parameters:
-            int_dtype: The integer type to cast to.
+            dtype: The integer type to cast to.
 
         Returns:
             An integer representation of the floating-point value.
         """
         constrained[
-            int_dtype.is_integral(), "the target type must be integral"
+            dtype.is_unsigned(),
+            "the target type must be unsigned integral",
         ]()
         constrained[
-            bitwidthof[int_dtype]() >= bitwidthof[dtype](),
-            (
-                "the target integer type must be at least as wide as the source"
-                " type"
-            ),
+            dtype.bitwidth() >= Self.dtype.bitwidth(),
+            "the target type must be at least as wide as the source type",
         ]()
 
-        return bitcast[_integral_type_of[dtype](), size](self).cast[int_dtype]()
+        @parameter
+        if Self.dtype is DType.bool:
+            return self.cast[DType.uint8]().to_bits[dtype]()
+        else:
+            alias uint = _unsigned_integral_type_of[Self.dtype]()
+            return bitcast[uint, size](self).cast[dtype]()
+
+    @always_inline
+    fn _to_bits_signed(self) -> SIMD[_integral_type_of[dtype](), size]:
+        return bitcast[_integral_type_of[dtype](), size](self)
 
     @staticmethod
     fn from_bytes[
-        big_endian: Bool = is_big_endian()
-    ](bytes: InlineArray[Byte, dtype.sizeof()]) -> Scalar[dtype]:
-        """Converts a byte array to an scalar integer.
+        *,
+        big_endian: Bool = is_big_endian(),
+    ](bytes: InlineArray[Byte, sizeof[Self]()]) -> SIMD[dtype, size]:
+        """Converts a byte array to a vector.
 
         Args:
             bytes: The byte array to convert.
@@ -1965,7 +1972,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The integer value.
         """
-        var ptr = bytes.unsafe_ptr().bitcast[Scalar[dtype]]()
+        var ptr = bytes.unsafe_ptr().bitcast[Self]()
         var value = ptr[]
 
         @parameter
@@ -1975,9 +1982,10 @@ struct SIMD[dtype: DType, size: Int](
         return value
 
     fn as_bytes[
-        big_endian: Bool = is_big_endian()
-    ](self) -> InlineArray[Byte, dtype.sizeof()]:
-        """Convert the scalar integer to a byte array.
+        *,
+        big_endian: Bool = is_big_endian(),
+    ](self) -> InlineArray[Byte, sizeof[Self]()]:
+        """Convert the vector to a byte array.
 
         Parameters:
             big_endian: Whether the byte array should be big-endian.
@@ -1992,8 +2000,8 @@ struct SIMD[dtype: DType, size: Int](
             value = byte_swap(value)
 
         var ptr = UnsafePointer(to=value)
-        var array = InlineArray[Byte, dtype.sizeof()](uninitialized=True)
-        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), dtype.sizeof())
+        var array = InlineArray[Byte, sizeof[Self]()](uninitialized=True)
+        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), sizeof[Self]())
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
@@ -2007,7 +2015,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype.is_integral() or dtype is DType.bool:
             return self
-        elif has_neon() and dtype is DType.bfloat16:
+        elif CompilationTarget.has_neon() and dtype is DType.bfloat16:
             # TODO(KERN-228): support BF16 on neon systems.
             # As a workaround, we cast to float32.
             return (
@@ -2256,7 +2264,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (CompilationTarget.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or CompilationTarget.has_neon())
             and dtype is DType.uint8
             and size == 16
         ):
@@ -2923,7 +2931,7 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     @parameter
     if CompilationTarget.has_sse4():
         return _pshuf(lookup_table, indices)
-    elif sys.has_neon():
+    elif CompilationTarget.has_neon():
         return _tbl1(lookup_table, indices)
     else:
         # TODO: Change the error message when we allow SSE3
@@ -3308,17 +3316,13 @@ fn _convert_f32_to_float8_scaler[
 # bfloat16
 # ===----------------------------------------------------------------------=== #
 
-alias _fp32_bf16_mantissa_diff = FPUtils[
-    DType.float32
-].mantissa_width() - FPUtils[DType.bfloat16].mantissa_width()
-
 
 @always_inline
 fn _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.float32, 1]()
 
@@ -3340,7 +3344,7 @@ fn _bfloat16_to_f32[
     size: Int
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.float32, size]()
 
@@ -3356,48 +3360,29 @@ fn _bfloat16_to_f32[
     return _simd_apply[wrapper_fn, DType.float32, size](val)
 
 
-@always_inline
-fn _f32_to_bfloat16_scalar(
-    val: Float32,
-) -> BFloat16:
-    @parameter
-    if has_neon():
-        # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.bfloat16, 1]()
-
-    if _isnan(val):
-        return _nan[DType.bfloat16]()
-
-    var float_bits = FPUtils[DType.float32].bitcast_to_integer(val)
-
-    var lsb = (float_bits >> _fp32_bf16_mantissa_diff) & 1
-    var rounding_bias = 0x7FFF + lsb
-    float_bits += rounding_bias
-
-    var bfloat_bits = float_bits >> _fp32_bf16_mantissa_diff
-
-    return FPUtils[DType.bfloat16].bitcast_from_integer(bfloat_bits)
+alias _f32_bf16_mantissa_diff = (
+    FPUtils[DType.float32].mantissa_width()
+    - FPUtils[DType.bfloat16].mantissa_width()
+)
 
 
+# float_to_bfloat16_rtne<true> from gitlab.com/libeigen/eigen/-/blob/master/Eigen/src/Core/arch/Default/BFloat16.h
 @always_inline
 fn _f32_to_bfloat16[
-    size: Int
-](val: SIMD[DType.float32, size]) -> SIMD[DType.bfloat16, size]:
+    width: Int, //
+](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.bfloat16, size]()
-
-    @always_inline
-    @parameter
-    fn wrapper_fn[
-        input_dtype: DType, result_dtype: DType
-    ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
-        return rebind[Scalar[result_dtype]](
-            _f32_to_bfloat16_scalar(rebind[Float32](val))
-        )
-
-    return _simd_apply[wrapper_fn, DType.bfloat16, size](val)
+        return _unchecked_zero[DType.bfloat16, width]()
+    var f32_bits = f32.to_bits[DType.uint32]()
+    var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
+    var rounding_bias = 0x7FFF + lsb
+    var bf16_bits = (f32_bits + rounding_bias) >> _f32_bf16_mantissa_diff
+    var bf16 = SIMD[DType.bfloat16, width].from_bits(
+        bf16_bits.cast[DType.uint16]()
+    )
+    return _isnan(f32).select(_nan[DType.bfloat16](), bf16)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3530,7 +3515,7 @@ fn _floor(x: SIMD) -> __type_of(x):
     alias bias = FPUtils[x.dtype].exponent_bias()
     alias shift_factor = bitwidth - exponent_width - 1
 
-    var bits = x.to_bits()
+    var bits = x._to_bits_signed()
     var e = ((bits & mask) >> mantissa_width) - bias
     bits = (e < shift_factor).select(
         bits & ~((1 << (shift_factor - e)) - 1),

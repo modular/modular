@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional
 
@@ -169,7 +170,7 @@ class VocabParallelEmbedding(Module):
         devices: list[DeviceRef],
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Args:
             vocab_size: The number of unique items in the vocabulary.
@@ -200,7 +201,7 @@ class VocabParallelEmbedding(Module):
         self.allreduce = Allreduce(num_accelerators=self.num_devices)
 
     def __call__(
-        self, indices: TensorValueLike, signal_buffers: list[BufferValue]
+        self, indices: TensorValueLike, signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Embeds the input indices by looking up corresponding vectors.
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from sys.info import has_neon
+from sys.info import CompilationTarget
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
@@ -80,7 +80,7 @@ def test_isfinite():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_false(isfinite(inf[DType.bfloat16]()))
         assert_false(isfinite(neg_inf[DType.bfloat16]()))
         assert_false(isfinite(nan[DType.bfloat16]()))
@@ -101,7 +101,7 @@ def test_isinf():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_true(isinf(inf[DType.bfloat16]()))
         assert_true(isinf(neg_inf[DType.bfloat16]()))
         assert_false(isinf(nan[DType.bfloat16]()))
@@ -122,7 +122,7 @@ def test_isnan():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_false(isnan(inf[DType.bfloat16]()))
         assert_false(isnan(neg_inf[DType.bfloat16]()))
         assert_true(isnan(nan[DType.bfloat16]()))

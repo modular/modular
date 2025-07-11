@@ -46,7 +46,7 @@ from max.serve.kvcache_agent.dispatcher_transport import (
 )
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class TransportType(Enum):

@@ -12,6 +12,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/custom-kernels-pytorch.mdx
+
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +44,7 @@ def create_test_image():
     return Image.fromarray(test_array, mode="RGB")
 
 
-def main():
+def main() -> None:
     # Create test image
     image = create_test_image()
     # Convert to numpy array and then to PyTorch tensor

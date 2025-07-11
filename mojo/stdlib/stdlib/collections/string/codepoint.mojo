@@ -44,7 +44,6 @@ var s = String(c)  # "A"
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import UnsafePointer
 
 
 @always_inline
@@ -159,7 +158,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
             return None
 
     @staticmethod
-    fn ord(string: StringSlice) -> Codepoint:
+    fn ord(string: StringSlice[mut=False]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -181,7 +180,9 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         # SAFETY:
         #   This is safe because `StringSlice` is guaranteed to point to valid
         #   UTF-8.
-        char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(string._slice)
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.as_bytes()
+        )
 
         debug_assert(
             string.byte_length() == Int(num_bytes),

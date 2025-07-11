@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -24,8 +25,9 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core import (
-    InputContext,
+from max.interfaces import InputContext
+from max.pipelines.core.serialization import (
+    SharedMemoryEncoder,
     msgpack_numpy_encoder,
 )
 from max.serve.process_control import ProcessControl
@@ -63,7 +65,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
         # Create Queues
         self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
-            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
+            zmq_ctx,
+            request_zmq_endpoint,
+            serialize=SharedMemoryEncoder(),
         )
         self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
             zmq_ctx, response_zmq_endpoint
@@ -103,8 +107,16 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self, req_id: ReqId, data: ReqInput
     ) -> Generator[asyncio.Queue, None, None]:
         try:
+            if req_id in self.pending_out_queues:
+                raise RuntimeError(
+                    f"Detected multiple requests with `req_id` set to {req_id}. "
+                    "This WILL lead to unexpected behavior! "
+                    "Please ensure that the `req_id` is unique for each request."
+                )
+
             out_queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
+
             self.request_push_socket.put_nowait((req_id, data))
             yield out_queue
         finally:

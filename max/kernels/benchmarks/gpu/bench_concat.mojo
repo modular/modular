@@ -19,8 +19,7 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from builtin._closure import __ownership_keepalive
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple

@@ -19,7 +19,6 @@ from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer
 from testing import assert_false
 
 from utils.numerics import isnan

@@ -14,7 +14,6 @@
 
 from sys.info import bitwidthof
 
-from memory import UnsafePointer
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
 

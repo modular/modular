@@ -13,46 +13,42 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from math import ceildiv
 from random import random_si64
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 
 from utils import IndexList
-from utils.index import Index
 
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    IndexList[2], IndexList[2], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
 
 
 @parameter
 @always_inline
 fn epilogue_test_fn[
-    type: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
-    val: SIMD[type, width],
+    val: SIMD[dtype, width],
 ) -> SIMD[
-    type, width
+    dtype, width
 ]:
-    var bias = SIMD[type, width](0)
+    var bias = SIMD[dtype, width](0)
 
     @parameter
     for i in range(width):
         bias[i] = (
             0.5
             + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                type
+                dtype
             ]()
         )
 

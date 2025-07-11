@@ -17,7 +17,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -56,7 +55,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, owned *args: *element_types):
+    fn __init__(out self, var *args: *element_types):
         """Construct the tuple.
 
         Args:

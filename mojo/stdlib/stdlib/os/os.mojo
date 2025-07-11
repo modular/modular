@@ -22,9 +22,8 @@ from os import listdir
 
 from collections import InlineArray, List
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_char
 
-from memory import UnsafePointer
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -93,7 +92,7 @@ struct _DirHandle:
 
     var _handle: OpaquePointer
 
-    fn __init__(out self, owned path: String) raises:
+    fn __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
 
         Args:
@@ -290,7 +289,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     if error != 0:
         # TODO get error message, the following code prints it
         # var error_str = String("Something went wrong")
-        # _ = external_call["perror", UnsafePointer[NoneType]](error_str.unsafe_ptr())
+        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
         # _ = error_str
         raise Error("Can not remove file: " + fspath)
 

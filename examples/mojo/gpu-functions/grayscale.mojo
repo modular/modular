@@ -91,7 +91,7 @@ fn color_to_grayscale(
         blue = rgb_tensor[row, col, 2].cast[float_dtype]()
         gray = 0.21 * red + 0.71 * green + 0.07 * blue
 
-        gray_tensor[row, col, 0] = gray.cast[int_dtype]()
+        gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
 def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout]):

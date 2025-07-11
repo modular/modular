@@ -37,7 +37,9 @@ class TextGenerationMetrics:
     _process: psutil.Process
     _print_raw: bool
 
-    def __init__(self, print_report: bool = False, print_raw: bool = False):
+    def __init__(
+        self, print_report: bool = False, print_raw: bool = False
+    ) -> None:
         self._signposts = {}
         self._mem_usage_marker = {}
         self.batch_size = 1
@@ -56,22 +58,22 @@ class TextGenerationMetrics:
         if self._should_print_report:
             self._print_report(self._print_raw)
 
-    def signpost(self, name: str):
+    def signpost(self, name: str) -> None:
         """Measure the current time and memory usage, tagging it with a name for later reporting."""
         self._signposts[name] = time.time()
         self._mem_usage_marker[name] = (self._process.memory_info().rss) / (
             1024 * 1024 * 1024
         )
 
-    def new_token(self):
+    def new_token(self) -> None:
         """Report that a new token has been generated."""
         self.new_tokens(1)
 
-    def new_tokens(self, num_tokens: int):
+    def new_tokens(self, num_tokens: int) -> None:
         """Report that a num_tokens tokens have been generated."""
         self.output_size += num_tokens
 
-    def _calculate_results(self):
+    def _calculate_results(self) -> None:
         begin_generation = self._signposts.get("begin_generation")
         if begin_generation:
             self.startup_time = (
@@ -124,7 +126,7 @@ class TextGenerationMetrics:
             self.total_exe_time = "n/a"
             self.requests_per_second = "n/a"
 
-    def _print_report(self, print_raw=False):
+    def _print_report(self, print_raw=False) -> None:
         print()
         print("Prompt size:", self.prompt_size)
         print("Output size:", self.output_size)
@@ -163,7 +165,9 @@ class EmbeddingsMetrics:
     _process: psutil.Process
     _print_raw: bool
 
-    def __init__(self, print_report: bool = False, print_raw: bool = False):
+    def __init__(
+        self, print_report: bool = False, print_raw: bool = False
+    ) -> None:
         self._signposts = {}
         self._mem_usage_marker = {}
         self.batch_size = 1
@@ -181,14 +185,14 @@ class EmbeddingsMetrics:
         if self._should_print_report:
             self._print_report(self._print_raw)
 
-    def signpost(self, name: str):
+    def signpost(self, name: str) -> None:
         """Measure the current time and memory usage, tagging it with a name for later reporting."""
         self._signposts[name] = time.time()
         self._mem_usage_marker[name] = (self._process.memory_info().rss) / (
             1024 * 1024 * 1024
         )
 
-    def _calculate_results(self):
+    def _calculate_results(self) -> None:
         begin_encoding = self._signposts.get("begin_encoding")
         if begin_encoding:
             self.startup_time = (begin_encoding - self._start_time) * 1000.0
@@ -205,7 +209,7 @@ class EmbeddingsMetrics:
             self.requests_per_second = "n/a"
             self.total_exe_time = "n/a"
 
-    def _print_report(self, print_raw=False):
+    def _print_report(self, print_raw=False) -> None:
         print()
         print("Prompt size:", self.prompt_size)
         print("Startup time:", self.startup_time, "ms")

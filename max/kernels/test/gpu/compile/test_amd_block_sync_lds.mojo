@@ -14,7 +14,7 @@
 # RUN: %mojo-no-debug -D USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM=True %s | FileCheck --check-prefix=CHECK-BLOCK-SYNC %s
 
 from gpu import barrier
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.host.info import MI300X
 
 alias MI300X_TARGET = MI300X.target()

@@ -45,7 +45,7 @@ class GroupNorm(Module):
         eps: float = 1e-5,
         affine: bool = True,
         device: DeviceRef = DeviceRef.GPU(),
-    ):
+    ) -> None:
         super().__init__()
         self.num_groups = num_groups
         self.num_channels = num_channels

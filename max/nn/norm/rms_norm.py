@@ -13,6 +13,7 @@
 
 """Normalization layer."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from max.dtype import DType
@@ -79,7 +80,7 @@ class RMSNorm(Module):
         eps: float = 1e-6,
         weight_offset: float = 0.0,
         multiply_before_cast: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
         self.eps = eps
@@ -87,6 +88,17 @@ class RMSNorm(Module):
         self.multiply_before_cast = multiply_before_cast
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        # Validate that weight dimension matches input's last dimension if
+        # statically known.
+        input_last_dim = x.shape[-1]
+        weight_dim = self.weight.shape[0]
+
+        if input_last_dim != weight_dim:
+            raise ValueError(
+                f"RMSNorm weight dimension ({weight_dim}) must match the input's "
+                f"last dimension ({input_last_dim})"
+            )
+
         weight: TensorValue = self.weight.cast(x.dtype)
         if x.device:
             weight = weight.to(x.device)
@@ -108,7 +120,7 @@ class RMSNorm(Module):
 
 
 class DistributedRMSNorm(RMSNorm):
-    def __init__(self, *args, devices: list[DeviceRef], **kwargs):
+    def __init__(self, *args, devices: Sequence[DeviceRef], **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
 
@@ -122,5 +134,5 @@ class DistributedRMSNorm(RMSNorm):
             layer.weight = self.weight.shard(n, device)
             self.rms_norms.append(layer)
 
-    def __call__(self, xs: list[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
+    def __call__(self, xs: Sequence[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
         return [self.rms_norms[i](xs[i]) for i in range(self.num_devices)]

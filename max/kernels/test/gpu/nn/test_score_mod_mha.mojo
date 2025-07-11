@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import exp2, iota, isclose, isqrt
+from math import exp2, iota, isqrt
 from random import random_ui64, seed
 
 from bit import prev_power_of_two
@@ -23,7 +23,6 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
@@ -42,7 +41,7 @@ alias llama_num_q_heads = 32
 
 
 fn generate_alibi_bias[
-    type: DType,
+    dtype: DType,
     width: Int,
     num_heads: Int,
 ](
@@ -50,28 +49,28 @@ fn generate_alibi_bias[
     q_idx: SIMD[DType.index, width],
     k_idx: SIMD[DType.index, width],
     max_prompt_len: Int = 0,
-) -> SIMD[type, width]:
-    var scale: SIMD[type, width]
+) -> SIMD[dtype, width]:
+    var scale: SIMD[dtype, width]
 
     @parameter
     if num_heads.is_power_of_two():
-        scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+        scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
     else:
         alias floor_power_of_2 = prev_power_of_two(num_heads)
         if head_idx < floor_power_of_2:
             scale = exp2(
-                -((head_idx + 1).cast[type]() * 8.0 / floor_power_of_2)
+                -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
             )
         else:
             scale = exp2(
                 -(
-                    ((head_idx - floor_power_of_2) * 2 + 1).cast[type]()
+                    ((head_idx - floor_power_of_2) * 2 + 1).cast[dtype]()
                     * 8.0
                     / (floor_power_of_2 * 2)
                 )
             )
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[type]()
+        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[dtype]()
         * scale
     )
     return bias
@@ -79,7 +78,7 @@ fn generate_alibi_bias[
 
 def execute_flash_attention[
     num_q_heads: Int,
-    type: DType,
+    dtype: DType,
     kv_params: KVCacheStaticParams,
 ](
     batch_size: Int,
@@ -89,7 +88,7 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     debug_assert(
         batch_size < num_blocks,
@@ -120,7 +119,7 @@ def execute_flash_attention[
     # initialize q tensor
     # TODO parameterize to layout
     q_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -136,7 +135,7 @@ def execute_flash_attention[
     ctx.enqueue_copy(valid_length_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -203,14 +202,14 @@ def execute_flash_attention[
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     ref_output_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -220,14 +219,14 @@ def execute_flash_attention[
 
     # initialize test output
     test_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     test_output_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -235,7 +234,7 @@ def execute_flash_attention[
         ctx=ctx,
     )
 
-    kv_block_host = HostNDBuffer[type, 6](
+    kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -356,7 +355,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         cache_valid_length_ptr, Index(1)
     )
 
-    alias type = DType.bfloat16
+    alias dtype = DType.bfloat16
 
     # Replit & Llama3 context encoding [testing even query valid lengths].
     valid_length[0] = 128
@@ -366,13 +365,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     execute_flash_attention[
         replit_num_q_heads,
-        type,
+        dtype,
         kv_params_replit,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
-        type,
+        dtype,
         kv_params_llama3,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
@@ -384,13 +383,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     execute_flash_attention[
         replit_num_q_heads,
-        type,
+        dtype,
         kv_params_replit,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
-        type,
+        dtype,
         kv_params_llama3,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
@@ -402,13 +401,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     execute_flash_attention[
         replit_num_q_heads,
-        type,
+        dtype,
         kv_params_replit,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
-        type,
+        dtype,
         kv_params_llama3,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
@@ -420,13 +419,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     execute_flash_attention[
         replit_num_q_heads,
-        type,
+        dtype,
         kv_params_replit,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 
     execute_flash_attention[
         llama_num_q_heads,
-        type,
+        dtype,
         kv_params_llama3,
     ](bs, valid_length, 1024, cache_valid_length, ctx)
 

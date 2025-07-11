@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
@@ -37,7 +38,21 @@ from max.pipelines.lib import (
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float]
+VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+
+
+class JSONType(click.ParamType):
+    """Click parameter type for JSON input."""
+
+    name = "json"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, dict):
+            return value
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
 def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
@@ -91,6 +106,8 @@ def get_field_type(field_type: Any):
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
+    elif get_origin(field_type) is dict or field_type is dict:
+        field_type = JSONType()
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
@@ -218,41 +235,29 @@ def pipeline_config_options(func):
     return wrapper
 
 
-def parse_task_flags(task_flags: list[str]) -> dict[str, str]:
+def parse_task_flags(task_flags: tuple[str, ...]) -> dict[str, str]:
     """Parse task flags into a dictionary.
 
-    The flags must be in the format `--flag_name=flag_value` or
-    `--flag_name flag_value`.
+    The flags must be in the format `flag_name=flag_value`.
+
+    This requires that the task flags are:
+    1. Passed and interpreted as strings, including their values.
+    2. Be passed as a list of strings via explicit --task-arg flags. For example:
+        --task-arg=flag1=value1 --task-arg=flag2=value2
 
     Args:
-        task_flags: A list of task flags.
+        task_flags: A tuple of task flags.
 
     Returns:
         A dictionary of parsed flag values.
     """
     flags = {}
-    index = 0
-    while index < len(task_flags):
-        flag = task_flags[index]
-        if not flag.startswith("--"):
-            raise ValueError(f"Expected flag to start with '--', got: {flag}")
+    for flag in task_flags:
+        if "=" not in flag or flag.startswith("--"):
+            raise ValueError(
+                f"Flag must be in format 'flag_name=flag_value', got: {flag}"
+            )
 
-        flag_data = flag[2:].split("=", 1)
-
-        if len(flag_data) == 1:
-            flag_name = flag_data[0]
-
-            next_value = task_flags[index + 1]
-            if next_value.startswith("--"):
-                raise ValueError(
-                    "Flag value cannot start with '--', got: {next_value}."
-                    " Check your flags or use the --flag=value format."
-                )
-            flag_value = next_value
-            index += 1
-        else:
-            flag_name, flag_value = flag_data
-
+        flag_name, flag_value = flag.split("=", 1)
         flags[flag_name.replace("-", "_")] = flag_value
-        index += 1
     return flags

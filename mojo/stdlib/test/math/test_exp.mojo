@@ -14,7 +14,7 @@
 
 from math.math import _Expable, exp
 from random import randn_float64, seed
-from sys import has_neon
+from sys import CompilationTarget
 
 from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal
@@ -23,7 +23,7 @@ from testing import assert_almost_equal, assert_equal
 def test_exp_bfloat16():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(exp(BFloat16(2.0)), 7.375)
 
 
@@ -54,17 +54,17 @@ def test_exp_float64():
 
 @always_inline
 def exp_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    var eval = libm_call[type, simd_width, "expf", "exp"](arg)
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    var eval = libm_call[dtype, simd_width, "expf", "exp"](arg)
     return eval
 
 
-def test_exp_libm[type: DType]():
+def test_exp_libm[dtype: DType]():
     seed(0)
     alias N = 8192
     for _i in range(N):
-        var x = randn_float64(0, 9.0).cast[type]()
+        var x = randn_float64(0, 9.0).cast[dtype]()
         assert_almost_equal(
             exp(x), exp_libm(x), msg=String("for the input ", x)
         )

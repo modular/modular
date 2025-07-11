@@ -304,11 +304,34 @@ execution of threads. The number of SMs and the number of cores on a GPU depends
 on its architecture. For example, the NVIDIA H100 PCIe contains 114 SMs, with
 128 32-bit floating point cores per SM.
 
+<figure>
+
+![](../images/gpu/sm-architecture.png#light)
+![](../images/gpu/sm-architecture-dark.png#dark)
+
+<figcaption><b>Figure 1.</b> High-level architecture of a streaming
+multiprocessor (SM). (Click to enlarge.)</figcaption>
+
+</figure>
+
 Additionally, when an SM is assigned a thread block, it divides the block into
 multiple *warps*, which are groups of 32 or 64 threads, depending on the GPU
 architecture. These threads execute the same instruction simultaneously in a
 *single instruction, multiple threads* (SIMT) model. The SM's *warp scheduler*
 coordinates the execution of warps on an SM's cores.
+
+<figure>
+
+![](../images/gpu/grid-hierarchy.png#light)
+![](../images/gpu/grid-hierarchy-dark.png#dark)
+
+<figcaption><b>Figure 2.</b> Hierarchy of threads running on a GPU, showing the
+relationship of the grid, thread blocks, warps, and individual threads, based
+on <cite><a
+href="https://rocm.docs.amd.com/projects/HIP/en/latest/understand/programming_model.html">HIP
+Programming Guide</a></cite></figcaption>
+
+</figure>
 
 Warps are used to efficiently utilize GPU hardware by maximizing throughput and
 minimizing control overhead. Since GPUs are designed for high-performance
@@ -337,6 +360,16 @@ dimensionality of the data to process. For example, you might choose a
 1-dimensional grid for processing large vectors, a 2-dimensional grid for
 processing matrices, and a 3-dimensional grid for processing the frames of a
 video.
+
+<figure>
+
+![](../images/gpu/multidimensional-grid.png#light)
+![](../images/gpu/multidimensional-grid-dark.png#dark)
+
+<figcaption><b>Figure 3.</b> Organization of thread blocks and threads within a
+grid. </figcaption>
+
+</figure>
 
 To better understand how grids, thread blocks, and threads work together, let's
 modify our `print_threads()` kernel function to print the `x`, `y`, and `z`

@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import ceildiv, isclose
 from random import rand, random_float64
 from sys import sizeof
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
@@ -34,7 +31,7 @@ from quantization.qmatmul_k import (
 from utils.index import Index
 
 
-fn fill_random[type: DType](mut array: InlineArray[Scalar[type]]):
+fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
     rand(array.unsafe_ptr(), len(array))
 
 

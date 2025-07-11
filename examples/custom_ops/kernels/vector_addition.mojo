@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-custom-ops.mdx
+
 from math import ceildiv
 
 from gpu import block_dim, block_idx, thread_idx

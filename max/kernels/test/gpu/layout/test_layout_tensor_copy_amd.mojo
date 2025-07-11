@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -27,7 +25,6 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
 )
 from layout.tensor_builder import LayoutTensorBuild as tb
-from memory import UnsafePointer
 
 from utils import IndexList
 

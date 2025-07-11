@@ -24,12 +24,7 @@ from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
-# NOTE: This apparently redundant import is needed so PythonBindingsGen.cpp can
-# find the StringLiteral declaration.
-from builtin.string_literal import StringLiteral
-from memory import UnsafePointer
-
-from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
+from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject, GILAcquired
 from .python import Python
 from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
@@ -38,7 +33,7 @@ trait PythonConvertible:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert a value to a PythonObject.
 
         Returns:
@@ -105,7 +100,7 @@ struct _PyIter(Defaultable, Sized):
         """
         var cpython = Python().cpython()
         self.iterator = iter
-        var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
+        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
         if not maybe_next_item:
             self.is_done = True
             self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
@@ -136,7 +131,7 @@ struct _PyIter(Defaultable, Sized):
             return self.iterator
         var cpython = Python().cpython()
         var current = self.prepared_next_item
-        var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
+        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
         if not maybe_next_item:
             self.is_done = True
         else:
@@ -161,12 +156,6 @@ struct _PyIter(Defaultable, Sized):
             return 1
 
 
-alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
-alias PyFunctionRaising = fn (
-    mut PythonObject, mut PythonObject
-) raises -> PythonObject
-
-
 @register_passable
 struct PythonObject(
     Boolable,
@@ -183,7 +172,7 @@ struct PythonObject(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var py_object: PyObjectPtr
+    var _obj_ptr: PyObjectPtr
     """A pointer to the underlying Python object."""
 
     # ===-------------------------------------------------------------------===#
@@ -211,7 +200,7 @@ struct PythonObject(
         Args:
             from_owned_ptr: The `PyObjectPtr` to take ownership of.
         """
-        self.py_object = from_owned_ptr
+        self._obj_ptr = from_owned_ptr
 
     fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
         """Initialize this object from a read-only reference-counted Python
@@ -249,7 +238,7 @@ struct PythonObject(
         self = PythonObject(from_owned_ptr=from_borrowed_ptr)
 
     @always_inline
-    fn __init__[T: Movable](out self, *, owned alloc: T) raises:
+    fn __init__[T: Movable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -278,13 +267,11 @@ struct PythonObject(
         #   PyTypeObject that represents a given Mojo type.
         var type_obj = lookup_py_type_object[T]()
 
-        var type_obj_ptr = (
-            type_obj.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
-                PyTypeObject
-            ]()
-        )
+        var type_obj_ptr = type_obj._obj_ptr.unsized_obj_ptr.bitcast[
+            PyTypeObject
+        ]()
 
-        return PythonObject._unsafe_alloc(type_obj_ptr, alloc^)
+        return _unsafe_alloc_init(type_obj_ptr, alloc^)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
@@ -307,8 +294,8 @@ struct PythonObject(
             none: None.
         """
         cpython = Python().cpython()
-        self.py_object = cpython.Py_None()
-        cpython.Py_IncRef(self.py_object)
+        self._obj_ptr = cpython.Py_None()
+        cpython.Py_IncRef(self._obj_ptr)
 
     @implicit
     fn __init__(out self, value: Bool):
@@ -318,7 +305,7 @@ struct PythonObject(
             value: The boolean value.
         """
         cpython = Python().cpython()
-        self.py_object = cpython.PyBool_FromLong(Int(value))
+        self._obj_ptr = cpython.PyBool_FromLong(Int(value))
 
     @implicit
     fn __init__(out self, integer: Int):
@@ -328,7 +315,7 @@ struct PythonObject(
             integer: The integer value.
         """
         cpython = Python().cpython()
-        self.py_object = cpython.PyLong_FromSsize_t(integer)
+        self._obj_ptr = cpython.PyLong_FromSsize_t(integer)
 
     @implicit
     fn __init__[dtype: DType](out self, value: SIMD[dtype, 1]):
@@ -346,16 +333,16 @@ struct PythonObject(
 
         @parameter
         if dtype is DType.bool:
-            self.py_object = cpython.PyBool_FromLong(Int(value))
+            self._obj_ptr = cpython.PyBool_FromLong(Int(value))
         elif dtype.is_unsigned():
             var uint_val = value.cast[DType.index]().value
-            self.py_object = cpython.PyLong_FromSize_t(uint_val)
+            self._obj_ptr = cpython.PyLong_FromSize_t(uint_val)
         elif dtype.is_integral():
             var int_val = value.cast[DType.index]().value
-            self.py_object = cpython.PyLong_FromSsize_t(int_val)
+            self._obj_ptr = cpython.PyLong_FromSsize_t(int_val)
         else:
             var fp_val = value.cast[DType.float64]()
-            self.py_object = cpython.PyFloat_FromDouble(fp_val)
+            self._obj_ptr = cpython.PyFloat_FromDouble(fp_val)
 
     @implicit
     fn __init__(out self, value: StringLiteral) raises:
@@ -386,8 +373,8 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         cpython = Python().cpython()
-        self.py_object = cpython.PyUnicode_DecodeUTF8(string)
-        if not self.py_object:
+        self._obj_ptr = cpython.PyUnicode_DecodeUTF8(string)
+        if not self._obj_ptr:
             raise cpython.get_error()
 
     @implicit
@@ -397,12 +384,12 @@ struct PythonObject(
         Args:
             slice: The dictionary value.
         """
-        self.py_object = _slice_to_py_object_ptr(slice)
+        self._obj_ptr = _slice_to_py_object_ptr(slice)
 
     @always_inline
     fn __init__[
         *Ts: PythonConvertible & Copyable
-    ](out self, owned *values: *Ts, __list_literal__: ()) raises:
+    ](out self, var *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
         Parameters:
@@ -420,7 +407,7 @@ struct PythonObject(
     @always_inline
     fn __init__[
         *Ts: PythonConvertible & Copyable
-    ](out self, owned *values: *Ts, __set_literal__: ()) raises:
+    ](out self, var *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 
         Parameters:
@@ -441,8 +428,8 @@ struct PythonObject(
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            var result = cpython.PySet_Add(obj_ptr, obj.py_object)
+            cpython.Py_IncRef(obj._obj_ptr)
+            var result = cpython.PySet_Add(obj_ptr, obj._obj_ptr)
             if result == -1:
                 raise cpython.get_error()
 
@@ -470,7 +457,7 @@ struct PythonObject(
             var key_obj = keys[i].to_python_object()
             var val_obj = values[i].to_python_object()
             var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj.py_object, val_obj.py_object
+                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
             )
             if result != 0:
                 raise Error("internal error: PyDict_SetItem failed")
@@ -485,9 +472,9 @@ struct PythonObject(
         Args:
             existing: The value to copy.
         """
-        self.py_object = existing.py_object
+        self._obj_ptr = existing._obj_ptr
         var cpython = Python().cpython()
-        cpython.Py_IncRef(self.py_object)
+        cpython.Py_IncRef(self._obj_ptr)
 
     fn __del__(owned self):
         """Destroy the object.
@@ -497,63 +484,10 @@ struct PythonObject(
         var cpython = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
-        var state = cpython.PyGILState_Ensure()
-        if self.py_object:
-            cpython.Py_DecRef(self.py_object)
-        self.py_object = PyObjectPtr()
-        cpython.PyGILState_Release(state)
-
-    # ===-------------------------------------------------------------------===#
-    # Factory methods
-    # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    fn _unsafe_alloc[
-        T: Movable
-    ](
-        type_obj_ptr: UnsafePointer[PyTypeObject],
-        owned mojo_value: T,
-    ) raises -> PythonObject:
-        """Allocate a new `PythonObject` and store a Mojo value in it.
-
-        Parameters:
-            T: The Mojo type of the value that the resulting Python object
-              holds.
-
-        Args:
-            type_obj_ptr: Must be the Python type object describing
-              `PyTypeObject[T]`.
-            mojo_value: The Mojo value to store in the new Python object.
-
-        # Safety
-
-        `type_obj_ptr` must be a Python type object created by
-        `PythonTypeBuilder`, whose underlying storage type is the `PyMojoObject`
-        struct. Use of any other type object is invalid.
-        """
-
-        var cpython = Python().cpython()
-
-        # Allocates and zero-initializes the new `PyMojoObject[T]`.
-        # (For some objects, zeroed values are valid. But that isn't guaranteed
-        # for any given Mojo object.)
-        var obj_py_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
-            type_obj_ptr,
-            0,
-        )
-
-        # If we failed to allocate, raise.
-        if not obj_py_ptr.unsized_obj_ptr:
-            # Intentionally try to avoid allocating to raise this error.
-            raise Error("Allocation of Python object failed.")
-
-        var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-        var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
-
-        # Initialize the PyMojoObject[T] with the user-provided Mojo value.
-        __get_address_as_uninit_lvalue(obj_value_ptr.address) = mojo_value^
-
-        return PythonObject(from_owned_ptr=obj_py_ptr)
+        with GILAcquired(cpython):
+            if self._obj_ptr:
+                cpython.Py_DecRef(self._obj_ptr)
+            self._obj_ptr = PyObjectPtr()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -569,12 +503,12 @@ struct PythonObject(
             If the object is not iterable.
         """
         var cpython = Python().cpython()
-        var iter_ptr = cpython.PyObject_GetIter(self.py_object)
+        var iter_ptr = cpython.PyObject_GetIter(self._obj_ptr)
         if not iter_ptr:
             raise cpython.get_error()
         return _PyIter(PythonObject(from_owned_ptr=iter_ptr))
 
-    fn __getattr__(self, owned name: String) raises -> PythonObject:
+    fn __getattr__(self, var name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
 
         Args:
@@ -584,12 +518,12 @@ struct PythonObject(
             The value of the object attribute with the given name.
         """
         var cpython = Python().cpython()
-        var result = cpython.PyObject_GetAttrString(self.py_object, name^)
+        var result = cpython.PyObject_GetAttrString(self._obj_ptr, name^)
         if not result:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 
-    fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
+    fn __setattr__(self, var name: String, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
 
         Args:
@@ -598,7 +532,7 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_SetAttrString(
-            self.py_object, name^, new_value.py_object
+            self._obj_ptr, name^, new_value._obj_ptr
         )
         if result != 0:
             raise cpython.get_error()
@@ -627,7 +561,7 @@ struct PythonObject(
             True if they are the same object and False otherwise.
         """
         var cpython = Python().cpython()
-        return cpython.Py_Is(self.py_object, other.py_object)
+        return cpython.Py_Is(self._obj_ptr, other._obj_ptr)
 
     fn __isnot__(self, other: PythonObject) -> Bool:
         """Test if the PythonObject is not the `other` PythonObject, the same as `x is not y` in
@@ -654,18 +588,18 @@ struct PythonObject(
         var size = len(args)
         var key_obj: PyObjectPtr
         if size == 1:
-            key_obj = args[0].py_object
+            key_obj = args[0]._obj_ptr
         else:
             key_obj = cpython.PyTuple_New(size)
             for i in range(size):
-                var arg_value = args[i].py_object
+                var arg_value = args[i]._obj_ptr
                 cpython.Py_IncRef(arg_value)
                 var result = cpython.PyTuple_SetItem(key_obj, i, arg_value)
                 if result != 0:
                     raise Error("internal error: PyTuple_SetItem failed")
 
         cpython.Py_IncRef(key_obj)
-        var result = cpython.PyObject_GetItem(self.py_object, key_obj)
+        var result = cpython.PyObject_GetItem(self._obj_ptr, key_obj)
         cpython.Py_DecRef(key_obj)
         if not result:
             raise cpython.get_error()
@@ -695,7 +629,7 @@ struct PythonObject(
                     raise Error("internal error: PyTuple_SetItem failed")
 
         cpython.Py_IncRef(key_obj)
-        var result = cpython.PyObject_GetItem(self.py_object, key_obj)
+        var result = cpython.PyObject_GetItem(self._obj_ptr, key_obj)
         cpython.Py_DecRef(key_obj)
         if not result:
             raise cpython.get_error()
@@ -713,29 +647,29 @@ struct PythonObject(
         var key_obj: PyObjectPtr
 
         if size == 1:
-            key_obj = args[0].py_object
+            key_obj = args[0]._obj_ptr
         else:
             key_obj = cpython.PyTuple_New(size)
             for i in range(size):
-                var arg_value = args[i].py_object
+                var arg_value = args[i]._obj_ptr
                 cpython.Py_IncRef(arg_value)
                 var result = cpython.PyTuple_SetItem(key_obj, i, arg_value)
                 if result != 0:
                     raise Error("internal error: PyTuple_SetItem failed")
 
         cpython.Py_IncRef(key_obj)
-        cpython.Py_IncRef(value.py_object)
+        cpython.Py_IncRef(value._obj_ptr)
         var result = cpython.PyObject_SetItem(
-            self.py_object, key_obj, value.py_object
+            self._obj_ptr, key_obj, value._obj_ptr
         )
         if result != 0:
             raise cpython.get_error()
         cpython.Py_DecRef(key_obj)
-        cpython.Py_DecRef(value.py_object)
+        cpython.Py_DecRef(value._obj_ptr)
 
     @doc_private
     fn __call_single_arg_inplace_method__(
-        mut self, owned method_name: String, rhs: PythonObject
+        mut self, var method_name: String, rhs: PythonObject
     ) raises:
         var callable_obj: PythonObject
         try:
@@ -1233,7 +1167,7 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__ne__` method, or if it fails.
         """
-        return self.__getattr__("__ne__")(rhs).__bool__()
+        return self.__getattr__("__ne__")(rhs)
 
     fn __pos__(self) raises -> PythonObject:
         """Positive.
@@ -1282,7 +1216,7 @@ struct PythonObject(
         # TODO: replace/optimize with c-python function.
         # TODO: implement __getitem__ step for cpython membership test operator.
         var cpython = Python().cpython()
-        if cpython.PyObject_HasAttrString(self.py_object, "__contains__"):
+        if cpython.PyObject_HasAttrString(self._obj_ptr, "__contains__"):
             return self.__getattr__("__contains__")(rhs).__bool__()
         for v in self:
             if v == rhs:
@@ -1311,14 +1245,14 @@ struct PythonObject(
         var num_pos_args = len(args)
         var tuple_obj = cpython.PyTuple_New(num_pos_args)
         for i in range(num_pos_args):
-            var arg_value = args[i].py_object
+            var arg_value = args[i]._obj_ptr
             cpython.Py_IncRef(arg_value)
             var result = cpython.PyTuple_SetItem(tuple_obj, i, arg_value)
             if result != 0:
                 raise Error("internal error: PyTuple_SetItem failed")
 
         var dict_ptr = Python._dict(kwargs)
-        var callable_obj = self.py_object
+        var callable_obj = self._obj_ptr
         cpython.Py_IncRef(callable_obj)
         var result = cpython.PyObject_Call(callable_obj, tuple_obj, dict_ptr)
         cpython.Py_DecRef(callable_obj)
@@ -1339,7 +1273,7 @@ struct PythonObject(
             The length of the object.
         """
         var cpython = Python().cpython()
-        var result = cpython.PyObject_Length(self.py_object)
+        var result = cpython.PyObject_Length(self._obj_ptr)
         if result == -1 and cpython.PyErr_Occurred():
             # Custom python types may return -1 even in non-error cases.
             raise cpython.unsafe_get_error()
@@ -1352,7 +1286,7 @@ struct PythonObject(
             The hash value of the object.
         """
         var cpython = Python().cpython()
-        var result = cpython.PyObject_Hash(self.py_object)
+        var result = cpython.PyObject_Hash(self._obj_ptr)
         if result == -1 and cpython.PyErr_Occurred():
             # Custom python types may return -1 even in non-error cases.
             raise cpython.unsafe_get_error()
@@ -1415,7 +1349,7 @@ struct PythonObject(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1423,26 +1357,14 @@ struct PythonObject(
         """
         return self^
 
-    fn unsafe_as_py_object_ptr(self) -> PyObjectPtr:
-        """Get the underlying PyObject pointer.
-
-        Returns:
-            The underlying PyObject pointer.
-
-        Safety:
-            Use-after-free: The caller must take care that `self` outlives the
-            usage of the pointer returned by this function.
-        """
-        return self.py_object
-
-    fn steal_data(owned self) -> PyObjectPtr:
+    fn steal_data(var self) -> PyObjectPtr:
         """Take ownership of the underlying pointer from the Python object.
 
         Returns:
             The underlying data.
         """
-        var ptr = self.py_object
-        self.py_object = PyObjectPtr()
+        var ptr = self._obj_ptr
+        self._obj_ptr = PyObjectPtr()
 
         return ptr
 
@@ -1522,11 +1444,11 @@ struct PythonObject(
 
     fn _try_downcast_value[
         T: AnyType
-    ](owned self) raises -> Optional[UnsafePointer[T]]:
+    ](var self) raises -> Optional[UnsafePointer[T]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
-        bound Python type of `T`.
+        bound Python type of `T`, or if the Mojo value has not been initialized.
 
         This function will raise if the provided Mojo type `T` has not been
         bound to a Python type using a `PythonTypeBuilder`.
@@ -1540,21 +1462,23 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var type = PyObjectPtr(
-            cpython.Py_TYPE(self.unsafe_as_py_object_ptr()).bitcast[PyObject]()
+            cpython.Py_TYPE(self._obj_ptr).bitcast[PyObject]()
         )
 
         var expected_type_obj = lookup_py_type_object[T]()
 
-        if type == expected_type_obj.unsafe_as_py_object_ptr():
-            return self.unchecked_downcast_value_ptr[T]()
-        else:
-            return None
+        if type == expected_type_obj._obj_ptr:
+            var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
+            if obj_ptr[].is_initialized:
+                return UnsafePointer[T](to=obj_ptr[].mojo_value)
+        return None
 
     fn unchecked_downcast_value_ptr[T: AnyType](self) -> UnsafePointer[T]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
-        instance of `PyMojoObject[T]`.
+        instance of `PyMojoObject[T]` and that the Mojo value has been
+        initialized.
 
         Parameters:
             T: The type of the Mojo value stored in this object.
@@ -1573,11 +1497,96 @@ struct PythonObject(
         return UnsafePointer[T](to=obj_ptr[].mojo_value)
 
     @always_inline
-    fn _unchecked_downcast_object_ptr[
-        T: AnyType
-    ](owned self) -> UnsafePointer[T]:
+    fn _unchecked_downcast_object_ptr[T: AnyType](var self) -> UnsafePointer[T]:
         """Assume that this Python object contains a wrapped Mojo value."""
-        return self.py_object.unsized_obj_ptr.bitcast[T]()
+        return self._obj_ptr.unsized_obj_ptr.bitcast[T]()
+
+
+# ===-----------------------------------------------------------------------===#
+# Factory functions for PythonObject
+# ===-----------------------------------------------------------------------===#
+
+
+fn _unsafe_alloc[
+    T: AnyType
+](type_obj_ptr: UnsafePointer[PyTypeObject]) raises -> PyObjectPtr:
+    """Allocate an uninitialized Python object for storing a Mojo value.
+
+    Parameters:
+        T: The Mojo type of the value that will be stored in the Python object.
+
+    Args:
+        type_obj_ptr: Pointer to the Python type object describing the layout.
+
+    Returns:
+        A new Python object pointer with uninitialized storage.
+
+    Raises:
+        If the Python object allocation fails.
+    """
+    var cpython = Python().cpython()
+    var obj_py_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
+        type_obj_ptr,
+        0,
+    )
+
+    if not obj_py_ptr.unsized_obj_ptr:
+        raise Error("Allocation of Python object failed.")
+
+    return obj_py_ptr
+
+
+fn _unsafe_init[
+    T: Movable, //,
+](obj_py_ptr: PyObjectPtr, var mojo_value: T) raises:
+    """Initialize a Python object pointer with a Mojo value.
+
+    Parameters:
+        T: The Mojo type of the value that the resulting Python object holds.
+
+    Args:
+        obj_py_ptr: The Python object pointer to initialize.
+            The pointer must have been allocated using the correct type object.
+        mojo_value: The Mojo value to store in the Python object.
+
+    # Safety
+     `obj_py_ptr` must be a Python object pointer allocated using the correct
+     type object. Use of any other pointer is invalid.
+    """
+    var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+    var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
+    obj_value_ptr.init_pointee_move(mojo_value^)
+    obj_ptr[].is_initialized = True
+
+
+fn _unsafe_alloc_init[
+    T: Movable, //,
+](
+    type_obj_ptr: UnsafePointer[PyTypeObject], var mojo_value: T
+) raises -> PythonObject:
+    """Allocate a Python object pointer and initialize it with a Mojo value.
+
+    Parameters:
+        T: The Mojo type of the value that the resulting Python object holds.
+
+    Args:
+        type_obj_ptr: Must be the Python type object describing `PyTypeObject[T]`.
+        mojo_value: The Mojo value to store in the new Python object.
+
+    Returns:
+        A new PythonObject containing the Mojo value.
+
+    Raises:
+        If the Python object allocation fails.
+
+    # Safety
+    `type_obj_ptr` must be a Python type object created by `PythonTypeBuilder`,
+    whose underlying storage type is the `PyMojoObject` struct. Use of any other
+    type object is invalid.
+    """
+    var obj_py_ptr = _unsafe_alloc[T](type_obj_ptr)
+    _unsafe_init(obj_py_ptr, mojo_value^)
+    return PythonObject(from_owned_ptr=obj_py_ptr)
 
 
 # ===-----------------------------------------------------------------------===#

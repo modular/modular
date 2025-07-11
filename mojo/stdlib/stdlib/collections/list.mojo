@@ -20,7 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import Pointer, Span, UnsafePointer, memcpy
+from memory import Pointer, memcpy
 
 from .optional import Optional
 
@@ -36,7 +36,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:
@@ -48,15 +48,13 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
     alias list_type = List[T, hint_trivial_type]
 
     var index: Int
     var src: Pointer[Self.list_type, list_origin]
 
-    fn __iter__(self) -> Self:
-        return self
-
-    fn __next__(mut self) -> ref [list_origin] T:
+    fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
             self.index += 1
@@ -66,8 +64,16 @@ struct _ListIter[
             return self.src[][self.index]
 
     @always_inline
+    fn __next__(mut self) -> T:
+        return self.__next_ref__()
+
+    @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
 
     fn __len__(self) -> Int:
         @parameter
@@ -145,7 +151,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self.resize(length, fill)
 
     @always_inline
-    fn __init__(out self, owned *values: T, __list_literal__: () = ()):
+    fn __init__(out self, var *values: T, __list_literal__: () = ()):
         """Constructs a list from the given values.
 
         Args:
@@ -154,7 +160,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, owned elements: VariadicListMem[T, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[T, _]):
         """Constructs a list from the given values.
 
         Args:
@@ -343,7 +349,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         for _ in range(x - 1):
             self.extend(orig)
 
-    fn __add__(self, owned other: Self) -> Self:
+    fn __add__(self, var other: Self) -> Self:
         """Concatenates self with other and returns the result as a new list.
 
         Args:
@@ -357,7 +363,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         result.extend(other^)
         return result^
 
-    fn __iadd__(mut self, owned other: Self):
+    fn __iadd__(mut self, var other: Self):
         """Appends the elements of other into self.
 
         Args:
@@ -513,7 +519,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self.data = new_data
         self.capacity = new_capacity
 
-    fn append(mut self, owned value: T):
+    fn append(mut self, var value: T):
         """Appends a value to this list.
 
         Args:
@@ -551,7 +557,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
-    fn insert(mut self, i: Int, owned value: T):
+    fn insert(mut self, i: Int, var value: T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -580,7 +586,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, owned other: List[T, *_]):
+    fn extend(mut self, var other: List[T, *_]):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -615,12 +621,12 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         other._len = 0
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _]):
+        dtype: DType, //
+    ](mut self: List[Scalar[dtype], *_, **_], value: SIMD[dtype, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.
@@ -633,12 +639,17 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._len += value.size
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _], *, count: Int):
+        dtype: DType, //
+    ](
+        mut self: List[Scalar[dtype], *_, **_],
+        value: SIMD[dtype, _],
+        *,
+        count: Int,
+    ):
         """Extends this list with `count` number of elements from a vector.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.
@@ -650,17 +661,17 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
-        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[D]]()
+        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
         memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
         self._len += count
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: Span[Scalar[D]]):
+        dtype: DType, //
+    ](mut self: List[Scalar[dtype], *_, **_], value: Span[Scalar[dtype]]):
         """Extends this list with the elements of a `Span`.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.
@@ -928,6 +939,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         @parameter
         if _type_is_eq[I, UInt]():
+            var idx = UInt(idx)
+            debug_assert(
+                idx < self._len,
+                "index: ",
+                idx,
+                " is out of bounds for `List` of length: ",
+                self._len,
+            )
             return (self.data + idx)[]
         else:
             var normalized_idx = Int(idx)
@@ -973,7 +992,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         return (self.data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, owned value: T):
+    fn unsafe_set(mut self, idx: Int, var value: T):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1050,20 +1069,22 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if elt_idx_1 != elt_idx_2:
             swap((self.data + elt_idx_1)[], (self.data + elt_idx_2)[])
 
-    fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
-        T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
+        T, mut = origin.mut, origin=origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.
+
+        Parameters:
+            origin: The origin of the `List`.
+            address_space: The `AddressSpace` of the `List`.
 
         Returns:
             The pointer to the underlying memory.
         """
-        return self.data.origin_cast[
-            mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+        return self.data.origin_cast[origin.mut, origin]().address_space_cast[
+            address_space
         ]()
 
     @always_inline
@@ -1105,7 +1126,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
-    ](owned self) -> List[T, hint_trivial_type]:
+    ](var self) -> List[T, hint_trivial_type]:
         var result = List[T, hint_trivial_type]()
         result.data = self.data
         result._len = self._len

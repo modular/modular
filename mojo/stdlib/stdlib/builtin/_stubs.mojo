@@ -26,47 +26,28 @@ struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
 
 
 # ===-----------------------------------------------------------------------===#
-# parameter_for
+# @parameter for implementation details
 # ===-----------------------------------------------------------------------===#
 
 
-trait _ParamForIterator(Copyable):
-    alias _IndexType: Copyable
-
-    fn __has_next__(self) -> Bool:
-        ...
-
-    fn __next__(mut self) -> _IndexType:
-        ...
-
-
-struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator]:
-    var next_it: IteratorT
-    var value: IteratorT._IndexType
-    var stop: Bool
-
-    fn __init__(
-        out self,
-        next_it: IteratorT,
-        owned value: IteratorT._IndexType,
-        stop: Bool,
-    ):
-        self.next_it = next_it
-        self.value = value^
-        self.stop = stop
+fn paramfor_next_iter[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> IteratorType:
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ will return true.  This is needed because the interpreter
+    # memory model isn't smart enough to handle mut arguments cleanly.
+    var result = it
+    # This intentionally discards the value, but this only happens at comptime,
+    # so recomputing it in the body of the loop is fine.
+    _ = result.__next__()
+    return result
 
 
-fn parameter_for_generator[
-    IteratorT: _ParamForIterator
-](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
-    if it.__has_next__():
-        var next_it = it
-        return _ParamForIteratorWrapper(next_it, next_it.__next__(), False)
-
-    var next_iter: IteratorT
-    __mlir_op.`lit.ownership.mark_initialized`(
-        __get_mvalue_as_litref(next_iter)
-    )
-    var next_val: IteratorT._IndexType
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(next_val))
-    return _ParamForIteratorWrapper(next_iter^, next_val^, True)
+fn paramfor_next_value[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> IteratorType.Element:
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ will return true.  This is needed because the interpreter
+    # memory model isn't smart enough to handle mut arguments cleanly.
+    var result = it
+    return result.__next__()

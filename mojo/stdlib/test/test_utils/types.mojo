@@ -29,7 +29,6 @@
 
 from os import abort
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly
@@ -47,7 +46,7 @@ struct MoveOnly[T: Movable](Movable):
     """Test data payload."""
 
     @implicit
-    fn __init__(out self, owned i: T):
+    fn __init__(out self, var i: T):
         """Construct a MoveOnly providing the payload data.
 
         Args:
@@ -172,7 +171,7 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
     var move_count: Int
 
     @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Construct a new instance of this type. This initial move is not counted.
         """
         self.value = value^
@@ -272,32 +271,17 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
-var __g_dtor_count: Int = 0
 
-
+@fieldwise_init
 struct DelCounter(Copyable, Movable, Writable):
-    # NOTE: payload is required because LinkedList does not support zero sized structs.
-    var payload: Int
-
-    fn __init__(out self):
-        self.payload = 0
-
-    fn __init__(out self, *, other: Self):
-        self.payload = other.payload
-
-    fn __copyinit__(out self, existing: Self, /):
-        self.payload = existing.payload
-
-    fn __moveinit__(out self, owned existing: Self, /):
-        self.payload = existing.payload
-        existing.payload = 0
+    var counter: UnsafePointer[Int]
 
     fn __del__(owned self):
-        __g_dtor_count += 1
+        self.counter[] += 1
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("DelCounter(")
-        writer.write(String(__g_dtor_count))
+        writer.write(String(self.counter[]))
         writer.write(")")
 
 

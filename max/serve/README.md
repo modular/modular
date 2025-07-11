@@ -4,12 +4,15 @@
 NOTE: This README is packaged with the MAX container.
 -->
 
-MAX is a high-performance inference server that provides
-an [OpenAI-compatible endpoint](https://docs.modular.com/max/api/serve) for
-large language models (LLMs) locally or in the cloud.
+MAX is a high-performance inference server that provides an [OpenAI-compatible
+endpoint](https://docs.modular.com/max/api/serve) for large language models
+(LLMs) locally or in the cloud. To start your own serving endpoint with just a
+few commands, check out our [quickstart
+guide](https://docs.modular.com/max/get-started).
 
-To start your own endpoint with just a few commands, check out our
-[quickstart guide](https://docs.modular.com/max/get-started).
+The inference server is built in Python and the source is available
+in [our GitHub repo](https://github.com/modular/modular/tree/main/max/serve),
+but we're currently not accepting contributions to the serving library.
 
 ## License
 

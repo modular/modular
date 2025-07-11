@@ -10,19 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo build %S/mojo_module.mojo --emit shared-lib -o mojo_module.so
-# RUN: python3 %s
-
-import sys
-
-import numpy as np
-
-# Put the current directory (containing module.so) on the Python module lookup
-# path.
-sys.path.insert(0, "")
 
 # Imports from 'mojo_module.so'
 import mojo_module
+import numpy as np
 
 if __name__ == "__main__":
     print("Hello from Basic Numpy Example!")

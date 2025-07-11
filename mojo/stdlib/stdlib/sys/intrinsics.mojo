@@ -24,7 +24,7 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory import AddressSpace, UnsafePointer
+from memory import AddressSpace
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
@@ -76,35 +76,19 @@ fn llvm_intrinsic[
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
+        __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=None,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
+        return rebind[type](None)
 
-        @parameter
-        if has_side_effect:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-            ](loaded_pack)
-            return rebind[type](None)
-        else:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
-            return rebind[type](None)
     else:
-
-        @parameter
-        if has_side_effect:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-            ](loaded_pack)
-        else:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
+        return __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=type,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -117,7 +101,7 @@ fn llvm_intrinsic[
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
     dtype: DType
-](owned addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
+](var addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
     return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
 
 
@@ -1096,7 +1080,7 @@ struct _ThreadIdx(Defaultable):
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
@@ -1136,7 +1120,7 @@ struct _BlockIdx(Defaultable):
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 

@@ -92,7 +92,7 @@ def profile_in_session():
     return PROFILE_SESSION_VAR.get().request_id != None
 
 
-def write_profile(profiler: Profiler, session: ProfileSession):
+def write_profile(profiler: Profiler, session: ProfileSession) -> None:
     request_id = session.request_id
     profile_format = session.profile_format
 
@@ -117,7 +117,7 @@ async def profile_call(profiler: Profiler, call: Callable):
     return result
 
 
-def register_debug(app: FastAPI, settings: DebugSettings):
+def register_debug(app: FastAPI, settings: DebugSettings) -> None:
     if settings.profiling_enabled:
         profiler = ProfileSession.default_profiler()
 

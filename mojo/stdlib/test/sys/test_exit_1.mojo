@@ -17,4 +17,6 @@ import sys
 
 
 fn main():
+    # CHECK: Running...
+    print("Running...")
     sys.exit(1)

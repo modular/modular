@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 /bazel-*
+/MODULE.bazel.lock
 /external
 build/
 develop-eggs/

@@ -24,6 +24,7 @@ are used to optimize code generation and ensure hardware compatibility.
 from sys.info import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
+    _is_amd_rdna,
     is_amd_gpu,
     is_nvidia_gpu,
 )
@@ -41,7 +42,8 @@ alias WARP_SIZE = _resolve_warp_size()
 This constant represents the hardware warp size, which is the number of threads that execute
 instructions synchronously as a unit. The value is architecture-dependent:
 - 32 threads per warp on NVIDIA GPUs
-- 64 threads per warp on AMD GPUs
+- 32 threads per warp on AMD RDNA GPUs
+- 64 threads per warp on AMD CDNA GPUs
 - 0 if no GPU is detected
 
 The warp size is a fundamental parameter that affects:
@@ -56,12 +58,37 @@ fn _resolve_warp_size() -> Int:
     @parameter
     if is_nvidia_gpu():
         return 32
+    elif _is_amd_rdna():
+        return 32
     elif is_amd_gpu():
         return 64
     elif DEFAULT_GPU_ARCH == "":
         return 0
     else:
         return DEFAULT_GPU.warp_size
+
+
+# ===-----------------------------------------------------------------------===#
+# WARPGROUP_SIZE
+# ===-----------------------------------------------------------------------===#
+
+
+alias WARPGROUP_SIZE = _resolve_warpgroup_size()
+"""The number of threads in a warpgroup on Nvidia GPUs.
+
+On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps
+i.e. 128 threads. The first warp id must be multiple of 4.
+
+Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
+"""
+
+
+fn _resolve_warpgroup_size() -> Int:
+    # We can't constrain it here because the constant is used on host for
+    # compilation test w/o nvidia GPUs.
+    # constrained[is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."]()
+
+    return 128
 
 
 # ===-----------------------------------------------------------------------===#

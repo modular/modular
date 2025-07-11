@@ -1,12 +1,19 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
 
 modular_py_binary(
     name = "basic",
     srcs = ["basic.py"],
     imports = ["."],
+    use_sitecustomize = True,
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         requirement("tqdm"),
     ],
+)
+
+modular_run_binary_test(
+    name = "basic_test",
+    binary = "basic",
+    tags = ["requires-network"],
 )

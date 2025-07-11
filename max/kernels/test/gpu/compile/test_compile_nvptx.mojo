@@ -16,9 +16,9 @@ from sys._assembly import inlined_assembly
 
 from gpu import barrier, thread_idx
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 
 fn kernel(x: Int) -> Int:
@@ -125,8 +125,8 @@ def test_short_nvptx_ptr():
     # CHECK-NEXT: shl.b32
     # CHECK-NEXT: mov.b32
     # CHECK-NEXT: add.s32
-    # CHECK-NEXT: ld.global.u32
-    # CHECK-NEXT: st.shared.u32
+    # CHECK-NEXT: ld.global.b32
+    # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
         _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
 
