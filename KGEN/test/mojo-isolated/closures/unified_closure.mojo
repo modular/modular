@@ -214,7 +214,7 @@ fn make_closure(x: Int) -> Int:
 
 
 # CHECK: lit.fn @"take_closure{{.*}}"<closure1: [[TRAIT]]>[imm *"closure1`"](%closure1: !lit.ref<:!Int closure1, imm *"closure1`"> read_mem, |, %x: !Int1) -> !kgen.none
-# CHECK-NEXT: %0 = lit.call[!lit.generator<[1](!lit.ref<:!Int closure1, mut *[0,0]> read_mem, |, "y": !Int1) -> !Int1>: #kgen.get_witness<#kgen.param.decl.ref<"closure1"> : !Int, "unified_closure::fn(y: Int) -> Int", "__call__">][imm *"closure1`"](%closure1, %x)
+# CHECK-NEXT: %0 = lit.call[!lit.generator<[1](!lit.ref<:!Int closure1, mut *[0,0]> read_mem, |, "y": !Int1) -> !Int1>: #kgen.get_witness<:!Int closure1, "unified_closure::fn(y: Int) -> Int", "__call__">][imm *"closure1`"](%closure1, %x)
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 # CHECK-NEXT: lit.end_fn
