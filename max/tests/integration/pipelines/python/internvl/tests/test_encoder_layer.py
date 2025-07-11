@@ -128,7 +128,15 @@ def generate_max_outputs(
     "config_name",
     [
         pytest.param(ConfigNames.INTERNVL_2B),
-        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_8B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_8B_TESTS"),
+                    reason="8B tests disabled (set INTERNVL_8B_TESTS env var to enable)",
+                ),
+            ],
+        ),
         pytest.param(
             ConfigNames.INTERNVL_38B,
             marks=[

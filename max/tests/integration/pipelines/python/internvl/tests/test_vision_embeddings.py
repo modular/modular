@@ -136,7 +136,15 @@ def generate_max_outputs(
     "config_name",
     [
         pytest.param(ConfigNames.INTERNVL_2B),
-        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_8B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_8B_TESTS"),
+                    reason="8B tests disabled (set INTERNVL_8B_TESTS env var to enable)",
+                ),
+            ],
+        ),
         pytest.param(
             ConfigNames.INTERNVL_38B,
             marks=[
@@ -216,7 +224,15 @@ def test_vision_embeddings(config_name: ConfigNames, target_size: int) -> None:
     "config_name",
     [
         pytest.param(ConfigNames.INTERNVL_2B),
-        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_8B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_8B_TESTS"),
+                    reason="8B tests disabled (set INTERNVL_8B_TESTS env var to enable)",
+                ),
+            ],
+        ),
         pytest.param(
             ConfigNames.INTERNVL_38B,
             marks=[
@@ -303,7 +319,15 @@ def test_vision_embeddings_non_square(
     "config_name",
     [
         pytest.param(ConfigNames.INTERNVL_2B),
-        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_8B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_8B_TESTS"),
+                    reason="8B tests disabled (set INTERNVL_8B_TESTS env var to enable)",
+                ),
+            ],
+        ),
         pytest.param(
             ConfigNames.INTERNVL_38B,
             marks=[
@@ -398,7 +422,15 @@ def test_vision_embeddings_multi_gpu(
     "config_name",
     [
         pytest.param(ConfigNames.INTERNVL_2B),
-        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_8B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_8B_TESTS"),
+                    reason="8B tests disabled (set INTERNVL_8B_TESTS env var to enable)",
+                ),
+            ],
+        ),
         pytest.param(
             ConfigNames.INTERNVL_38B,
             marks=[

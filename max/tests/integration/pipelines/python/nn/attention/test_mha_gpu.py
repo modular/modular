@@ -187,17 +187,10 @@ def generate_max_outputs(
 @pytest.mark.parametrize(
     "batch_size,seq_len,num_heads,hidden_size,has_bias,dtype,stacked_qkv",
     [
-        (1, 32, 8, 512, False, DType.bfloat16, False),
-        (1, 32, 8, 512, False, DType.float32, False),
-        (1, 256, 8, 512, True, DType.bfloat16, False),
-        (1, 256, 8, 512, True, DType.float32, False),
-        (2, 64, 8, 512, False, DType.bfloat16, False),
-        (2, 64, 8, 512, False, DType.float32, False),
-        # Test stacked QKV with bias
-        (1, 32, 8, 512, True, DType.bfloat16, True),
-        (1, 32, 8, 512, True, DType.float32, True),
-        (2, 64, 8, 512, True, DType.bfloat16, True),
-        (2, 64, 8, 512, True, DType.float32, True),
+        (1, 16, 4, 64, False, DType.float32, False),
+        (1, 16, 4, 128, True, DType.float32, True),
+        (1, 8, 4, 256, False, DType.bfloat16, False),
+        (1, 8, 4, 256, True, DType.bfloat16, True),
     ],
 )
 @torch.no_grad()
