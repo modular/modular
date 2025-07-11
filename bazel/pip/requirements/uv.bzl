@@ -41,7 +41,7 @@ def _uv_lock_impl(ctx):
 uv_lock = rule(
     attrs = {
         "existing_lockfile": attr.label(mandatory = True, allow_single_file = True),
-        "py3_runtime": attr.label(mandatory = True, doc = "The python3 runtime to use for uv resolution"),
+        "py3_runtime": attr.label(cfg = "exec", mandatory = True, doc = "The python3 runtime to use for uv resolution"),
         "pyproject": attr.label(mandatory = True, allow_single_file = True),
         "_template": attr.label(default = ":uv-lock.sh", allow_single_file = True),
         "_uv": attr.label(default = "//bazel/internal:uv", executable = True, cfg = "exec", allow_single_file = True),
