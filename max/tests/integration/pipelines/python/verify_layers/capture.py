@@ -17,7 +17,6 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
-import max.nn
 import torch
 from generate_llm_logits import PIPELINE_ORACLES
 from max._core.engine import PrintStyle
@@ -29,6 +28,7 @@ from max.nn.layer import Module
 from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import ModelOutput
 
+from verify_layers.collect_subclasses import get_all_subclasses
 from verify_layers.layer_utils import (
     normalize_max_layer_name,
     normalize_pytorch_layer_name,
@@ -51,6 +51,8 @@ class LayerIOCapture:
         self.layer_count = 0
         self.captured_layers: dict[str, dict[str, Any]] = {}
         self._original_call_methods: dict[type, Callable] = {}
+        # Track active calls to avoid double-counting layers
+        self._active_calls: set[str] = set()
 
         # For improved naming: track block type counts
         self._block_type_counter: dict[str, int] = {}
@@ -210,6 +212,12 @@ class LayerIOCapture:
                 layer_name = f"layers.{count}.{class_name}"
                 layer_capture._block_type_counter[class_name] = count + 1
 
+            # See if the layer is in the active calls set (this can happen if a
+            # layer calls super().__call__())
+            if layer_name in layer_capture._active_calls:
+                return original_call(module_self, *args, **kwargs)
+            layer_capture._active_calls.add(layer_name)
+
             # Write layer name to module_names_max.txt in working directory
             try:
                 module_names_file = (
@@ -342,6 +350,7 @@ class LayerIOCapture:
 
             # Call original function
             result = original_call(module_self, *args, **kwargs)
+            layer_capture._active_calls.remove(layer_name)
 
             # Export output tensors
             if isinstance(result, (list, tuple)):
@@ -616,14 +625,8 @@ def capture_max_layer_outputs(
 
         # Find all Module subclasses and patch them
         # This is a simplified approach - in practice you might need to be more selective
-        for name in dir(max.nn):
-            obj = getattr(max.nn, name)
-            if (
-                isinstance(obj, type)
-                and issubclass(obj, Module)
-                and obj is not Module
-            ):
-                layer_capture.monkey_patch_module(obj)
+        for cls in get_all_subclasses():
+            layer_capture.monkey_patch_module(cls)
 
         pipeline_oracle = PIPELINE_ORACLES[pipeline]
 
