@@ -18,9 +18,6 @@ from .audio_generation import (
     AudioGeneratorOutput,
 )
 from .embeddings_generation import EmbeddingsGenerator
-from .response import (
-    AudioGenerationResponse,
-)
 from .text_generation import (
     PipelineTokenizer,
     TokenGeneratorContext,
@@ -33,7 +30,6 @@ from .text_generation import (
 
 __all__ = [
     "AudioGenerationRequest",
-    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
     "AudioGeneratorOutput",

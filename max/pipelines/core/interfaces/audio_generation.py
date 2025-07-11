@@ -30,9 +30,7 @@ if TYPE_CHECKING:
     import numpy as np
     import torch
 
-from max.interfaces import SamplingParams
-
-from .response import AudioGenerationResponse
+from max.interfaces import AudioGenerationResponse, SamplingParams
 
 
 @dataclass(frozen=True)

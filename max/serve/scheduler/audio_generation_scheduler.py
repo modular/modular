@@ -24,9 +24,9 @@ from typing import Any, cast
 
 import torch
 import zmq
+from max.interfaces import AudioGenerationResponse
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorOutput,
     TTSContext,

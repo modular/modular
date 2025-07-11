@@ -19,7 +19,6 @@ from max.interfaces import TokenGenerator
 from .context import TextAndVisionContext, TextContext, TTSContext
 from .interfaces import (
     AudioGenerationRequest,
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorContext,
     AudioGeneratorOutput,
@@ -40,7 +39,6 @@ PipelinesFactory = _Callable[
 
 __all__ = [
     "AudioGenerationRequest",
-    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
     "AudioGeneratorOutput",
