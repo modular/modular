@@ -322,3 +322,42 @@ struct IntPairRange:
 # CHECK-LABEL: lit.fn @"test_unpack
 fn test_unpack():
     var elts = [a*b for (a,b) in IntPairRange()]
+
+
+
+# COM: Check that a list comprehension can be used inside a for loop.
+
+
+@fieldwise_init
+struct IterRange(Copyable, Iterator):
+    alias Element = Int
+
+    var value: Int
+
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __has_next__(self) -> Bool:
+        return self.value > 0
+
+    fn __next__(mut self) -> Int:
+        return self.value
+
+
+fn useIt(expr: List[Int]):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"comprehensionInForLoop
+def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int):
+    # CHECK: lit.loop cond
+    # CHECK: } body {
+    # CHECK: lit.call @{{.*}}::@List::@"__init__
+    # CHECK: lit.loop cond
+    # CHECK: } body {
+    # CHECK: lit.call @{{.*}}::@List::@"append
+    for row in IterRange(rows):
+        var my_list = [
+            1 if data[row][col] == 1 else 0 for col in IterRange(cols)
+        ]
+        useIt(my_list)
