@@ -57,6 +57,8 @@ def _mojo_test_environment_implementation(ctx):
                 "COMPUTED_LIBS": "",
                 "LLD_PATH": "",
                 "MOJO_BINARY_PATH": "",
+                "MOJO_LINKER_DRIVER": "",
+                "MOJO_LINKER_SYSTEM_LIBS": "",
                 "ORCRT_PATH": "",
             }),
         ]
