@@ -8,11 +8,18 @@ module(
 include("//bazel:common.MODULE.bazel")
 
 bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
-single_version_override(
+
+# TODO: Remove override (not patch) once >1.4.0 is released
+archive_override(
     module_name = "toolchains_llvm",
+    integrity = "sha256-6aV/BiwLvmc4+ZU/E2cIZ2A8yXuUV3fS9V2oweWL41I=",
     patch_strip = 1,
     patches = [
         "//bazel:toolchains_llvm.patch",
+    ],
+    strip_prefix = "toolchains_llvm-6eef27401b4dff9de4ca6f66aea7592a90305789",
+    urls = [
+        "https://github.com/bazel-contrib/toolchains_llvm/archive/6eef27401b4dff9de4ca6f66aea7592a90305789.tar.gz",
     ],
 )
 
