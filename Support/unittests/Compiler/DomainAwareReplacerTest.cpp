@@ -34,9 +34,9 @@ TEST(DomainAwareReplacerTest, testNoRecursion) {
 
   // ===== Tests =====
   auto int42 = IntegerAttr::get(IntegerType::get(&context, 32), 42);
-  EXPECT_EQ(replacer.replace(int42, Domain::ToFloat32),
+  EXPECT_EQ(*replacer.replace(int42, Domain::ToFloat32),
             FloatAttr::get(float32Type, 42));
-  EXPECT_EQ(replacer.replace(int42, Domain::ToString),
+  EXPECT_EQ(*replacer.replace(int42, Domain::ToString),
             StringAttr::get(&context, "42"));
 
   SmallVector<int32_t> inputI32Array = {42, 31, 79};
@@ -50,14 +50,14 @@ TEST(DomainAwareReplacerTest, testNoRecursion) {
       llvm::map_range(inputI32Array, [&](int32_t num) {
         return FloatAttr::get(float32Type, num);
       }));
-  EXPECT_EQ(replacer.replace(inputAttr, Domain::ToFloat32),
+  EXPECT_EQ(*replacer.replace(inputAttr, Domain::ToFloat32),
             ArrayAttr::get(&context, f32AttrArray));
 
   SmallVector<Attribute> stringAttrArray(
       llvm::map_range(inputI32Array, [&](int32_t num) {
         return StringAttr::get(&context, Twine(num));
       }));
-  EXPECT_EQ(replacer.replace(inputAttr, Domain::ToString),
+  EXPECT_EQ(*replacer.replace(inputAttr, Domain::ToString),
             ArrayAttr::get(&context, stringAttrArray));
 }
 
@@ -75,7 +75,8 @@ TEST(DomainAwareReplacerTest, testMutualRecursion) {
         auto result = IntegerAttr::get(attr.getType(), newNum);
         // Switch to dec on even result.
         if (newNum % 2 == 0) {
-          auto partial = cast<ArrayAttr>(replacer.replace(result, Domain::Dec));
+          auto partial =
+              cast<ArrayAttr>(*replacer.replace(result, Domain::Dec));
           SmallVector<Attribute> partialAttrs(partial.getValue());
           partialAttrs.push_back(result);
           return {ArrayAttr::get(&context, partialAttrs), WalkResult::skip()};
@@ -89,7 +90,8 @@ TEST(DomainAwareReplacerTest, testMutualRecursion) {
         auto result = IntegerAttr::get(attr.getType(), newNum);
         // Switch to inc on odd result.
         if (newNum % 2 == 1) {
-          auto partial = cast<ArrayAttr>(replacer.replace(result, Domain::Inc));
+          auto partial =
+              cast<ArrayAttr>(*replacer.replace(result, Domain::Inc));
           SmallVector<Attribute> partialAttrs(partial.getValue());
           partialAttrs.push_back(result);
           return {ArrayAttr::get(&context, partialAttrs), WalkResult::skip()};
@@ -116,20 +118,20 @@ TEST(DomainAwareReplacerTest, testMutualRecursion) {
 
   IntegerAttr int42 = getInt(42);
   // Inc becomes an odd number. Should not create cycles.
-  EXPECT_EQ(replacer.replace(int42, Domain::Inc),
+  EXPECT_EQ(*replacer.replace(int42, Domain::Inc),
             ArrayAttr::get(&context, {getInt(43)}));
   // Dec becomes on odd number. Will trigger cycle and get back to 42 again.
-  EXPECT_EQ(replacer.replace(int42, Domain::Dec),
+  EXPECT_EQ(*replacer.replace(int42, Domain::Dec),
             ArrayAttr::get(&context, {StringAttr::get(&context, "Dec"),
                                       getInt(42), getInt(41)}));
 
   // Inc results in the replacement of 42 under the Dec domain, which has
   // already been performed above and cached as an independent result. Should
   // just reuse the result.
-  EXPECT_EQ(replacer.replace(getInt(41), Domain::Inc),
+  EXPECT_EQ(*replacer.replace(getInt(41), Domain::Inc),
             ArrayAttr::get(&context, {StringAttr::get(&context, "Dec"),
                                       getInt(42), getInt(41), getInt(42)}));
   // Dec becomes an even number. Should not create cycles.
-  EXPECT_EQ(replacer.replace(getInt(43), Domain::Dec),
+  EXPECT_EQ(*replacer.replace(getInt(43), Domain::Dec),
             ArrayAttr::get(&context, {getInt(42)}));
 }
