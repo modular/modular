@@ -32,7 +32,7 @@ extend-exclude = [
   "*max/serve/schemas/openai.py", # Generated file
   "Support/python/modular/utils/debuglib/lldbtypes.py",
   "third-party",
-  "utils/build/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
+  "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "utils/mblack",
 ]
 

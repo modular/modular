@@ -47,9 +47,6 @@ build --features=-layering_check --host_features=-layering_check
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
-# Use the target platform for tests to correctly resolve GPU settings
-build --use_target_platform_for_tests
-
 # Load config generated from tools/bazel
 try-import %workspace%/build/wrapper.bazelrc
 

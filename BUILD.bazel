@@ -62,6 +62,12 @@ config_setting(
 )
 
 config_setting(
+    name = "modular_config_production",
+    tags = [ALLOW_UNUSED_TAG],
+    values = {"features": "UNREACHABLE"},
+)
+
+config_setting(
     name = "linux_x86_64",
     constraint_values = [
         "@platforms//cpu:x86_64",

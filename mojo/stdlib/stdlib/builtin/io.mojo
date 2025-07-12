@@ -410,13 +410,16 @@ fn print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.data[buffer.pos] = 0
-            file.write_bytes(
-                Span[Byte, ImmutableAnyOrigin](
-                    ptr=buffer.data, length=buffer.pos + 1
-                )
-            )
+            buffer.nul_terminate()
 
+            @parameter
+            if is_nvidia_gpu():
+                _printf["%s"](buffer.data)
+            else:
+                var msg = printf_begin()
+                _ = printf_append_string_n(
+                    msg, Span(ptr=buffer.data, length=buffer.pos), is_last=True
+                )
         else:
             var buffer = _WriteBufferStack(file)
             alias length = values.__len__()

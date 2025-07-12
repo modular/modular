@@ -23,11 +23,11 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
-    PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )

@@ -69,13 +69,20 @@ fn min_p_sampling[
 @always_inline
 fn _topp_minp_sampling[
     dtype: DType,
-    out_idx_type: DType, //,
+    out_idx_type: DType,
+    out_token_layout: Layout,
+    out_token_element_layout: Layout, //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
     p_thresholds: LayoutTensor[dtype, **_],
     input_logits: LayoutTensor[mut=True, dtype, **_],
-    out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
+    out_token_ids: LayoutTensor[
+        mut=True,
+        out_idx_type,
+        out_token_layout,
+        element_layout=out_token_element_layout, **_,
+    ],
     temperature: Scalar[dtype] = 1,
 ) raises:
     """
@@ -87,6 +94,8 @@ fn _topp_minp_sampling[
     Parameters:
         dtype: DType - The data type of the input logits, p_thresholds, and temperature.
         out_idx_type: DType - The data type for output token indices.
+        out_token_layout: Layout - the layout of the out token ids.
+        out_token_element_layout: Layout - the element layout of the out token ids.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling.
         _test_sort: Bool - For internal testing purposes to check if the
             sorted probs are in descending order. If true, copies the sorted
@@ -105,7 +114,9 @@ fn _topp_minp_sampling[
     var sorted_probs_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var sorted_probs = LayoutTensor[dtype, Layout.row_major[2]()](
+    var sorted_probs = LayoutTensor[
+        dtype, Layout.row_major[2](), element_layout=out_token_element_layout
+    ](
         sorted_probs_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, vocab_size)
@@ -115,7 +126,11 @@ fn _topp_minp_sampling[
     var sorted_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * vocab_size
     )
-    var sorted_ids = LayoutTensor[out_idx_type, Layout.row_major[2]()](
+    var sorted_ids = LayoutTensor[
+        out_idx_type,
+        Layout.row_major[2](),
+        element_layout=out_token_element_layout,
+    ](
         sorted_ids_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, vocab_size)
@@ -176,16 +191,24 @@ fn _topp_minp_sampling[
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i][0]
                 if r <= 0 or i == vocab_size - 1:
-                    out_token_ids[batch, 0] = sorted_ids[batch, i][0]
+                    sid = sorted_ids[batch, i]
+
+                    @parameter
+                    if out_token_layout.rank() == 1:
+                        out_token_ids[batch] = sid
+                    else:
+                        out_token_ids[batch] = sid
                     break
         else:
             # Sample using min-p sampling
             # Step 1: Filter out tokens with probabilities less than min-p threshold
-            var sum_filtered_probs = Scalar[dtype](0.0)
+            var sum_filtered_probs = SIMD[
+                dtype, out_token_element_layout.size()
+            ](0.0)
             var num_filtered_tokens = 0
             for i in range(vocab_size):
                 if sorted_probs[batch, i][0] >= p_threshold:
-                    sum_filtered_probs += sorted_probs[batch, i][0]
+                    sum_filtered_probs += sorted_probs[batch, i]
                     num_filtered_tokens += 1
                 else:
                     break
@@ -197,7 +220,13 @@ fn _topp_minp_sampling[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[batch, i][0]
                 if r <= 0 or i == vocab_size - 1:
-                    out_token_ids[batch, 0] = sorted_ids[batch, i][0]
+                    sid = sorted_ids[batch, i]
+
+                    @parameter
+                    if out_token_layout.rank() == 1:
+                        out_token_ids[batch] = sid
+                    else:
+                        out_token_ids[batch, 0] = sid
                     break
 
     sorted_ids_ptr.free()

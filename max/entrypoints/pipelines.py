@@ -184,10 +184,10 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_pipeline
     from max.entrypoints.cli.config import parse_task_flags
+    from max.interfaces import PipelineTask
     from max.pipelines import (
         AudioGenerationConfig,
         PipelineConfig,
-        PipelineTask,
     )
 
     # Initialize config, and serve.

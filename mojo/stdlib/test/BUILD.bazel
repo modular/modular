@@ -1,9 +1,7 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test", "requirement")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 _DATA = [
     "builtin/test_file_dummy_input.txt",
-    "python/custom_indexable.py",
-    "python/my_module.py",
 ]
 
 _TEST_UTILS = [
@@ -32,14 +30,6 @@ _NO_ASAN = [
     "builtin/test_format_float.mojo",
     "builtin/test_int.mojo",
     "collections/string/test_string.mojo",
-    "python/test_ownership.mojo",
-    "python/test_python_cpython.mojo",
-    "python/test_python_error_handling.mojo",
-    "python/test_python_info.mojo",
-    "python/test_python_interop.mojo",
-    "python/test_python_module_create.mojo",
-    "python/test_python_object.mojo",
-    "python/test_python_to_mojo.mojo",
     "subprocess/test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
     "testing/test_assertion.mojo",
 ]
@@ -238,7 +228,6 @@ _FILECHECK_TESTS = [
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
-            requirement("numpy"),
         ],
     )
     for src in glob(

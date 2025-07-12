@@ -33,6 +33,7 @@ from transformers import (
 if TYPE_CHECKING:
     from .config import PipelineConfig
 from max.interfaces import (
+    EmbeddingsResponse,
     GenerationStatus,
     TextGenerationResponse,
     TextResponse,
@@ -40,7 +41,6 @@ from max.interfaces import (
 )
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    EmbeddingsResponse,
     TextContext,
 )
 

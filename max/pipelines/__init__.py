@@ -17,9 +17,7 @@ from .architectures import register_all_models
 from .core import (
     AudioGenerationResponse,
     EmbeddingsGenerator,
-    EmbeddingsResponse,
     PipelinesFactory,
-    PipelineTask,
     TextAndVisionContext,
     TextContext,
     TokenGeneratorContext,
@@ -28,6 +26,7 @@ from .core import (
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
+    TTSContext,
 )
 from .lib.config import (
     AudioGenerationConfig,
@@ -78,7 +77,6 @@ __all__ = [
     "AudioGenerationResponse",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
-    "EmbeddingsResponse",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "MAXModelConfig",
@@ -91,7 +89,6 @@ __all__ = [
     "PipelineRole",
     "PipelineModel",
     "PipelinesFactory",
-    "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
@@ -116,4 +113,5 @@ __all__ = [
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
     "upper_bounded_default",
+    "TTSContext",
 ]

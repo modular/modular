@@ -50,10 +50,10 @@ single_version_override(
 # TODO: Remove when >0.4.1 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-XsI6VTuzUKH+VvZ73b9ACDGcUFiIIl6b6NCLtAB2m7k=",
-    strip_prefix = "rules_mojo-909129d91fcfe162be3c2707d58c7029ed18c0e9",
+    integrity = "sha256-wE7eh4kPlFpI6vCzIatv7UtJDSstPs6v46EnHovRHVU=",
+    strip_prefix = "rules_mojo-48231d2c83f47e1a56a23aa612b4227d5236298d",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/909129d91fcfe162be3c2707d58c7029ed18c0e9.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/48231d2c83f47e1a56a23aa612b4227d5236298d.tar.gz",
     ],
 )
 
@@ -208,6 +208,10 @@ mojo.gpu_toolchains(
         "MI355": "mi355",
         "Navi": "radeon",
         "AMD Radeon Graphics": "radeon",
+        "Apple M1": "m1",
+        "Apple M2": "m2",
+        "Apple M3": "m3",
+        "Apple M4": "m4",
     },
     # GPU name -> target accelerator
     supported_gpus = {
@@ -225,6 +229,10 @@ mojo.gpu_toolchains(
         "mi355": "amdgpu:gfx950",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
+        "m1": "metal:10",
+        "m2": "metal:20",
+        "m3": "metal:30",
+        "m4": "metal:40",
     },
 )
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
