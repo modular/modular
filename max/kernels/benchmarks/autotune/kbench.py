@@ -232,12 +232,12 @@ class SpecInstance:
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
         # Check for Bazel-provided mojo binary first
-        if mojo_path := os.environ.get("MOJO_BINARY_PATH"):
+        if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
             if os.path.exists(mojo_path):
                 return mojo_path
             else:
                 raise FileNotFoundError(
-                    f"MOJO_BINARY_PATH '{mojo_path}' does not exist."
+                    f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
                 )
         # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):

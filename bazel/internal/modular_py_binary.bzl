@@ -55,10 +55,10 @@ def modular_py_binary(
     extra_data.append(env_name)
     extra_env |= {
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
-        "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
+        "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
         "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+        "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
         "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-        "MOJO_BINARY_PATH": "$(MOJO_BINARY_PATH)",
     }
     mojo_test_environment(
         name = env_name,

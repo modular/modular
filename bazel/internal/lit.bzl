@@ -224,13 +224,13 @@ EOF
         mojo_test_deps.append(name + "_mojo_deps")
         mojo_test_env = {
             "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
+            "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
             "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
             "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
             "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
             "MODULAR_MOJO_MAX_ORCRT_PATH": "$(ORCRT_PATH)",
             "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
             "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
-            "MOJO_BINARY_PATH": "$(MOJO_BINARY_PATH)",
         }
         extra_tool_paths.append("$(MOJO_BINARY_PATH)")
         mojo_test_environment(
