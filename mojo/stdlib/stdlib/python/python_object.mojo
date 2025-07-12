@@ -1235,26 +1235,22 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
 
         var num_pos_args = len(args)
-        var tuple_obj = cpython.PyTuple_New(num_pos_args)
+        var args_ = cpy.PyTuple_New(num_pos_args)
         for i in range(num_pos_args):
-            var arg_value = args[i]._obj_ptr
-            cpython.Py_IncRef(arg_value)
-            var result = cpython.PyTuple_SetItem(tuple_obj, i, arg_value)
-            if result != 0:
-                raise Error("internal error: PyTuple_SetItem failed")
-
-        var dict_ptr = Python._dict(kwargs)
-        var callable_obj = self._obj_ptr
-        cpython.Py_IncRef(callable_obj)
-        var result = cpython.PyObject_Call(callable_obj, tuple_obj, dict_ptr)
-        cpython.Py_DecRef(callable_obj)
-        cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(dict_ptr)
+            var arg = args[i]._obj_ptr
+            # increment the refcount for `PyTuple_SetItem` steals the reference
+            # to `arg`
+            cpy.Py_IncRef(arg)
+            cpy.PyTuple_SetItem(args_, i, arg)
+        var kwargs_ = Python._dict(kwargs)
+        var result = cpy.PyObject_Call(self._obj_ptr, args_, kwargs_)
+        cpy.Py_DecRef(args_)
+        cpy.Py_DecRef(kwargs_)
         if not result:
-            raise cpython.get_error()
+            raise cpy.get_error()
         return PythonObject(from_owned_ptr=result)
 
     # ===-------------------------------------------------------------------===#
