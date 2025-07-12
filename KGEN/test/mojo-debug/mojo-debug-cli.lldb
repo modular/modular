@@ -28,7 +28,7 @@
 
 # COM: Check if we can build correctly the JIT debug command.
 # RUN: %debug --debug-level=line-tables -X foo --debug-level none --dry-run target.mojo --debug-level full | FileCheck %s --check-prefix=CHECK-JIT-DEBUG
-# CHECK-JIT-DEBUG: foo -- {{.*}}/mojo run -O0 --debug-level=full --debug-level line-tables --debug-level none target.mojo --debug-level full
+# CHECK-JIT-DEBUG: foo -- {{.*}}/mojo{{-compiler-only}} run -O0 --debug-level=full --debug-level line-tables --debug-level none target.mojo --debug-level full
 
 # COM: Check if we can build correctly the binary debug command.
 # RUN: %debug -X foo --dry-run target.exe --debug-level full | FileCheck %s --check-prefix=CHECK-BINARY-DEBUG
@@ -40,4 +40,4 @@
 
 # COM: Check `mojo debug --cuda-gdb` stuff
 # RUN: mojo debug --cuda-gdb --cuda-gdb-path /foo/bar/cuda-gdb --break-on-launch --dry-run file.mojo | FileCheck %s --check-prefix=CHECK-CUDA-BREAK
-# CHECK-CUDA-BREAK: /foo/bar/cuda-gdb -ex 'set cuda break_on_launch application' --args {{.*}}mojo run -O0 --debug-level=full file.mojo
+# CHECK-CUDA-BREAK: /foo/bar/cuda-gdb -ex 'set cuda break_on_launch application' --args {{.*}}mojo{{-compiler-only}} run -O0 --debug-level=full file.mojo
