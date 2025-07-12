@@ -91,7 +91,7 @@
 # CHECK-CUDA-GDB:          "PATH=
 # CHECK-CUDA-GDB:        ]
 # CHECK-CUDA-GDB:   "modularHomePath": "
-# CHECK-CUDA-GDB:   "program": "{{.*}}mojo",
+# CHECK-CUDA-GDB:   "program": "{{.*}}mojo
 # CHECK-CUDA-GDB:   "request": "launch",
 # CHECK-CUDA-GDB:   "type": "mojo-cuda-gdb"
 # CHECK-CUDA-GDB: }
@@ -112,7 +112,7 @@
 # CHECK-CUDA-GDB-BREAK:          "PATH=
 # CHECK-CUDA-GDB-BREAK:        ]
 # CHECK-CUDA-GDB-BREAK:   "modularHomePath": "
-# CHECK-CUDA-GDB-BREAK:   "program": "{{.*}}mojo",
+# CHECK-CUDA-GDB-BREAK:   "program": "{{.*}}mojo
 # CHECK-CUDA-GDB-BREAK:   "request": "launch",
 # CHECK-CUDA-GDB-BREAK:   "type": "mojo-cuda-gdb"
 # CHECK-CUDA-GDB-BREAK: }
