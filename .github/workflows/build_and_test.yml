@@ -65,6 +65,6 @@ jobs:
             )
           fi
 
-          ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
+          ./bazelw test --config=ci --config=public-cache --noremote_upload_local_results "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
