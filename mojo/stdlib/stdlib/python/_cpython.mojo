@@ -1383,7 +1383,6 @@ struct CPython(Copyable, Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef
         """
-
         self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_IncRef(ptr)
         self._inc_total_rc()
@@ -1394,7 +1393,6 @@ struct CPython(Copyable, Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef
         """
-
         self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_DecRef(ptr)
         self._dec_total_rc()
