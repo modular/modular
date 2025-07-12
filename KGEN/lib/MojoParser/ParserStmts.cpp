@@ -148,6 +148,26 @@ ParserBase::parseDecorators(ssize_t indentation) {
   return result;
 }
 
+static void
+initializeBuilderForFunctions(ASTDecl &curDeclScope, OpBuilder &builder,
+                              std::optional<OpBuilder> &varDeclCursor) {
+  // Special logic for functions.
+  if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
+    // The default of inserting at the end of the function isn't right,
+    // because it will have an lit.endfn: insert before that instead.
+    assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
+           "expected lit.endfn at the end of a function body");
+    builder.setInsertionPoint(&funcOp.getBody()->back());
+
+    // If we are parsing into a function, then we need a position to
+    // synthesize variable definitions at the top of the function.
+    // The operation builder inserts before its insertion point, but for a
+    // stable insertion point, keep the previous iterator position.
+    varDeclCursor = OpBuilder(builder.getInsertionBlock(),
+                              std::prev(builder.getInsertionPoint()));
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // StmtParser
 //===----------------------------------------------------------------------===//
@@ -159,21 +179,15 @@ struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
-    // Special logic for functions.
-    if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
-      // The default of inserting at the end of the function isn't right,
-      // because it will have an lit.endfn: insert before that instead.
-      assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
-             "expected lit.endfn at the end of a function body");
-      builder.setInsertionPoint(&funcOp.getBody()->back());
-
-      // If we are parsing into a function, then we need a position to
-      // synthesize variable definitions at the top of the function.
-      // The operation builder inserts before its insertion point, but for a
-      // stable insertion point, keep the previous iterator position.
-      varDeclCursor = OpBuilder(builder.getInsertionBlock(),
-                                std::prev(builder.getInsertionPoint()));
-    }
+    initializeBuilderForFunctions(curDeclScope, builder, varDeclCursor);
+  }
+  StmtParser(Lexer &lexer, IREmitter &emitter)
+      : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
+        curDeclScope(&emitter.getDeclScope()),
+        builder(emitter.builder ? emitter.builder.value()
+                                : curDeclScope->getDeclEndBuilder()) {
+    initializeBuilderForFunctions(emitter.getDeclScope(), builder,
+                                  varDeclCursor);
   }
 
   ASTDecl &getDeclScope() const { return *curDeclScope; }
@@ -3018,8 +3032,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // type of 'result' until we emit all the other stuff.
   const char *emptyString = ""; // make sure we have a nul on this.
   Lexer lexer(shared.diags, emptyString, emptyString);
-  StmtParser stmtEmitter(lexer, emitter.declScope);
-  stmtEmitter.getBuilder() = *emitter.builder;
+  StmtParser stmtEmitter(lexer, emitter);
 
   // We're going to emit a bunch of stuff below but need a cursor to know where
   // to put the temporary for the collection and the constructor call.  Emit a
