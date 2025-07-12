@@ -40,8 +40,6 @@ public:
   enum Cases {
     /// Framework is unknown.
     kUnknown,
-    // A compiled PyTorch model.
-    kPyTorchModel,
     // A compiled Modular model.
     kModularModel,
   } value;
