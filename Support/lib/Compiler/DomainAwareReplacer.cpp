@@ -17,37 +17,56 @@ DomainAwareReplacer::DomainAwareReplacer()
 // Application
 //===----------------------------------------------------------------------===//
 
-void DomainAwareReplacer::replaceElementsIn(Operation *op, DomainId domain,
-                                            bool replaceAttrs, bool replaceLocs,
-                                            bool replaceTypes) {
+LogicalResult DomainAwareReplacer::replaceElementsIn(Operation *op,
+                                                     DomainId domain,
+                                                     bool replaceAttrs,
+                                                     bool replaceLocs,
+                                                     bool replaceTypes) {
   // Functor that replaces the given element if the new value is different,
   // otherwise returns nullptr.
-  auto replaceIfDifferent = [&](auto element) {
+  // If the replacement can not be performed, return failure.
+  auto replaceIfDifferent =
+      [&](auto element) -> FailureOr<std::conditional_t<
+                            std::is_convertible_v<decltype(element), Attribute>,
+                            Attribute, Type>> {
     auto replacement = replace(element, domain);
-    return (replacement && replacement != element) ? replacement : nullptr;
+    if (succeeded(replacement)) {
+      return *replacement != element ? *replacement : nullptr;
+    }
+    return failure();
   };
 
   // Update the attribute dictionary.
   if (replaceAttrs) {
-    if (auto newAttrs = replaceIfDifferent(op->getAttrDictionary()))
-      op->setAttrs(cast<DictionaryAttr>(newAttrs));
+    auto newAttrs = replaceIfDifferent(op->getAttrDictionary());
+    if (failed(newAttrs))
+      return failure();
+    if (*newAttrs)
+      op->setAttrs(cast<DictionaryAttr>(*newAttrs));
   }
 
   // If we aren't updating locations or types, we're done.
   if (!replaceTypes && !replaceLocs)
-    return;
+    return success();
 
   // Update the location.
   if (replaceLocs) {
-    if (Attribute newLoc = replaceIfDifferent(op->getLoc()))
-      op->setLoc(cast<LocationAttr>(newLoc));
+    FailureOr<Attribute> newLoc = replaceIfDifferent(op->getLoc());
+    if (failed(newLoc))
+      return failure();
+    if (*newLoc)
+      op->setLoc(cast<LocationAttr>(*newLoc));
   }
 
   // Update the result types.
   if (replaceTypes) {
-    for (OpResult result : op->getResults())
-      if (Type newType = replaceIfDifferent(result.getType()))
-        result.setType(newType);
+    for (OpResult result : op->getResults()) {
+      FailureOr<Type> newType = replaceIfDifferent(result.getType());
+      if (failed(newType))
+        return failure();
+      if (*newType)
+        result.setType(*newType);
+    }
   }
 
   // Update any nested block arguments.
@@ -55,17 +74,25 @@ void DomainAwareReplacer::replaceElementsIn(Operation *op, DomainId domain,
     for (Block &block : region) {
       for (BlockArgument &arg : block.getArguments()) {
         if (replaceLocs) {
-          if (Attribute newLoc = replaceIfDifferent(arg.getLoc()))
-            arg.setLoc(cast<LocationAttr>(newLoc));
+          FailureOr<Attribute> newLoc = replaceIfDifferent(arg.getLoc());
+          if (failed(newLoc))
+            return failure();
+          if (*newLoc)
+            arg.setLoc(cast<LocationAttr>(*newLoc));
         }
 
         if (replaceTypes) {
-          if (Type newType = replaceIfDifferent(arg.getType()))
-            arg.setType(newType);
+          FailureOr<Type> newType = replaceIfDifferent(arg.getType());
+          if (failed(newType))
+            return failure();
+          if (*newType)
+            arg.setType(*newType);
         }
       }
     }
   }
+
+  return success();
 }
 
 template <typename T>
@@ -85,9 +112,10 @@ static void updateSubElementImpl(T element,
   }
 
   // Replace the element.
-  if (T result = replacer.replace(element, domain)) {
-    newElements.push_back(result);
-    if (result != element)
+  FailureOr<T> result = replacer.replace(element, domain);
+  if (succeeded(result)) {
+    newElements.push_back(*result);
+    if (*result != element)
       changed = true;
   } else {
     changed = failure();

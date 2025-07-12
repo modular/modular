@@ -22,6 +22,13 @@ namespace M {
 /// on an attr/type, a domain is specified.
 ///
 /// Replacer cache is predicated on the domain to ensure correctness.
+///
+/// When user calls `replace`, a FailureOr<T> is returned to propagate the
+/// error, it is guaranteed that when `succeeded(FailureOr<T>) == true`, T !=
+/// nullptr.
+///
+/// Inside the replacer, a nullptr is used to indicate an error has occurred to
+/// be compatible with MLIR APIs.
 class DomainAwareReplacer {
 public:
   using DomainId = size_t;
@@ -32,17 +39,24 @@ public:
   // Application
   //===--------------------------------------------------------------------===//
 
-  Attribute replace(Attribute element, DomainId domain) {
-    return cachedReplaceImpl(element, domain);
+  mlir::FailureOr<Attribute> replace(Attribute element, DomainId domain) {
+    Attribute ret = cachedReplaceImpl(element, domain);
+    if (!ret)
+      return llvm::failure();
+    return ret;
   }
 
-  Type replace(Type element, DomainId domain) {
-    return cachedReplaceImpl(element, domain);
+  mlir::FailureOr<Type> replace(Type element, DomainId domain) {
+    Type ret = cachedReplaceImpl(element, domain);
+    if (!ret)
+      return llvm::failure();
+    return ret;
   }
 
-  void replaceElementsIn(Operation *op, DomainId domain,
-                         bool replaceAttrs = true, bool replaceLocs = false,
-                         bool replaceTypes = false);
+  mlir::LogicalResult replaceElementsIn(Operation *op, DomainId domain,
+                                        bool replaceAttrs = true,
+                                        bool replaceLocs = false,
+                                        bool replaceTypes = false);
 
   //===--------------------------------------------------------------------===//
   // Registration - Replacers
@@ -125,6 +139,7 @@ private:
   std::optional<const void *> breakCycleImpl(CacheKey element);
 
   /// Shared concrete implementation of the public `replace` functions.
+  /// Could return nullptr upon failure.
   template <typename T>
   T cachedReplaceImpl(T element, DomainId domain);
 
