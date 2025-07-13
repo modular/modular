@@ -1038,7 +1038,7 @@ class VectorElementTypeInterface(Protocol):
     This may change in the future, for example, to require types to provide
     their size or alignment given a data layout. Please post an RFC before
     adding this interface to additional types. Implementing this interface on
-    downstream types is discouraged, until we specified the exact properties of
+    downstream types is discourged, until we specified the exact properties of
     a vector element type in more detail.
     """
 
