@@ -935,8 +935,8 @@ PIPELINES = {
             pipeline="gemma3-1b",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_gemma3-1b_golden/torch_gemma3-1b_bfloat16_golden.json",
-            cos_dist_threshold=3.7e-3,
-            kl_div_threshold=2.2e-01,
+            cos_dist_threshold=1.3e-3,
+            kl_div_threshold=9.4e-03,
         ),
     ),
     # TODO: Gemma-3-12B requires unusually high tolerances (atol=7.3, rtol=0.52).
