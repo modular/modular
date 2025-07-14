@@ -811,6 +811,18 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
                  .getRegisterPassability(SMLoc(), shared) ==
              TypeConvention::RegisterPassableTrivial;
     }
+
+    if (auto traitType = dyn_cast<TraitType>(fromType)) {
+      auto traitDeclOp = shared.declResolver->getTraitDecl(traitType);
+      if (!traitDeclOp)
+        return false;
+      if (!traitDeclOp->getIfOperation())
+        return false;
+      auto traitOp = dyn_cast<TraitDeclOp>(traitDeclOp->getIfOperation());
+      if (!traitOp)
+        return false;
+      return traitOp.getConvention() == TypeConvention::RegisterPassableTrivial;
+    }
   }
 
   // Check for param type conversions.
@@ -1196,6 +1208,9 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
   // PValues of origin type have a special conversion.
   if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
     value = OriginMutCastAttr::get(value, toType);
+
+  if (isa<TypeType>(toType) && isa<TraitType>(value.getType()))
+    return TypeParamAttr::get(ASTType(value), toType);
 
   return ParamOperatorAttr::get(POC::Rebind, value.get(), toType);
 }
