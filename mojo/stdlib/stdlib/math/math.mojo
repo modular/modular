@@ -35,7 +35,7 @@ from sys.ffi import _external_call_const
 from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize
-from bit import count_leading_zeros, count_trailing_zeros
+from bit import count_leading_zeros, count_trailing_zeros, log2_floor
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span
@@ -44,7 +44,7 @@ from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
 from utils.static_tuple import StaticTuple
 
-from .constants import log2e
+from .constants import log2e, e
 from .polynomial import polynomial_evaluate
 
 # ===----------------------------------------------------------------------=== #
@@ -809,36 +809,67 @@ fn _log_base[
 
 
 @always_inline
-fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
-    """Performs elementwise natural log (base E) of a SIMD vector.
+fn log[
+    dtype: DType,
+    width: Int, //,
+    *,
+    calc_dtype: DType = dtype,
+    out_dtype: DType = dtype,
+    base: Scalar[calc_dtype] = e,
+](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+    """Performs elementwise log (default base E) of a SIMD vector.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
+        dtype: The `dtype` of the input SIMD vector.
         width: The width of the input and output SIMD vector.
+        calc_dtype: The `dtype` used for the calculations.
+        out_dtype: The `dtype` of the output SIMD vector.
+        base: The base of the logarithm.
 
     Args:
         x: Vector to perform logarithm operation on.
 
     Returns:
-        Vector containing result of performing natural log base E on x.
+        Vector containing result of performing log base on x.
     """
+    constrained[
+        calc_dtype.is_floating_point(), "calc_dtype must be floating point"
+    ]()
 
     @parameter
-    if is_nvidia_gpu():
-        alias ln2 = 0.69314718055966295651160180568695068359375
+    if Bool(base == e) and dtype.is_floating_point():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
-            return log(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return (
-                _call_ptx_intrinsic[
-                    instruction="lg2.approx.f32", constraints="=f,f"
-                ](x)
-                * ln2
-            )
+        if is_nvidia_gpu():
+            alias ln2 = 0.69314718055966295651160180568695068359375
 
-    return _log_base[27](x)
+            @parameter
+            if sizeof[calc_dtype]() < sizeof[DType.float32]():
+                return log(x.cast[DType.float32]()).cast[out_dtype]()
+            elif calc_dtype is DType.float32:
+                return (
+                    _call_ptx_intrinsic[
+                        instruction="lg2.approx.f32", constraints="=f,f"
+                    ](x.cast[DType.float32]())
+                    * ln2
+                ).cast[out_dtype]()
+
+        return _log_base[27](x.cast[calc_dtype]()).cast[out_dtype]()
+    elif Bool(base == 10) and dtype.is_floating_point():
+        return log10(x.cast[calc_dtype]()).cast[out_dtype]()
+    elif Bool(base == 2) and dtype.is_floating_point():
+        return log2(x.cast[calc_dtype]()).cast[out_dtype]()
+    elif Bool(base == 2) and dtype.is_integral():
+        return log2_floor(x).cast[out_dtype]()
+    elif dtype.is_integral():
+        alias log2base = log2(base)
+        return (log2_floor(x).cast[calc_dtype]() / log2base).cast[out_dtype]()
+    else:
+        # TODO: benchmark. supposedly due to IEEE floats being stored in log10
+        # in binary they are faster to compute for that logarithm. I found no
+        # reliable sources
+        alias log10base = log10(base).cast[calc_dtype]()
+        return (log10(x.cast[calc_dtype]()) / log10base).cast[out_dtype]()
 
 
 # ===----------------------------------------------------------------------=== #

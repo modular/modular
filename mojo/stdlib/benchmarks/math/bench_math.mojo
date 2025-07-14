@@ -76,6 +76,24 @@ fn bench_math[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark log
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_log(mut b: Bencher) raises:
+    var inputs = make_inputs(0, 10_000, 1_000_000)
+
+    @always_inline
+    @parameter
+    @__copy_capture(inputs)
+    fn call_fn() raises:
+        for input in inputs:
+            var result = log(input)
+            keep(result)
+
+    b.iter[call_fn]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark fma
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -127,7 +145,7 @@ def main():
     m.bench_function[bench_math[asin]](BenchId("bench_math_asin"))
     m.bench_function[bench_math[acos]](BenchId("bench_math_acos"))
     m.bench_function[bench_math[atan]](BenchId("bench_math_atan"))
-    m.bench_function[bench_math[log]](BenchId("bench_math_log"))
+    m.bench_function[bench_log](BenchId("bench_math_log"))
     m.bench_function[bench_math[log2]](BenchId("bench_math_log2"))
     m.bench_function[bench_math[sqrt]](BenchId("bench_math_sqrt"))
     m.bench_function[bench_math[exp2]](BenchId("bench_math_exp2"))
