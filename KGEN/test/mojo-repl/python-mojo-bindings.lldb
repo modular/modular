@@ -22,7 +22,7 @@ class bar:
 # CHECK-NOT: (PythonObject) a =
 # CHECK: (PythonObject) b = {
 # CHECK:   (PyObjectPtr) _obj_ptr = {
-# CHECK:     (UnsafePointer[PyObject]) unsized_obj_ptr = {
+# CHECK:     (UnsafePointer[PyObject]) _unsized_obj_ptr = {
 # CHECK:         (pointer<{{.*}}>) address = 0x
 # CHECK:     }
 # CHECK:   }
