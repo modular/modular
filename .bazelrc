@@ -117,4 +117,4 @@ test:ci-test --remote_download_outputs=minimal
 
 test:ci-gpu-common --config=ci-test
 
-build --execution_log_compact_file=%workspace%/build/bazel/logs/execution.log
+build --execution_log_compact_file=%workspace%/build/execution.log
