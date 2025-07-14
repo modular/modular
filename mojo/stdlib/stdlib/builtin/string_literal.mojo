@@ -299,7 +299,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A new string containing the character at the specified position.
         """
-        return String(self)[idx]
+        return String(String(self)[idx])
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
     # non-materializable by making them merge into StaticString.  They should

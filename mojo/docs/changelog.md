@@ -115,6 +115,8 @@ mutation.
     `fn __hash__[H: Hasher](self, mut hasher: H):`
     (see `Hashable` docstring for further details).
 
+- Indexing into a `String` now returns a `StringSlice`, avoiding an allocation.
+
 - Added support for a wider range of consumer-grade AMD hardware, including:
   - AMD Radeon RX 7xxx GPUs
   - AMD Radeon RX 9xxx GPUs

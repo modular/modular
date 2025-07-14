@@ -605,7 +605,7 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__[I: Indexer](self, idx: I) -> String:
+    fn __getitem__[I: Indexer](self, idx: I) -> StringSlice[__origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:
@@ -615,13 +615,11 @@ struct String(
             idx: The index value.
 
         Returns:
-            A new string containing the character at the specified position.
+            A StringSlice view containing the character at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
-        var result = String(capacity=1)
-        result.append_byte(self.unsafe_ptr()[normalized_idx])
-        return result^
+        return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: Slice) -> String:
         """Gets the sequence of characters at the specified positions.
