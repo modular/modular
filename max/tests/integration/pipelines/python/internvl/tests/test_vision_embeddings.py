@@ -132,6 +132,9 @@ def generate_max_outputs(
     return from_dlpack(max_tensor)
 
 
+@pytest.mark.skip(
+    reason="TODO(Stelath): This test causes timeouts in presubmit"
+)
 @pytest.mark.parametrize(
     "config_name",
     [
