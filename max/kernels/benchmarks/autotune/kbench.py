@@ -941,7 +941,7 @@ def run(
     yaml_path_list,
     obj_cache: KbenchCache,
     shape: SpecInstance,
-    output_path=None,
+    output_path: Path = Path(),
     mode=KBENCH_MODE.RUN,
     param_list=None,
     filter_list=None,
@@ -981,6 +981,10 @@ def run(
     # Generate a tmp path for intermediate results.
     if not output_dir:
         output_dir = _get_tmp_path(spec.file)
+    else:
+        output_path = output_dir / output_path
+    os.makedirs(output_path.parent, exist_ok=True)
+
     output_dir = Path(output_dir)
     logging.info(f"output-dir: [{output_dir}]")
 
@@ -1135,23 +1139,27 @@ def run(
     if output_path:
         output_dict["name"] = spec.name
         output_dict["file"] = spec.file
-        store_pickle(f"{output_path}.pkl", output_dict)
+        pkl_path = Path(output_path).with_suffix(".pkl")
+        csv_path = Path(output_path).with_suffix(".csv")
+        txt_path = Path(output_path).with_suffix(".txt")
+        store_pickle(f"{pkl_path}", output_dict)
 
         # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
-        # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
+        # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
         if mode == KBENCH_MODE.RUN and valid_specs:
             merged_df.drop(columns=["mesh_idx"]).to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
             )
+            logging.info(f"wrote results to [{csv_path}]")
         elif mode == KBENCH_MODE.BUILD:
-            build_df.to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        else:
-            with open(output_path, "w") as f:
-                f.write(output_str + "\n")
+            build_df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+            logging.info(f"wrote results to [{csv_path}]")
 
-        logging.info(f"wrote results to [{output_path}]")
+        with open(txt_path, "w") as f:
+            f.write(output_str + "\n")
+
+        logging.info(f"wrote results to [{txt_path}]")
+        logging.info(f"wrote results to [{pkl_path}]")
     logging.info(f"output-dir: [{output_dir}]")
     print(LINE + "\n\n")
 
@@ -1235,9 +1243,7 @@ def set_build_opts(
     return build_opts
 
 
-help_str = (
-    "Grid-search all the params for a mojo benchmark and pick the top value"
-)
+help_str = "Benchmarking toolkit for Mojo kernels"
 
 
 @click.command(help=help_str, no_args_is_help=True)
@@ -1253,7 +1259,11 @@ help_str = (
     multiple=True,
 )
 @click.option(
-    "--output", "-o", "output_path", default=None, help="Path to output file."
+    "--output",
+    "-o",
+    "output_path",
+    default="output.csv",
+    help="Path to output file.",
 )
 @click.option(
     "--output-dir",
@@ -1419,9 +1429,9 @@ def cli(
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.hash(with_variables=True) for sh in shape_list]
+        [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
-        else [output_path]
+        else [Path(output_path)]
     )
 
     assert len(shape_path_list) == len(shape_list), (
