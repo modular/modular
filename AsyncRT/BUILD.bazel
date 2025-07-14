@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_cc_library", "modular_relink_object", "modular_shared_library")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 
 bool_flag(
     name = "worker_stats",
@@ -196,6 +197,7 @@ modular_cc_library(
     ),
     include_prefix = "",
     strip_include_prefix = "include",
+    tags = ["no-clang-tidy"],  # Copied code doesn't conform to our style
     visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:Support",
@@ -233,7 +235,10 @@ modular_shared_library(
             "-Wl,-undefined,dynamic_lookup",
         ],
     }),
-    tags = ["maybe-unused"],
+    tags = [
+        ALLOW_UNUSED_TAG,
+        "no-clang-tidy",  # Copied code doesn't conform to our style
+    ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",

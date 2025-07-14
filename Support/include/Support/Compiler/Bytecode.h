@@ -35,7 +35,7 @@ void writeIntegral(mlir::DialectBytecodeWriter &writer, T value) {
 template <typename T, typename ReadElementFn>
 LogicalResult readOptional(mlir::DialectBytecodeReader &reader,
                            std::optional<T> &result, ReadElementFn &&read) {
-  FailureOr<APInt> present = reader.readAPIntWithKnownWidth(1);
+  FailureOr<llvm::APInt> present = reader.readAPIntWithKnownWidth(1);
   if (failed(present))
     return failure();
   if (present->getLimitedValue() == 0)
@@ -55,7 +55,7 @@ void writeOptional(mlir::DialectBytecodeWriter &writer,
 /// ODS helper for parsing an array of enums.
 template <typename T>
 LogicalResult readIntegralArray(mlir::DialectBytecodeReader &reader,
-                                SmallVectorImpl<T> &result) {
+                                llvm::SmallVectorImpl<T> &result) {
   return reader.readList(
       result, [&](T &value) { return M::readIntegral<T>(reader, value); });
 }
@@ -63,7 +63,7 @@ LogicalResult readIntegralArray(mlir::DialectBytecodeReader &reader,
 /// ODS helper for printing an array of enums.
 template <typename T>
 void writeIntegralArray(mlir::DialectBytecodeWriter &writer,
-                        ArrayRef<T> values) {
+                        llvm::ArrayRef<T> values) {
   writer.writeList(values, [&](T value) { writeIntegral(writer, value); });
 }
 
