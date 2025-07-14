@@ -16,7 +16,6 @@ from typing import Any, Optional, Union, cast
 
 import numpy as np
 import numpy.typing as npt
-from max._core.engine import FrameworkFormat as _FrameworkFormat
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
@@ -438,7 +437,6 @@ class InferenceSession:
             with self._compilation_lock:
                 _model = self._impl.compile_from_object(
                     model._module._CAPIPtr,
-                    _FrameworkFormat.max_graph,
                     options_dict,
                 )
         else:
