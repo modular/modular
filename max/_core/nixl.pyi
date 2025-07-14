@@ -81,6 +81,9 @@ class UnknownError(Exception):
 class NotSupportedError(Exception):
     pass
 
+class RemoteDisconnectError(Exception):
+    pass
+
 class TransferDescriptorList:
     @overload
     def __init__(
