@@ -412,11 +412,11 @@ void SignatureTransform::applyPackTransform(unsigned operandIndex,
     newInputs[operandIndex] = KGEN::NoneType::get(type.getContext());
     return;
   }
-  auto erase_it = newInputs.begin() + operandIndex;
-  newInputs.erase(erase_it);
-  auto insert_it =
+  auto eraseIt = newInputs.begin() + operandIndex;
+  newInputs.erase(eraseIt);
+  auto insertIt =
       newInputs.begin() + operandIndex; // Position where the erased element was
-  newInputs.insert(insert_it, types.begin(), types.end());
+  newInputs.insert(insertIt, types.begin(), types.end());
 }
 
 Type SignatureTransform::typeOfValueAt(unsigned operandIndex) {
