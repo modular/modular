@@ -279,21 +279,6 @@ fn consumer_main_loop[
 
             read_pipeline_states.step()
 
-        @parameter
-        for j in range(num_pipeline_stages_to_unroll, pipeline_stages):
-            var read_idx = read_pipeline_states.index()
-            full[read_idx].wait(read_pipeline_states.phase())
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < UInt(CLUSTER_SIZE):
-                    _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[read_idx].arrive()
-
-            read_pipeline_states.step()
-
     @parameter
     if num_remaining_k_iters == 0:
         for k_iter in range(num_full_k_iters):
