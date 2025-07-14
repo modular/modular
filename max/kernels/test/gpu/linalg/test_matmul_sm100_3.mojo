@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # TODO: Later PR: Partitioning of Tensor Memory for multiple consumers (is this even needed since only one core? potentially to pipeline the write out of tmem)
-# TODO: Later PR: Use PipelineState struct for cleaner code in the future, for now I want barriers exposed to have control for 2SM as well
 
 from sys import sizeof
 from hashlib import default_comp_time_hasher
@@ -28,6 +27,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory, tma_store_fence
+from gpu.sync import named_barrier
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from gpu.mma import st_matrix
@@ -51,7 +51,12 @@ from layout.tensor_core_async import (
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+    PipelineState,
+)
 from linalg import vendor_blas
 
 from utils.index import Index, IndexList
@@ -74,7 +79,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn blackwell_matmul_tma_umma_kernel[
+fn tma_umma_warp_specialized_gemm_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -132,21 +137,6 @@ fn blackwell_matmul_tma_umma_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias num_epilogue_warps = 4
 
-    # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-    alias a_smem_tile_t = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    alias b_smem_tile_t = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
     alias c_smem_tile_t = LayoutTensor[
         c_type,
         c_layout,
@@ -164,7 +154,6 @@ fn blackwell_matmul_tma_umma_kernel[
             Scalar[a_type],
             address_space = AddressSpace.SHARED,
             alignment=128,
-            name="tmem_test_dynamic_shared_memory",
         ]()
     )  # pointer to first byte of scratchpad
 
@@ -179,14 +168,6 @@ fn blackwell_matmul_tma_umma_kernel[
     constrained[
         ((c_size * sizeof[c_type]()) % 128) == 0, "preserve alignment"
     ]()
-
-    alias a_ptr_t = UnsafePointer[
-        Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-    ]
-    alias b_ptr_t = UnsafePointer[
-        Scalar[b_type], address_space = AddressSpace.SHARED, alignment=128
-    ]
-
     var a_smem = LayoutTensorIter[
         a_type,  # dtype (first positional)
         a_smem_layout,  # layout
@@ -219,9 +200,6 @@ fn blackwell_matmul_tma_umma_kernel[
     )
     var c_smem_tile = c_smem_tile_t(c_smem)
 
-    var a_smem_tile = a_smem_tile_t(a_smem[].ptr)
-    var b_smem_tile = b_smem_tile_t(b_smem[].ptr)
-
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
     var ptr_tmem_addr = (
         (c_smem + c_size)
@@ -230,40 +208,28 @@ fn blackwell_matmul_tma_umma_kernel[
     )
 
     # Arrays of *pointers* to SharedMemBarrier, one per pipeline stage.
-    alias mbar_ptr_t = UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
-    ]
-
-    # TODO: use PipelineState struct for cleaner code in the future, for now I want barriers exposed to have control for 2SM as well
-    var full_barrier_base: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
-    ] = (
+    var full_barrier_base = (
         ptr_tmem_addr.bitcast[SharedMemBarrier]() + 1
     )  # ptr_tmem_addr is a pointer of 4 bytes. every addition is a 4 byte offset
 
-    var empty_barrier_base: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
-    ] = (full_barrier_base + num_pipeline_stages)
+    var empty_barrier_base = full_barrier_base + num_pipeline_stages
 
+    var math_barrier_base = empty_barrier_base + num_pipeline_stages
     alias a_expected_bytes = a_size * sizeof[a_type]()
     alias b_expected_bytes = b_size * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     if thread_idx.x == 0:
+
+        @parameter
         for i in range(num_pipeline_stages):
             full_barrier_base[i].init()  # initialise first TMA barrier
             empty_barrier_base[i].init()  # initialise first MMA barrier
 
-    # Pack all phase bits into a single integer (supports up to 32 pipeline stages)
-    constrained[
-        num_pipeline_stages <= 32, "num_pipeline_stages must be <= 32"
-    ]()
+        math_barrier_base[].init()
 
-    # Each bit represents a pipeline stage's phase
-    var tma_phases: UInt32 = 0  # All bits start at 0
-    var empty_phases: UInt32 = (
-        1 << num_pipeline_stages
-    ) - 1  # All bits start at 1
+    var producer_state = PipelineState[num_pipeline_stages](0, 1, 0)
+    var consumer_state = PipelineState[num_pipeline_stages]()
 
     # Thread role identification for separate producer/consumer threads
 
@@ -284,7 +250,7 @@ fn blackwell_matmul_tma_umma_kernel[
 
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    tmem_addr = ptr_tmem_addr[]
 
     # give me a tensor for matrices A and B, sliced down to the portion that this CTA is responsible for, and referring to original global tensor
     # so it's the 128 x 64 portion the CTA will copy from global tensor into smem tile A and B
@@ -299,8 +265,8 @@ fn blackwell_matmul_tma_umma_kernel[
     alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
     alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem[].ptr)
+    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem[].ptr)
 
     idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
@@ -314,43 +280,35 @@ fn blackwell_matmul_tma_umma_kernel[
     # Producer CTA thread (threadIdx.x == 0)
     # ------------------------------------------------------------------
     if is_mainloop_warp:
-        if producer_warp:  # TODO: better naming and one thread per warp
+        if producer_warp:
             if local_thread_id == 0:
                 for i in range(num_iters):
-                    producer_stage = i % num_pipeline_stages
-
-                    # Extract the phase bit for this stage
-                    var phase_bit = (empty_phases >> producer_stage) & 1
-                    empty_barrier_base[producer_stage].wait(phase_bit)
-                    # Flip the phase bit for this stage
-                    empty_phases ^= 1 << producer_stage
+                    var stage = producer_state.index()
+                    var phase = producer_state.phase()
+                    empty_barrier_base[stage].wait(phase)
 
                     # Tell the barrier how many bytes the upcoming TMA transfers will write so that
                     # the consumer can wait on completion.
-                    full_barrier_base[producer_stage].expect_bytes(
-                        expected_bytes
-                    )
+                    full_barrier_base[stage].expect_bytes(expected_bytes)
 
-                    a_smem_tile = a_smem_tile_t(
-                        a_smem.next(producer_stage)[].ptr
-                    )
+                    a_smem_tile = a_smem.next(stage)[]
                     a_tma_op.async_copy(
                         a_smem_tile,
-                        full_barrier_base[producer_stage],
+                        full_barrier_base[stage],
                         (UInt(i) * BK, block_idx.y * BM),
                     )
 
-                    b_smem_tile = b_smem_tile_t(
-                        b_smem.next(producer_stage)[].ptr
-                    )
+                    b_smem_tile = b_smem.next(stage)[]
                     b_tma_op.async_copy(
                         b_smem_tile,
-                        full_barrier_base[producer_stage],
+                        full_barrier_base[stage],
                         (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
                             block_idx.x * BN,
                             UInt(i) * BK,
                         ),
                     )
+
+                    producer_state.step()  # this is i+1%num_pipeline_stages
 
         # ------------------------------------------------------------------
         # Consumer CTA thread (threadIdx.x == 1)
@@ -358,20 +316,17 @@ fn blackwell_matmul_tma_umma_kernel[
         if consumer_warp:
             for i in range(num_iters):
                 if local_thread_id == 0:
-                    consumer_stage = i % num_pipeline_stages
-                    # build descriptors that point at the current stage's shared-memory tiles
-                    var cur_adesc = MMASmemDescriptor.create[
-                        aSBO, aLBO, a_swizzle
-                    ](a_smem.next(consumer_stage)[].ptr)
-                    var cur_bdesc = MMASmemDescriptor.create[
-                        bSBO, bLBO, b_swizzle
-                    ](b_smem.next(consumer_stage)[].ptr)
-                    # Wait until the TMA engine has fully committed the data for this stage.
-                    # Extract the phase bit for this stage
-                    var tma_phase_bit = (tma_phases >> consumer_stage) & 1
-                    full_barrier_base[consumer_stage].wait(tma_phase_bit)
-                    # Flip the phase bit for this stage
-                    tma_phases ^= 1 << consumer_stage
+                    var stage = consumer_state.index()
+                    var phase = consumer_state.phase()
+                    var stage_offset_a = stage * a_expected_bytes
+                    var stage_offset_b = stage * b_expected_bytes
+
+                    var cur_adesc = adesc_base + stage_offset_a
+                    var cur_bdesc = bdesc_base + stage_offset_b
+
+                    full_barrier_base[stage].wait(
+                        phase
+                    )  # wait on barrier based on phase, then flip phase bit
 
                     # Issue UMMA instructions across the K dimension
                     @parameter
@@ -393,17 +348,16 @@ fn blackwell_matmul_tma_umma_kernel[
                         )
 
                     # Signal that UMMA operations consuming this stage have been issued.
-                    mma_arrive(empty_barrier_base + consumer_stage)
+                    mma_arrive(empty_barrier_base + stage)
 
-    # Ensure every thread sees that all UMMA stages have committed to TMEM before we
-    # read the results back.  Only the consumer thread waits on the mma mbarrier,
-    # so the rest of the warp-group needs a plain CTA barrier here.
-    barrier()
-    # TODO: use another wg to prevent paying the cost of this barrier
-    # TODO: so one wg does loads and mma, and another wg does the loads from tensor memory
-    # TODO: because each warp reads 32 lanes from TMEM
+                    # advance to next stage
+                    consumer_state.step()
+            if local_thread_id == 0:
+                _ = math_barrier_base[].arrive()
 
     if is_epilogue_wg:
+        # all threads in the epilogue warp wait for consumer warp to signal that it has finished eating
+        math_barrier_base[].wait()
         # eventually all of c has been accumulated, so we load it from tmem_addr into c_frag registers using tcgen05_ld
         alias c_frag_size = MMA_M * MMA_N // 128  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
 
@@ -459,34 +413,37 @@ fn blackwell_matmul_tma_umma_kernel[
                     var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
 
                     st_matrix[simd_width=4](offset, d_reg_f32_packed)
-    barrier()
+        named_barrier[WARP_GROUP_SIZE]()
 
-    # SMEM -> GMEM: Direct TMA store
-    # UMMA (tensor memory) → registers → shared memory → global memory
-    #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < BN // TMA_BN:
-        tma_store_fence()
+        # SMEM -> GMEM: Direct TMA store
+        # UMMA (tensor memory) → registers → shared memory → global memory
+        #           c_frag                   c_smem_tile      c_tma_op
+        if elect_one_warp and thread_idx.x < BN // TMA_BN:
+            tma_store_fence()
 
-        var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+            var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
 
-        var c_tma_tile = LayoutTensor[
-            c_type,
-            c_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ](smem_offset)
+            var c_tma_tile = LayoutTensor[
+                c_type,
+                c_layout,
+                MutableAnyOrigin,
+                address_space = AddressSpace.SHARED,
+                alignment=128,
+            ](smem_offset)
 
-        c_tma_op.async_store(
-            c_tma_tile,
-            ((block_idx.x * BN + thread_idx.x * TMA_BN), (block_idx.y * BM)),
-        )
-        c_tma_op.commit_group()
-        c_tma_op.wait_group[0]()
+            c_tma_op.async_store(
+                c_tma_tile,
+                (
+                    (block_idx.x * BN + thread_idx.x * TMA_BN),
+                    (block_idx.y * BM),
+                ),
+            )
+            c_tma_op.commit_group()
+            c_tma_op.wait_group[0]()
 
-    if elect_one_warp:
-        tcgen05_release_allocation_lock[1]()
-        tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
+        if elect_one_warp:
+            tcgen05_release_allocation_lock[1]()
+            tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
 
 fn blackwell_matmul_tma_umma[
@@ -558,15 +515,15 @@ fn blackwell_matmul_tma_umma[
         UInt32
     ]()  # ptr_tmem_addr takes two UInt32 words (lane | col | align)
     alias barriers_per_stage = 2
-    alias barrier_bytes = sizeof[
-        SharedMemBarrier
-    ]() * barriers_per_stage * num_pipeline_stages
+    alias barrier_bytes = sizeof[SharedMemBarrier]() * (
+        barriers_per_stage * num_pipeline_stages + 1
+    )  # +1 for barrier between consumer and epilogue
 
     alias smem_use = a_b_buffers_bytes + c_buffer_bytes + ptr_tmem_bytes + barrier_bytes + 24  # 24 not necessary, just for buffer
 
     alias block_dim_val = block_dim
 
-    alias kernel = blackwell_matmul_tma_umma_kernel[
+    alias kernel = tma_umma_warp_specialized_gemm_kernel[
         a_type,
         b_type,
         c_type,
