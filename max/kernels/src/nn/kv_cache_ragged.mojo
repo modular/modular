@@ -1200,8 +1200,8 @@ fn _matmul_kv_cache_ragged_impl[
         )
 
     # Cast to a register passable dtype so the function closure works on GPU.
-    k_cache_reg = rebind[ContinuousBatchingKVCache[dtype, kv_params]](k_cache)
-    v_cache_reg = rebind[ContinuousBatchingKVCache[dtype, kv_params]](v_cache)
+    k_cache_reg = rebind[cache_t](k_cache)
+    v_cache_reg = rebind[cache_t](v_cache)
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
