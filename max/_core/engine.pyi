@@ -22,9 +22,6 @@ from numpy import typing as npt
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
 InputType = Union[DLPackCompatible, Tensor, MojoValue, int, float, bool]
 
-class FrameworkFormat(enum.Enum):
-    max_graph = 0
-
 class TensorSpec:
     """
     Defines the properties of a tensor, including its name, shape and
@@ -240,7 +237,7 @@ class InferenceSession:
         self, model_path: str | os.PathLike, config: dict = {}
     ) -> Model: ...
     def compile_from_object(
-        self, model: object, format: FrameworkFormat, config: dict = {}
+        self, model: object, config: dict = {}
     ) -> Model: ...
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
