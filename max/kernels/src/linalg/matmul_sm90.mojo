@@ -101,6 +101,7 @@ from .utils_gpu import (
 
 from .matmul_loadop_sm90 import async_load_AB
 from logger import Logger
+from pathlib import Path
 
 alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
@@ -992,7 +993,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](a_smem.static_alignment_cast[128](), a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
@@ -1000,7 +1000,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](b_smem.static_alignment_cast[128](), b_smem_size)
 
     var c_smem_tile = LayoutTensor[
@@ -1302,7 +1301,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](a_smem.static_alignment_cast[128](), a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
@@ -1310,7 +1308,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](b_smem.static_alignment_cast[128](), b_smem_size)
 
     var c_smem_tile = LayoutTensor[
@@ -1979,7 +1976,6 @@ fn cpasync_wgmma_kernel[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](a_smem.static_alignment_cast[128](), a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
@@ -1987,7 +1983,6 @@ fn cpasync_wgmma_kernel[
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](b_smem.static_alignment_cast[128](), b_smem_size)
 
     var c_smem_tile = LayoutTensor[
