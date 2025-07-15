@@ -97,13 +97,13 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     )
 
     var res = Float32(0)
-    res_add_device.enqueue_copy_to(UnsafePointer(to=res))
+    res_add_device.copy_to(UnsafePointer(to=res))
 
     var res_min = Float32(0)
-    res_min_device.enqueue_copy_to(UnsafePointer(to=res_min))
+    res_min_device.copy_to(UnsafePointer(to=res_min))
 
     var res_max = Float32(0)
-    res_max_device.enqueue_copy_to(UnsafePointer(to=res_max))
+    res_max_device.copy_to(UnsafePointer(to=res_max))
 
     ctx.synchronize()
 

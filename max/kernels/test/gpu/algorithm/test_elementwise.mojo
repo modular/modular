@@ -61,7 +61,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.enqueue_copy_to(out_host.data)
+    out_device.copy_to(out_host.data)
 
     ctx.synchronize()
 
@@ -131,7 +131,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
         IndexList[2](3, 3),
         ctx,
     )
-    out_device.enqueue_copy_to(out_host.data)
+    out_device.copy_to(out_host.data)
     ctx.synchronize()
 
     var expected_vals = List[Scalar[dtype]](
@@ -192,7 +192,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.enqueue_copy_to(out_host.data)
+    out_device.copy_to(out_host.data)
     ctx.synchronize()
 
     var expected_vals = List[Scalar[dtype]](

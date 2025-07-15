@@ -126,7 +126,7 @@ def test_print(ctx: DeviceContext):
     assert_equal(String(host_buffer), expected_host)
 
     var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
-    host_buffer.enqueue_copy_to(dev_buffer)
+    host_buffer.copy_to(dev_buffer)
     ctx.synchronize()
 
     var expected_dev = (
