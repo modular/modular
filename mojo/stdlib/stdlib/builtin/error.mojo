@@ -21,11 +21,33 @@ from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import memcpy
-from utils.write import _WriteBufferStack
+from memory import UnsafePointer, memcpy
+from utils.write import (
+    _WriteBufferStack,
+    _TotalWritableBytes,
+    STACK_BUFFER_BYTES,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Error
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _UnsafeWriteToErrorPtr(Writer):
+    var data: UnsafePointer[UInt8]
+    var length: Int
+    var capacity: Int
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        var count = min(len(bytes), self.capacity - self.length)
+        memcpy(self.data + self.length, bytes.unsafe_ptr(), count)
+        self.length += count
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 @register_passable
@@ -78,6 +100,7 @@ struct Error(
         self.data = value.unsafe_ptr()
         self.loaded_length = value.byte_length()
 
+    @always_inline
     @implicit
     fn __init__(out self, src: String):
         """Construct an Error object with a given string.
@@ -85,52 +108,50 @@ struct Error(
         Args:
             src: The error message.
         """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
+        self = Error.__init__[String](src)
 
+    @always_inline
     @implicit
     fn __init__(out self, src: StringSlice):
-        """Construct an Error object with a given string ref.
+        """Construct an Error object with a given `StringSlice`.
 
         Args:
             src: The error message.
         """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
+        self = Error.__init__[__type_of(src)](src)
 
     @no_inline
     fn __init__[
-        *Ts: Writable
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
-        """
-        Construct an Error by concatenating a sequence of Writable arguments.
+        *Ts: Writable, buffer_size: Int = STACK_BUFFER_BYTES
+    ](out self, *args: *Ts):
+        """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
 
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            buffer_size: The max size of the stack buffer.
         """
-        var output = String()
-        var buffer = _WriteBufferStack(output)
+
+        # Count the total length of bytes to allocate only once
+        var arg_bytes = _TotalWritableBytes()
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(arg_bytes)
+        var ptr = UnsafePointer[Byte].alloc(arg_bytes.size + 1)
+        var writer = _UnsafeWriteToErrorPtr(ptr, 0, arg_bytes.size)
+        var buffer = _WriteBufferStack[buffer_size](writer)
 
         @parameter
         for i in range(args.__len__()):
             args[i].write_to(buffer)
-
         buffer.flush()
-        self = Error(output)
+        ptr[arg_bytes.size] = 0
+        self.data = ptr
+        self.loaded_length = -arg_bytes.size
 
     fn copy(self) -> Self:
         """Copy the object.
