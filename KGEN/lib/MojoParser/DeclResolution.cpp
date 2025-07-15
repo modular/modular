@@ -474,7 +474,7 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
   for (auto paramDecl : fnOp.collectAllParams(/*implOrigins*/ false)) {
     params.push_back(
         UnknownAttr::get(evaluator.getReboundType(paramDecl.getType())));
-    evaluator.setParameterValue(paramDecl, params.back());
+    evaluator.setDeclBinding(paramDecl, params.back());
   }
   auto paramValueArray = ParameterExprArrayAttr::get(fnOp.getContext(), params);
   operands.push_back(
@@ -1444,24 +1444,24 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 
     auto isMut = makeBoolAttr(convention == ArgConvention::OwnedMem ||
                               convention == ArgConvention::Mut);
-    evaluator.addInputValue(isMut);
+    evaluator.appendIndexBinding(isMut);
     typeParams[0] = isMut.get();
 
     SyntheticNode locElExpr(loc);
     auto eltTypeAttr = emitter.emitPValue(
         {refType.getElementType(), &locElExpr}, EC_Type, eltType);
-    evaluator.addInputValue(eltTypeAttr);
+    evaluator.appendIndexBinding(eltTypeAttr);
     typeParams[1] = eltTypeAttr.get();
 
     SyntheticNode locOriginExpr(loc);
     auto reboundOriginType = evaluator.getReboundType(originType);
     auto origin = emitter.emitPValue({refType.getOrigin(), &locOriginExpr},
                                      EC_Type, reboundOriginType);
-    evaluator.addInputValue(origin);
+    evaluator.appendIndexBinding(origin);
     typeParams[2] = origin.get();
 
     auto isOwned = makeBoolAttr(convention == ArgConvention::OwnedMem);
-    evaluator.addInputValue(isOwned);
+    evaluator.appendIndexBinding(isOwned);
     typeParams[3] = isOwned.get();
 
     varListType = varListStruct.bindReference(typeParams);

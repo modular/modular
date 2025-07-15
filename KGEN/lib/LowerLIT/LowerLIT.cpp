@@ -736,7 +736,7 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
       TypedAttr singletonValue =
           singletonTypeHelper.getSingletonValue(adjParamType);
       paramsToBind.push_back(singletonValue);
-      evaluator.addInputValue(paramsToBind.back());
+      evaluator.appendIndexBinding(paramsToBind.back());
       ++numRemoved;
     } else {
       // Any uses of this parameter in later replaced lifetimes needs to refer
@@ -744,7 +744,7 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
       // bool in a origin may shift to a new index.
       auto idxValue =
           ParamIndexRefAttr::get(/*depth*/ -1, idx - numRemoved, adjParamType);
-      evaluator.addInputValue(idxValue);
+      evaluator.appendIndexBinding(idxValue);
 
       // We tell getSpecializedSignature not to touch this though.
       paramsToBind.push_back(UnboundAttr::get(adjParamType));

@@ -2506,7 +2506,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   for (auto [decl, value] :
        llvm::zip(fnOp.collectAllParams(/*implOrigins*/ false),
                  symCst.getParamValues()))
-    folder.evaluator.setParameterValue(decl, value);
+    folder.evaluator.setDeclBinding(decl, value);
 
   // Bind the argument values we are provided.
   for (auto [convention, arg, argValue] :

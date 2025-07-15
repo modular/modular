@@ -125,7 +125,7 @@ ParserEvaluationContext::evaluateGetWitness(TypedAttr typeValue,
   ParserParameterEvaluator nestedEvaluator(shared);
   for (auto [param, value] :
        llvm::zip(structDeclOp.getInputParams(), structType.getParamValues()))
-    nestedEvaluator.setParameterValue(param, value);
+    nestedEvaluator.setDeclBinding(param, value);
 
   auto getWitness =
       GetWitnessAttr::get(typeParam, traitName, witnessName, type);

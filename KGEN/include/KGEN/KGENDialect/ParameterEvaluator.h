@@ -96,14 +96,14 @@ class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
-                     ArrayRef<TypedAttr> paramValues);
+                     ArrayRef<TypedAttr> declBindings);
   /// Instantiate a new parameter evaluator with the given input parameters.
-  ParameterEvaluator(ArrayRef<TypedAttr> paramValues);
+  ParameterEvaluator(ArrayRef<TypedAttr> declBindings);
 
   /// Instantiate a new parameter evaluator with the given parameter values.
-  ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =
+  ParameterEvaluator(DenseMap<StringAttr, Attribute> declBindings =
                          DenseMap<StringAttr, Attribute>())
-      : paramValues(std::move(paramValues)) {}
+      : declBindings(std::move(declBindings)) {}
 
   /// Set the evaluation context to use.
   void setEvaluationContext(ParameterEvaluationContext *context) {
@@ -115,22 +115,22 @@ public:
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
-  void setParameterValue(StringAttr name, Attribute value) {
-    assert(!paramValues.count(name) && "parameter already declared!");
-    paramValues[name] = value;
+  void setDeclBinding(StringAttr name, Attribute value) {
+    assert(!declBindings.count(name) && "parameter already declared!");
+    declBindings[name] = value;
   }
-  void setParameterValue(ParamDeclAttr decl, Attribute value) {
-    setParameterValue(decl.getName(), value);
+  void setDeclBinding(ParamDeclAttr decl, Attribute value) {
+    setDeclBinding(decl.getName(), value);
   }
 
   /// Iterate over the current parameter values.
-  const DenseMap<StringAttr, Attribute> &getParameterValues() const {
-    return paramValues;
+  const DenseMap<StringAttr, Attribute> &getDeclBindings() const {
+    return declBindings;
   }
 
   /// Overwrite the current set of parameter values.
-  void setParameterValues(const DenseMap<StringAttr, Attribute> &values) {
-    paramValues = values;
+  void setDeclBindings(const DenseMap<StringAttr, Attribute> &values) {
+    declBindings = values;
   }
 
   /// Get the specified type with any nested parameter expressions rewritten.
@@ -147,17 +147,15 @@ public:
   /// Dump the parameter evaluator state.
   void dump() const;
 
-  /// Add an input parameter binding.
-  void addInputValue(TypedAttr value) { inputParamValues.push_back(value); }
+  /// Append an index-based parameter binding.
+  void appendIndexBinding(TypedAttr value) { indexBindings.push_back(value); }
+  /// Return the number of input parameter values that have been added.
+  size_t getNumIndexBindings() const { return indexBindings.size(); }
+  /// Get all the input parameters.
+  ArrayRef<TypedAttr> getIndexBindings() const { return indexBindings; }
+
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
-
-  /// Return the number of input parameter values that have been added.
-  size_t getNumInputParams() const { return inputParamValues.size(); }
-  /// Add an input parameter.
-  void addInputParam(TypedAttr param) { inputParamValues.push_back(param); }
-  /// Get all the input parameters.
-  ArrayRef<TypedAttr> getInputParams() const { return inputParamValues; }
 
 private:
   // CRTP methods.
@@ -170,16 +168,16 @@ private:
   /// suspend, which is that the bool represents.
   std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t rootDepth);
 
-  /// These are the bound parameter values, captured in simplified form.
-  DenseMap<StringAttr, Attribute> paramValues;
+  /// These are the name-based parameter bindings.
+  DenseMap<StringAttr, Attribute> declBindings;
 
-  /// These are the top-level input parameters to use when rebinding a
-  /// signature.
-  SmallVector<TypedAttr> inputParamValues;
+  /// These are the top-level index-based parameter bindings.
+  SmallVector<TypedAttr> indexBindings;
 
-  /// The relative depth from the signature where the input parameters are from.
-  /// This is zero for most applications, but should be set accordingly when
-  /// substituting attributes or types inside a signature, see PSTIAIRAID.
+  /// The relative depth from the generator where the index-based parameter
+  /// bindings are from. This is zero for most applications, but should be set
+  /// accordingly when substituting attributes or types inside a generator, see
+  /// PSTIAIRAID.
   size_t inputDepth = 0;
 
   /// The optional context to use for evaluating contexually evaluated

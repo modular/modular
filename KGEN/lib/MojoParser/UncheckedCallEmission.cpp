@@ -88,7 +88,7 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
     if (idx != 1) // Index `1` is the `is_owned` parameter.
       currBinding =
           UnboundAttr::get(evaluator.getReboundType(currBinding.getType()));
-    evaluator.addInputValue(currBinding);
+    evaluator.appendIndexBinding(currBinding);
   }
   ASTType unboundVariadicPackType =
       variadicPackStructDecl.bindReference(bindings);

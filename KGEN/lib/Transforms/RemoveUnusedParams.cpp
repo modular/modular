@@ -572,7 +572,7 @@ void RemoveUnusedParams::runOnOperation() {
       ArrayRef<ParamDeclAttr> inputParams(oldFunction.getInputParams());
       for (size_t index : unusedParamsIndex.set_bits()) {
         ParamDeclAttr decl = inputParams[index];
-        evaluator.setParameterValue(decl, UninitMemAttr::get(decl.getType()));
+        evaluator.setDeclBinding(decl, UninitMemAttr::get(decl.getType()));
       }
 
       auto subroutineType =

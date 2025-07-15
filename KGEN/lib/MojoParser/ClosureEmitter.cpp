@@ -675,7 +675,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         ParamDeclAttr::get(StringAttr::get(getContext(), "p" + Twine(i)),
                            evaluator.getReboundType(type)));
     paramValues.push_back(ParamDeclRefAttr::get(wrapperDecls.back()));
-    evaluator.addInputValue(paramValues.back());
+    evaluator.appendIndexBinding(paramValues.back());
   }
 
   auto [structDecl, declOp] =

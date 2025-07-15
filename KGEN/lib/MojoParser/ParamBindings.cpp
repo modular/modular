@@ -68,7 +68,7 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
       TypedAttr aliasRef =
           declResolver.shared.getEvaluationContext().getGetWitnessAttr(
               selfPValue, traitName, nameStringAttr, traitAlias.getType());
-      traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
+      traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasRef);
     }
   }
   return traitAliasReplacer.replace(desiredSignature);
@@ -323,7 +323,7 @@ ParamBindings::verifyBindingsImpl(
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
   auto setParamValue = [&](TypedAttr value) {
-    evaluator.addInputValue(value);
+    evaluator.appendIndexBinding(value);
     newBindings.push_back(value);
   };
 

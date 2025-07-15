@@ -797,7 +797,7 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
     if (parseParamValue(p, paramValues.emplace_back(),
                         evaluator.getReboundType(type)))
       return failure();
-    evaluator.addInputValue(paramValues.back());
+    evaluator.appendIndexBinding(paramValues.back());
   }
   return success();
 }

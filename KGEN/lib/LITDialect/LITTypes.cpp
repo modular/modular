@@ -142,7 +142,7 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
        llvm::enumerate(values, getParamTypes(), paramListAttr.getPogs())) {
     // If the current value is bound and we have a specified value, use it.
     if (!::isa<UnboundAttr>(val)) {
-      evaluator.addInputValue(val);
+      evaluator.appendIndexBinding(val);
       continue;
     }
 
@@ -155,7 +155,7 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
     else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
       newKwOnlyDefaults.push_back(evaluator.replace(defaultOr));
 
-    evaluator.addInputValue(
+    evaluator.appendIndexBinding(
         ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
   }
   auto paramListAttrs = PogListAttr::get(getContext(), newPogs, newPosDefaults,
@@ -1509,7 +1509,7 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
     Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
       value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
-    evaluator.addInputValue(value);
+    evaluator.appendIndexBinding(value);
     unboundBindings.push_back(value);
   }
   type = type.getSpecializedGenerator(

@@ -582,8 +582,8 @@ LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
        llvm::zip(structGen.getInputParams(), getParamValues())) {
     remappedParamDecls.push_back(ParamDeclAttr::get(
         decl.getName(), evaluator.getReboundType(decl.getType())));
-    evaluator.setParameterValue(decl.getName(), value);
-    evaluator.addInputValue(value);
+    evaluator.setDeclBinding(decl.getName(), value);
+    evaluator.appendIndexBinding(value);
   }
 
   // Check parameter types.

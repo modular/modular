@@ -528,7 +528,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         // We need to infer in lexical order because we may have dependent types
         // between parameters.  The evaluator implicitly keeps track of how many
         // we have inferred.
-        ire.getIndex() <= evaluator.getNumInputParams()) {
+        ire.getIndex() <= evaluator.getNumIndexBindings()) {
       // Compare the rebound types to handle dependent types.
       Type expectedType = evaluator.getReboundType(expectedAttr.getType());
       size_t parameterIndex = ire.getIndex();
@@ -570,8 +570,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 
       // If we found the next missing parameter value for the evaluator, install
       // it so we can remap dependent types more effectively.
-      if (parameterIndex == evaluator.getNumInputParams())
-        evaluator.addInputValue(inferredValue);
+      if (parameterIndex == evaluator.getNumIndexBindings())
+        evaluator.appendIndexBinding(inferredValue);
 
       return success();
     }
@@ -1291,15 +1291,15 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   // If we had a variadic parameter that is unspecified, and no arguments to
   // infer it from, it must be because of an empty variadic list.
   if (!hasArguments) {
-    size_t nextParamNo = evaluator.getNumInputParams();
+    size_t nextParamNo = evaluator.getNumIndexBindings();
     if (nextParamNo < types.size() && paramListAttr.isPosVarArg(nextParamNo)) {
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= nextParamNo)
         inferredParams.resize(nextParamNo + 1);
-      auto type = types[evaluator.getNumInputParams()];
+      auto type = types[evaluator.getNumIndexBindings()];
       auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
       inferredParams[nextParamNo] = empty;
-      evaluator.addInputValue(empty);
+      evaluator.appendIndexBinding(empty);
     }
   }
 }
@@ -1485,16 +1485,16 @@ LogicalResult ParameterInferenceState::infer(
 
   // If we had a variadic parameter that is unspecified, it must be because of
   // an empty variadic list.
-  size_t nextParamNo = evaluator.getNumInputParams();
+  size_t nextParamNo = evaluator.getNumIndexBindings();
   if (nextParamNo < signature.getInputParamTypes().size() &&
       signature.getParamListAttrs().isPosVarArg(nextParamNo)) {
     // If we didn't already have a slot for this, make space.
     if (inferredParams.size() <= nextParamNo)
       inferredParams.resize(nextParamNo + 1);
-    auto type = signature.getInputParamTypes()[evaluator.getNumInputParams()];
+    auto type = signature.getInputParamTypes()[evaluator.getNumIndexBindings()];
     auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
     inferredParams[nextParamNo] = empty;
-    evaluator.addInputValue(empty);
+    evaluator.appendIndexBinding(empty);
   }
 
   // Make sure to rebind any selfResultParams if they've been inferred already.
@@ -1507,10 +1507,10 @@ LogicalResult ParameterInferenceState::infer(
     // Need to first populate the evaluator with unbound attrs in case some
     // Self params were not deduced.
     ArrayRef<Type> paramTypes = signature.getInputParamTypes();
-    for (size_t paramIdx = evaluator.getNumInputParams(),
+    for (size_t paramIdx = evaluator.getNumIndexBindings(),
                 e = signature.getInputParamTypes().size();
          paramIdx < e; ++paramIdx)
-      evaluator.addInputValue(UnboundAttr::get(paramTypes[paramIdx]));
+      evaluator.appendIndexBinding(UnboundAttr::get(paramTypes[paramIdx]));
 
     for (unsigned idx : selfResultParams) {
       if (idx < inferredParams.size()) {

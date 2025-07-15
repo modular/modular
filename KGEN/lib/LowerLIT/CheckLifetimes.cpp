@@ -384,7 +384,7 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   ParameterEvaluator evaluator;
   for (auto [decl, value] :
        llvm::zip(decl.getInputParams(), structType.getParamValues()))
-    evaluator.setParameterValue(decl, value);
+    evaluator.setDeclBinding(decl, value);
 
   size_t totalFields = 0;
   for (auto field : decl.getFieldDecls()) {
@@ -2053,7 +2053,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   ParameterEvaluator evaluator;
   for (auto [decl, value] :
        llvm::zip(structDecl.getParams(), valueType.getParamValues()))
-    evaluator.setParameterValue(decl, value);
+    evaluator.setDeclBinding(decl, value);
 
   assert(valueRef.isIndirect && "register values aren't field sensitive");
 
