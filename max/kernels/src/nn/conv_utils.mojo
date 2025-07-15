@@ -15,7 +15,6 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    has_avx2,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
