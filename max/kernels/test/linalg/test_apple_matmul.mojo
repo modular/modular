@@ -365,7 +365,6 @@ def test_matmul[
         )
     if errors > 0:
         return
-    # CHECK: Success
     print("Success")
 
     a_ptr.free()

@@ -150,9 +150,9 @@ _EXPECT_FAIL = [
 _FILECHECK_TESTS = [
     "algorithm/test_elementwise.mojo",
     "algorithm/test_elementwise_1d.mojo",
-    "algorithm/test_map.mojo",
-    "algorithm/test_parallelize.mojo",
-    "algorithm/test_reductions.mojo",
+    "algorithm/test_map.mojo",  # TODO: Move off filecheck
+    "algorithm/test_parallelize.mojo",  # TODO: Move off filecheck
+    "algorithm/test_reductions.mojo",  # TODO: Move off filecheck
     "algorithm/test_stencil.mojo",
     "algorithm/test_tile.mojo",
     "algorithm/test_vectorize.mojo",
@@ -187,6 +187,7 @@ _FILECHECK_TESTS = [
     "runtime/test_asyncrt.mojo",
     "runtime/test_locks.mojo",
     "sys/test_exit_1.mojo",
+    "utils/test_write_to_stdout.mojo",
 ]
 
 [

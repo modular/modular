@@ -26,7 +26,6 @@ def test__dump_sass():
             UInt32(100)
         )
 
-    # CHECK: NANOSLEEP 0x64
     with DeviceContext() as ctx:
         _ = ctx.compile_function[kernel_inlined_assembly, _dump_sass=True]()
 

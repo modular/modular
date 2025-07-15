@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D bar=99 -D baz=hello -D foo=11 -D my_true=True -D my_false=false -D my_on=on -D my_off=off %s
 
 from sys import env_get_bool, env_get_int, env_get_string, is_defined
 

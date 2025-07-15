@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D BUILD_TYPE=debug %s
 
 from sys._build import is_debug_build, is_release_build
 

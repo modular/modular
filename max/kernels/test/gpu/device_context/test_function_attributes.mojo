@@ -17,7 +17,6 @@ from gpu.host.func_attribute import Attribute
 from testing import assert_equal
 
 
-# CHECK-LABEL: test_function_attributes
 def test_function_attributes():
     fn kernel(x: UnsafePointer[Int]):
         x[0] = thread_idx.x

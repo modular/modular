@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(#33762): This is causing recursive dirs to be created.
-# REQUIRES: DISABLED
-# RUN: rm -rf %t && mkdir -p %t
-# RUN: ln -s %S %t/tmp
-# RUN: %mojo  -D TEMP_DIR=%t/tmp %s
+# COM: rm -rf %t && mkdir -p %t
+# COM: ln -s %S %t/tmp
+# COM: %mojo  -D TEMP_DIR=%t/tmp %s
 
 from os.path import isdir, islink
 from pathlib import Path
