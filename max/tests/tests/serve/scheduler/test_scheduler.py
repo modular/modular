@@ -6,13 +6,18 @@
 
 import queue
 import time
-from typing import Union, cast
+from typing import Union
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
 import zmq
-from max.interfaces import TextGenerationResponse
+from max.interfaces import (
+    EngineResult,
+    GenerationStatus,
+    TextGenerationResponse,
+    TextResponse,
+)
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
@@ -41,18 +46,25 @@ def mock_pipeline():
     def next_token_behavior(
         batch: dict[str, TextContext], num_steps=1
     ) -> dict[str, TextGenerationResponse]:
-        responses = {}
+        responses: dict[str, TextGenerationResponse] = {}
 
         for request_id, request in batch.items():
-            responses[request_id] = Mock()
-            responses[request_id].tokens = []
-            responses[request_id].is_done = False
-            for _ in range(num_steps):
-                assert request.active_idx != 128, "pre update"
-                request.update(new_token=1)
-                assert request.active_idx != 128, "post update"
+            # Update the InputContext.
+            request.update(0)
 
-        return cast(dict[str, TextGenerationResponse], responses)
+            # Return a valid response.
+            responses[request_id] = TextGenerationResponse(
+                tokens=[
+                    TextResponse(
+                        next_token=0,
+                        log_probabilities=None,
+                    ),
+                    TextResponse(next_token=0, log_probabilities=None),
+                ],
+                final_status=GenerationStatus.ACTIVE,
+            )
+
+        return responses
 
     pipeline = Mock()
     pipeline.next_token = Mock(side_effect=next_token_behavior)
@@ -226,8 +238,11 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+        dict[str, EngineResult[TextGenerationResponse]]
+    ](
+        zmq_ctx,
+        scheduler.response_q.zmq_endpoint,
+    )
 
     cancel_push_socket = ZmqPushSocket[list[str]](
         zmq_ctx,
@@ -257,7 +272,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationResponse]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_ce(sch_output)
@@ -287,7 +302,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationResponse]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     request_push_socket.put(("req1", mock_request))
@@ -339,7 +354,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationResponse]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
@@ -378,7 +393,7 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationResponse]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_tg(sch_output)
