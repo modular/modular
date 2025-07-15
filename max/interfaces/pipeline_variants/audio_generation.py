@@ -20,10 +20,10 @@ class AudioGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
     """
     Represents a response from the audio generation API.
 
-    Attributes:
-        final_status (GenerationStatus): The final status of the generation process.
-        audio (Optional[np.ndarray]): The generated audio data, if available.
-        buffer_speech_tokens (Optional[np.ndarray]): Buffered speech tokens, if available.
+    Configuration:
+        final_status: The final status of the generation process.
+        audio: The generated audio data, if available.
+        buffer_speech_tokens: Buffered speech tokens, if available.
     """
 
     final_status: GenerationStatus

@@ -18,11 +18,11 @@ from max.interfaces.status import GenerationStatus
 
 
 class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """A base class for model response, specifically for Text model variants.
+    """A base class for model responses, specifically for text model variants.
 
-    Attributes:
-        next_token (int | str): Encoded predicted next token.
-        log_probabilities (LogProbabilities | None): Log probabilities of each output token.
+    Configuration:
+        next_token: Encoded predicted next token.
+        log_probabilities: Log probabilities of each output token.
 
     """
 
@@ -40,6 +40,13 @@ class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
 
 
 class TextGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
+    """Response structure for text generation.
+
+    Configuration:
+        tokens: List of generated text responses.
+        final_status: The final status of the generation process.
+    """
+
     tokens: list[TextResponse] = msgspec.field()
     final_status: GenerationStatus = msgspec.field()
 
@@ -67,8 +74,8 @@ class TokenGenerator(Generic[T], Protocol):
         """Computes the next token response for a single batch.
 
         Args:
-            batch (dict[str, TokenGeneratorContext]): Batch of contexts.
-            num_steps int: Number of tokens to generate.
+            batch: Batch of contexts.
+            num_steps: Number of tokens to generate.
 
         Returns:
             list[dict[str, TextResponse]]: List of encoded responses (indexed by req. ID)
@@ -79,6 +86,6 @@ class TokenGenerator(Generic[T], Protocol):
         """Releases resources associated with this context.
 
         Args:
-            context (TokenGeneratorContext): Finished context.
+            context: Finished context.
         """
         ...
