@@ -157,8 +157,8 @@ $L__BB0_2:
     alias LEN = 1024
     alias BLOCK_DIM = 32
 
-    lhs = ctx.enqueue_create_buffer[DType.float32](LEN).enqueue_fill(2.0)
-    rhs = ctx.enqueue_create_buffer[DType.float32](LEN).enqueue_fill(1.0)
+    lhs = ctx.enqueue_create_buffer[DType.float32](LEN).fill(2.0)
+    rhs = ctx.enqueue_create_buffer[DType.float32](LEN).fill(1.0)
     out = ctx.enqueue_create_buffer[DType.float32](LEN)
 
     func = ctx.load_function[vec_add_sig](
