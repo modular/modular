@@ -19,7 +19,11 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import AudioGenerationResponse, GenerationStatus
+from max.interfaces import (
+    AudioGenerationResponse,
+    EngineResult,
+    GenerationStatus,
+)
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerator,
@@ -438,7 +442,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     )
 
     # Create this so the schedule process has a client to send to.
-    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+    _ = ZmqPullSocket[dict[str, EngineResult[AudioGenerationResponse]]](
         zmq_ctx, scheduler.response_q.zmq_endpoint
     )
 
@@ -484,7 +488,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
         serialize=msgpack_numpy_encoder(),
     )
 
-    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+    _ = ZmqPullSocket[dict[str, EngineResult[AudioGenerationResponse]]](
         zmq_ctx, scheduler.response_q.zmq_endpoint
     )
 
@@ -538,7 +542,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         serialize=msgpack_numpy_encoder(),
     )
 
-    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+    _ = ZmqPullSocket[dict[str, EngineResult[AudioGenerationResponse]]](
         zmq_ctx, scheduler.response_q.zmq_endpoint
     )
 
@@ -620,7 +624,7 @@ def test_paged_scheduler_max_queue_size_tg(
         serialize=msgpack_numpy_encoder(),
     )
 
-    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+    _ = ZmqPullSocket[dict[str, EngineResult[AudioGenerationResponse]]](
         zmq_ctx, scheduler.response_q.zmq_endpoint
     )
 
@@ -727,7 +731,7 @@ def test_paged_scheduler_tg_batching(
         serialize=msgpack_numpy_encoder(),
     )
 
-    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+    _ = ZmqPullSocket[dict[str, EngineResult[AudioGenerationResponse]]](
         zmq_ctx, scheduler.response_q.zmq_endpoint
     )
 
