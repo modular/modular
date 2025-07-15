@@ -1,32 +1,62 @@
 """Private bazel configuration used internally by rules and macros."""
 
+load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
+
 GPU_TEST_ENV = {
     "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),suppressions=$(execpath //bazel/internal:asan-suppressions.txt)",
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
     "LSAN_OPTIONS": "suppressions=$(execpath //bazel/internal:lsan-suppressions.txt)",
 }
 
-def validate_gpu_tags(tags, gpu_constraints):
+def _get_all_constraints(constraints):
+    """Extract all possible constraints from the target's 'target_compatible_with'.
+
+    This is complicated because if the 'target_compatible_with' is a select,
+    you cannot check if it has a value. This uses an upstream hack to parse the
+    select and return all possible values, even if they are not in effect.
+    """
+    flattened_constraints = []
+    for in_select, elements in decompose_select_elements(constraints):
+        if type(elements) == type([]):
+            flattened_constraints.extend(elements)
+        else:
+            if in_select and (elements == {} or elements == {"//conditions:default": []}):
+                fail("Empty select, delete it")
+            flattened_constraints.extend(elements.keys())
+            for selected_constraints in elements.values():
+                flattened_constraints.extend(selected_constraints)
+
+    return flattened_constraints
+
+def validate_gpu_tags(tags, target_compatible_with):
     """Fail if configured gpu_constraints + tags aren't supported.
 
     Args:
         tags: The target's 'tags'
-        gpu_constraints: The target's 'gpu_constraints'
+        target_compatible_with: The target's 'target_compatible_with'
     """
     has_tag = "gpu" in tags
-    if not has_tag and gpu_constraints:
+    if has_tag:
+        return
+
+    has_gpu_constraints = any([
+        constraint.endswith(("_gpu", "_gpus"))
+        for constraint in _get_all_constraints(target_compatible_with)
+    ])
+    if has_gpu_constraints:
         fail("tests that have 'gpu_constraints' must specify 'tags = [\"gpu\"],' to be run on CI")
 
-def get_default_exec_properties(tags, gpu_constraints):
+def get_default_exec_properties(tags, target_compatible_with):
     """Return exec_properties that should be shared between different test target types.
 
     Args:
         tags: The target's 'tags'
-        gpu_constraints: The target's 'gpu_constraints'
+        target_compatible_with: The target's 'target_compatible_with'
 
     Returns:
         A dictionary that should be added to exec_properties of the test target
     """
+    gpu_constraints = _get_all_constraints(target_compatible_with)
 
     exec_properties = {}
     if "requires-network" in tags:

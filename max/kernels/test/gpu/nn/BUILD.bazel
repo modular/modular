@@ -17,9 +17,6 @@ _EXTRA_CONSTRAINTS = {
     "test_mla.mojo": ["//:nvidia_gpu"],
     "test_padding_gpu.mojo": ["//:nvidia_gpu"],
     "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_topk_gpu.mojo": select({
-        "//conditions:default": [],
-    }),
     "test_toppminp_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
 }
 
