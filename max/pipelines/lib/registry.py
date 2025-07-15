@@ -591,6 +591,30 @@ class PipelineRegistry:
 
         return tokenizer, pipeline_factory
 
+    def retrieve_pipeline_task(
+        self, pipeline_config: PipelineConfig
+    ) -> PipelineTask:
+        """
+        Retrieve the pipeline task associated with the architecture for the given pipeline configuration.
+
+        Args:
+            pipeline_config (PipelineConfig): The configuration for the pipeline.
+
+        Returns:
+            PipelineTask: The task associated with the architecture.
+
+        Raises:
+            ValueError: If no supported architecture is found for the given model repository.
+        """
+        if arch := self.retrieve_architecture(
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+        ):
+            return arch.task
+
+        raise ValueError(
+            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+        )
+
     def retrieve(
         self,
         pipeline_config: PipelineConfig,
