@@ -76,7 +76,7 @@ struct Fnv1a(Defaultable, Hasher):
         """
         value.__hash__(self)
 
-    fn finish(varself) -> UInt64:
+    fn finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:
