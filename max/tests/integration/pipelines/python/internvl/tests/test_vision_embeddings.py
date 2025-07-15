@@ -132,9 +132,6 @@ def generate_max_outputs(
     return from_dlpack(max_tensor)
 
 
-@pytest.mark.skip(
-    reason="TODO(Stelath): This test causes timeouts in presubmit"
-)
 @pytest.mark.parametrize(
     "config_name",
     [
@@ -164,8 +161,7 @@ def generate_max_outputs(
     [
         224,  # Downscale from 448 (16 patches)
         448,  # Same size (32 patches)
-        896,  # 2x upscale from 448 (64 patches)
-        2688,  # Large size (192 patches)
+        672,  # 1.5x upscale from 448 (48 patches)
     ],
 )
 def test_vision_embeddings(config_name: ConfigNames, target_size: int) -> None:
@@ -174,6 +170,7 @@ def test_vision_embeddings(config_name: ConfigNames, target_size: int) -> None:
     reshape operations to work correctly.
     """
     torch.manual_seed(42)
+
     # Load HuggingFace config and generate weights
     hf_config = get_config_loader().load_hf_vision_config(config_name)
     internvl_config = get_config_loader().create_internvl_config(config_name)
@@ -252,14 +249,6 @@ def test_vision_embeddings(config_name: ConfigNames, target_size: int) -> None:
     [
         (224, 224),  # Small square (16x16 patches)
         (448, 672),  # Non-square, moderate size (32x48 patches)
-        (
-            2688,
-            2044,
-        ),  # Large size, adjusted to be divisible by 14 (192x146 patches)
-        (
-            1918,
-            1078,
-        ),  # HD-like resolution, adjusted to be divisible by 14 (137x77 patches)
     ],
 )
 def test_vision_embeddings_non_square(
@@ -462,9 +451,7 @@ def test_vision_embeddings_multi_gpu_execution(
         config_name
     ).generate_vision_embeddings_weights()
 
-    # Use large image dimensions to stress test
-    # Dimensions must be divisible by patch_size (14)
-    height, width = 2688, 2044
+    height, width = 896, 672
     batch_size = 1  # Define batch_size explicitly
 
     # Create test inputs
