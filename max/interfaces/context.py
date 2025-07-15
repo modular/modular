@@ -15,13 +15,13 @@ from .status import GenerationStatus
 
 @dataclass(frozen=True)
 class SamplingParams:
-    """Request Specific Sampling Parameters that are only known at run time."""
+    """Request specific sampling parameters that are only known at run time."""
 
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
     top_p: float = 1
-    """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
+    """Only use the tokens whose cumulative probability is within the top_p threshold. This applies to the top_k tokens."""
 
     min_p: float = 0.0
     """Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this."""
@@ -87,7 +87,7 @@ class SamplingParams:
 
 @runtime_checkable
 class InputContext(Protocol):
-    """A base class for model contexts, represent model inputs for TokenGenerators.
+    """A base class for model contexts, representing model inputs for TokenGenerators.
 
     Token array layout::
 

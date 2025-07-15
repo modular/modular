@@ -11,16 +11,14 @@ from enum import Enum
 class GenerationStatus(str, Enum):
     """
     Enum representing the status of a generation process in the MAX API.
-
-    Attributes:
-        ACTIVE: The generation process is ongoing.
-        END_OF_SEQUENCE: The generation process has reached the end of the sequence.
-        MAXIMUM_LENGTH: The generation process has reached the maximum allowed length.
     """
 
     ACTIVE = "active"
+    """The generation process is ongoing."""
     END_OF_SEQUENCE = "end_of_sequence"
+    """The generation process has reached the end of the sequence."""
     MAXIMUM_LENGTH = "maximum_length"
+    """The generation process has reached the maximum allowed length."""
 
     @property
     def is_done(self) -> bool:
