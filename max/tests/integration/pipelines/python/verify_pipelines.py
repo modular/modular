@@ -692,24 +692,23 @@ PIPELINES = {
             kl_div_threshold=8.6e-2,
         ),
     ),
-    # TODO(GEX-2384) Enable after allreduce deadloack is fixed
-    # "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     # This does not require multigpu, but does require h100.
-    #     tags=["h100-multi"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="llama3.1-8b-float8-dynamic",
-    #         encoding="float8_e4m3fn",
-    #         # This model does not run with torch and transformers.
-    #         # It only runs with vllm.
-    #         # For now compare to the bfloat16 goldens cause we have them.
-    #         pregenerated_torch_goldens_rlocation=(
-    #             "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
-    #         ),
-    #         cos_dist_threshold=5.6e-3,
-    #         kl_div_threshold=3.9e-2,
-    #     ),
-    # ),
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        # This does not require multigpu, but does require h100.
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="llama3.1-8b-float8-dynamic",
+            encoding="float8_e4m3fn",
+            # This model does not run with torch and transformers.
+            # It only runs with vllm.
+            # For now compare to the bfloat16 goldens cause we have them.
+            pregenerated_torch_goldens_rlocation=(
+                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+            ),
+            cos_dist_threshold=5.6e-3,
+            kl_div_threshold=3.9e-2,
+        ),
+    ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # Needs h100 for specific kernels.
