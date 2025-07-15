@@ -14,6 +14,7 @@
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
 from .hasher import Hasher
+from memory import Span
 
 
 struct Fnv1a(Defaultable, Hasher):
@@ -31,21 +32,14 @@ struct Fnv1a(Defaultable, Hasher):
         """Initialize the hasher."""
         self._value = 0xCBF29CE484222325
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
-        """Consume provided data to update the internal buffer.
-
-        Args:
-            data: Pointer to the byte array.
-            length: The length of the byte array.
+    fn _update_with_bytes(mut self, data: Span[UInt8]):
         """
+        Consume provided data to update the internal buffer.
+        """
+        var length = len(data)
+        var ptr = data.unsafe_ptr()
         for i in range(length):
-            self._value ^= data[i].cast[DType.uint64]()
+            self._value ^= ptr[i].cast[DType.uint64]()
             self._value *= 0x100000001B3
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):

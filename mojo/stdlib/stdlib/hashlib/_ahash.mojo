@@ -136,7 +136,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         if length > 8:
             if length > 16:
                 var tail = (
-                    ptr.offset(length - 16)
+                    (ptr + (length - 16))
                     .bitcast[Scalar[DType.uint64]]()
                     .load[width=2]()
                 )
