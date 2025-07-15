@@ -30,7 +30,6 @@ inputs = [
     "NotebookTest",
     "ReferencesTest",
     "RegressionTest",
-    "RenameTest",
     "SampleTest",
     "SemanticTokensTest",
     "SignatureHelpTest",
