@@ -5,7 +5,7 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
-load("@module_versions//:config.bzl", "PYTHON_VERSIONS")
+load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
@@ -193,8 +193,7 @@ def targets():
     }
 
     build_targets = {}
-    for version in PYTHON_VERSIONS:
-        version = version.replace("_", ".")
+    for version in PYTHON_VERSIONS_DOTTED:
         for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
             alias_name = "_env_python_{}_{}".format(version, platform)
             build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{}_{}.json".format(version, platform)

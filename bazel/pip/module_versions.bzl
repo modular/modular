@@ -6,7 +6,9 @@ def _impl(rctx):
 DEFAULT_PYTHON_VERSION = "{default_python_version}"
 DEFAULT_PYTHON_VERSION_UNDERBAR = "{default_python_version}".replace(".", "_")
 DEFAULT_PYTHON_VERSION_NOSEP = "{default_python_version}".replace(".", "")
-PYTHON_VERSIONS = {python_versions}
+
+PYTHON_VERSIONS_UNDERBAR = {python_versions}
+PYTHON_VERSIONS_DOTTED = [x.replace("_", ".") for x in PYTHON_VERSIONS_UNDERBAR]
 """.format(
         default_python_version = rctx.attr.default_python_version,
         python_versions = str(rctx.attr.python_versions),
