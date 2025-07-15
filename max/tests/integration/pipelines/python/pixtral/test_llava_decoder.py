@@ -50,7 +50,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 global_rng = random.Random()
 
 
-def ids_tensor(shape, vocab_size, rng=None, name=None):
+def ids_tensor(shape, vocab_size, rng=None, name=None):  # noqa: ANN001
     #  Creates a random int32 tensor of the shape within the vocab size
     if rng is None:
         rng = global_rng
@@ -110,7 +110,7 @@ def mistral_given_pytorch_mistral(
     ]
 
     ############ Define Graph-API layers with weights with pytorch #############
-    def linear(name: str, array) -> LinearV1:
+    def linear(name: str, array) -> LinearV1:  # noqa: ANN001
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
         return LinearV1(
@@ -122,7 +122,7 @@ def mistral_given_pytorch_mistral(
             )
         )
 
-    def _weight(name: str, array) -> Weight:
+    def _weight(name: str, array) -> Weight:  # noqa: ANN001
         weights_registry[name] = array
         return Weight(
             name=name,
@@ -131,7 +131,7 @@ def mistral_given_pytorch_mistral(
             device=DeviceRef.CPU(),
         )
 
-    def attention(kv_params, rope: RotaryEmbedding, layer_idx: int):
+    def attention(kv_params, rope: RotaryEmbedding, layer_idx: int):  # noqa: ANN001
         wq = ops.transpose(
             _weight(
                 f"text.wq_weights_{layer_idx}",
@@ -242,7 +242,7 @@ def mistral_given_pytorch_mistral(
 
 
 @pytest.mark.skip("doesnt work and needs refactoring similar to llama vision")
-def test_llava_mistral_decoder(pytorch_mistral_and_config) -> None:
+def test_llava_mistral_decoder(pytorch_mistral_and_config) -> None:  # noqa: ANN001
     batch_size = 1
     seq_length = 7
 

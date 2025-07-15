@@ -45,7 +45,7 @@ def generate_tensor(
 
 
 def create_lora_buffers(
-    weight_shape,
+    weight_shape,  # noqa: ANN001
     lora_A: torch.Tensor,
     lora_B: torch.Tensor,
     max_adapters: int = 2,
@@ -265,7 +265,7 @@ class TorchRoPEAttentionWithLoRA(nn.Module):
         sin = self._sin_cached[:seq_len].to(device)
         return cos, sin
 
-    def _apply_rotary_pos_emb(self, x, cos, sin):
+    def _apply_rotary_pos_emb(self, x, cos, sin):  # noqa: ANN001
         cos = cos.unsqueeze(0).unsqueeze(0)
         sin = sin.unsqueeze(0).unsqueeze(0)
 

@@ -6,7 +6,7 @@
 """Function for verifying that the predictions match the references."""
 
 
-def results_match(references, predictions, **kwargs):
+def results_match(references, predictions, **kwargs):  # noqa: ANN001
     total = 0
     for reference, prediction in zip(references, predictions):
         total += reference in prediction

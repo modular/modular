@@ -22,7 +22,7 @@ seq_lens = st.integers(1, MAX_SEQUENCE_LENGTH // 2)
 FILL_VAL = -10000.0
 
 
-def lists_of_size(strategy, size_strategy):
+def lists_of_size(strategy, size_strategy):  # noqa: ANN001
     return size_strategy.flatmap(
         lambda length: st.lists(strategy, min_size=length, max_size=length)
     )

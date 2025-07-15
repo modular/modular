@@ -44,7 +44,7 @@ from max.serve.schemas.openai import (  # type: ignore
     ],
     indirect=True,
 )
-async def test_metrics_e2e_v1(app) -> None:
+async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
     # Method 2: Using client tuple (host, port)
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint exists
@@ -102,7 +102,7 @@ async def test_metrics_e2e_v1(app) -> None:
     ],
     indirect=True,
 )
-async def test_metrics_e2e_v0(app) -> None:
+async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint exists
         raw_response = await client.get("/metrics")
@@ -167,7 +167,7 @@ async def test_metrics_e2e_v0(app) -> None:
     ],
     indirect=True,
 )
-async def test_metrics_e2e_validate_disable_works_v1(app) -> None:
+async def test_metrics_e2e_validate_disable_works_v1(app) -> None:  # noqa: ANN001
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint won't exist
         with pytest.raises(requests.exceptions.ConnectionError):

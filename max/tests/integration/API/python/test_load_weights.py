@@ -15,7 +15,7 @@ from max.graph import DeviceRef, Graph, Weight
 from max.graph.weights import GGUFWeights, PytorchWeights, SafetensorWeights
 
 
-def test_weight(session) -> None:
+def test_weight(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     with Graph("graph_with_weights") as graph:
         weight_shape = [5, 10]
@@ -43,7 +43,7 @@ def test_weight(session) -> None:
         np.testing.assert_array_equal(weight * 2, output1.to_numpy())
 
 
-def test_weight_offset(session) -> None:
+def test_weight_offset(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     with Graph("graph_with_offset_weights") as graph:
         weight_shape = [5, 10]
@@ -93,7 +93,7 @@ def _test_data():
     return data
 
 
-def test_load_pytorch(session, graph_testdata) -> None:
+def test_load_pytorch(session, graph_testdata) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
     # pytorch weights file does not currently contain float8 weights
@@ -134,7 +134,7 @@ def test_load_pytorch(session, graph_testdata) -> None:
                 )
 
 
-def test_load_gguf(session, graph_testdata) -> None:
+def test_load_gguf(session, graph_testdata) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
     # gguf weights file does not currently contain float8 weights
@@ -179,7 +179,7 @@ def test_load_gguf(session, graph_testdata) -> None:
                 )
 
 
-def test_load_safetensors(session, graph_testdata) -> None:
+def test_load_safetensors(session, graph_testdata) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     expected_base_dict = _test_data()
     expected_dict = {

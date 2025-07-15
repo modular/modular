@@ -55,18 +55,18 @@ def echo_app():
 
 
 @pytest.fixture(scope="session")
-def pipeline_config(request):
+def pipeline_config(request):  # noqa: ANN001
     return request.param
 
 
 @pytest.fixture(scope="session")
-def settings_config(request):
+def settings_config(request):  # noqa: ANN001
     """Fixture to control settings configuration"""
     return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
 
 
 @pytest.fixture(scope="function")
-def app(pipeline_config, settings_config):
+def app(pipeline_config, settings_config):  # noqa: ANN001
     """The FastAPI app used to serve the model."""
 
     pipeline_task = PipelineTask.TEXT_GENERATION

@@ -62,7 +62,7 @@ def test_mock_text_tokenizer() -> None:
 
 @patch("max.pipelines.lib.pipeline.load_weights")
 @patch("max.pipelines.lib.pipeline.weights_format")
-def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:
+def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  # noqa: ANN001
     mock_load_weights.return_value = None
     weights_format.return_value = None
     max_length = 512

@@ -21,7 +21,7 @@ class OuterLayer(Layer):
         self.inner_layer_1 = InnerLayer()
         self.inner_layer_2 = InnerLayer()
 
-    def __call__(self, input):
+    def __call__(self, input):  # noqa: ANN001
         cast_input = input.cast(DType.int32)
         inner_1 = self.inner_layer_1(cast_input)
         inner_2 = self.inner_layer_2(inner_1)
@@ -29,11 +29,11 @@ class OuterLayer(Layer):
 
 
 class InnerLayer(Layer):
-    def __call__(self, input):
+    def __call__(self, input):  # noqa: ANN001
         return input.transpose(0, 1)
 
 
-def test_hook_nested_layers(mocker) -> None:
+def test_hook_nested_layers(mocker) -> None:  # noqa: ANN001
     outer_layer = OuterLayer()
 
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
@@ -81,7 +81,7 @@ def test_hook_nested_layers(mocker) -> None:
     assert outputs3 is outputs2
 
 
-def test_hook_nested_hooks_returns(mocker) -> None:
+def test_hook_nested_hooks_returns(mocker) -> None:  # noqa: ANN001
     # Test multiple hooks that modify the output value.
     inner_layer = InnerLayer()
     hook = mocker.Mock(side_effect=lambda *args: ops.tile(args[-1], [1, 2, 1]))
@@ -132,7 +132,7 @@ def test_hook_nested_hooks_returns(mocker) -> None:
     )
 
 
-def test_clear_hooks(mocker) -> None:
+def test_clear_hooks(mocker) -> None:  # noqa: ANN001
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     hook2 = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
@@ -155,11 +155,11 @@ def test_clear_hooks(mocker) -> None:
 
 
 class LayerWithArgsKwargs(Layer):
-    def __call__(self, arg1, arg2, *args, kwarg1="1", kwarg2="3", **kwargs):
+    def __call__(self, arg1, arg2, *args, kwarg1="1", kwarg2="3", **kwargs):  # noqa: ANN001
         return arg1
 
 
-def test_hook_args_kwargs(mocker) -> None:
+def test_hook_args_kwargs(mocker) -> None:  # noqa: ANN001
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
     layer = LayerWithArgsKwargs()
@@ -185,7 +185,7 @@ def test_hook_args_kwargs(mocker) -> None:
     assert kwargs == {"kwarg2": "kwarg2 value"}
 
 
-def test_hook_many_args_kwargs(mocker) -> None:
+def test_hook_many_args_kwargs(mocker) -> None:  # noqa: ANN001
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
     layer = LayerWithArgsKwargs()

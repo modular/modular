@@ -49,7 +49,7 @@ def generate_tensor(
     return torch.randn(shape, dtype=dtype) * (1.0 / math.sqrt(hidden_dim))
 
 
-def torch_linear(weight, bias_tensor=None, **kwargs) -> nn.Linear:
+def torch_linear(weight, bias_tensor=None, **kwargs) -> nn.Linear:  # noqa: ANN001
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     if bias_tensor is not None:
@@ -103,7 +103,7 @@ class WrapModuleForSubgraph(Module):
     def __call__(self, *args):
         subgraph_arg_types: list[Type] = []
 
-        def flatten(t, result) -> None:
+        def flatten(t, result) -> None:  # noqa: ANN001
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)

@@ -31,7 +31,7 @@ LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
 LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
 
-def convert_image_url_to_base64(image_url):
+def convert_image_url_to_base64(image_url):  # noqa: ANN001
     """Fetches an image from a URL and converts it to Base64 encoded bytes."""
     try:
         # Fetch the image from the URL
@@ -91,7 +91,7 @@ def test_text_and_vision_tokenizer() -> None:
 
 
 @pytest.mark.skip("CI does not appear to be working well with gated repos")
-def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
+def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:  # noqa: ANN001
     """This test uses gated repos on huggingface, as such its not expected to run in CI.
     It is written to test out chat templating and input features for tool use with Llama 3.2
     """
@@ -141,7 +141,7 @@ def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
 
 
 def test_tokenizer__truncates_to_max_length(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     max_length = 12
     tokenizer = TextTokenizer(
@@ -202,7 +202,7 @@ def test_tokenizer_regression_MODELS_467() -> None:
 
 @pytest.mark.asyncio
 async def test_tokenizer__encode_and_decode(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 
@@ -222,7 +222,7 @@ async def test_tokenizer__encode_and_decode(
 @pytest.mark.skip("TODO: Fix this flaky test")
 @mock_estimate_memory_footprint
 def test_text_tokenizer_with_constrained_decoding(
-    modular_ai_llama_3_1_local_path,
+    modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
     device_specs = []
     if accelerator_count() > 0:
@@ -282,7 +282,7 @@ def test_text_tokenizer_with_constrained_decoding(
 
 
 def test_tokenizer_encode_stop_criteria(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 
@@ -310,7 +310,7 @@ def test_tokenizer_encode_stop_criteria(
 
 @pytest.mark.asyncio
 async def test_tokenizer__generate_prompt_and_token_ids(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     """Test the _generate_prompt_and_token_ids method of TextTokenizer."""
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)

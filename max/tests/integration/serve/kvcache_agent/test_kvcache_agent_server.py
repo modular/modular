@@ -40,7 +40,7 @@ def zmq_endpoint():
 
 
 @pytest.fixture
-def zmq_push_socket(zmq_ctx, zmq_endpoint):
+def zmq_push_socket(zmq_ctx, zmq_endpoint):  # noqa: ANN001
     push_socket = ZmqPushSocket[KVCacheChangeMessage](zmq_ctx, zmq_endpoint)
     yield push_socket
     push_socket._cleanup()
@@ -53,7 +53,7 @@ def server_config():
 
 
 @pytest.fixture
-def server(server_config, zmq_ctx, zmq_endpoint):
+def server(server_config, zmq_ctx, zmq_endpoint):  # noqa: ANN001
     """Fixture that provides a running server instance for tests using ZMQ."""
     server = KVCacheAgentServer(server_config, zmq_ctx, zmq_endpoint)
     server.start()
@@ -63,7 +63,7 @@ def server(server_config, zmq_ctx, zmq_endpoint):
 
 
 @pytest.fixture
-def stub(server_config):
+def stub(server_config):  # noqa: ANN001
     """Fixture that provides a gRPC client stub connected to the test server."""
     channel = grpc.insecure_channel(
         f"{server_config.host}:{server_config.port}"
@@ -71,7 +71,7 @@ def stub(server_config):
     return KVCacheAgentServiceStub(channel)
 
 
-def test_server_initialization(server_config, zmq_ctx, zmq_endpoint) -> None:
+def test_server_initialization(server_config, zmq_ctx, zmq_endpoint) -> None:  # noqa: ANN001
     """Test that the server initializes correctly with ZMQ."""
     server = KVCacheAgentServer(server_config, zmq_ctx, zmq_endpoint)
     assert not server._started
@@ -83,7 +83,7 @@ def test_server_initialization(server_config, zmq_ctx, zmq_endpoint) -> None:
     assert not server._started
 
 
-def test_smoke(server, zmq_push_socket, stub) -> None:
+def test_smoke(server, zmq_push_socket, stub) -> None:  # noqa: ANN001
     """Smoke test using ZMQ for event delivery."""
     zmq_push_socket.put(
         KVCacheChangeMessage(
@@ -126,7 +126,7 @@ def test_smoke(server, zmq_push_socket, stub) -> None:
     assert response.cache_ids == ["id1"]
 
 
-def test_multiple_subscribers(server, zmq_push_socket, stub) -> None:
+def test_multiple_subscribers(server, zmq_push_socket, stub) -> None:  # noqa: ANN001
     """Test that multiple subscribers receive updates using ZMQ."""
 
     responses1 = stub.SubscribeToUpdates(SubscriptionRequest())

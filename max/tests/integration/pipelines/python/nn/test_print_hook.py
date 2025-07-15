@@ -17,7 +17,7 @@ class OuterLayer(Layer):
         self.inner_layer_1 = InnerLayer()
         self.inner_layer_2 = InnerLayer()
 
-    def __call__(self, input):
+    def __call__(self, input):  # noqa: ANN001
         cast_input = input.cast(DType.int32)
         inner_1 = self.inner_layer_1(cast_input)
         inner_2 = self.inner_layer_2(inner_1)
@@ -25,11 +25,11 @@ class OuterLayer(Layer):
 
 
 class InnerLayer(Layer):
-    def __call__(self, input):
+    def __call__(self, input):  # noqa: ANN001
         return input.transpose(0, 1)
 
 
-def test_unnamed_print_hook(session: InferenceSession, capfd) -> None:
+def test_unnamed_print_hook(session: InferenceSession, capfd) -> None:  # noqa: ANN001
     print_hook = PrintHook()
     layer = OuterLayer()
 
@@ -58,7 +58,7 @@ def test_unnamed_print_hook(session: InferenceSession, capfd) -> None:
     assert "Printed 6 tensors for step 0" in captured.out
 
 
-def test_named_print_hook(session: InferenceSession, capfd) -> None:
+def test_named_print_hook(session: InferenceSession, capfd) -> None:  # noqa: ANN001
     print_hook = PrintHook()
     layer = OuterLayer()
 

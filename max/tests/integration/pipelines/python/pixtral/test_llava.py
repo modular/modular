@@ -188,12 +188,12 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
     return connector, weights_registry
 
 
-def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
+def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):  # noqa: ANN001
     ########################### Weights ####################################
     # Collect all the weights into the weights registry.
     weights_registry: dict = {}
 
-    def linear(name: str, array) -> LinearV1:
+    def linear(name: str, array) -> LinearV1:  # noqa: ANN001
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
         return LinearV1(
@@ -321,7 +321,7 @@ def missing_value(t: type[T]) -> T:
     raise NotImplementedError
 
 
-def mistral_given_pytorch_mistral(pytorch_model, config):
+def mistral_given_pytorch_mistral(pytorch_model, config):  # noqa: ANN001
     # refer to:
     # https://github.com/huggingface/transformers/blob/main/src/transformers/models/mistral/modeling_mistral.py#L682
     # TODO: init these values for Mistral test
@@ -347,7 +347,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
     ]
 
     ############ Define Graph-API layers with weights with pytorch #############
-    def linear(name: str, array) -> LinearV1:
+    def linear(name: str, array) -> LinearV1:  # noqa: ANN001
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
         return LinearV1(
@@ -359,7 +359,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
             )
         )
 
-    def _weight(name: str, array) -> Weight:
+    def _weight(name: str, array) -> Weight:  # noqa: ANN001
         weights_registry[name] = array
         return Weight(
             name=name,
@@ -369,7 +369,9 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         )
 
     def attention(
-        kv_params, rope: RotaryEmbedding, layer_idx: int
+        kv_params,  # noqa: ANN001
+        rope: RotaryEmbedding,
+        layer_idx: int,  # noqa: ANN001
     ) -> AttentionWithRopeV1:
         wq = ops.transpose(
             _weight(
@@ -482,7 +484,8 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
 
 @pytest.fixture
 def graph_api_pixtral(
-    pytorch_pixtral, graph_api_connector: tuple[LlavaMultiModalConnector, dict]
+    pytorch_pixtral,  # noqa: ANN001
+    graph_api_connector: tuple[LlavaMultiModalConnector, dict],  # noqa: ANN001
 ):
     weights_registry: dict = {}
     # Create a vision encoder with the weights of pytorch_pixtral.vision_tower
@@ -551,7 +554,8 @@ def test_connector(
 
 
 def test_processor(
-    img_urls_and_prompt: tuple, pytorch_pixtral_processor
+    img_urls_and_prompt: tuple,
+    pytorch_pixtral_processor,  # noqa: ANN001
 ) -> None:
     IMG_URLS, PROMPT = img_urls_and_prompt
     pytorch_inputs = pytorch_pixtral_processor(

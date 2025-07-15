@@ -12,7 +12,7 @@ import numpy as np
 
 
 class NumpyEncoder(JSONEncoder):
-    def default(self, obj):
+    def default(self, obj):  # noqa: ANN001
         if isinstance(obj, np.ndarray):
             return {
                 "__np__": base64.b64encode(obj.tobytes()).decode("ascii"),
@@ -30,7 +30,7 @@ class NumpyDecoder(JSONDecoder):
             self, object_hook=self.object_hook, *args, **kwargs
         )
 
-    def object_hook(self, dct):
+    def object_hook(self, dct):  # noqa: ANN001
         if "__np__" in dct:
             shape = dct["shape"]
             dtype = np.dtype(dct["dtype"])

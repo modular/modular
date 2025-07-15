@@ -93,7 +93,7 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
 
 
 @pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
-def test_memory_estimation__raise_oom_error_all_defaults(caplog) -> None:
+def test_memory_estimation__raise_oom_error_all_defaults(caplog) -> None:  # noqa: ANN001
     with (
         patch.object(
             DummyLlamaPipelineModel,

@@ -188,7 +188,7 @@ class LayerIOCapture:
         layer_capture = self
 
         @wraps(original_call)
-        def wrapped_call(module_self, *args, **kwargs):
+        def wrapped_call(module_self, *args, **kwargs):  # noqa: ANN001
             # Generate layer name - try to get meaningful name from layer weights
             layer_name = f"layer_{layer_capture.layer_count:03d}_{type(module_self).__name__}"
 
@@ -491,7 +491,7 @@ class TorchLayerIOCapture:
     def _make_hook(self, module_name: str, module: torch.nn.Module):
         """Create a forward hook for a specific module."""
 
-        def hook_fn(module, inputs, outputs):
+        def hook_fn(module, inputs, outputs):  # noqa: ANN001
             # Use the original module name, replacing dots with underscores for valid filenames
             layer_name = module_name
             self.layer_count += 1
@@ -610,7 +610,7 @@ def capture_max_layer_outputs(
     # Monkey patch InferenceSession to set debug print options on all new sessions
     original_init = InferenceSession.__init__
 
-    def patched_init(self, *args, **kwargs):
+    def patched_init(self, *args, **kwargs):  # noqa: ANN001
         # Call original init
         original_init(self, *args, **kwargs)
         # Set debug print options on this session

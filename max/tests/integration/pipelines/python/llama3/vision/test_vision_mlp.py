@@ -47,7 +47,7 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
 
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)
-        def test_correctness(execute, inputs, torch_inputs) -> None:
+        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 

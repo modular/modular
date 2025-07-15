@@ -103,7 +103,7 @@ def check_correctness(
 
 @contextlib.contextmanager
 def time_limit(seconds: float):
-    def signal_handler(signum, frame) -> NoReturn:
+    def signal_handler(signum, frame) -> NoReturn:  # noqa: ANN001
         raise TimeoutException("Timed out!")
 
     signal.setitimer(signal.ITIMER_REAL, seconds)
@@ -156,7 +156,7 @@ class redirect_stdin(contextlib._RedirectStream):  # type: ignore
 
 
 @contextlib.contextmanager
-def chdir(root):
+def chdir(root):  # noqa: ANN001
     if root == ".":
         yield
         return

@@ -111,14 +111,14 @@ def pytorch_attention_mask(
 
 
 @pytest.fixture
-def vision_encoder(pytorch_pixtral_vision_encoder):
+def vision_encoder(pytorch_pixtral_vision_encoder):  # noqa: ANN001
     ########################### Weights ####################################
     pytorch_model = pytorch_pixtral_vision_encoder
 
     # Collect all the weights into the weights registry.
     weights_registry: dict = {}
 
-    def linear(name: str, array) -> LinearV1:
+    def linear(name: str, array) -> LinearV1:  # noqa: ANN001
         """Creates a LinearV1 layer backed by a weight."""
         weights_registry[name] = array
         return LinearV1(
@@ -239,7 +239,7 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
 
 # TODO(KERN-1066): Fix and enable test
 @pytest.mark.skip(reason="Test is flaky. Model works.")
-def test_patch_conv(imgs, img_sizes) -> None:
+def test_patch_conv(imgs, img_sizes) -> None:  # noqa: ANN001
     # TODO: Check the values of pixels are expected to be in [0, 255]
     patch_conv = nn.Conv2d(
         in_channels=num_channels,
@@ -294,7 +294,10 @@ def test_patch_conv(imgs, img_sizes) -> None:
 
 @pytest.mark.skip(reason="Test is flaky. Model works.")
 def test_vision_encoder(
-    imgs, img_sizes, pytorch_pixtral_vision_encoder, vision_encoder
+    imgs,  # noqa: ANN001
+    img_sizes,  # noqa: ANN001
+    pytorch_pixtral_vision_encoder,  # noqa: ANN001
+    vision_encoder,  # noqa: ANN001
 ) -> None:
     # TODO: Check the values of pixels are expected to be in [0, 255]
     pytorch_model = pytorch_pixtral_vision_encoder
@@ -335,7 +338,7 @@ def test_vision_encoder(
         )
 
 
-def test_attention_mask(imgs, pytorch_attention_mask) -> None:
+def test_attention_mask(imgs, pytorch_attention_mask) -> None:  # noqa: ANN001
     # Permute torch inputs for the graph API to be (height, width, num_channels)
     imgs = [np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs]
     # use pytorch model's fill value for testing to compare results

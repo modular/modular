@@ -28,7 +28,7 @@ from test_common.context_utils import create_text_context
         (KVCacheStrategy.PAGED, FetchPagedKVCacheCollection),
     ],
 )
-async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
+async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:  # noqa: ANN001
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.float32,

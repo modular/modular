@@ -250,7 +250,7 @@ TEST_COMMANDS = [
     type=int,
 )
 def testing(
-    idx,
+    idx,  # noqa: ANN001
     **config_kwargs,
 ) -> None:
     # Retrieve test command.
@@ -317,7 +317,7 @@ def testing(
 )
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli_commands(command, idx) -> None:
+def test_cli_commands(command, idx) -> None:  # noqa: ANN001
     """
     Test individual CLI commands
 

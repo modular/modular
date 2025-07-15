@@ -25,17 +25,17 @@ def gen_prompt(length: int) -> np.ndarray:
     return np.random.randint(0, 2, size=length)
 
 
-def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:
+def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:  # noqa: ANN001
     return kv_tuple[2].to_numpy().tolist()
 
 
 def get_uncommitted_and_committed_block_counts(
-    kv_tuple,
+    kv_tuple,  # noqa: ANN001
 ) -> list[list[int]]:
     return kv_tuple[3].to_numpy().tolist()
 
 
-def get_cache_lengths_from_kv_tuple(kv_tuple) -> list[int]:
+def get_cache_lengths_from_kv_tuple(kv_tuple) -> list[int]:  # noqa: ANN001
     return kv_tuple[1].to_numpy().tolist()
 
 
@@ -236,7 +236,7 @@ async def test_prefix_caching_with_no_release() -> None:
         (128, 10),
     ],
 )
-async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
+async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:  # noqa: ANN001
     np.random.seed(12345)
 
     num_blocks = 128
@@ -429,7 +429,7 @@ class FakeModel:
         fake_model = self
 
         def mock_memcpy_d2d(
-            self,
+            self,  # noqa: ANN001
             dst: int,
             src: int,
             num_tokens: int,
@@ -453,7 +453,7 @@ class FakeModel:
     def run(
         self,
         seq_ids_and_prompts: dict[int, np.ndarray],
-        fetch_kv_tuple,
+        fetch_kv_tuple,  # noqa: ANN001
         num_steps: int,
         seq_ids_and_new_tokens: Optional[dict[int, np.ndarray]] = None,
     ) -> dict[int, np.ndarray]:
@@ -711,7 +711,7 @@ async def test_prefix_caching_cow() -> None:
     prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     run_forward(model, kv_manager, ctx, prompt_1, 42)
 
-    def run_forward_cow(seq_id, prompt, cache_idx) -> None:
+    def run_forward_cow(seq_id, prompt, cache_idx) -> None:  # noqa: ANN001
         kv_manager.external_claim([seq_id])
         ctx = create_text_context(seq_id, np.array([]))
         run_forward(

@@ -10,7 +10,7 @@ import pytest
 from max.entrypoints import pipelines
 
 
-def test_pipelines_list_json(capsys) -> None:
+def test_pipelines_list_json(capsys) -> None:  # noqa: ANN001
     with pytest.raises(SystemExit):
         pipelines.main(["list", "--json"])
     captured = capsys.readouterr()

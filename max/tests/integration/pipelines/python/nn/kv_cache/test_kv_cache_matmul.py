@@ -158,7 +158,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             6: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:
+    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)

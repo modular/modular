@@ -17,20 +17,20 @@ from max.nn import MLPV1, LinearV1
 from modular_graph_test import are_all_tensor_values
 
 
-def torch_linear(weight, **kwargs):
+def torch_linear(weight, **kwargs):  # noqa: ANN001
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     return linear
 
 
 class TorchMLP(nn.Module):
-    def __init__(self, w1, w2, w3) -> None:
+    def __init__(self, w1, w2, w3) -> None:  # noqa: ANN001
         super().__init__()
         self.gate_proj = torch_linear(w1, bias=False)
         self.down_proj = torch_linear(w2, bias=False)
         self.up_proj = torch_linear(w3, bias=False)
 
-    def forward(self, x):
+    def forward(self, x):  # noqa: ANN001
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 

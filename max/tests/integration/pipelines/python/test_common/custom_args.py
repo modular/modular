@@ -17,13 +17,13 @@ class CommaSeparatedList(Sequence[str]):
     def __len__(self) -> int:
         return len(self._values)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):  # noqa: ANN001
         return self._values[idx]
 
     def __repr__(self) -> str:
         return repr(self._values)
 
-    def __eq__(self, other):
+    def __eq__(self, other):  # noqa: ANN001
         return len(self) == len(other) and all(
             lhs == rhs for lhs, rhs in zip(self, other)
         )

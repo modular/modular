@@ -38,7 +38,8 @@ def test_sampling_top_k() -> None:
 
 
 def test_bitmask_sampling_vs_xgrammar(
-    session: InferenceSession, modular_ai_llama_3_1_local_path
+    session: InferenceSession,
+    modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
     # Get Tokenizer and Model Info
     config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)

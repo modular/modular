@@ -87,7 +87,8 @@ def pipeline(
 @pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_same_output(
-    pipeline, pipeline_tokenizer
+    pipeline,  # noqa: ANN001
+    pipeline_tokenizer,  # noqa: ANN001
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -129,7 +130,8 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 @pytest.mark.skip("flaky")
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
-    pipeline, pipeline_tokenizer
+    pipeline,  # noqa: ANN001
+    pipeline_tokenizer,  # noqa: ANN001
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     HOWEVER, we set different max-new-tokens for each batch
@@ -184,7 +186,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
 
 
 @pytest.fixture(scope="session")
-def batch_sizes(request):
+def batch_sizes(request):  # noqa: ANN001
     return request.param
 
 
@@ -200,7 +202,9 @@ def batch_sizes(request):
     indirect=True,
 )
 async def test_pipeline_dynamic_batch_same_prompt_same_output(
-    pipeline, pipeline_tokenizer, batch_sizes
+    pipeline,  # noqa: ANN001
+    pipeline_tokenizer,  # noqa: ANN001
+    batch_sizes,  # noqa: ANN001
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -248,7 +252,8 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 @pytest.mark.asyncio
 @pytest.mark.skip("AITLIB-336: Bug that causes a mismatch in matmul dimensions")
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline, pipeline_tokenizer
+    pipeline,  # noqa: ANN001
+    pipeline_tokenizer,  # noqa: ANN001
 ) -> None:
     """Execute a batch with prompts with different lengths and validates the
     logits.

@@ -61,24 +61,24 @@ class InternVisionConfig(PretrainedConfig):
 
     def __init__(
         self,
-        num_channels=3,
-        patch_size=14,
-        image_size=224,
-        qkv_bias=False,
-        hidden_size=3200,
-        num_attention_heads=25,
-        intermediate_size=12800,
-        qk_normalization=True,
-        num_hidden_layers=48,
-        use_flash_attn=True,
-        hidden_act="gelu",
-        norm_type="rms_norm",
-        layer_norm_eps=1e-6,
-        dropout=0.0,
-        drop_path_rate=0.0,
-        attention_dropout=0.0,
-        initializer_range=0.02,
-        initializer_factor=0.1,
+        num_channels=3,  # noqa: ANN001
+        patch_size=14,  # noqa: ANN001
+        image_size=224,  # noqa: ANN001
+        qkv_bias=False,  # noqa: ANN001
+        hidden_size=3200,  # noqa: ANN001
+        num_attention_heads=25,  # noqa: ANN001
+        intermediate_size=12800,  # noqa: ANN001
+        qk_normalization=True,  # noqa: ANN001
+        num_hidden_layers=48,  # noqa: ANN001
+        use_flash_attn=True,  # noqa: ANN001
+        hidden_act="gelu",  # noqa: ANN001
+        norm_type="rms_norm",  # noqa: ANN001
+        layer_norm_eps=1e-6,  # noqa: ANN001
+        dropout=0.0,  # noqa: ANN001
+        drop_path_rate=0.0,  # noqa: ANN001
+        attention_dropout=0.0,  # noqa: ANN001
+        initializer_range=0.02,  # noqa: ANN001
+        initializer_factor=0.1,  # noqa: ANN001
         **kwargs,
     ):
         super().__init__(**kwargs)

@@ -23,7 +23,7 @@ request = {
 
 
 @pytest.mark.asyncio
-async def test_stop_sequence(echo_app) -> None:
+async def test_stop_sequence(echo_app) -> None:  # noqa: ANN001
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post("/v1/chat/completions", json=request)
@@ -40,7 +40,8 @@ async def test_stop_sequence(echo_app) -> None:
 @pytest.mark.skip(reason="Flaky test -- MAXSERV-947")
 @pytest.mark.asyncio
 async def test_stop_sequence_streaming(
-    echo_app, reset_sse_starlette_appstatus_event
+    echo_app,  # noqa: ANN001
+    reset_sse_starlette_appstatus_event,  # noqa: ANN001
 ) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
@@ -61,7 +62,7 @@ async def test_stop_sequence_streaming(
         )
 
 
-async def _stream_response(raw_response):
+async def _stream_response(raw_response):  # noqa: ANN001
     response_text = ""
     async for response in raw_response.iter_content(1024 * 20):
         response = response.decode("utf-8").strip()

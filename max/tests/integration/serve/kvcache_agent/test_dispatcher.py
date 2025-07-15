@@ -308,7 +308,7 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
         # Client handlers
         for i, client in enumerate(clients):
 
-            def make_handler(client_idx):
+            def make_handler(client_idx):  # noqa: ANN001
                 def handle_client_reply(payload: Any) -> None:
                     client_replies[client_idx].append(payload)
 

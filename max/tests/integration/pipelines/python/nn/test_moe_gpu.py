@@ -58,7 +58,7 @@ def test_moe_create_indices() -> None:
     graph = construct()
     model = session.load(graph)
 
-    def validate_moe_indices(results, topk_ids, NUM_TOKENS) -> None:
+    def validate_moe_indices(results, topk_ids, NUM_TOKENS) -> None:  # noqa: ANN001
         # check output 0
         token_expert_order = from_dlpack(results[0]).cpu().numpy()
 

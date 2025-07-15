@@ -16,7 +16,12 @@ HIDDEN_DIM = 64
 
 
 def torch_merge_ragged_tensors(
-    a_input, a_batch_sizes, a_offsets, b_input, b_batch_sizes, b_offsets
+    a_input,  # noqa: ANN001
+    a_batch_sizes,  # noqa: ANN001
+    a_offsets,  # noqa: ANN001
+    b_input,  # noqa: ANN001
+    b_batch_sizes,  # noqa: ANN001
+    b_offsets,  # noqa: ANN001
 ) -> tuple[torch.Tensor, torch.Tensor]:
     torch_merged_tensor = torch.zeros(
         (

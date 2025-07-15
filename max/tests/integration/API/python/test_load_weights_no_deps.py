@@ -20,7 +20,7 @@ def graph_testdata() -> Path:
     return Path(path)
 
 
-def test_load_gguf(graph_testdata) -> None:
+def test_load_gguf(graph_testdata) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
 
     with pytest.raises(ImportError) as info:
@@ -29,7 +29,7 @@ def test_load_gguf(graph_testdata) -> None:
     assert str(info.value) == "Unable to load gguf file, gguf not installed"
 
 
-def test_load_pytorch(graph_testdata) -> None:
+def test_load_pytorch(graph_testdata) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
 
     with pytest.raises(ImportError) as info:

@@ -422,7 +422,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config_post_init__other_repo_weights(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
@@ -467,7 +467,7 @@ def test_validate_model_path__correct_repo_id_provided() -> None:
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_incompatible_quantization_encoding(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -505,7 +505,7 @@ def test_config__test_incompatible_quantization_encoding(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_quantization_encoding_with_dtype_casting(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -562,7 +562,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_known_architecture(
-    modular_ai_llama_3_1_local_path,
+    modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -580,7 +580,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_unsupported_model_path(
-    gemma_3_1b_it_local_path,
+    gemma_3_1b_it_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -599,7 +599,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
-    modular_ai_llama_3_1_local_path,
+    modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -617,7 +617,7 @@ def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
 class LimitedPickler(pickle.Unpickler):
     """A custom Unpickler class that checks for transformer modules."""
 
-    def find_class(self, module, name):
+    def find_class(self, module, name):  # noqa: ANN001
         if module.startswith("transformers"):
             raise AssertionError(
                 "Tried to unpickle class from transformers module, raising an "
@@ -627,7 +627,7 @@ class LimitedPickler(pickle.Unpickler):
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_is_picklable(tmp_path) -> None:
+def test_config_is_picklable(tmp_path) -> None:  # noqa: ANN001
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
@@ -689,7 +689,7 @@ def test_config__validates_supported_device() -> None:
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__validates_invalid_supported_device(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -709,7 +709,7 @@ def test_config__validates_invalid_supported_device(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__validates_engine_configurations(
-    llama_3_1_8b_instruct_local_path,
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -726,7 +726,8 @@ def test_config__validates_engine_configurations(
 
 @prepare_registry
 def test_config__validates_lora_configuration(
-    llama_3_1_8b_instruct_local_path, llama_3_1_8b_lora_local_path
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+    llama_3_1_8b_lora_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 

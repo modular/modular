@@ -11,7 +11,7 @@ from unittest.mock import patch
 from max.pipelines.lib import MEMORY_ESTIMATOR
 
 
-def mock_estimate_memory_footprint(func):
+def mock_estimate_memory_footprint(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch.object(

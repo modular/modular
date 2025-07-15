@@ -14,14 +14,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def torch_linear(weight, **kwargs):
+def torch_linear(weight, **kwargs):  # noqa: ANN001
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     return linear
 
 
 class TorchVisionEncoderMLP(nn.Module):
-    def __init__(self, w1, w2) -> None:
+    def __init__(self, w1, w2) -> None:  # noqa: ANN001
         super().__init__()
         self.fc1 = torch_linear(w1, bias=False)
         self.fc2 = torch_linear(w2, bias=False)
@@ -35,7 +35,10 @@ class TorchVisionEncoderMLP(nn.Module):
 
 class TorchVisionAttention(nn.Module):
     def __init__(
-        self, attn_weight, hidden_size: int, attention_heads: int
+        self,
+        attn_weight,  # noqa: ANN001
+        hidden_size: int,
+        attention_heads: int,  # noqa: ANN001
     ) -> None:
         super().__init__()
 

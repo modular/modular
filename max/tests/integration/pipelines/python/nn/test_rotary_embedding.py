@@ -113,7 +113,7 @@ class RopeParams:
     ],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
-def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:
+def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:  # noqa: ANN001
     with Graph("freqs_cis", input_types=[]) as graph:
         rope = RotaryEmbedding(
             params.dim,
@@ -182,7 +182,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
 def test_llama3_freqs_cis(
-    session,
+    session,  # noqa: ANN001
     dtype: DType,
     base_params: RopeParams,
     scaling_params: Llama3RopeScalingParams,
@@ -231,7 +231,7 @@ def test_llama3_freqs_cis(
     ],
 )
 def test_dynamic_rope_freqs_cis(
-    session,
+    session,  # noqa: ANN001
     dim: int,
     n_heads: int,
     theta: float,
@@ -310,7 +310,7 @@ class CannedRotaryEmbedding(RotaryEmbedding):
         self._freqs_cis = freqs_cis
 
 
-def torch_rope(x, freqs_cis, cache):
+def torch_rope(x, freqs_cis, cache):  # noqa: ANN001
     start_pos = cache.shape[0]
     seq_len = x.shape[1]
     freqs_cis = freqs_cis[start_pos : start_pos + seq_len]
@@ -343,7 +343,7 @@ def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     ],
 )
 @pytest.mark.parametrize("start_pos", [0, 15])
-def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:
+def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:  # noqa: ANN001
     _, seqlen, _, head_dim = input_type.shape
     freqs_cis_type = TensorType(
         input_type.dtype, [MAX_SEQ_LEN, head_dim], device=DeviceRef.CPU()
@@ -361,7 +361,7 @@ def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:
         graph.output(rope(x, start_pos, seq_len))
 
         @modular_graph_test(session, graph, max_magnitude=1.0)
-        def test_correctness(execute, inputs, torch_inputs) -> None:
+        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
             x, freqs_cis, cache = inputs
             start_pos = cache.shape[0]
             seq_len = x.shape[1]
@@ -378,7 +378,7 @@ def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:
             )
 
 
-def test_kv_cache_ragged_rope(session) -> None:
+def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
     num_q_heads = 32
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -508,7 +508,7 @@ def test_kv_cache_ragged_rope(session) -> None:
             6: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:
+    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)
@@ -569,7 +569,7 @@ def torch_longrope_freqs_cis(
     ],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
-def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:
+def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  # noqa: ANN001
     """Test LongRoPE frequency scaling with different scaling factors for short and long sequences.
 
     This test verifies that LongRoPE correctly applies frequency scaling parameters:

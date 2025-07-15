@@ -48,7 +48,9 @@ BATCH_SIZE = 4
     ],
 )
 def test_kv_cache_ragged_attention(
-    session, cache_strategy, mask_strategy
+    session,  # noqa: ANN001
+    cache_strategy,  # noqa: ANN001
+    mask_strategy,  # noqa: ANN001
 ) -> None:
     num_q_heads = 32
     kv_params = KVCacheParams(
@@ -177,7 +179,7 @@ def test_kv_cache_ragged_attention(
             5: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:
+    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)

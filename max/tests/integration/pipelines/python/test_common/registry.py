@@ -31,7 +31,7 @@ def pipeline_registry():
     yield PIPELINE_REGISTRY
 
 
-def prepare_registry(func):
+def prepare_registry(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         PIPELINE_REGISTRY.reset()

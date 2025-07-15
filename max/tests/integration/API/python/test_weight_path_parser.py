@@ -68,7 +68,7 @@ class TestWeightPathParser:
         assert repo_id is None
 
     @patch("pathlib.Path.is_file")
-    def test_parse_existing_file_skips_hf_parsing(self, mock_is_file) -> None:
+    def test_parse_existing_file_skips_hf_parsing(self, mock_is_file) -> None:  # noqa: ANN001
         """Test that existing files skip HF repo parsing."""
         mock_is_file.return_value = True
 
@@ -83,7 +83,8 @@ class TestWeightPathParser:
 
     @patch("huggingface_hub.file_exists")
     def test_parse_hf_repo_path_same_as_model_path(
-        self, mock_file_exists
+        self,
+        mock_file_exists,  # noqa: ANN001
     ) -> None:
         """Test parsing HF repo path that matches model_path."""
         mock_file_exists.return_value = True
@@ -99,7 +100,8 @@ class TestWeightPathParser:
 
     @patch("huggingface_hub.file_exists")
     def test_parse_hf_repo_path_different_from_model_path(
-        self, mock_file_exists
+        self,
+        mock_file_exists,  # noqa: ANN001
     ) -> None:
         """Test parsing HF repo path that differs from model_path."""
         mock_file_exists.return_value = True
@@ -114,7 +116,7 @@ class TestWeightPathParser:
         assert repo_id == "org2/model2"
 
     @patch("huggingface_hub.file_exists")
-    def test_parse_hf_repo_path_file_not_exists(self, mock_file_exists) -> None:
+    def test_parse_hf_repo_path_file_not_exists(self, mock_file_exists) -> None:  # noqa: ANN001
         """Test parsing HF repo path when file doesn't exist."""
         mock_file_exists.return_value = False
 
@@ -154,7 +156,8 @@ class TestWeightPathParser:
 
     @patch("huggingface_hub.file_exists")
     def test_parse_complex_hf_path_with_nested_structure(
-        self, mock_file_exists
+        self,
+        mock_file_exists,  # noqa: ANN001
     ) -> None:
         """Test parsing complex HF paths with nested directory structure."""
         mock_file_exists.return_value = True
@@ -170,7 +173,8 @@ class TestWeightPathParser:
 
     @patch("huggingface_hub.file_exists")
     def test_parse_complex_hf_path_with_nested_structure_no_hf_prefix_no_model_path(
-        self, mock_file_exists
+        self,
+        mock_file_exists,  # noqa: ANN001
     ) -> None:
         """Test parsing complex HF paths with very nested directory structure.
         In this case the weight path doesn't have a HF prefix and model_path is empty,
@@ -191,7 +195,8 @@ class TestWeightPathParser:
 
     @patch("huggingface_hub.file_exists")
     def test_parse_complex_hf_path_with_nested_structure_no_hf_prefix(
-        self, mock_file_exists
+        self,
+        mock_file_exists,  # noqa: ANN001
     ) -> None:
         """Test parsing complex HF paths with very nested directory structure.
         In this case the weight path doesn't have a HF prefix, which means file_exists
@@ -214,7 +219,9 @@ class TestWeightPathParser:
     @patch("pathlib.Path.is_file")
     @patch("huggingface_hub.file_exists")
     def test_parse_mixed_existing_and_hf_paths(
-        self, mock_file_exists, mock_is_file
+        self,
+        mock_file_exists,  # noqa: ANN001
+        mock_is_file,  # noqa: ANN001
     ) -> None:
         """Test parsing a mix of existing files and HF repo paths."""
         # First path exists locally, second is from HF

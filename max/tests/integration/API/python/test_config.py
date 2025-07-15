@@ -58,7 +58,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     platform.machine() in ["arm64", "aarch64"],
     reason="BF16 is not supported on ARM CPU architecture",
 )
-def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None:
+def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None:  # noqa: ANN001
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     temp_valid_kernels = [

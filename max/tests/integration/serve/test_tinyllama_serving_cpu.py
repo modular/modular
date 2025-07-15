@@ -38,7 +38,7 @@ pipeline_config = PipelineConfig(
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:
+async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: ANN001
     async with TestClient(app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
@@ -88,8 +88,8 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_completions_cpu(app) -> None:
-    def openai_completion_request(content):
+async def test_tinyllama_serve_v1_completions_cpu(app) -> None:  # noqa: ANN001
+    def openai_completion_request(content):  # noqa: ANN001
         """Create the json request for /v1/completion (not chat)."""
         return {
             "model": "HuggingFaceTB/SmolLM-135M",
@@ -97,7 +97,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app) -> None:
             "temperature": 0.7,
         }
 
-    async def main_stream(client, msg: str):
+    async def main_stream(client, msg: str):  # noqa: ANN001
         print(f"Generated request with prompt :{msg}")
         r = await client.post(
             "/v1/completions",

@@ -109,8 +109,8 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     reason="TODO(AITLIB-339): This test is flaky due to bad huggingface cache hydration"
 )
 def test_config__validate_device_and_encoding_combinations(
-    smollm_135m_local_path,
-    llama_3_1_8b_instruct_local_path,
+    smollm_135m_local_path,  # noqa: ANN001
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -135,9 +135,9 @@ def test_config__validate_device_and_encoding_combinations(
 
 @pytest.mark.skip(reason="TODO(AITLIB-363): Division by zero error.")
 def test_config__validate_target_and_draft_architecture(
-    exaone_2_4b_local_path,
-    smollm_135m_local_path,
-    deepseek_r1_distill_llama_8b_local_path,
+    exaone_2_4b_local_path,  # noqa: ANN001
+    smollm_135m_local_path,  # noqa: ANN001
+    deepseek_r1_distill_llama_8b_local_path,  # noqa: ANN001
 ) -> None:
     with pytest.raises(ValueError):
         # Test that when the target & draft architectures are different
@@ -164,7 +164,7 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
-def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:
+def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:  # noqa: ANN001
     """Test that speculative decoding is not supported with HuggingFace engine."""
     with pytest.raises(
         ValueError,
@@ -180,7 +180,7 @@ def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:
 
 
 def test_speculative_decoding_no_rejection(
-    setup_speculative_decoding_pipeline,
+    setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
@@ -241,7 +241,7 @@ def test_speculative_decoding_no_rejection(
 
 
 def test_speculative_decoding_partial_rejection(
-    setup_speculative_decoding_pipeline,
+    setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
@@ -330,7 +330,7 @@ def test_speculative_decoding_partial_rejection(
 
 
 def test_speculative_decoding_multiple_token_without_rejection(
-    setup_speculative_decoding_pipeline,
+    setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
@@ -353,7 +353,7 @@ def test_speculative_decoding_multiple_token_without_rejection(
 
 
 def test_speculative_decoding_context_update(
-    setup_speculative_decoding_pipeline,
+    setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]

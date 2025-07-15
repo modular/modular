@@ -23,7 +23,7 @@ from max.pipelines.core import TextContext
 pytest_plugins = "test_common.registry"
 
 
-def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:
+def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: ANN001
     pipeline_config = PipelineConfig(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         enable_structured_output=True,

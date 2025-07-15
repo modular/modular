@@ -9,7 +9,7 @@ from __future__ import annotations
 from max.experimental.tensor import Tensor
 
 
-def assert_all_close(t1, t2: Tensor, atol=1e-6, rtol=1e-6):
+def assert_all_close(t1, t2: Tensor, atol=1e-6, rtol=1e-6):  # noqa: ANN001
     if not isinstance(t1, Tensor):
         t1 = Tensor.constant(t1, dtype=t2.dtype, device=t2.device_)
 

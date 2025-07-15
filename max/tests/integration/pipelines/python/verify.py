@@ -52,12 +52,12 @@ from test_common.verify_utils import construct_validator
 
 
 class VerificationError(click.ClickException):
-    def __init__(self, message) -> None:
+    def __init__(self, message) -> None:  # noqa: ANN001
         super().__init__(message)
 
 
 class AccuracyError(VerificationError):
-    def __init__(self, message) -> None:
+    def __init__(self, message) -> None:  # noqa: ANN001
         super().__init__(message)
         self.exit_code = 2
 
@@ -300,7 +300,7 @@ def verify(
     results = []
     any_failed = False
 
-    def compare(pipeline_value, torch_value, description) -> None:
+    def compare(pipeline_value, torch_value, description) -> None:  # noqa: ANN001
         nonlocal any_failed
 
         # TODO: These assertions assume we're working with LLMs

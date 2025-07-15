@@ -28,7 +28,7 @@ from max.serve.schemas.openai import ListModelsResponse, Model  # type: ignore
     ],
     indirect=True,
 )
-async def test_serve_models(app) -> None:
+async def test_serve_models(app) -> None:  # noqa: ANN001
     async with TestClient(app, timeout=720.0) as client:
         raw_response = await client.get("/v1/models")
 

@@ -35,12 +35,12 @@ logger = logging.get_logger(__name__)
 
 
 class InternRMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6):
+    def __init__(self, hidden_size, eps=1e-6):  # noqa: ANN001
         super().__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states):  # noqa: ANN001
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -82,7 +82,7 @@ class InternVisionEmbeddings(nn.Module):
             torch.randn(1, self.num_positions, self.embed_dim)
         )
 
-    def _get_pos_embed(self, pos_embed, H, W):
+    def _get_pos_embed(self, pos_embed, H, W):  # noqa: ANN001
         target_dtype = pos_embed.dtype
         pos_embed = (
             pos_embed.float()
@@ -163,7 +163,7 @@ class InternAttention(nn.Module):
 
         self.proj = nn.Linear(self.embed_dim, self.embed_dim)
 
-    def _naive_attn(self, x):
+    def _naive_attn(self, x):  # noqa: ANN001
         B, N, C = x.shape
         qkv = (
             self.qkv(x)
@@ -299,7 +299,7 @@ class InternVisionEncoder(nn.Module):
 
     def forward(
         self,
-        inputs_embeds,
+        inputs_embeds,  # noqa: ANN001
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[tuple, BaseModelOutput]:
@@ -366,7 +366,7 @@ class InternVisionModel(PreTrainedModel):
         self.embeddings = InternVisionEmbeddings(config)
         self.encoder = InternVisionEncoder(config)
 
-    def resize_pos_embeddings(self, old_size, new_size, patch_size):
+    def resize_pos_embeddings(self, old_size, new_size, patch_size):  # noqa: ANN001
         pos_emb = self.embeddings.position_embedding
         _, num_positions, embed_dim = pos_emb.shape
         cls_emb = pos_emb[:, :1, :]
@@ -471,7 +471,7 @@ class InternVLVisionModelWithProjection(nn.Module):
             nn.Linear(llm_hidden_size, llm_hidden_size),
         )
 
-    def pixel_shuffle(self, x, scale_factor=0.5):
+    def pixel_shuffle(self, x, scale_factor=0.5):  # noqa: ANN001
         n, w, h, c = x.size()
         # N, W, H, C --> N, W, H * scale, C // scale
         x = x.view(n, w, int(h * scale_factor), int(c / scale_factor))
@@ -495,7 +495,7 @@ class InternVLVisionModelWithProjection(nn.Module):
             x = x.permute(0, 2, 1, 3).contiguous()
         return x
 
-    def extract_feature(self, pixel_values, select_layer):
+    def extract_feature(self, pixel_values, select_layer):  # noqa: ANN001
         if select_layer == -1:
             vit_embeds = self.vision_model(
                 pixel_values=pixel_values,
@@ -521,6 +521,6 @@ class InternVLVisionModelWithProjection(nn.Module):
         vit_embeds = self.mlp1(vit_embeds)
         return vit_embeds
 
-    def forward(self, pixel_values, select_layer, **kwargs):
+    def forward(self, pixel_values, select_layer, **kwargs):  # noqa: ANN001
         """Forward pass returning projected vision features."""
         return self.extract_feature(pixel_values, select_layer)

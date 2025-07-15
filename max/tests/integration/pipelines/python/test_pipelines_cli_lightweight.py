@@ -8,7 +8,7 @@ import pytest
 from max.entrypoints import pipelines
 
 
-def test_pipelines_list(capsys) -> None:
+def test_pipelines_list(capsys) -> None:  # noqa: ANN001
     with pytest.raises(SystemExit):
         pipelines.main(["list"])
     captured = capsys.readouterr()

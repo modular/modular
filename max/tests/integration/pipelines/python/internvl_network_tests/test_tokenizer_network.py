@@ -72,7 +72,7 @@ async def test_internvl_tokenizer_with_image() -> None:
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_apply_chat_template(mocker) -> None:
+async def test_internvl_tokenizer_apply_chat_template(mocker) -> None:  # noqa: ANN001
     """Test that InternVL tokenizer's apply_chat_template handles multimodal content correctly.
 
     This test verifies that the InternVL processor can handle messages with multimodal

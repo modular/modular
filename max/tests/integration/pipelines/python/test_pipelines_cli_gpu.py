@@ -18,7 +18,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 @pytest.mark.skip("AITLIB-342: Failing on H100")
-def test_pipelines_cli__smollm_bfloat16(capsys) -> None:
+def test_pipelines_cli__smollm_bfloat16(capsys) -> None:  # noqa: ANN001
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -54,7 +54,7 @@ def test_pipelines_cli__smollm_bfloat16(capsys) -> None:
 
 @pytest.mark.skip("AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
-    capsys,
+    capsys,  # noqa: ANN001
 ) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"

@@ -93,7 +93,7 @@ class DummyPipelineConfig(PipelineConfig):
         self.eos_token = eos_token
 
 
-def mock_huggingface_config(func):
+def mock_huggingface_config(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch.object(
@@ -104,7 +104,7 @@ def mock_huggingface_config(func):
     return wrapper
 
 
-def mock_huggingface_hub_repo_exists_with_retry(func):
+def mock_huggingface_hub_repo_exists_with_retry(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch("huggingface_hub.revision_exists", return_value=True):
@@ -113,7 +113,7 @@ def mock_huggingface_hub_repo_exists_with_retry(func):
     return wrapper
 
 
-def mock_huggingface_hub_file_exists(func):
+def mock_huggingface_hub_file_exists(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch("huggingface_hub.file_exists", return_value=True):
@@ -122,7 +122,7 @@ def mock_huggingface_hub_file_exists(func):
     return wrapper
 
 
-def mock_pipeline_config_hf_dependencies(func):
+def mock_pipeline_config_hf_dependencies(func):  # noqa: ANN001
     """Decorator that combines multiple mock decorators for pipeline testing.
 
     Combines:
@@ -141,7 +141,7 @@ def mock_pipeline_config_hf_dependencies(func):
 # This is a helper decorator to mock the PipelineConfig.resolve() method.
 # In practice, it is used to skip all the other validation and resolution steps.
 # We're just testing if the config fields are set correctly.
-def mock_pipeline_config_resolve(func):
+def mock_pipeline_config_resolve(func):  # noqa: ANN001
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch(

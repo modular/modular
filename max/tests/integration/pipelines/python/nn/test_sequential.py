@@ -12,7 +12,7 @@ from max.nn.sequential import Sequential
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 
-def test_sequential__one_linear_layer(session) -> None:
+def test_sequential__one_linear_layer(session) -> None:  # noqa: ANN001
     dtype = DType.float32
 
     with Graph(
@@ -35,7 +35,7 @@ def test_sequential__one_linear_layer(session) -> None:
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:
+        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
             result = execute(inputs).to_numpy()
             x, w1 = torch_inputs
 
@@ -46,7 +46,7 @@ def test_sequential__one_linear_layer(session) -> None:
             )
 
 
-def test_sequential__two_linear_layers(session) -> None:
+def test_sequential__two_linear_layers(session) -> None:  # noqa: ANN001
     dtype = DType.float32
 
     with Graph(
@@ -72,7 +72,7 @@ def test_sequential__two_linear_layers(session) -> None:
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:
+        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 
@@ -84,7 +84,7 @@ def test_sequential__two_linear_layers(session) -> None:
             )
 
 
-def test_sequential__two_linear_layers_with_activation(session) -> None:
+def test_sequential__two_linear_layers_with_activation(session) -> None:  # noqa: ANN001
     dtype = DType.float32
 
     with Graph(
@@ -109,7 +109,7 @@ def test_sequential__two_linear_layers_with_activation(session) -> None:
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:
+        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 

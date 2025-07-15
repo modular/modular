@@ -72,7 +72,7 @@ logger = logging.get_logger(__name__)
 _CONFIG_FOR_DOC = "DeepseekV2Config"
 
 
-def _get_unpad_data(attention_mask):
+def _get_unpad_data(attention_mask):  # noqa: ANN001
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
     indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
     max_seqlen_in_batch = seqlens_in_batch.max().item()
@@ -87,7 +87,7 @@ def _get_unpad_data(attention_mask):
 
 
 class DeepseekV2RMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6) -> None:
+    def __init__(self, hidden_size, eps=1e-6) -> None:  # noqa: ANN001
         """
         DeepseekV2RMSNorm is equivalent to T5LayerNorm
         """
@@ -95,7 +95,7 @@ class DeepseekV2RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states):  # noqa: ANN001
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -110,7 +110,11 @@ ALL_LAYERNORM_LAYERS.append(DeepseekV2RMSNorm)
 
 class DeepseekV2RotaryEmbedding(nn.Module):
     def __init__(
-        self, dim, max_position_embeddings=2048, base=10000, device=None
+        self,
+        dim,  # noqa: ANN001
+        max_position_embeddings=2048,  # noqa: ANN001
+        base=10000,  # noqa: ANN001
+        device=None,  # noqa: ANN001
     ) -> None:
         super().__init__()
 
@@ -131,7 +135,7 @@ class DeepseekV2RotaryEmbedding(nn.Module):
         )
         self.max_seq_len_cached = None
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:  # noqa: ANN001
         self.max_seq_len_cached = seq_len
         t = torch.arange(
             self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype
@@ -147,7 +151,7 @@ class DeepseekV2RotaryEmbedding(nn.Module):
             "sin_cached", emb.sin().to(dtype), persistent=False
         )
 
-    def forward(self, x, seq_len=None):
+    def forward(self, x, seq_len=None):  # noqa: ANN001
         # x: [bs, num_attention_heads, seq_len, head_size]
         if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
             self._set_cos_sin_cache(
@@ -166,16 +170,16 @@ class DeepseekV2LinearScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
     def __init__(
         self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        device=None,
-        scaling_factor=1.0,
+        dim,  # noqa: ANN001
+        max_position_embeddings=2048,  # noqa: ANN001
+        base=10000,  # noqa: ANN001
+        device=None,  # noqa: ANN001
+        scaling_factor=1.0,  # noqa: ANN001
     ) -> None:
         self.scaling_factor = scaling_factor
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:  # noqa: ANN001
         self.max_seq_len_cached = seq_len
         t = torch.arange(
             self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype
@@ -199,16 +203,16 @@ class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
     def __init__(
         self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        device=None,
-        scaling_factor=1.0,
+        dim,  # noqa: ANN001
+        max_position_embeddings=2048,  # noqa: ANN001
+        base=10000,  # noqa: ANN001
+        device=None,  # noqa: ANN001
+        scaling_factor=1.0,  # noqa: ANN001
     ) -> None:
         self.scaling_factor = scaling_factor
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:  # noqa: ANN001
         self.max_seq_len_cached = seq_len
 
         if seq_len > self.max_position_embeddings:
@@ -239,7 +243,10 @@ class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
 # Inverse dim formula to find dim based on number of rotations
 def yarn_find_correction_dim(
-    num_rotations, dim, base=10000, max_position_embeddings=2048
+    num_rotations,  # noqa: ANN001
+    dim,  # noqa: ANN001
+    base=10000,  # noqa: ANN001
+    max_position_embeddings=2048,  # noqa: ANN001
 ):
     return (
         dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))
@@ -248,7 +255,11 @@ def yarn_find_correction_dim(
 
 # Find dim range bounds based on rotations
 def yarn_find_correction_range(
-    low_rot, high_rot, dim, base=10000, max_position_embeddings=2048
+    low_rot,  # noqa: ANN001
+    high_rot,  # noqa: ANN001
+    dim,  # noqa: ANN001
+    base=10000,  # noqa: ANN001
+    max_position_embeddings=2048,  # noqa: ANN001
 ):
     low = math.floor(
         yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings)
@@ -259,13 +270,13 @@ def yarn_find_correction_range(
     return max(low, 0), min(high, dim - 1)  # Clamp values just in case
 
 
-def yarn_get_mscale(scale=1, mscale=1):
+def yarn_get_mscale(scale=1, mscale=1):  # noqa: ANN001
     if scale <= 1:
         return 1.0
     return 0.1 * mscale * math.log(scale) + 1.0
 
 
-def yarn_linear_ramp_mask(min, max, dim):
+def yarn_linear_ramp_mask(min, max, dim):  # noqa: ANN001
     if min == max:
         max += 0.001  # Prevent singularity
 
@@ -277,16 +288,16 @@ def yarn_linear_ramp_mask(min, max, dim):
 class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
     def __init__(
         self,
-        dim,
-        max_position_embeddings=2048,
-        base=10000,
-        device=None,
-        scaling_factor=1.0,
-        original_max_position_embeddings=4096,
-        beta_fast=32,
-        beta_slow=1,
-        mscale=1,
-        mscale_all_dim=0,
+        dim,  # noqa: ANN001
+        max_position_embeddings=2048,  # noqa: ANN001
+        base=10000,  # noqa: ANN001
+        device=None,  # noqa: ANN001
+        scaling_factor=1.0,  # noqa: ANN001
+        original_max_position_embeddings=4096,  # noqa: ANN001
+        beta_fast=32,  # noqa: ANN001
+        beta_slow=1,  # noqa: ANN001
+        mscale=1,  # noqa: ANN001
+        mscale_all_dim=0,  # noqa: ANN001
     ) -> None:
         self.scaling_factor = scaling_factor
         self.original_max_position_embeddings = original_max_position_embeddings
@@ -296,7 +307,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
         self.mscale_all_dim = mscale_all_dim
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:  # noqa: ANN001
         self.max_seq_len_cached = seq_len
         dim = self.dim
 
@@ -348,7 +359,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
 
 # Copied from transformers.models.llama.modeling_llama.rotate_half
-def rotate_half(x):
+def rotate_half(x):  # noqa: ANN001
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
@@ -356,7 +367,7 @@ def rotate_half(x):
 
 
 # Copied from transformers.models.llama.modeling_llama.apply_rotary_pos_emb
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):  # noqa: ANN001
     """Applies Rotary Position Embedding to the query and key tensors.
     Args:
         q (`torch.Tensor`): The query tensor.
@@ -392,7 +403,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
 
 class DeepseekV2MLP(nn.Module):
     def __init__(
-        self, config, hidden_size=None, intermediate_size=None
+        self,
+        config,  # noqa: ANN001
+        hidden_size=None,  # noqa: ANN001
+        intermediate_size=None,  # noqa: ANN001
     ) -> None:
         super().__init__()
         self.config = config
@@ -416,7 +430,7 @@ class DeepseekV2MLP(nn.Module):
         )
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x):
+    def forward(self, x):  # noqa: ANN001
         down_proj = self.down_proj(
             self.act_fn(self.gate_proj(x)) * self.up_proj(x)
         )
@@ -424,7 +438,7 @@ class DeepseekV2MLP(nn.Module):
 
 
 class MoEGate(nn.Module):
-    def __init__(self, config) -> None:
+    def __init__(self, config) -> None:  # noqa: ANN001
         super().__init__()
         self.config = config
         self.top_k = config.num_experts_per_tok
@@ -450,7 +464,7 @@ class MoEGate(nn.Module):
 
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states):  # noqa: ANN001
         bsz, seq_len, h = hidden_states.shape
         ### compute gating score
         hidden_states = hidden_states.view(-1, h)
@@ -543,14 +557,14 @@ class AddAuxiliaryLoss(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, x, loss):
+    def forward(ctx, x, loss):  # noqa: ANN001
         assert loss.numel() == 1
         ctx.dtype = loss.dtype
         ctx.required_aux_loss = loss.requires_grad
         return x
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, grad_output):  # noqa: ANN001
         grad_loss = None
         if ctx.required_aux_loss:
             grad_loss = torch.ones(
@@ -564,7 +578,7 @@ class DeepseekV2MoE(nn.Module):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config) -> None:
+    def __init__(self, config) -> None:  # noqa: ANN001
         super().__init__()
         self.config = config
         self.num_experts_per_tok = config.num_experts_per_tok
@@ -609,7 +623,7 @@ class DeepseekV2MoE(nn.Module):
                 config=config, intermediate_size=intermediate_size
             )
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states):  # noqa: ANN001
         identity = hidden_states
         orig_shape = hidden_states.shape
         topk_idx, topk_weight, aux_loss = self.gate(hidden_states)
@@ -638,7 +652,7 @@ class DeepseekV2MoE(nn.Module):
         return y
 
     @torch.no_grad()
-    def moe_infer(self, x, topk_ids, topk_weight):
+    def moe_infer(self, x, topk_ids, topk_weight):  # noqa: ANN001
         cnts = topk_ids.new_zeros((topk_ids.shape[0], len(self.experts)))
         cnts.scatter_(1, topk_ids, 1)
         tokens_per_expert = cnts.sum(dim=0)
@@ -1157,13 +1171,13 @@ class DeepseekV2FlashAttention2(DeepseekV2Attention):
 
     def _flash_attention_forward(
         self,
-        query_states,
-        key_states,
-        value_states,
-        attention_mask,
-        query_length,
-        dropout=0.0,
-        softmax_scale=None,
+        query_states,  # noqa: ANN001
+        key_states,  # noqa: ANN001
+        value_states,  # noqa: ANN001
+        attention_mask,  # noqa: ANN001
+        query_length,  # noqa: ANN001
+        dropout=0.0,  # noqa: ANN001
+        softmax_scale=None,  # noqa: ANN001
     ):
         """
         Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
@@ -1239,7 +1253,12 @@ class DeepseekV2FlashAttention2(DeepseekV2Attention):
         return attn_output
 
     def _upad_input(
-        self, query_layer, key_layer, value_layer, attention_mask, query_length
+        self,
+        query_layer,  # noqa: ANN001
+        key_layer,  # noqa: ANN001
+        value_layer,  # noqa: ANN001
+        attention_mask,  # noqa: ANN001
+        query_length,  # noqa: ANN001
     ):
         indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(
             attention_mask
@@ -1414,7 +1433,7 @@ class DeepseekV2PreTrainedModel(PreTrainedModel):
     _supports_flash_attn_2 = True
     _supports_cache_class = True
 
-    def _init_weights(self, module) -> None:
+    def _init_weights(self, module) -> None:  # noqa: ANN001
         std = self.config.initializer_range
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)
@@ -1523,7 +1542,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.embed_tokens
 
-    def set_input_embeddings(self, value) -> None:
+    def set_input_embeddings(self, value) -> None:  # noqa: ANN001
         self.embed_tokens = value
 
     @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)
@@ -1701,7 +1720,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
 class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
-    def __init__(self, config) -> None:
+    def __init__(self, config) -> None:  # noqa: ANN001
         super().__init__(config)
         self.model = DeepseekV2Model(config)
         self.vocab_size = config.vocab_size
@@ -1715,16 +1734,16 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.model.embed_tokens
 
-    def set_input_embeddings(self, value) -> None:
+    def set_input_embeddings(self, value) -> None:  # noqa: ANN001
         self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
 
-    def set_output_embeddings(self, new_embeddings) -> None:
+    def set_output_embeddings(self, new_embeddings) -> None:  # noqa: ANN001
         self.lm_head = new_embeddings
 
-    def set_decoder(self, decoder) -> None:
+    def set_decoder(self, decoder) -> None:  # noqa: ANN001
         self.model = decoder
 
     def get_decoder(self):
@@ -1826,10 +1845,10 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
 
     def prepare_inputs_for_generation(
         self,
-        input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
+        input_ids,  # noqa: ANN001
+        past_key_values=None,  # noqa: ANN001
+        attention_mask=None,  # noqa: ANN001
+        inputs_embeds=None,  # noqa: ANN001
         **kwargs,
     ):
         if past_key_values is not None:
@@ -1891,7 +1910,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
         return model_inputs
 
     @staticmethod
-    def _reorder_cache(past_key_values, beam_idx):
+    def _reorder_cache(past_key_values, beam_idx):  # noqa: ANN001
         reordered_past = ()
         for layer_past in past_key_values:
             reordered_past += (
@@ -1917,7 +1936,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     DeepseekV2_START_DOCSTRING,
 )
 class DeepseekV2ForSequenceClassification(DeepseekV2PreTrainedModel):
-    def __init__(self, config) -> None:
+    def __init__(self, config) -> None:  # noqa: ANN001
         super().__init__(config)
         self.num_labels = config.num_labels
         self.model = DeepseekV2Model(config)
@@ -1929,7 +1948,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.model.embed_tokens
 
-    def set_input_embeddings(self, value) -> None:
+    def set_input_embeddings(self, value) -> None:  # noqa: ANN001
         self.model.embed_tokens = value
 
     @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)

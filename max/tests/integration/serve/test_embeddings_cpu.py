@@ -23,7 +23,7 @@ from max.serve.schemas.openai import CreateEmbeddingResponse  # type: ignore
     ],
     indirect=True,
 )
-async def test_serve_embeddings(app) -> None:
+async def test_serve_embeddings(app) -> None:  # noqa: ANN001
     async with TestClient(app, timeout=720.0) as client:
         raw_response = await client.post(
             "/v1/embeddings",

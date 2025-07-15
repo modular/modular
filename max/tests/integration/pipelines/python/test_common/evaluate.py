@@ -271,7 +271,12 @@ def next_token_with_logits(
 
 
 def compare_values(
-    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+    actual,  # noqa: ANN001
+    expected,  # noqa: ANN001
+    *,
+    rtol=1e-2,  # noqa: ANN001
+    atol=1e-5,  # noqa: ANN001
+    compare_fn=None,  # noqa: ANN001
 ) -> None:
     """Compares two dictionaries of values."""
     keys = expected[0].keys()
@@ -291,7 +296,12 @@ def compare_values(
 
 
 def compare_text_generation(
-    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+    actual,  # noqa: ANN001
+    expected,  # noqa: ANN001
+    *,
+    rtol=1e-2,  # noqa: ANN001
+    atol=1e-5,  # noqa: ANN001
+    compare_fn=None,  # noqa: ANN001
 ) -> None:
     """Compares the values between two computed logits.
 
@@ -356,7 +366,12 @@ def compare_text_generation(
 
 
 def compare_embeddings(
-    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+    actual,  # noqa: ANN001
+    expected,  # noqa: ANN001
+    *,
+    rtol=1e-2,  # noqa: ANN001
+    atol=1e-5,  # noqa: ANN001
+    compare_fn=None,  # noqa: ANN001
 ) -> None:
     """Compares the values between two computed embeddings.
 

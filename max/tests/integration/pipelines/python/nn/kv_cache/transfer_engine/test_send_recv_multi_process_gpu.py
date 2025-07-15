@@ -27,12 +27,12 @@ from max.nn.kv_cache import (
 
 
 def transfer_routine_sender(
-    sender_md_queue,
-    receiver_md_queue,
-    xfer_queue,
-    total_num_pages,
-    src_idxs,
-    dst_idxs,
+    sender_md_queue,  # noqa: ANN001
+    receiver_md_queue,  # noqa: ANN001
+    xfer_queue,  # noqa: ANN001
+    total_num_pages,  # noqa: ANN001
+    src_idxs,  # noqa: ANN001
+    dst_idxs,  # noqa: ANN001
 ) -> None:
     device = Accelerator()
 
@@ -64,10 +64,10 @@ def transfer_routine_sender(
 
 
 def transfer_routine_receiver(
-    sender_md_queue,
-    receiver_md_queue,
-    xfer_queue,
-    total_num_pages,
+    sender_md_queue,  # noqa: ANN001
+    receiver_md_queue,  # noqa: ANN001
+    xfer_queue,  # noqa: ANN001
+    total_num_pages,  # noqa: ANN001
 ) -> None:
     device = Accelerator()
 

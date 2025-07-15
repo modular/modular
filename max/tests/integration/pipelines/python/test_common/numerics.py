@@ -14,7 +14,7 @@ import torch
 _tf32_lock = threading.RLock()
 
 
-def pytorch_disable_tf32_dtype(func):
+def pytorch_disable_tf32_dtype(func):  # noqa: ANN001
     """Thread-safe decorator which disables TF32 for PyTorch code.
 
     PyTorch uses the TensorFloat32 precision by default on modern NVIDIA GPUs.
