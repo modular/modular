@@ -283,7 +283,8 @@ See how to [install the nightly release](/max/packages#nightly-release).
     [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) moved to the
     new [`variadics`](/mojo/stdlib/builtin/variadics/) module.
 
-  - The `CollectionElement` trait has been removed.
+  - The `CollectionElement` trait has been removed. You can replace any use of
+    it with `Copyable & Movable`.
 
 Python-Mojo interoperability enhancements and changes:
 
