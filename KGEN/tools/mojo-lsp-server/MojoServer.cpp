@@ -526,7 +526,7 @@ private:
 
   /// Generates a new progress token.
   std::string generateToken() {
-    thread_local std::default_random_engine rng;
+    thread_local std::default_random_engine rng(std::random_device{}());
     // generate a 32-character ASCII string
     std::uniform_int_distribution<unsigned char> distribution('a', 'z');
     std::string id(32, 'a');

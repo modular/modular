@@ -1,8 +1,9 @@
 import { CancellationToken, DidOpenTextDocumentParams, ProgressToken, ProgressType, WorkDoneProgress, WorkDoneProgressBegin, WorkDoneProgressCreateParams, WorkDoneProgressCreateRequest, WorkDoneProgressEnd, WorkDoneProgressReport } from "vscode-languageserver-protocol";
 import { LanguageServer } from "./harness"
 import * as assert from "assert";
+import { setTimeout } from "timers/promises";
 
-describe("progress", function() {
+describe("progress", function () {
   let server: LanguageServer;
 
   beforeEach("start and connect to language server", function () {
@@ -89,4 +90,57 @@ describe("progress", function() {
 
     await progressFinished;
   });
-})
+
+  it("must not send the same progress token", async function () {
+    await server.initialize({
+      window: {
+        workDoneProgress: true,
+      },
+    });
+
+    // We expect two progress notifications. Create a promise that resolves once
+    // that criterion is met.
+    let tokenPromise = new Promise<ProgressToken[]>((resolve) => {
+      let tokens: ProgressToken[] = [];
+      let listener = server.connection.onRequest(
+        WorkDoneProgressCreateRequest.type,
+        (params) => {
+          tokens.push(params.token);
+
+          if (tokens.length === 2) {
+            resolve(tokens);
+            listener.dispose();
+          }
+        }
+      );
+    });
+
+    // Open two documents at once. This should force the server to parse them on
+    // separate worker threads.
+    await server.connection.sendNotification("textDocument/didOpen", {
+      textDocument: {
+        uri: "test:///test.mojo",
+        languageId: "mojo",
+        version: 0,
+        text: "fn main():\n\tprint('hello world')",
+      },
+    } as DidOpenTextDocumentParams);
+
+    await server.connection.sendNotification("textDocument/didOpen", {
+      textDocument: {
+        uri: "test:///test2.mojo",
+        languageId: "mojo",
+        version: 0,
+        text: "fn main():\n\tprint('hello world')",
+      },
+    } as DidOpenTextDocumentParams);
+
+    let tokens = await tokenPromise;
+    assert.strictEqual(tokens.length, 2);
+    assert.notStrictEqual(
+      tokens[0],
+      tokens[1],
+      `received duplicate tokens: '${tokens[0]}'`
+    );
+  });
+});
