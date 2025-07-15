@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv_transpose import conv_transpose_naive
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_convtranspose_pads
@@ -36,27 +35,28 @@ from utils.index import Index
 fn test_convtranspose_pads():
     print("== test_convtranspose_pads")
     alias type = DType.float32
+    alias layout_unknown = Layout.row_major[5]()
 
-    alias input_shape = DimList(1, 1, 3, 3, 1)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[type, 5, _, input_shape](input_stack)
+    var input = LayoutTensor[type, input_layout](input_stack)
     for i in range(9):
-        input.data[i] = i
+        input.ptr[i] = i
 
-    alias filter_shape = DimList(1, 3, 3, 2, 1)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 5, _, filter_shape](filter_stack)
-    filter.fill(1.0)
+    var filter = LayoutTensor[type, filter_layout](filter_stack)
+    _ = filter.fill(1.0)
 
-    alias output_shape = DimList(1, 1, 7, 3, 2)
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    alias output_layout = Layout.row_major(1, 1, 7, 3, 2)
+    var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
-    var output = NDBuffer[type, 5, _, output_shape](output_stack)
+    var output = LayoutTensor[type, output_layout](output_stack)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -65,9 +65,24 @@ fn test_convtranspose_pads():
     var pad_w = Index(2, 2)
 
     conv_transpose_naive[type](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        filter.make_dims_unknown(),
+        LayoutTensor[type, layout_unknown](
+            output.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 7, 3, 2)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            input.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 3, 3, 1)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            filter.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 3, 3, 2, 1)
+            ),
+        ),
         stride,
         dilation,
         pad_d,
@@ -99,27 +114,28 @@ fn test_convtranspose_pads():
 fn test_convtranspose():
     print("== test_convtranspose")
     alias type = DType.float32
+    alias layout_unknown = Layout.row_major[5]()
 
-    alias input_shape = DimList(1, 1, 3, 3, 1)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[type, 5, _, input_shape](input_stack)
+    var input = LayoutTensor[type, input_layout](input_stack)
     for i in range(9):
-        input.data[i] = i
+        input.ptr[i] = i
 
-    alias filter_shape = DimList(1, 3, 3, 2, 1)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 5, _, DimList(1, 3, 3, 2, 1)](filter_stack)
-    filter.fill(1.0)
+    var filter = LayoutTensor[type, filter_layout](filter_stack)
+    _ = filter.fill(1.0)
 
-    alias output_shape = DimList(1, 1, 5, 5, 2)
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    alias output_layout = Layout.row_major(1, 1, 5, 5, 2)
+    var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
-    var output = NDBuffer[type, 5, _, output_shape](output_stack)
+    var output = LayoutTensor[type, output_layout](output_stack)
 
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 1, 1)
@@ -128,9 +144,24 @@ fn test_convtranspose():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        filter.make_dims_unknown(),
+        LayoutTensor[type, layout_unknown](
+            output.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 5, 5, 2)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            input.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 3, 3, 1)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            filter.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 3, 3, 2, 1)
+            ),
+        ),
         stride,
         dilation,
         pad_d,
@@ -157,37 +188,38 @@ fn test_convtranspose():
 fn test_convtranspose_dilation():
     print("== test_convtranspose_dilation")
     alias type = DType.float32
+    alias layout_unknown = Layout.row_major[5]()
 
-    alias input_shape = DimList(1, 1, 3, 3, 1)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[type, 5, _, input_shape](input_stack)
-    input.data[0] = 3
-    input.data[1] = 8
-    input.data[2] = 1
-    input.data[3] = 9
-    input.data[4] = 5
-    input.data[5] = 7
-    input.data[6] = 3
-    input.data[7] = 2
-    input.data[8] = 6
+    var input = LayoutTensor[type, input_layout](input_stack)
+    input.ptr[0] = 3
+    input.ptr[1] = 8
+    input.ptr[2] = 1
+    input.ptr[3] = 9
+    input.ptr[4] = 5
+    input.ptr[5] = 7
+    input.ptr[6] = 3
+    input.ptr[7] = 2
+    input.ptr[8] = 6
 
-    alias filter_shape = DimList(1, 2, 2, 1, 1)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    alias filter_layout = Layout.row_major(1, 2, 2, 1, 1)
+    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 5, _, filter_shape](filter_stack)
-    filter.data[0] = 7
-    filter.data[1] = 2
-    filter.data[2] = 1
-    filter.data[3] = 9
+    var filter = LayoutTensor[type, filter_layout](filter_stack)
+    filter.ptr[0] = 7
+    filter.ptr[1] = 2
+    filter.ptr[2] = 1
+    filter.ptr[3] = 9
 
-    alias output_shape = DimList(1, 1, 5, 5, 1)
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    alias output_layout = Layout.row_major(1, 1, 5, 5, 1)
+    var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
-    var output = NDBuffer[type, 5, _, output_shape](output_stack)
+    var output = LayoutTensor[type, output_layout](output_stack)
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 2, 2)
     var pad_d = Index(0, 0)
@@ -195,9 +227,24 @@ fn test_convtranspose_dilation():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        filter.make_dims_unknown(),
+        LayoutTensor[type, layout_unknown](
+            output.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 5, 5, 1)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            input.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 3, 3, 1)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            filter.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 2, 2, 1, 1)
+            ),
+        ),
         stride,
         dilation,
         pad_d,
@@ -239,27 +286,28 @@ fn test_convtranspose_dilation():
 fn test_convtranspose_attributes():
     print("== test_convtranspose_attributes")
     alias type = DType.float32
+    alias layout_unknown = Layout.row_major[5]()
 
-    alias input_shape = DimList(1, 1, 3, 3, 1)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    alias input_layout = Layout.row_major(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], input_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[type, 5, _, input_shape](input_stack)
+    var input = LayoutTensor[type, input_layout](input_stack)
     for i in range(9):
-        input.data[i] = i
+        input.ptr[i] = i
 
-    alias filter_shape = DimList(1, 3, 3, 2, 1)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    alias filter_layout = Layout.row_major(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 5, _, filter_shape](filter_stack)
-    filter.fill(1.0)
+    var filter = LayoutTensor[type, filter_layout](filter_stack)
+    _ = filter.fill(1.0)
 
-    alias output_shape = DimList(1, 1, 10, 8, 2)
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    alias output_layout = Layout.row_major(1, 1, 10, 8, 2)
+    var output_stack = InlineArray[Scalar[type], output_layout.size()](
         uninitialized=True
     )
-    var output = NDBuffer[type, 5, _, output_shape](output_stack)
+    var output = LayoutTensor[type, output_layout](output_stack)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -268,9 +316,24 @@ fn test_convtranspose_attributes():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        output.make_dims_unknown(),
-        input.make_dims_unknown(),
-        filter.make_dims_unknown(),
+        LayoutTensor[type, layout_unknown](
+            output.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 10, 8, 2)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            input.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 1, 3, 3, 1)
+            ),
+        ),
+        LayoutTensor[type, layout_unknown](
+            filter.ptr,
+            RuntimeLayout[layout_unknown].row_major(
+                IndexList[5](1, 3, 3, 2, 1)
+            ),
+        ),
         stride,
         dilation,
         pad_d,

@@ -5646,8 +5646,12 @@ struct ConvTranspose:
                 "(2*(input_rank-2)) value expected in convTranspose paddings"
             )
 
-        var stride_tuple = IndexList[input.rank - 2](0)
-        var dilation_tuple = IndexList[input.rank - 2](0)
+        var stride_tuple = IndexList[
+            __type_of(input.to_layout_tensor()).layout.rank() - 2
+        ](0)
+        var dilation_tuple = IndexList[
+            __type_of(input.to_layout_tensor()).layout.rank() - 2
+        ](0)
 
         @parameter
         for i in range(input.rank - 2):
@@ -5682,18 +5686,12 @@ struct ConvTranspose:
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         alias filter_is_cfrs = filter_layout == "CFRS"
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # Input shape.
-                filter._static_shape,  # Filter shape.
-                output._static_shape,  # Output shape.
+                _,
+                _,
+                _,
                 input.dtype,
                 filter.dtype,  # Filter dtype.
                 output.dtype,  # Output dtype.
@@ -5702,9 +5700,9 @@ struct ConvTranspose:
                 lambdas_have_fusion,
                 output_fn,
             ](
-                output_buf,
-                input_buf,
-                filter_buf,
+                output.to_layout_tensor(),
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
@@ -5722,7 +5720,9 @@ struct ConvTranspose:
             ]()
 
             var cuda_ctx = ctx.get_device_context()
-            var pad_tuple = IndexList[input.rank - 2](0)
+            var pad_tuple = IndexList[
+                __type_of(input.to_layout_tensor()).layout.rank() - 2
+            ](0)
 
             @parameter
             if input.rank == 4:
@@ -5730,11 +5730,9 @@ struct ConvTranspose:
                 pad_tuple[1] = pad_w[0]
 
             conv_transposed_gpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,
-                filter._static_shape,
-                output._static_shape,
+                _,
+                _,
+                _,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -5742,9 +5740,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](output_fn) if lambdas_have_fusion else None,
             ](
-                output_buf,
-                input_buf,
-                filter_buf,
+                output.to_layout_tensor(),
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -5762,13 +5760,15 @@ struct ConvTranspose:
         paddings: InputTensor[rank=1],
         output_paddings: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
-        return conv_transpose_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output_paddings),
+        return rebind[IndexList[input.rank]](
+            conv_transpose_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+                output_paddings.to_layout_tensor(),
+            )
         )
 
 
@@ -7989,8 +7989,8 @@ fn layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        managed_tensor_slice_to_ndbuffer(filter),
-        managed_tensor_slice_to_ndbuffer(packed_filter),
+        filter.to_layout_tensor(),
+        packed_filter.to_layout_tensor(),
         1,
     )
 
@@ -8084,7 +8084,7 @@ struct PackConvTransposeFilterShape:
     fn execute[
         rank: Int,
         filter_type: DType,
-    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) raises:
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
@@ -8092,10 +8092,12 @@ struct PackConvTransposeFilterShape:
     fn shape[
         rank: Int,
         filter_type: DType,
-    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) -> IndexList[
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) -> IndexList[
         rank + 1
     ]:
-        return pack_filter_shape_conv_transpose(filter_buf, 1)
+        return rebind[IndexList[rank + 1]](
+            pack_filter_shape_conv_transpose(filter_buf.to_layout_tensor(), 1)
+        )
 
 
 # Wrapper that take `num_groups` as a parameter.
