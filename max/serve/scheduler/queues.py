@@ -67,7 +67,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             request_zmq_endpoint,
             serialize=SharedMemoryEncoder(),
         )
-        self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
+        self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
             zmq_ctx, response_zmq_endpoint
         )
         self.cancel_push_socket = ZmqPushSocket[list[str]](
@@ -151,11 +151,13 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         """
         with self.open_channel(req_id, data) as queue:
             # queue.get() will wait until an item is available.
-            # This will exit when continue_stream is false.
-            # continue_stream is false when the EngineResult.status
-            # is either EngineStatus.completed or EngineStatus.cancelled
-            while (item := await queue.get()).continue_stream():
+            # This will exit when no result is passed in the EngineResult.
+            # or the EngineResult states that we should stop the stream.
+            while (item := await queue.get()).result is not None:
                 yield item.result
+
+                if item.stop_stream:
+                    break
 
     async def response_worker(self) -> None:
         """
@@ -193,17 +195,15 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             while True:
                 try:
-                    responses_list = self.response_pull_socket.get_nowait()
-
+                    response_dict = self.response_pull_socket.get_nowait()
                     cancelled = set()
-                    for responses in responses_list:
-                        for req_id, response in responses.items():
-                            if req_id in self.pending_out_queues:
-                                await self.pending_out_queues[req_id].put(
-                                    response
-                                )
-                            else:
-                                cancelled.add(req_id)
+                    for request_id, response in response_dict.items():
+                        if request_id in self.pending_out_queues:
+                            await self.pending_out_queues[request_id].put(
+                                response
+                            )
+                        else:
+                            cancelled.add(request_id)
 
                     if cancelled:
                         self.cancel_push_socket.put_nowait(list(cancelled))

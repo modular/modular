@@ -170,12 +170,12 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
+        self, responses: dict[str, EngineResult[TextResponse]]
     ) -> None:
         """Pushes response messages to the response socket.
 
         Args:
-            responses: List of response dictionaries to send, defaults to empty dict.
+            responses: Dictionary of request_id, response of generation results.
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket.
@@ -410,25 +410,12 @@ class DecodeScheduler(Scheduler):
         if not responses:
             return
 
-        # Convert this to list[dict[str, Any]]
-        stream_responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
+        stream_responses: dict[str, EngineResult[TextResponse]] = {}
         for request_id, response in responses.items():
-            # This will just ensure that there is always a response for each token
-            # We add one here, as we need to send a stop sentinel
-            while (len(response.tokens) + (1 if response.is_done else 0)) > len(
-                stream_responses
-            ):
-                stream_responses.append({})
-
-            for token_idx, text_response in enumerate(response.tokens):
-                stream_responses[token_idx][request_id] = (
-                    EngineResult.successful(text_response)
-                )
-
             if response.is_done:
-                stream_responses[len(response.tokens)][request_id] = (
-                    EngineResult.complete()
-                )
+                stream_responses[request_id] = EngineResult.complete(response)
+            else:
+                stream_responses[request_id] = EngineResult.active(response)
 
         self.push_to_response_socket(stream_responses)
 

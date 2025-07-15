@@ -105,9 +105,9 @@ class EmbeddingsScheduler(Scheduler):
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # send the responses to the API process
-        responses: list[dict[str, EngineResult[EmbeddingsResponse]]] = [{}, {}]
-        for request_id, response in batch_responses.items():
-            responses[0][request_id] = EngineResult.successful(response)
-            responses[1][request_id] = EngineResult.complete()
-
-        self.response_q.put_nowait(responses)
+        self.response_q.put_nowait(
+            {
+                request_id: EngineResult.complete(response)
+                for request_id, response in batch_responses.items()
+            }
+        )
