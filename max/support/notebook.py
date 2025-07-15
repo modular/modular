@@ -13,7 +13,7 @@ try:
     from IPython.core.magic import register_cell_magic  # type: ignore
 except ImportError:
 
-    def register_cell_magic(fn):
+    def register_cell_magic(fn):  # noqa: ANN001
         return fn
 
 
@@ -22,7 +22,7 @@ from .paths import MojoCompilationError
 
 
 @register_cell_magic
-def mojo(line, cell) -> None:
+def mojo(line, cell) -> None:  # noqa: ANN001
     parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="?", default="run")
     parser.add_argument("-o", "--output")

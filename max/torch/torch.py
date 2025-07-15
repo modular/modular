@@ -438,7 +438,7 @@ class MaxOp:
 
 
 def graph_op(
-    fn=None,
+    fn=None,  # noqa: ANN001
     name: str | None = None,
     kernel_library: Path | KernelLibrary | None = None,
     input_types: Sequence[TensorType] | None = None,
@@ -509,7 +509,7 @@ def graph_op(
         A PyTorch custom operation that can be called with torch.Tensor arguments.
     """
 
-    def decorator(fn):
+    def decorator(fn):  # noqa: ANN001
         library = kernel_library or KernelLibrary(mlir.Context())
         op = MaxOp(
             fn,

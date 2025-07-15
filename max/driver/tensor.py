@@ -22,11 +22,11 @@ IndexType = Union[Sequence[_IdxElType], _IdxElType]
 ShapeType = Sequence[int]
 
 
-def _iterate_indices(self) -> Generator[ShapeType]:
+def _iterate_indices(self) -> Generator[ShapeType]:  # noqa: ANN001
     yield from product(*map(range, self.shape))
 
 
-def _contiguous(self) -> Tensor:
+def _contiguous(self) -> Tensor:  # noqa: ANN001
     """Creates a contiguous copy of the parent tensor."""
     tensor_copy = Tensor(self.dtype, self.shape)
     for idx in self._iterate_indices():
@@ -34,11 +34,11 @@ def _contiguous(self) -> Tensor:
     return tensor_copy
 
 
-def _repr(self) -> str:
+def _repr(self) -> str:  # noqa: ANN001
     return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
 
 
-def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
+def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:  # noqa: ANN001
     """Return a new tensor with the given type and shape that shares the
     underlying memory.
 
@@ -58,7 +58,7 @@ def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
     return self._view(dtype, shape)
 
 
-def inplace_copy_from(self, src: Tensor) -> None:
+def inplace_copy_from(self, src: Tensor) -> None:  # noqa: ANN001
     """Copy the contents of another tensor into this one. These tensors may
     be on different devices.
 
@@ -91,7 +91,7 @@ def _from_numpy(arr: np.ndarray) -> Tensor:
     return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
 
 
-def _to_numpy(self) -> np.ndarray:
+def _to_numpy(self) -> np.ndarray:  # noqa: ANN001
     """Converts the tensor to a numpy array.
 
     If the tensor is not on the host, an exception is raised.
@@ -176,7 +176,7 @@ def _mmap(
     dtype: DType,
     shape: ShapeType | int,
     mode: np._MemMapModeKind = "copyonwrite",
-    offset=0,
+    offset=0,  # noqa: ANN001
 ):
     arr: np.memmap = np.memmap(
         filename,

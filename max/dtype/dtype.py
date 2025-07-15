@@ -11,17 +11,17 @@ import numpy as np
 from max._core.dtype import DType as DType
 
 
-def _missing(value) -> DType | None:
+def _missing(value) -> DType | None:  # noqa: ANN001
     if isinstance(value, str):
         return _MLIR_TO_DTYPE[value]
     return None
 
 
-def _repr(self) -> str:
+def _repr(self) -> str:  # noqa: ANN001
     return self.name
 
 
-def _mlir(self) -> str:
+def _mlir(self) -> str:  # noqa: ANN001
     return _DTYPE_TO_MLIR[self]
 
 
@@ -60,7 +60,7 @@ _NUMPY_TO_DTYPE = {
 }
 
 
-def _to_numpy(self) -> np.dtype:
+def _to_numpy(self) -> np.dtype:  # noqa: ANN001
     """Converts this ``DType`` to the corresponding NumPy dtype.
 
     Returns:
