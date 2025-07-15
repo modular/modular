@@ -22,7 +22,9 @@ from typing import Optional
 import click
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import yaml
+from pandas.api.types import is_numeric_dtype
 from rich.console import Console
 from rich.table import Table
 
@@ -133,6 +135,10 @@ def df_to_console_table(
     console = Console()
     table = Table(show_header=True, header_style=header_style)
 
+    if index:
+        style = col_style.get("index", "bold blue")
+        table.add_column("index", justify="left", style=style)
+
     for c in df.columns:
         style = col_style.get(c, None)
         table.add_column(c, justify="left", style=style)
@@ -181,7 +187,7 @@ class KbenchPKL:
                     break
         assert valid_metric, f"ERROR: metric [{metric}] is not valid!"
         self.metric = metric
-        assert pd.api.types.is_numeric_dtype(self.merged_df[metric]), (
+        assert is_numeric_dtype(self.merged_df[metric]), (
             f"ERROR: metric [{metric}] is not numeric!"
         )
         # Setting the sort order based on the metric
@@ -448,6 +454,75 @@ class ComplexParamList(click.Option):
                 raise click.BadParameter(value)
 
 
+def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png"):
+    column_names = df.columns
+    width_px = 1600
+    height_px = 1200
+    layout = go.Layout(autosize=True, width=width_px, height=height_px)
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=df,
+            x=column_names,
+            y=column_names,
+            text=df.values,
+            texttemplate="%{text:.2f}",
+            textfont={"size": 20},
+            hoverongaps=False,
+            colorscale="Blues",
+        ),
+        layout=layout,
+    )
+    font_size_pt = 20
+    fig.update_layout(
+        #         font_family=cfg.font_family,
+        #         title_font_family=cfg.title_font_family,
+        font_size=font_size_pt,
+    )
+    fig.write_image(img)
+
+
+def correlation_analysis(
+    files, output_path, metric: str = "met (ms)", verbose: bool = False
+):
+    pkl_list = []
+    for pkl in files:
+        try:
+            pkl_list.append(KbenchPKL(pickle_path=pkl, metric=metric))
+        except:
+            if verbose:
+                print(f"invalid pkl: [{pkl}]")
+    print(LINE)
+
+    # Note: it is crucial to ignore index for later merging the two sets.
+    merged_df = pd.concat([p.merged_df for p in pkl_list], ignore_index=True)
+    specs_df = specs_to_df(merged_df["spec"])
+    agg_df = pd.merge(merged_df, specs_df, left_index=True, right_index=True)
+
+    rm_list = ["mesh_idx", "spec", "name"]
+    metric_col = "met (ms)"
+    cols = []
+    agg_df[metric_col] = agg_df[metric_col].astype(float)
+    for c in list(agg_df.columns):
+        if c not in rm_list:
+            try:
+                agg_df[c] = agg_df[c].astype(float)
+                cols.append(c)
+            except:
+                pass
+
+    corr_method = "kendall"
+    c = pd.DataFrame(agg_df[cols].corr(corr_method))
+
+    c_abs = c[metric_col].fillna(0).abs().sort_values(ascending=False).round(2)
+    c_abs = c_abs.to_frame(name=f"Sorted Absolute Correlation: {metric_col}")
+
+    df_to_console_table(c_abs, index=True)
+    df_to_console_table(round(c, 2), index=True)
+
+    draw_heatmap(c, "correlation.png")
+    return
+
+
 help_str = "Profile kbench output pickle"
 
 
@@ -517,6 +592,13 @@ help_str = "Profile kbench output pickle"
     multiple=True,
 )
 @click.option(
+    "--correlation",
+    "-c",
+    is_flag=True,
+    default=False,
+    help="Correlation analysis.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -535,6 +617,7 @@ def cli(
     diff,
     metric,
     pivots,
+    correlation,
     verbose,
 ) -> bool:
     assert files
@@ -586,6 +669,10 @@ def cli(
             print(f"invalid pkl [{i}]: [{pkl}]")
 
         print(LINE)
+
+    if correlation:
+        correlation_analysis(files, output_path, verbose=verbose)
+
     return True
 
 
