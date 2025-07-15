@@ -215,14 +215,11 @@ export class MojoLSPProxy {
       },
       onNotification: (method: string, params: any) =>
         this.client.sendNotification(method, params),
-      onOutgoingRequest: async (
-        id: any,
-        method: string,
-        params: JSONObject,
-      ) => {
-        let result = await this.client.sendRequest(method, params);
-        this.server!.sendResponse(id, result);
-      },
+      onOutgoingRequest: (id: any, method: string, params: JSONObject) =>
+        this.client
+          .sendRequest(method, params)
+          .then((result) => this.server!.sendResponse(id, result))
+          .catch((error) => this.server!.sendError(id, error)),
     });
     return this.server!.sendRequest(
       params,
