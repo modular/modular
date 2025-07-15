@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
+from memory import Span
 
 alias default_hasher = AHasher[SIMD[DType.uint64, 4](0)]
 alias default_comp_time_hasher = Fnv1a
@@ -21,13 +22,7 @@ trait Hasher:
     fn __init__(out self):
         ...
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[UInt8]):
         ...
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
