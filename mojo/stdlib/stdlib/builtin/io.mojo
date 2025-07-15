@@ -428,6 +428,7 @@ fn print[
             for i in range(length):
                 values[i].write_to(buffer)
 
+                @parameter
                 if i < length - 1:
                     sep.write_to(buffer)
 
