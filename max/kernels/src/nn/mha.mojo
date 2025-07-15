@@ -199,10 +199,8 @@ fn get_mha_decoding_num_partitions[
 
 
 fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
-    return (
-        has_nvidia_gpu_accelerator()
-        or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
-        or (has_amd_gpu_accelerator() and qkv_type is DType.bfloat16)
+    return has_nvidia_gpu_accelerator() or (
+        has_amd_gpu_accelerator() and qkv_type is DType.bfloat16
     )
 
 
