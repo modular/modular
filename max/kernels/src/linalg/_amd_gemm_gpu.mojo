@@ -14,32 +14,27 @@
 from collections import OptionalReg
 from sys import alignof, simdwidthof
 
-import gpu.warp as warp
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
     block_idx,
-    global_idx,
-    grid_dim,
     lane_id,
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
-from gpu.mma import mma as mma_simd
-from gpu.sync import AMDScheduleBarrierMask
-from gpu.sync import schedule_barrier as amd_schedule_barrier
-from gpu.sync import schedule_group_barrier
+from gpu.sync import (
+    AMDScheduleBarrierMask,
+    schedule_barrier,
+    schedule_group_barrier,
+)
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     ThreadScope,
-    _tile_is_masked,
     copy_local_to_shared,
     copy_dram_to_local,
-    copy_dram_to_sram,
     copy_local_to_dram,
 )
 from layout.swizzle import Swizzle
@@ -71,9 +66,7 @@ fn amd_scheduling_hints[
     alias b_loads_per_thread = BN // rows_per_thread_block
 
     @parameter
-    for i in range(
-        (num_m_mmas * num_k_tiles + num_n_mmas * num_k_tiles) // num_k_tiles
-    ):
+    for i in range((num_m_mmas + num_n_mmas) * (num_k_tiles - 1)):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
             AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
@@ -91,11 +84,7 @@ fn amd_scheduling_hints[
         )
 
     @parameter
-    for i in range(
-        (num_m_mmas * num_k_tiles + num_n_mmas * num_k_tiles)
-        // num_k_tiles
-        * (num_k_tiles - 1)
-    ):
+    for i in range(num_m_mmas + num_n_mmas):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
         schedule_group_barrier(
             AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
@@ -415,7 +404,6 @@ fn gemm_kernel[
     # Warp organization
     alias num_warps_m = UInt(BM // WM)
     alias num_warps_n = UInt(BN // WN)
-    alias warps_per_block = num_warps_m * num_warps_n
 
     # MMA instruction tiling
     alias num_m_mmas = WM // MMA_M
@@ -529,7 +517,7 @@ fn gemm_kernel[
     load_tiles_from_dram()
     load_tiles_from_shared[0]()
 
-    amd_schedule_barrier()
+    schedule_barrier()
 
     # Stage 3: Main computation loop - Pipelined execution with double buffering
     for _ in range(2, K // BK):
@@ -565,7 +553,7 @@ fn gemm_kernel[
             scheduler_hint = config.scheduler_hint,
         ]()
 
-    amd_schedule_barrier()
+    schedule_barrier()
 
     @parameter
     for k_tile_idx in range(1, num_k_tiles):
@@ -579,7 +567,7 @@ fn gemm_kernel[
     for k_tile_idx in range(0, num_k_tiles):
         mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
-    amd_schedule_barrier()
+    schedule_barrier()
 
     barrier()
 
@@ -591,7 +579,7 @@ fn gemm_kernel[
     for k_tile_idx in range(0, num_k_tiles):
         mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
-    amd_schedule_barrier()
+    schedule_barrier()
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
