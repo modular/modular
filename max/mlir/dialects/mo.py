@@ -42,10 +42,10 @@ class IfOp(IfOp):  # type: ignore[no-redef]
 
     def __init__(
         self,
-        pred,
+        pred,  # noqa: ANN001
         out_types: Iterable[Type] | None,
-        loc=None,
-        ip=None,
+        loc=None,  # noqa: ANN001
+        ip=None,  # noqa: ANN001
     ) -> None:
         if out_types is None:
             out_types = []
@@ -55,10 +55,10 @@ class IfOp(IfOp):  # type: ignore[no-redef]
 
 
 def if_(  # type: ignore[no-redef]
-    pred,
-    out_types,
-    loc=None,
-    ip=None,
+    pred,  # noqa: ANN001
+    out_types,  # noqa: ANN001
+    loc=None,  # noqa: ANN001
+    ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         # mypy doesn't see the IfOp definition above, but the one that is replaced
@@ -70,7 +70,7 @@ def if_(  # type: ignore[no-redef]
 class WhileOp(WhileOp):  # type: ignore[no-redef]
     """Extends mo.while op with simpler builders."""
 
-    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:
+    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:  # noqa: ANN001
         if results_ is None:
             results_ = []
         super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)
@@ -79,7 +79,11 @@ class WhileOp(WhileOp):  # type: ignore[no-redef]
 
 
 def while_(  # type: ignore[no-redef]
-    results_, inputs, *, loc=None, ip=None
+    results_,  # noqa: ANN001
+    inputs,  # noqa: ANN001
+    *,
+    loc=None,  # noqa: ANN001
+    ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
@@ -87,7 +91,13 @@ def while_(  # type: ignore[no-redef]
 
 
 def call_(
-    symbol, results, operands, *, loc=None, ip=None, prefix: str = ""
+    symbol,  # noqa: ANN001
+    results,  # noqa: ANN001
+    operands,  # noqa: ANN001
+    *,
+    loc=None,  # noqa: ANN001
+    ip=None,  # noqa: ANN001
+    prefix: str = "",  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     if results is None:
         results = []

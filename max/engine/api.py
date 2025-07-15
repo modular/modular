@@ -171,7 +171,7 @@ Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 
 
-def _TensorSpec_str(self) -> str:
+def _TensorSpec_str(self) -> str:  # noqa: ANN001
     if self.shape is not None:
         mlir_shape = [
             str(dim) if dim is not None else "-1" for dim in self.shape
@@ -182,7 +182,7 @@ def _TensorSpec_str(self) -> str:
         return f"None x {self.dtype.name}"
 
 
-def _TensorSpec_repr(self) -> str:
+def _TensorSpec_repr(self) -> str:  # noqa: ANN001
     return (
         f"TensorSpec(shape={self.shape}, dtype={self.dtype}, name={self.name})"
     )
