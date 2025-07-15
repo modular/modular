@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: (Experimental, Bazel) Build and Test
+name: Build and Test
 on:
   pull_request:
     types: [opened, synchronize, reopened]
