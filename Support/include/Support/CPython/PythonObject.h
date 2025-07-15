@@ -11,7 +11,7 @@
 
 extern "C" {
 struct _object;
-typedef struct _object PyObject;
+using PyObject = struct _object;
 }
 
 namespace M::CPython {
