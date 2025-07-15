@@ -936,6 +936,10 @@ class Scheduler:
 
             self.progress.update(exec_progress, advance=1)
 
+    def close_pool(self):
+        self.cpu_pool.close()
+        self.cpu_pool.join()
+
 
 def run(
     yaml_path_list,
@@ -1033,7 +1037,9 @@ def run(
                     exec_prefix=exec_prefix,
                     exec_suffix=exec_suffix,
                 )
+            scheduler.close_pool()
         except KeyboardInterrupt:
+            scheduler.close_pool()
             obj_cache.dump()
             sys.exit(0)
 
