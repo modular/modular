@@ -89,7 +89,7 @@ class Tensor(graph.TensorValue):
         return cls(mlir_value=value._mlir_value)
 
     @classmethod
-    def constant(cls, value, dtype, device) -> Tensor:
+    def constant(cls, value, dtype, device) -> Tensor:  # noqa: ANN001
         if hasattr(value, "__iter__") and not isinstance(value, np.ndarray):
             value = np.array(value, dtype.to_numpy())
 
@@ -154,7 +154,7 @@ class Tensor(graph.TensorValue):
     def __bool__(self) -> bool:
         return bool(self.item())
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):  # noqa: ANN001
         return functional(graph.TensorValue.__getitem__)(self, idx)
 
     def _values(self):
@@ -328,7 +328,7 @@ class ComputeGraph:
         self.sources[tensor._mlir_value] = tensor
 
 
-def functional(op):
+def functional(op):  # noqa: ANN001
     """Convert an op on symbolic tensor values to one which
     additionally supports max.Tensor inputs."""
 

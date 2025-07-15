@@ -315,7 +315,7 @@ class Tracer:
 # ---------------------------------------------------------------------------
 
 
-def _motr_task_factory(loop: asyncio.AbstractEventLoop, coro, *args, **kwargs):
+def _motr_task_factory(loop: asyncio.AbstractEventLoop, coro, *args, **kwargs):  # noqa: ANN001
     """Creates asyncio tasks with proper MOTR trace context synchronization.
 
     Every freshly-created Task inherits the caller's ContextVars, including
