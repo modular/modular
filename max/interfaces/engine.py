@@ -18,10 +18,15 @@ import msgspec
 class EngineStatus(str, Enum):
     """
     Represents the status of an engine operation.
+
+    Status values:
+        ACTIVE: Indicates that the engine executed the operation successfully and request remains active.
+        CANCELLED: Indicates that the request was cancelled before completion; no further data will be provided.
+        COMPLETE: Indicates that the engine executed the operation successfully and the request is completed.
     """
 
-    SUCCESSFUL = "successful"
-    """Indicates that the engine executed the operation successfully and data is returned."""
+    ACTIVE = "active"
+    """Indicates that the engine executed the operation successfully and request remains active."""
     CANCELLED = "cancelled"
     """Indicates that the request was cancelled before completion; no further data will be provided."""
     COMPLETE = "complete"
@@ -54,36 +59,34 @@ class EngineResult(msgspec.Struct, Generic[T], tag=True, omit_defaults=True):
         return EngineResult(status=EngineStatus.CANCELLED, result=None)
 
     @classmethod
-    def complete(cls) -> "EngineResult":
+    def complete(cls, result: T) -> "EngineResult":
         """
         Create an EngineResult representing a completed operation.
 
         Returns:
             EngineResult: An EngineResult with COMPLETE status and no result.
         """
-        return EngineResult(status=EngineStatus.COMPLETE, result=None)
+        return EngineResult(status=EngineStatus.COMPLETE, result=result)
 
     @classmethod
-    def successful(cls, result: T) -> "EngineResult":
+    def active(cls, result: T) -> "EngineResult":
         """
-        Create an EngineResult representing a successful operation.
+        Create an EngineResult representing an active operation.
 
         Args:
             result: The result data of the operation.
 
         Returns:
-            EngineResult: An EngineResult with SUCCESSFUL status and the provided result.
+            EngineResult: An EngineResult with ACTIVE status and the provided result.
         """
-        return EngineResult(status=EngineStatus.SUCCESSFUL, result=result)
+        return EngineResult(status=EngineStatus.ACTIVE, result=result)
 
-    def continue_stream(self) -> bool:
+    @property
+    def stop_stream(self) -> bool:
         """
         Determine if the stream should continue based on the current status.
 
         Returns:
-            bool: True if the stream should continue, False otherwise.
+            bool: True if the stream should stop, False otherwise.
         """
-        return self.status not in [
-            EngineStatus.CANCELLED,
-            EngineStatus.COMPLETE,
-        ]
+        return self.status != EngineStatus.ACTIVE
