@@ -31,6 +31,7 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
             "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
             "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
         },
+        env_inherit = ["FORCE_COLOR"],
         toolchains = [":mojo_test_env"],
         **kwargs
     )
