@@ -49,7 +49,7 @@ logger = logging.getLogger("max.entrypoints")
 _server_instance: Optional[Server] = None
 
 
-def sigterm_handler(sig, frame) -> None:
+def sigterm_handler(sig, frame) -> None:  # noqa: ANN001
     # If we have a server instance, trigger its shutdown
     if _server_instance is not None:
         _server_instance.should_exit = True
@@ -61,7 +61,7 @@ def sigterm_handler(sig, frame) -> None:
     sys.exit(0)
 
 
-def sigint_handler(sig, frame) -> None:
+def sigint_handler(sig, frame) -> None:  # noqa: ANN001
     """Handle SIGINT by raising KeyboardInterrupt to allow lifespan to handle it."""
     # Trigger server shutdown
     if _server_instance is not None:

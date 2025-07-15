@@ -343,7 +343,7 @@ ASYNC_REQUEST_FUNCS = {
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit=65535) -> None:
+def set_ulimit(target_soft_limit=65535) -> None:  # noqa: ANN001
     resource_type = resource.RLIMIT_NOFILE
     current_soft, current_hard = resource.getrlimit(resource_type)
 

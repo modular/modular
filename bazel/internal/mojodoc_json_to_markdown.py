@@ -21,7 +21,7 @@ from pathlib import Path
 import jinja2
 
 
-def addImplicitConversionDecorator(mojo_json) -> None:
+def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
     """Show @implicit on implicit constructors. We reuse the "convention"
     field which is also used for marking structs with the register-passable
     decorator. The isImplicitConversion flag should only appear on constructors,
@@ -41,7 +41,7 @@ def addImplicitConversionDecorator(mojo_json) -> None:
                         exit(1)
 
 
-def copyFieldTypesToValue(mojo_json) -> None:
+def copyFieldTypesToValue(mojo_json) -> None:  # noqa: ANN001
     """The type of struct fields is expected by the doc generator to be in a
     field called 'value'."""
     for struct in mojo_json["structs"] + mojo_json["traits"]:
@@ -49,7 +49,7 @@ def copyFieldTypesToValue(mojo_json) -> None:
             field["value"] = field["type"]
 
 
-def processStructConvention(mojo_json) -> None:
+def processStructConvention(mojo_json) -> None:  # noqa: ANN001
     """We want to show the decorators for register-passable types; don't display
     anything for the default case (memory-only)."""
     for struct in mojo_json["structs"]:
@@ -68,7 +68,7 @@ def processStructConvention(mojo_json) -> None:
                 exit(1)
 
 
-def removeSelfArgumentFromStructMethods(mojo_json) -> None:
+def removeSelfArgumentFromStructMethods(mojo_json) -> None:  # noqa: ANN001
     """If we are in a non-static struct method, we don't want to show the first argument (self) as an
     argument in the documentation. So we remove it from all the functions that are child of structs.
     """
@@ -84,11 +84,11 @@ def removeSelfArgumentFromStructMethods(mojo_json) -> None:
                     function["args"].pop(0)
 
 
-def removeArgumentsWithoutDocumentation(mojo_json) -> None:
+def removeArgumentsWithoutDocumentation(mojo_json) -> None:  # noqa: ANN001
     """We've been omitting function arguments without documentation from docstring, so we remove them
     from top-level functions and struct methods."""
 
-    def process_decl_with_functions(decl) -> None:
+    def process_decl_with_functions(decl) -> None:  # noqa: ANN001
         for overloadSet in decl["functions"]:
             for function in overloadSet["overloads"]:
                 function["args"] = [
@@ -100,16 +100,16 @@ def removeArgumentsWithoutDocumentation(mojo_json) -> None:
     process_decl_with_functions(mojo_json)
 
 
-def removeParametersWithoutDocumentation(mojo_json) -> None:
+def removeParametersWithoutDocumentation(mojo_json) -> None:  # noqa: ANN001
     """We've been omitting parameters without documentation from docstring, so we remove them
     from top-level functions, struct methods and structs"""
 
-    def process_decl_with_parameters(decl) -> None:
+    def process_decl_with_parameters(decl) -> None:  # noqa: ANN001
         decl["parameters"] = [
             param for param in decl["parameters"] if param["description"]
         ]
 
-    def process_decl_with_functions(decl) -> None:
+    def process_decl_with_functions(decl) -> None:  # noqa: ANN001
         for overloadSet in decl["functions"]:
             for function in overloadSet["overloads"]:
                 process_decl_with_parameters(function)
@@ -124,7 +124,7 @@ def removeParametersWithoutDocumentation(mojo_json) -> None:
     process_decl_with_functions(mojo_json)
 
 
-def removeStaticFromInitializers(mojo_json) -> None:
+def removeStaticFromInitializers(mojo_json) -> None:  # noqa: ANN001
     """Removes 'isStatic' from struct initializer functions.
 
     The "isStatic" attribute is set to `true` for all `FnOp` for which
@@ -137,7 +137,7 @@ def removeStaticFromInitializers(mojo_json) -> None:
     the LIT dialect treats certain functions as static or not, and we munge the
     data here to be simpler."""
 
-    def process_decl_with_functions(decl) -> None:
+    def process_decl_with_functions(decl) -> None:  # noqa: ANN001
         for overloadSet in decl["functions"]:
             for function in overloadSet["overloads"]:
                 name = function["name"]
@@ -156,19 +156,19 @@ def removeStaticFromInitializers(mojo_json) -> None:
 # The slug is the name of the module, except for the index
 # module, which is named "index_" to avoid a name conflict with
 # the index file.
-def nameToSlug(name):
+def nameToSlug(name):  # noqa: ANN001
     return "index_" if name == "index" else name
 
 
 def generateMarkdown(
-    mojo_json,
+    mojo_json,  # noqa: ANN001
     version: str,
     output: Path,
     environment: jinja2.Environment,
     template: jinja2.Template,
-    parent_json=None,
-    is_nested=False,
-    namespace=None,
+    parent_json=None,  # noqa: ANN001
+    is_nested=False,  # noqa: ANN001
+    namespace=None,  # noqa: ANN001
 ) -> None:
     name = mojo_json["name"]
 

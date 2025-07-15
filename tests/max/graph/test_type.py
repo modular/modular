@@ -70,14 +70,14 @@ def test_static_dim__division_by_zero(numerator: StaticDim) -> None:
         _ = numerator // 0
 
 
-def test_algebraic_dim_simplify_and_comparison(mlir_context) -> None:
+def test_algebraic_dim_simplify_and_comparison(mlir_context) -> None:  # noqa: ANN001
     assert 4 * Dim("x") + 4 == (Dim("x") + 1) * 4
     assert 4 * Dim("x") // 5 != Dim(4) // 5 * "x"
     assert 0 == Dim(4) // 5 * "x"
     assert -Dim("x") - 4 == -(Dim("x") + 4)
 
 
-def test_dims_print_reasonably(mlir_context) -> None:
+def test_dims_print_reasonably(mlir_context) -> None:  # noqa: ANN001
     assert str(Dim(23)) == "23"
     assert str(Dim("test")) == "test"
     assert str((Dim("x") + "y" - 4) // 5) == "(x + y + -4) // 5"
@@ -122,11 +122,11 @@ def test_symbolic_dim_to_int_error() -> None:
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(tensor_type=...)
-def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType) -> None:
+def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType) -> None:  # noqa: ANN001
     assert tensor_type == TensorType.from_mlir(tensor_type.to_mlir())
 
 
-def test_tensor_type(mlir_context) -> None:
+def test_tensor_type(mlir_context) -> None:  # noqa: ANN001
     """Tests tensor type creation."""
     t = TensorType(DType.float32, [3, "x"], DeviceRef.CPU())
     assert t == Type.from_mlir(t.to_mlir())
@@ -145,7 +145,7 @@ def test_tensor_type(mlir_context) -> None:
     )
 
 
-def test_tensor_type__negative_dim(mlir_context) -> None:
+def test_tensor_type__negative_dim(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(TypeError, match="dimensions must be non-negative"):
         tensor_type = TensorType(DType.float32, [-1], device=DeviceRef.CPU())
 
@@ -158,7 +158,7 @@ def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     assert tensor_type.to_mlir().device_ref == device_type.to_mlir()
 
 
-def test_tensor_type_layout(mlir_context) -> None:
+def test_tensor_type_layout(mlir_context) -> None:  # noqa: ANN001
     t = TensorType(DType.float32, ["r", "s", "f", "c"], DeviceRef.CPU())
     t_copy = Type.from_mlir(t.to_mlir())
     t._layout = FilterLayout.RSCF
@@ -170,7 +170,7 @@ def test_tensor_type_layout(mlir_context) -> None:
     assert t == t_copy
 
 
-def test_opaque_type(mlir_context) -> None:
+def test_opaque_type(mlir_context) -> None:  # noqa: ANN001
     """Tests opaque type creation and properties."""
     opaque = mo.OpaqueType(
         builtin.StringAttr("custom_type"), builtin.DictionaryAttr()
@@ -181,11 +181,11 @@ def test_opaque_type(mlir_context) -> None:
 
 
 @given(opaque_type=...)
-def test_opaque_type_to_mlir(mlir_context, opaque_type: _OpaqueType) -> None:
+def test_opaque_type_to_mlir(mlir_context, opaque_type: _OpaqueType) -> None:  # noqa: ANN001
     assert opaque_type == _OpaqueType.from_mlir(opaque_type.to_mlir())
 
 
-def test_type_checking(mlir_context) -> None:
+def test_type_checking(mlir_context) -> None:  # noqa: ANN001
     """Tests type checking functions."""
     dtype = DType.float32
     dim = Dim(3).to_mlir()
@@ -227,11 +227,11 @@ def test_type_checking(mlir_context) -> None:
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(buffer_type=...)
-def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType) -> None:
+def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType) -> None:  # noqa: ANN001
     assert buffer_type == BufferType.from_mlir(buffer_type.to_mlir())
 
 
-def test_buffer_type(mlir_context) -> None:
+def test_buffer_type(mlir_context) -> None:  # noqa: ANN001
     """Tests buffer type creation."""
     t = BufferType(DType.float32, [3, "x"], DeviceRef.CPU())
     assert t == Type.from_mlir(t.to_mlir())
@@ -250,11 +250,11 @@ def test_buffer_type(mlir_context) -> None:
     )
 
 
-def test_chain_type(mlir_context) -> None:
+def test_chain_type(mlir_context) -> None:  # noqa: ANN001
     assert _ChainType() == _ChainType.from_mlir(_ChainType().to_mlir())
 
 
-def test_invalid_dimension(mlir_context) -> None:
+def test_invalid_dimension(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(TypeError):
         _ = TensorType(
             DType.bfloat16, [-7095393036038990704], device=DeviceRef.CPU()
@@ -262,14 +262,14 @@ def test_invalid_dimension(mlir_context) -> None:
 
 
 @pytest.mark.skip("GEX-1918")
-def test_GEX_1918(mlir_context) -> None:
+def test_GEX_1918(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(ValueError):
         _ = Dim(2**63 - 1) * 2
     with pytest.raises(ValueError):
         _ = Dim(2**63 - 1) + 1
 
 
-def test_MAXPLAT_148(mlir_context) -> None:
+def test_MAXPLAT_148(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(TypeError):
         graph = Graph(
             "MAXPLAT-148",
@@ -279,7 +279,7 @@ def test_MAXPLAT_148(mlir_context) -> None:
         )
 
 
-def test_device_type(mlir_context) -> None:
+def test_device_type(mlir_context) -> None:  # noqa: ANN001
     """Tests Device type."""
     host = DeviceRef.CPU(0)
     cuda0 = DeviceRef.GPU(0)
@@ -291,7 +291,7 @@ def test_device_type(mlir_context) -> None:
     assert cuda1 == cuda1_2
 
 
-def test_type_hashing(mlir_context) -> None:
+def test_type_hashing(mlir_context) -> None:  # noqa: ANN001
     lhs = TensorType(DType.float32, [7, 2], device=DeviceRef.CPU())
     rhs = TensorType(DType.float32, [7, 2], device=DeviceRef.CPU())
 

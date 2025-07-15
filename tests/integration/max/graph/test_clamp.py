@@ -24,7 +24,7 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.int16])
-def test_clamp(session, dtype) -> None:
+def test_clamp(session, dtype) -> None:  # noqa: ANN001
     input_type = TensorType(dtype, [10, 10], device=device_ref)
 
     with Graph(f"clamp_{dtype}", input_types=[input_type]) as graph:

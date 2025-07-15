@@ -32,10 +32,10 @@ def test_while_loop(session: InferenceSession) -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred_fn(x):
+        def pred_fn(x):  # noqa: ANN001
             return x < 10
 
-        def body_fn(x):
+        def body_fn(x):  # noqa: ANN001
             return x + 1
 
         results = ops.while_loop(x, pred_fn, body_fn)
@@ -95,17 +95,18 @@ def custom_ops_path() -> Path:
     reason="Buffer operations are currently not supported in while loops"
 )
 def test_while_loop_inplace_user_supplied(
-    custom_ops_path, session: InferenceSession
+    custom_ops_path,  # noqa: ANN001
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:
         buffer: BufferValue = graph.inputs[0].buffer
 
-        def pred_fn(_):
+        def pred_fn(_):  # noqa: ANN001
             return buffer[0, 0] < 10
 
-        def body_fn(_):
+        def body_fn(_):  # noqa: ANN001
             ops.inplace_custom(
                 "mutable_test_op", device=buffer.device, values=[buffer]
             )

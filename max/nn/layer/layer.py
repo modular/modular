@@ -161,7 +161,7 @@ class Module(Layer, ABC):
             self._weight_values: dict[str, DLPackCompatible] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-    def __setattr__(self, name, value) -> None:
+    def __setattr__(self, name, value) -> None:  # noqa: ANN001
         try:
             if isinstance(value, Module):
                 self._sublayers[name] = value
@@ -233,7 +233,7 @@ class Module(Layer, ABC):
         layer_weights = list(self.raw_state_dict().values())
         subgraph_input_types: list[Type] = []
 
-        def flatten(t, result) -> None:
+        def flatten(t, result) -> None:  # noqa: ANN001
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -587,9 +587,9 @@ def clear_hooks() -> None:
     _LAYER_HOOKS.clear()
 
 
-def _call_with_hooks(call_fn):
+def _call_with_hooks(call_fn):  # noqa: ANN001
     @wraps(call_fn)
-    def __call_with_hooks(layer, *args, **kwargs):
+    def __call_with_hooks(layer, *args, **kwargs):  # noqa: ANN001
         # Hide this wrapper from rich traceback.
         _rich_traceback_omit = True
 

@@ -49,7 +49,7 @@ class TorchPrintHook(BasePrintHook):
             return None
         return os.path.join(self._export_path, str(self._current_step))
 
-    def __call__(self, module, args, outputs) -> None:  # type: ignore
+    def __call__(self, module, args, outputs) -> None:  # type: ignore  # noqa: ANN001
         super().__call__(module, args, kwargs={}, outputs=outputs)
 
     def print_value(self, name: str, value: Any) -> bool:

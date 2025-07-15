@@ -124,7 +124,7 @@ def while_loop(
     out_mlir_types = [t.to_mlir() for t in out_types]
 
     def wrap_while_block_function(
-        user_func,
+        user_func,  # noqa: ANN001
         block_args: Iterable[mlir.BlockArgument],
         is_cond_block: bool = False,
     ):
@@ -190,7 +190,7 @@ def while_loop(
     # Separate actual loop results from the execution chain
     *results, out_chain = results
 
-    def while_condition_op(args) -> mlir.OpView:
+    def while_condition_op(args) -> mlir.OpView:  # noqa: ANN001
         """Adaptor for mo.WhileConditionOp, whose constructor takes the
         condition value and the list of yielded values."""
         condition, *results = args

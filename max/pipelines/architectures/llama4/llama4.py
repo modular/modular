@@ -39,7 +39,7 @@ from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
 
 
-def distribute_value(v, devices: list[DeviceRef]):
+def distribute_value(v, devices: list[DeviceRef]):  # noqa: ANN001
     return [v.to(device) for device in devices]
 
 

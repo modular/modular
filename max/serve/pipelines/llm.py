@@ -89,7 +89,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):
+    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):  # noqa: ANN001
         token_log_probabilities = log_prob.token_log_probabilities
         top_log_probabilities = []
         for top_log_probs in log_prob.top_log_probabilities:
@@ -267,7 +267,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
@@ -412,7 +412,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_audio_metadata(self, response, context):
+    async def _collect_audio_metadata(self, response, context):  # noqa: ANN001
         # Collect metadata about generated audio like duration, sample rate etc.
         audio_metadata = {}
         if hasattr(response, "sample_rate"):
@@ -517,7 +517,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()

@@ -22,7 +22,7 @@ shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_types_nd = tensor_types(shapes=shared_shapes)
 
 
-def valid_repeat_counts(dim):
+def valid_repeat_counts(dim):  # noqa: ANN001
     if isinstance(dim, StaticDim):
         return st.integers(min_value=1, max_value=MAX_INT64 // dim.dim)
     else:

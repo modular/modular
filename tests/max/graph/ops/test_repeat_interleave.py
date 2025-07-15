@@ -32,7 +32,10 @@ shared_tensor_types = st.shared(tensor_types())
     axis=axes(shared_tensor_types),
 )
 def test_repeat_interleave(
-    graph_builder, type: TensorType, repeats: int, axis: int
+    graph_builder,  # noqa: ANN001
+    type: TensorType,
+    repeats: int,
+    axis: int,  # noqa: ANN001
 ) -> None:
     dim = type.shape[axis]
     assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
@@ -53,7 +56,7 @@ def test_repeat_interleave(
     type=shared_tensor_types,
     axis=axes(shared_tensor_types),
 )
-def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:
+def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:  # noqa: ANN001
     dim = type.shape[axis]
 
     repeats_type = TensorType(DType.int64, [dim], device=DeviceRef.CPU())
@@ -77,7 +80,9 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:
     repeats=st.integers(min_value=1, max_value=2**63 - 1),
 )
 def test_repeat_interleave__no_axis(
-    graph_builder, type: TensorType, repeats: int
+    graph_builder,  # noqa: ANN001
+    type: TensorType,
+    repeats: int,  # noqa: ANN001
 ) -> None:
     static_product = reduce(operator.mul, type.shape.static_dims, repeats)
     assume(static_product < 2**63)
@@ -96,7 +101,10 @@ def test_repeat_interleave__no_axis(
     axis=st.one_of(axes(shared_tensor_types), st.none()),
 )
 def test_repeat_interleave__nonpositive_repeats(
-    graph_builder, type: TensorType, repeats: int, axis: Optional[int]
+    graph_builder,  # noqa: ANN001
+    type: TensorType,
+    repeats: int,
+    axis: Optional[int],  # noqa: ANN001
 ) -> None:
     assume(repeats <= 0)
     with graph_builder(input_types=[type]) as graph:
@@ -110,7 +118,10 @@ def test_repeat_interleave__nonpositive_repeats(
     axis=...,
 )
 def test_repeat_interleave__axis_out_of_bounds(
-    graph_builder, type: TensorType, repeats: int, axis: int
+    graph_builder,  # noqa: ANN001
+    type: TensorType,
+    repeats: int,
+    axis: int,  # noqa: ANN001
 ) -> None:
     assume(not -type.rank <= axis < type.rank)
     with graph_builder(input_types=[type]) as graph:

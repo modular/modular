@@ -260,7 +260,7 @@ class BufferValue(Value[mo.BufferType]):
         device = self.device
         return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
-    def __getitem__(self, index) -> TensorValue:
+    def __getitem__(self, index) -> TensorValue:  # noqa: ANN001
         """Loads data from the buffer at the specified index.
 
         Args:
@@ -276,7 +276,7 @@ class BufferValue(Value[mo.BufferType]):
 
     def __setitem__(
         self,
-        index,
+        index,  # noqa: ANN001
         val: TensorValue,
     ) -> None:
         """Stores data into the buffer at the specified index.

@@ -50,7 +50,9 @@ def tensor_types_with_dtype(dtype: DType, **kwargs):
     ),
 )
 def test_qmatmul(
-    graph_builder, base_type: TensorType, encoding: QuantizationEncoding
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,
+    encoding: QuantizationEncoding,  # noqa: ANN001
 ) -> None:
     """Test qmatmul with basic inputs."""
     *_, m, n = base_type.shape
@@ -94,7 +96,9 @@ def test_qmatmul(
     ),
 )
 def test_dequantize(
-    graph_builder, base_type: TensorType, encoding: QuantizationEncoding
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,
+    encoding: QuantizationEncoding,  # noqa: ANN001
 ) -> None:
     """Test dequantize with basic inputs."""
     *_, m, n = base_type.shape
@@ -151,7 +155,9 @@ def test_dequantize(
     ),
 )
 def test_dequantize__error__nondivisible_block_size(
-    graph_builder, base_type: TensorType, encoding: QuantizationEncoding
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,
+    encoding: QuantizationEncoding,  # noqa: ANN001
 ) -> None:
     """Test that dequantize raises an error when last dimension is not divisible by block size."""
     *_, m, n = base_type.shape
@@ -191,7 +197,9 @@ def test_dequantize__error__nondivisible_block_size(
     ),
 )
 def test_dequantize__error__nonstatic_last_dim(
-    graph_builder, base_type: TensorType, encoding: QuantizationEncoding
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,
+    encoding: QuantizationEncoding,  # noqa: ANN001
 ) -> None:
     """Test that dequantize raises an error when last dimension is not static."""
     *_, m = base_type.shape

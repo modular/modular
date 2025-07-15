@@ -59,7 +59,10 @@ for feature in available_features:
 
 
 def _replace_substitution(
-    literal_command, subst_key, command, insert_in_front
+    literal_command,  # noqa: ANN001
+    subst_key,  # noqa: ANN001
+    command,  # noqa: ANN001
+    insert_in_front,  # noqa: ANN001
 ) -> None:
     for index, pair in reversed(
         list(enumerate(llvm_config.config.substitutions))

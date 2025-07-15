@@ -99,7 +99,7 @@ class EmbeddingsScheduler(Scheduler):
             already_terminated.add(req_id)
 
     @traced
-    def _schedule_encode(self, batch_to_execute) -> None:
+    def _schedule_encode(self, batch_to_execute) -> None:  # noqa: ANN001
         # execute the batch
         batch_responses = self.pipeline.encode(batch_to_execute)
         # remove terminated requests from the batch

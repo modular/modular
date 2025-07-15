@@ -71,7 +71,7 @@ devices = st.sampled_from([DeviceRef.CPU(), DeviceRef.GPU()])
 
 # Strategy for valid range parameters that produce reasonable output sizes
 @st.composite
-def valid_range_params(draw):
+def valid_range_params(draw):  # noqa: ANN001
     """Generate valid range parameters with reasonable output dimensions."""
     # Generate step first (non-zero)
     step = draw(
@@ -319,7 +319,7 @@ def test_range_step_zero() -> None:
 
 # Strategy for sign mismatch cases
 @st.composite
-def sign_mismatch_params(draw):
+def sign_mismatch_params(draw):  # noqa: ANN001
     """Generate parameters where sign(stop-start) != sign(step)."""
     choice = draw(st.integers(min_value=0, max_value=2))
     if choice == 0:
@@ -342,7 +342,7 @@ def sign_mismatch_params(draw):
 
 
 @given(params=sign_mismatch_params())
-def test_range_sign_mismatch(params) -> None:
+def test_range_sign_mismatch(params) -> None:  # noqa: ANN001
     """Tests ops.range where sign(stop-start) != sign(step) using hypothesis."""
     start, stop, step = params
     # Note: This currently doesn't raise at op construction time but should
@@ -380,7 +380,7 @@ def test_range_valid_params(dtype: DType, device: DeviceRef) -> None:
 
 # Strategy for testing non-scalar inputs
 @st.composite
-def non_scalar_arrays(draw):
+def non_scalar_arrays(draw):  # noqa: ANN001
     """Generate non-scalar numpy arrays for testing."""
     shape = draw(
         st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=3)
@@ -398,7 +398,7 @@ def non_scalar_arrays(draw):
 
 
 @given(array=non_scalar_arrays())
-def test_range_non_scalar_inputs(array) -> None:
+def test_range_non_scalar_inputs(array) -> None:  # noqa: ANN001
     """Tests ops.range with non-scalar inputs raises ValueError using hypothesis."""
     with pytest.raises(
         ValueError, match="range expected scalar values as inputs!"

@@ -111,7 +111,8 @@ shared_static_dim = st.shared(static_dims())
     )
 )
 def test_stack_error_with_many_different_shapes(
-    graph_builder, input_types: list[TensorType]
+    graph_builder,  # noqa: ANN001
+    input_types: list[TensorType],  # noqa: ANN001
 ) -> None:
     # Using a list comprehension to check if there are different ranks
     assume(len(set(len(t.shape) for t in input_types)) > 1)
@@ -127,7 +128,9 @@ def test_stack_error_with_many_different_shapes(
     y_type=tensor_types(shapes=shapes(max_rank=2, min_rank=2)),
 )
 def test_stack_error_with_many_different_dtypes(
-    graph_builder, x_type: TensorType, y_type: TensorType
+    graph_builder,  # noqa: ANN001
+    x_type: TensorType,
+    y_type: TensorType,  # noqa: ANN001
 ) -> None:
     assume(x_type.dtype != y_type.dtype)
     with graph_builder(input_types=[x_type, y_type]) as graph:
@@ -155,7 +158,9 @@ def invalid_axes(rank: int):
     ),
 )
 def test_stack_error_with_axis_out_of_bounds(
-    graph_builder, base_type: TensorType, invalid_axis: int
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,
+    invalid_axis: int,  # noqa: ANN001
 ) -> None:
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="Axis out of range"):

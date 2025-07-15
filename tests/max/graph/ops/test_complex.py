@@ -45,7 +45,8 @@ dynamic_last_dim_shapes = st.builds(
 
 @given(base_type=tensor_types(shapes=even_static_last_dim_shapes))
 def test_as_interleaved_complex__valid(
-    graph_builder, base_type: TensorType
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,  # noqa: ANN001
 ) -> None:
     """Test as_interleaved_complex with valid inputs."""
     *_, last = base_type.shape
@@ -60,7 +61,8 @@ def test_as_interleaved_complex__valid(
 
 @given(base_type=tensor_types(shapes=odd_static_last_dim_shapes))
 def test_as_interleaved_complex__error__odd_last_dim(
-    graph_builder, base_type: TensorType
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,  # noqa: ANN001
 ) -> None:
     """Test that as_interleaved_complex raises an error when last dimension is odd."""
 
@@ -71,7 +73,8 @@ def test_as_interleaved_complex__error__odd_last_dim(
 
 @given(base_type=tensor_types(shapes=dynamic_last_dim_shapes))
 def test_as_interleaved_complex__error__dynamic_last_dim(
-    graph_builder, base_type: TensorType
+    graph_builder,  # noqa: ANN001
+    base_type: TensorType,  # noqa: ANN001
 ) -> None:
     """Test that as_interleaved_complex raises an error when last dimension is dynamic."""
 

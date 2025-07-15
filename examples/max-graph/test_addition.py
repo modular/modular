@@ -48,7 +48,7 @@ from addition import add_tensors
         ),
     ],
 )
-def test_add_tensors(input0, input1, expected) -> None:
+def test_add_tensors(input0, input1, expected) -> None:  # noqa: ANN001
     result = add_tensors(input0, input1)
     np.testing.assert_almost_equal(result, expected, decimal=5)
 

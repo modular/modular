@@ -17,7 +17,9 @@ import time
 
 
 def simple_openai_request(
-    model_name="gpt-3.5-turbo", content="Say this is a test!", stream=False
+    model_name="gpt-3.5-turbo",  # noqa: ANN001
+    content="Say this is a test!",  # noqa: ANN001
+    stream=False,  # noqa: ANN001
 ):
     return {
         "model": model_name,
@@ -30,8 +32,8 @@ def simple_openai_request(
 def simple_openai_response(
     contents: str,
     model_name: str = "unnamed-model",
-    response_id="response_id_0",
-    timestamp=time.time_ns(),
+    response_id="response_id_0",  # noqa: ANN001
+    timestamp=time.time_ns(),  # noqa: ANN001
 ):
     return {
         "id": response_id,
@@ -74,8 +76,8 @@ def simple_openai_stream_request():
 def simple_openai_stream_response(
     contents: list[str],
     model_name: str = "unnamed-model",
-    response_id="response_id_0",
-    timestamp=time.time_ns(),
+    response_id="response_id_0",  # noqa: ANN001
+    timestamp=time.time_ns(),  # noqa: ANN001
 ):
     json_response = []
     # TODO this needs to be individually callable by the token gen

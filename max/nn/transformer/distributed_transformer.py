@@ -48,7 +48,7 @@ def take(it: Iterable[Value], n: int) -> list[Value]:
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
 # shard_row_value across the codebase into a multi gpu utils file
-def distribute_value(v, devices: list[DeviceRef]):
+def distribute_value(v, devices: list[DeviceRef]):  # noqa: ANN001
     return [v.to(device) for device in devices]
 
 

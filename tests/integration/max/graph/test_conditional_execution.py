@@ -40,7 +40,7 @@ def custom_ops_path() -> Path:
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-def test_conditional_execution_no_results(session, capfd) -> None:
+def test_conditional_execution_no_results(session, capfd) -> None:  # noqa: ANN001
     with Graph(
         "conditional",
         input_types=(TensorType(DType.bool, [], device=device_ref),),
@@ -69,7 +69,7 @@ def test_conditional_execution_no_results(session, capfd) -> None:
     assert "else" in captured.out
 
 
-def test_conditional_execution_with_results(session) -> None:
+def test_conditional_execution_with_results(session) -> None:  # noqa: ANN001
     with Graph(
         "conditional",
         input_types=(TensorType(DType.bool, [], device=device_ref),),
@@ -98,7 +98,7 @@ def test_conditional_execution_with_results(session) -> None:
     assert output[0].to_numpy() == 0
 
 
-def test_conditional_shape_to_tensor_solo_dim(session) -> None:
+def test_conditional_shape_to_tensor_solo_dim(session) -> None:  # noqa: ANN001
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=device_ref
     )
@@ -142,7 +142,8 @@ def test_conditional_shape_to_tensor_solo_dim(session) -> None:
 
 @pytest.mark.skip(reason="assert fail")
 def test_conditional_inplace_user_supplied(
-    custom_ops_path, session: InferenceSession
+    custom_ops_path,  # noqa: ANN001
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     import torch
 
@@ -200,7 +201,7 @@ def test_conditional_inplace_user_supplied(
     np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
 
-def test_conditional_nested_conditionals(session, capfd) -> None:
+def test_conditional_nested_conditionals(session, capfd) -> None:  # noqa: ANN001
     with Graph(
         "nested_conditionals",
         input_types=(
@@ -274,7 +275,7 @@ def test_conditional_nested_conditionals(session, capfd) -> None:
     assert "false_false_2" in captured.out
 
 
-def test_conditional_with_same_name_weight(session) -> None:
+def test_conditional_with_same_name_weight(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
     with Graph(
@@ -319,7 +320,7 @@ def test_conditional_with_same_name_weight(session) -> None:
         np.testing.assert_array_equal(weight * 3, output[0].to_numpy())
 
 
-def test_conditional_with_diff_names_weights(session) -> None:
+def test_conditional_with_diff_names_weights(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     with Graph(
         "graph_with_cond_weights",
@@ -371,7 +372,7 @@ def test_conditional_with_diff_names_weights(session) -> None:
         np.testing.assert_array_equal(false_weight * 3, output[0].to_numpy())
 
 
-def test_conditional_with_returned_weights(session) -> None:
+def test_conditional_with_returned_weights(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     with Graph(
         "graph_with_cond_weights",
@@ -404,7 +405,7 @@ def test_conditional_with_returned_weights(session) -> None:
         np.testing.assert_array_equal(weight, output[0].to_numpy())
 
 
-def test_cond_returned_diff_weights(session) -> None:
+def test_cond_returned_diff_weights(session) -> None:  # noqa: ANN001
     """Tests adding an external weight to a graph."""
     with Graph(
         "graph_with_cond_weights",

@@ -126,7 +126,7 @@ class TextGenerationMetrics:
             self.total_exe_time = "n/a"
             self.requests_per_second = "n/a"
 
-    def _print_report(self, print_raw=False) -> None:
+    def _print_report(self, print_raw=False) -> None:  # noqa: ANN001
         print()
         print("Prompt size:", self.prompt_size)
         print("Output size:", self.output_size)
@@ -209,7 +209,7 @@ class EmbeddingsMetrics:
             self.requests_per_second = "n/a"
             self.total_exe_time = "n/a"
 
-    def _print_report(self, print_raw=False) -> None:
+    def _print_report(self, print_raw=False) -> None:  # noqa: ANN001
         print()
         print("Prompt size:", self.prompt_size)
         print("Startup time:", self.startup_time, "ms")

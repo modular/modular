@@ -23,7 +23,7 @@ from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
 
-def sum(x: TensorValueLike, axis=-1) -> TensorValue:
+def sum(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using a sum operation.
 
@@ -41,7 +41,7 @@ def sum(x: TensorValueLike, axis=-1) -> TensorValue:
     return _reduce(rmo.mo_reduce_add, x, axis=axis)
 
 
-def mean(x: TensorValueLike, axis=-1) -> TensorValue:
+def mean(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using a mean operation.
 
@@ -59,7 +59,7 @@ def mean(x: TensorValueLike, axis=-1) -> TensorValue:
     return _reduce(rmo.mo_mean, x, axis=axis)
 
 
-def min(x: TensorValueLike, axis=-1) -> TensorValue:
+def min(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using a min operation.
 
@@ -77,7 +77,7 @@ def min(x: TensorValueLike, axis=-1) -> TensorValue:
     return _reduce(rmo.mo_reduce_min, x, axis=axis)
 
 
-def max(x: TensorValueLike, axis=-1) -> TensorValue:
+def max(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using a max operation.
 
@@ -95,7 +95,7 @@ def max(x: TensorValueLike, axis=-1) -> TensorValue:
     return _reduce(rmo.mo_reduce_max, x, axis=axis)
 
 
-def _reduce(op, x: TensorValueLike, axis=-1, out_dtype=None) -> TensorValue:
+def _reduce(op, x: TensorValueLike, axis=-1, out_dtype=None) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using a reduction operation.
 
@@ -126,7 +126,7 @@ def _reduce(op, x: TensorValueLike, axis=-1, out_dtype=None) -> TensorValue:
     )[0].tensor
 
 
-def argmin(x: TensorValueLike, axis=-1) -> TensorValue:
+def argmin(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using an argmin operation.
 
@@ -148,7 +148,7 @@ def argmin(x: TensorValueLike, axis=-1) -> TensorValue:
     return _reduce(rmo.mo_arg_min, x, axis, out_dtype=DType.int64)
 
 
-def argmax(x: TensorValueLike, axis=-1) -> TensorValue:
+def argmax(x: TensorValueLike, axis=-1) -> TensorValue:  # noqa: ANN001
     """
     Reduces a symbolic tensor using an argmax operation.
 

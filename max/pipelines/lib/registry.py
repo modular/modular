@@ -175,7 +175,7 @@ class SupportedArchitecture:
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other) -> bool:  # noqa: ANN001
         if other.__class__ == self.__class__:
             for field in [
                 "name",

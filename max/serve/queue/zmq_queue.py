@@ -218,7 +218,7 @@ class ZmqPullSocket(Generic[T]):
         self,
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
-        deserialize=pickle.loads,
+        deserialize=pickle.loads,  # noqa: ANN001
     ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint

@@ -355,7 +355,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):  # type: ignore
             )
             raise ValueError(msg)
 
-        def build_and_compile_model(build, label):
+        def build_and_compile_model(build, label):  # noqa: ANN001
             logger.info(f"Building and compiling {label} model...")
             graph = build()
             before = time.perf_counter()

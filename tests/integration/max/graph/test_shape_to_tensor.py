@@ -18,7 +18,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 
 
-def test_shape_to_tensor_static(session) -> None:
+def test_shape_to_tensor_static(session) -> None:  # noqa: ANN001
     input_type = TensorType(
         dtype=DType.float32, shape=[2, 4], device=DeviceRef.CPU()
     )
@@ -36,7 +36,7 @@ def test_shape_to_tensor_static(session) -> None:
     np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
 
-def test_shape_to_tensor_dynamic(session) -> None:
+def test_shape_to_tensor_dynamic(session) -> None:  # noqa: ANN001
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
@@ -54,7 +54,7 @@ def test_shape_to_tensor_dynamic(session) -> None:
     np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
 
-def test_shape_to_tensor_solo_dim(session) -> None:
+def test_shape_to_tensor_solo_dim(session) -> None:  # noqa: ANN001
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )

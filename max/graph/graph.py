@@ -151,10 +151,10 @@ class KernelLibrary:
 
 # From https://stackoverflow.com/a/76301341
 class _classproperty:
-    def __init__(self, func) -> None:
+    def __init__(self, func) -> None:  # noqa: ANN001
         self.fget = func
 
-    def __get__(self, instance, owner):
+    def __get__(self, instance, owner):  # noqa: ANN001
         return self.fget(owner)
 
 
@@ -181,7 +181,7 @@ def _location(ignore_frames: int = 1):
     return _graph.frame_loc(mlir.Context.current, tb)
 
 
-def _to_mlir(o):
+def _to_mlir(o):  # noqa: ANN001
     # Convert args from instances of Python graph-api Value() to mlir.Value
     if hasattr(o, "to_mlir"):
         return o.to_mlir()
@@ -539,7 +539,7 @@ class Graph:
     def _capturing_mlir_diagnostics(self):
         diagnostics = []
 
-        def handler(d) -> bool:
+        def handler(d) -> bool:  # noqa: ANN001
             diagnostics.append(str(d))
             return True
 
@@ -591,16 +591,20 @@ class Graph:
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
-    def _add_op(self, op, *args, **kwargs) -> list[Value]:
+    def _add_op(self, op, *args, **kwargs) -> list[Value]:  # noqa: ANN001
         """Wrapper for clients that only require the op results."""
         results, _ = self._add_op_get_op_with_results(op, *args, **kwargs)
         return results
 
     def _add_op_get_op_with_results(
-        self, op, *args, _ip: Optional[mlir.InsertionPoint] = None, **kwargs
+        self,
+        op,  # noqa: ANN001
+        *args,
+        _ip: Optional[mlir.InsertionPoint] = None,
+        **kwargs,  # noqa: ANN001
     ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
-        def unwrap(arg):
+        def unwrap(arg):  # noqa: ANN001
             if isinstance(arg, Value):
                 return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
             elif isinstance(arg, Type):

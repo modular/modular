@@ -50,7 +50,7 @@ def with_dim(base_type: TensorType, dim: Dim, axis: int):
     axis=new_axes(shared_shapes),
 )
 def test_split_valid_inputs(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     base_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -80,7 +80,7 @@ def test_split_valid_inputs(
     axis=new_axes(shared_shapes),
 )
 def test_split__non_static_split_dims(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     base_type: TensorType,
     split_sizes: list[Dim],
     dim: StaticDim,
@@ -99,7 +99,7 @@ def test_split__non_static_split_dims(
     axis=...,
 )
 def test_split__invalid_axis(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -117,7 +117,7 @@ def test_split__invalid_axis(
     axis=new_axes(shared_shapes),
 )
 def test_split__splits_dont_sum_to_dim(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     base_type: TensorType,
     split_sizes: list[StaticDim],
     split_dim: StaticDim,
@@ -137,7 +137,7 @@ def test_split__splits_dont_sum_to_dim(
     axis=non_static_axes(shared_shapes),
 )
 def test_split__non_static_dim(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -157,7 +157,7 @@ def test_split__non_static_dim(
     axis=new_axes(shared_shapes),
 )
 def test_split__negative_split_sizes(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     base_type: TensorType,
     split_sizes: list[int],
     split_dim: StaticDim,
@@ -190,7 +190,7 @@ def test_split__negative_split_sizes(
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_split_full_error_message(graph_builder) -> None:
+def test_invalid_split_full_error_message(graph_builder) -> None:  # noqa: ANN001
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 0
@@ -201,7 +201,7 @@ def test_invalid_split_full_error_message(graph_builder) -> None:
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_axis_full_error_message(graph_builder) -> None:
+def test_invalid_axis_full_error_message(graph_builder) -> None:  # noqa: ANN001
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 2
@@ -212,7 +212,7 @@ def test_invalid_axis_full_error_message(graph_builder) -> None:
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_negative_split_size_full_error_message(graph_builder) -> None:
+def test_negative_split_size_full_error_message(graph_builder) -> None:  # noqa: ANN001
     input_shape = [4]
     split_sizes = [10, -6]
     axis = 0

@@ -66,7 +66,7 @@ class SafetensorWeights(Weights):
         tensors: Optional[Set[str]] = None,
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
-        allocated=None,
+        allocated=None,  # noqa: ANN001
         _st_weight_map: dict[str, torch.Tensor] | None = None,
     ) -> None:
         if safe_open is None:
@@ -117,7 +117,7 @@ class SafetensorWeights(Weights):
                     ),
                 )
 
-    def __getattr__(self, attr) -> SafetensorWeights:
+    def __getattr__(self, attr) -> SafetensorWeights:  # noqa: ANN001
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:

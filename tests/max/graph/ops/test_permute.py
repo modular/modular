@@ -28,7 +28,9 @@ shared_shapes = st.shared(shapes())
     ),
 )
 def test_permute_success(
-    graph_builder, input_type: TensorType, dims: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    dims: list[int],  # noqa: ANN001
 ) -> None:
     target_shape = [input_type.shape[d] for d in dims]
     expected_type = TensorType(
@@ -50,7 +52,9 @@ rank_sized_list_ints = shared_shapes.flatmap(
 
 @given(input_type=tensor_types(shapes=shared_shapes), dims=rank_sized_list_ints)
 def test_permute_out_of_range(
-    graph_builder, input_type: TensorType, dims: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    dims: list[int],  # noqa: ANN001
 ) -> None:
     rank = input_type.rank
     assume(any(d >= rank or d < -rank for d in dims))
@@ -61,7 +65,9 @@ def test_permute_out_of_range(
 
 @given(input_type=..., dims=...)
 def test_permute_wrong_rank(
-    graph_builder, input_type: TensorType, dims: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    dims: list[int],  # noqa: ANN001
 ) -> None:
     rank = input_type.rank
     assume(len(dims) != rank)
@@ -82,7 +88,9 @@ shared_nontrivial_shapes = st.shared(shapes(min_rank=2))
     ),
 )
 def test_permute_duplicates(
-    graph_builder, input_type: TensorType, dims: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    dims: list[int],  # noqa: ANN001
 ) -> None:
     assume(len(set(dims)) < len(dims))
     with graph_builder(input_types=[input_type]) as graph:
