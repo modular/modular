@@ -14,7 +14,6 @@
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
 from .hasher import Hasher
-from memory import Span
 
 
 struct Fnv1a(Defaultable, Hasher):

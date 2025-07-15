@@ -13,7 +13,6 @@
 
 from bit import byte_swap, rotate_bits_left
 from memory import bitcast
-from memory import Span
 
 from .hasher import Hasher
 
@@ -136,7 +135,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         if length > 8:
             if length > 16:
                 var tail = (
-                    (ptr + (length - 16))
+                    (ptr[length - 16])
                     .bitcast[Scalar[DType.uint64]]()
                     .load[width=2]()
                 )
@@ -144,7 +143,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                 var offset = 0
                 while length - offset > 16:
                     var block = (
-                        (ptr + offset)
+                        (ptr[offset])
                         .bitcast[Scalar[DType.uint64]]()
                         .load[width=2]()
                     )
@@ -152,9 +151,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                     offset += 16
             else:
                 var a = ptr.bitcast[Scalar[DType.uint64]]().load()
-                var b = (
-                    (ptr + (length - 8)).bitcast[Scalar[DType.uint64]]().load()
-                )
+                var b = ptr[length - 8].bitcast[Scalar[DType.uint64]]().load()
                 self._large_update(U128(a, b))
         else:
             var value = _read_small(ptr, length)
