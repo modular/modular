@@ -1,6 +1,6 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_library", "py_test")
+load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
@@ -14,7 +14,6 @@ load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: 
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
-basic_py_test = py_test
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
 mojo_test_environment = _mojo_test_environment

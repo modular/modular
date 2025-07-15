@@ -84,7 +84,7 @@ def print_bench_run(
     print("\tresult = ", repr(callable()))
 
 
-if __name__ == "__main__":
+def test_block_hasher():
     print("-" * 80)
     print("Hello from Block Hasher Example!")
     print("-" * 80)

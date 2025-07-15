@@ -55,7 +55,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 @export
 fn takes_zero_raises_returns() raises -> PythonObject:
-    var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
+    var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
         raise String("`s` must be 'just a python string'")
 
@@ -123,13 +123,13 @@ fn takes_three_returns(
 
 @export
 fn takes_zero_raises() raises:
-    var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
+    var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
         raise String("`s` must be 'just a python string'")
 
     _ = Python().eval(
-        "setattr(sys.modules[__name__], 's', 'Hark! A mojo function calling"
-        " into Python, called from Python!')"
+        "setattr(sys.modules['test_module'], 's', 'Hark! A mojo function"
+        " calling into Python, called from Python!')"
     )
 
 

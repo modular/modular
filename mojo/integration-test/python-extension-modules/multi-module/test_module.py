@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import unittest
-
 # Imports from 'mojo_module.mojo'
 import mojo_module_a  # type: ignore
 import mojo_module_b  # type: ignore
@@ -22,10 +20,10 @@ This test suite validates the multi-module Python extension functionality in Moj
 
 The test verifies:
 1. Module initialization - Both mojo_module_a and mojo_module_b can be imported successfully
-2. Cross-module object sharing - A TestStruct instance created in mojo_module_a can be used 
+2. Cross-module object sharing - A TestStruct instance created in mojo_module_a can be used
    by functions in mojo_module_b
 3. Method functionality - The set_a() and set_b() methods work correctly
-4. Cross-module function calls - Functions from mojo_module_b can operate on objects 
+4. Cross-module function calls - Functions from mojo_module_b can operate on objects
    created by mojo_module_a
 5. Data integrity - The shared TestStruct maintains its state across module boundaries
 
@@ -34,19 +32,15 @@ while allowing shared data structures and cross-module function calls.
 """
 
 
-class TestMojoPythonInterop(unittest.TestCase):
-    def test_pyinit(self) -> None:
-        self.assertTrue(mojo_module_a)
-        self.assertTrue(mojo_module_b)
-
-    def test_both_modules(self) -> None:
-        s = mojo_module_a.TestStruct()
-        s.set_a(1)
-        s.set_b(2)
-        mojo_module_b.print_test_struct(s)
-        v = mojo_module_b.add(s)
-        self.assertEqual(v, 3)
+def test_pyinit() -> None:
+    assert mojo_module_a
+    assert mojo_module_b
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_both_modules() -> None:
+    s = mojo_module_a.TestStruct()
+    s.set_a(1)
+    s.set_b(2)
+    mojo_module_b.print_test_struct(s)
+    v = mojo_module_b.add(s)
+    assert v == 3

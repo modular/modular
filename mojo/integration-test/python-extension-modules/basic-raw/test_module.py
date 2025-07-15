@@ -14,7 +14,8 @@
 # Imports from 'mojo_module.so'
 import mojo_module
 
-if __name__ == "__main__":
+
+def test_basic_raw():
     result = mojo_module.mojo_count_args(1, 2)
 
     assert result == 2
