@@ -31,5 +31,5 @@ trait Hasher:
     fn update[T: Hashable](mut self, value: T):
         ...
 
-    fn finish(var self) -> UInt64:
+    fn finish(varself) -> UInt64:
         ...

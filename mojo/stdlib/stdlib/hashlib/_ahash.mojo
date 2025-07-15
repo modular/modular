@@ -131,7 +131,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         Consume provided data to update the internal buffer.
         """
         var length = len(data)
-        var ptr    = data.unsafe_ptr()
+        var ptr = data.unsafe_ptr()
         self.buffer = (self.buffer + length) * MULTIPLE
         if length > 8:
             if length > 16:
@@ -153,9 +153,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             else:
                 var a = ptr.bitcast[Scalar[DType.uint64]]().load()
                 var b = (
-                    (ptr + (length - 8))
-                    .bitcast[Scalar[DType.uint64]]()
-                    .load()
+                    (ptr + (length - 8)).bitcast[Scalar[DType.uint64]]().load()
                 )
                 self._large_update(U128(a, b))
         else:
@@ -210,7 +208,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         value.__hash__(self)
 
     @always_inline
-    fn finish(var self) -> UInt64:
+    fn finish(varself) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:
