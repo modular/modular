@@ -50,8 +50,28 @@ with Tracer("foo", color="modular_purple") as tracer:
 ```
 """
 
-from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
-from max.profiler.tracing import Tracer, traced
+from typing import TYPE_CHECKING
+
+from max._core.profiler import (
+    is_motr_enabled,
+    is_profiling_enabled,
+    set_gpu_profiling_state,
+)
+
+if TYPE_CHECKING:
+    # For static type checking, always import from the same module to avoid conflicts
+    from max.profiler.tracing import Tracer, traced
+else:
+    # The API provided by max.profiler.tracing and max.profiler.motr_tracing
+    # are identical, but we only want to export one interface.
+    #
+    # This runtime imports and re-exports the correct module
+    # depending on whether MOTR is enabled.
+    if is_motr_enabled():
+        from max.profiler.motr_tracing import Tracer, traced
+    else:
+        from max.profiler.tracing import Tracer, traced
+
 
 __all__ = [
     "Tracer",
