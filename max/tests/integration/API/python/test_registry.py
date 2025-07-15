@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import pytest
+from max.interfaces import PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -58,3 +59,16 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         trust_remote_code=True,
     )
     assert config.engine == PipelineEngine.HUGGINGFACE
+
+    @prepare_registry
+    @mock_pipeline_config_hf_dependencies
+    def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
+        PIPELINE_REGISTRY.register(DUMMY_ARCH)
+        config = PipelineConfig(
+            model_path="some-model",
+            max_batch_size=1,
+            max_length=1,
+            trust_remote_code=True,
+        )
+        task = PIPELINE_REGISTRY.retrieve_pipeline_task(config)
+        assert task == PipelineTask.TEXT_GENERATION
