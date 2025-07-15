@@ -13,7 +13,7 @@ To check your current version, run `mojo --version`.
 
 This version is still a work in progress.
 
-See how to [install the nightly release](/max/packages#nightly-release).
+See how to [install the nightly release](/max/packages#install).
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
