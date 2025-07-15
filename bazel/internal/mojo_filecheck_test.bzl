@@ -35,7 +35,7 @@ def mojo_filecheck_test(
         size: The size of the test.
         main: The main source file for the mojo_binary. Only needed if multiple source files are passed.
         deps: Dependencies for the mojo_binary.
-        tags: See upstream docs
+        tags: Tags to set on all underlying targets
         target_compatible_with: See upstream docs
         exec_properties: See upstream docs
         toolchains: See upstream docs
@@ -91,7 +91,7 @@ def mojo_filecheck_test(
             "NOT": "$(location @llvm-project//llvm:not)",
             "SOURCE": "$(location {})".format(filecheck_src),
         },
-        tags = tags,
+        tags = ["filecheck"] + tags,
         target_compatible_with = target_compatible_with,
         exec_properties = default_exec_properties | exec_properties,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
