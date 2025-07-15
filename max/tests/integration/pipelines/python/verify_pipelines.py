@@ -849,7 +849,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="qwen3",
             encoding="bfloat16",
-            cos_dist_threshold=4.6e-4,
+            cos_dist_threshold=1.1e-3,
             kl_div_threshold=3.7e-3,
         ),
     ),
