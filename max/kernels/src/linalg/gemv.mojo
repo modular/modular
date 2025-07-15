@@ -61,7 +61,6 @@ from layout import (
     RuntimeTuple,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 @fieldwise_init
@@ -247,11 +246,11 @@ fn gemv_kernel_vector[
 )
 fn gemv_split_k[
     c_type: DType,
+    c_shape: DimList,
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    b_shape: DimList,
     simd_width: UInt,
     tile_m: UInt,
     tile_n: UInt,
@@ -260,9 +259,9 @@ fn gemv_split_k[
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
 ](
-    output: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    output: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
+    act: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    weight: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -288,28 +287,36 @@ fn gemv_split_k[
     var tile_id_n = block_idx.y * tile_n
 
     var tid = thread_idx.x
-
-    var tile_w = tb[b_type]().row_major[tile_n, simd_width]().local().alloc()
+    var tile_a = stack_allocation[
+        simd_width, a_type, address_space = AddressSpace.LOCAL
+    ]()
+    var tile_w = stack_allocation[
+        tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
+    ]()
 
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = tb[s_type]().row_major[tile_m, tile_n]().local().alloc().fill(0)
+    var acc = stack_allocation[
+        tile_m * tile_n,
+        s_type,
+        address_space = AddressSpace.LOCAL,
+    ]()
 
+    alias align_act = alignof[SIMD[a_type, simd_width]]()
+    alias align_weight = alignof[SIMD[b_type, simd_width]]()
+
+    memset_zero[count = tile_m * tile_n](acc)
+
+    var act_idx = tile_id_m * k
+    var weight_idx = tile_id_n * k
     var output_idx = tile_id_m * n + tile_id_n
 
-    var iteration = 0
-
-    alias WeightVecType = SIMD[b_type, simd_width]
-    alias LocalAccumType = SIMD[s_type, simd_width]
-
     # Each thread sums local data in K.
-    for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
-        var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+    for idxK in range(tid * simd_width, k, tile_k):
 
         @parameter
         for i in range(tile_n):
-            # Here we load data @ thread_idx.x from the weight matrix
+            # Here we load data @ idxK from the weight matrix
             # and store it into tile_w. We skip this if if the current
             # row we are reading from (i + tile_id_n) is greater than the number
             # of rows in the weight matrix.
@@ -319,12 +326,15 @@ fn gemv_split_k[
                 if i + tile_id_n >= n:
                     continue
 
-            var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
-            tile_w.store[simd_width](i, 0, rebind[WeightVecType](b_vec))
+            var b_vec = weight.data.load[
+                width=simd_width, alignment=align_weight
+            ](weight_idx + i * k + idxK)
+
+            tile_w.store[alignment=align_weight](i * simd_width, b_vec)
 
         @parameter
         for i in range(tile_m):
-            # Here we load data @ thread_idx.x from the activation matrix
+            # Here we load data @ idxK from the activation matrix
             # and store it into tile_a. We skip this if if the current
             # row we are reading from (i + tile_id_m) is greater than the number
             # of rows in the activation matrix. This should never be the case if
@@ -335,35 +345,34 @@ fn gemv_split_k[
                 if i + tile_id_m >= m:
                     continue
 
-            var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+            var a_vec = act.data.load[width=simd_width, alignment=align_act](
+                act_idx + i * k + idxK
+            )
+
+            tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
             # Now we multiply tile_a by tile_w and store the partials
             # in acc
 
             @parameter
             for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
-                var local_accum = rebind[LocalAccumType](
-                    act_vec.cast[s_type]()
-                ) * rebind[LocalAccumType](weight_vec.cast[s_type]())
-                var scalar_accum = (
-                    rebind[SIMD[s_type, 1]](acc[i, j])
-                    + local_accum.reduce_add()
-                )
-                acc.store[1](i, j, scalar_accum)
 
-        iteration += 1
+                @parameter
+                for l in range(simd_width):
+                    acc[i * tile_n + j] += (
+                        tile_a[l].cast[s_type]()
+                        * tile_w[j * simd_width + l].cast[s_type]()
+                    )
 
     # Warps are arranged along K.
     alias k_warp_num = num_threads // WARP_SIZE
     var warp_id = warp.broadcast(tid // WARP_SIZE)
-
-    var shmem = (
-        tb[s_type]()
-        .row_major[1, tile_m * tile_n * k_warp_num]()
-        .shared()
-        .alloc()
-    )
+    var lane_id = tid % WARP_SIZE
+    var shmem = stack_allocation[
+        k_warp_num * tile_m * tile_n,
+        s_type,
+        address_space = AddressSpace.SHARED,
+    ]()
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
@@ -372,10 +381,9 @@ fn gemv_split_k[
 
         @parameter
         for ni in range(tile_n):
-            var val = warp.sum(acc[mi, ni])
-
-            if lane_id() == 0:
-                shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
+            var val = warp.sum(acc[mi * tile_n + ni])
+            if lane_id == 0:
+                shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
     barrier()
 
@@ -385,11 +393,10 @@ fn gemv_split_k[
         var mid = ii // tile_n
         var nid = ii % tile_n
         var val = Scalar[s_type]()
-        alias ValType = __type_of(val)
 
         @parameter
         for jj in range(k_warp_num):
-            val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+            val += shmem[jj * tile_m * tile_n + ii]
 
         @parameter
         if elementwise_lambda_fn:
@@ -405,7 +412,7 @@ fn gemv_split_k[
                 if idx >= n:
                     continue
 
-            output[0, idx] = val.cast[c_type]()
+            output.data.store(idx, val.cast[c_type]())
 
 
 # Row Vector-Matrix multiplication
@@ -500,11 +507,11 @@ fn gemv_gpu_dispatch[
 
         alias kernel = gemv_split_k[
             c.type,
+            c.shape,
             a.type,
+            a.shape,
             b.type,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            b.shape,
             simd_width=simd_width,
             tile_m=tile_m,
             tile_n=tile_n,
@@ -513,9 +520,9 @@ fn gemv_gpu_dispatch[
             check_bounds=check_bounds,
         ]
         ctx.enqueue_function[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c,
+            a,
+            b,
             m,
             n,
             k,
