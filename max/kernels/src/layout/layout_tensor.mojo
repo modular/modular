@@ -7626,7 +7626,7 @@ struct LayoutTensorIter[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[dtype]() if is_nvidia_gpu() else 1,
+    alignment: Int = alignof[dtype](),
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_int_type: DType = _get_index_type(address_space),
