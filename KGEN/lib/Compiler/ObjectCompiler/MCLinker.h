@@ -76,6 +76,10 @@ struct MCInfo {
 
   /// parallel llvm module split id, mostly for debugging.
   std::optional<int> splitIdx;
+
+  /// llvm::GlobalVariable name to the renamed llvm::GlobalVariable name, this
+  /// is to handle llvm inserted private symbol after splitting the module.
+  llvm::StringMap<const std::string> renamedPrivateSymbol;
 };
 
 struct SymbolAndMCInfo {
