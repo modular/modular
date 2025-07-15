@@ -97,21 +97,27 @@ class Conv2D(Module, Shardable):
         """Initializes the Conv2D layer with weights and optional bias.
 
         Args:
-            kernel_size: Size of the convolving kernel. Can be a single int or tuple (height, width).
+            kernel_size: Size of the convolving kernel. Can be a single int (square kernel) or tuple (height, width).
             in_channels: Number of channels in the input image.
             out_channels: Number of channels produced by the convolution.
             dtype: The data type for both weights and bias.
-            stride: Stride of the convolution. Default: 1
-            padding: Padding added to input. Can be int or tuple (pad_top, pad_bottom, pad_left, pad_right). Default: 0
-            dilation: Spacing between kernel elements. Default: 1
-            num_groups: Number of blocked connections from input channels to output channels. Default: 1
-            device: The target device for computation.
-                Weights remain on CPU until moved during computation.
-            name: Base name for weights (appended with ``.weight`` and
-                ``.bias`` if applicable).
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
+            stride: Stride of the convolution for height and width dimensions.
+                Can be int (applied to both dimensions) or tuple (stride_h, stride_w). Default: 1
+            padding: Padding added to input. Can be int (applied to all sides),
+                tuple of 2 ints (pad_h, pad_w), or tuple of 4 ints (pad_top, pad_bottom, pad_left, pad_right). Default: 0
+            dilation: Spacing between kernel elements for height and width dimensions.
+                Can be int (applied to both dimensions) or tuple (dilation_h, dilation_w). Default: 1
+            num_groups: Number of blocked connections from input channels to output channels.
+                Input channels and output channels are divided into groups. Default: 1
+            device: The target device for computation. If None, defaults to CPU.
+                Weights are initially stored on CPU and moved to target device during computation.
+            name: Base name for weights. If provided, weights are named ``{name}.weight`` and
+                ``{name}.bias`` (if bias is enabled). If None, uses "weight" and "bias".
+            has_bias: If true, adds a learnable bias vector to the layer.
                 Defaults to :obj:`False`.
-            permute: When :obj:`True`, permutes weights from PyTorch format to Max format.
+            permute: If true, permutes weights from PyTorch format to MAX format.
+                PyTorch order: (out_channels, in_channels / num_groups, height, width).
+                MAX API order: (height, width, in_channels / num_groups, out_channels).
                 Defaults to :obj:`False`.
         """
         super().__init__()
@@ -301,16 +307,7 @@ class Conv2DV1(Layer):
     """A 2D convolution over an input signal composed of several input
     planes.
 
-    Example:
-        .. code-block:: python
-
-            conv = nn.Conv2DV1(
-                filter=filter_2d,
-                bias=bias_2d,
-                stride=2,
-                padding=1
-            )
-            output = conv(x)
+    DEPRECATED: Use :obj:`Conv2D` instead.
     """
 
     filter: TensorValueLike
@@ -361,17 +358,7 @@ class Conv1DV1(Layer):
     """A 1D convolution over an input signal composed of several input
     planes.
 
-    Deprecated: Use `Conv1D` instead.
-
-    Example:
-        .. code-block:: python
-
-            conv = nn.Conv1DV1(
-                filter=filter_1d,
-                bias=bias_1d,
-                stride=1,
-                padding=1
-            )
+    DEPRECATED: Use :obj:`Conv1D` instead.
     """
 
     filter: TensorValueLike  # [kernel_size, in_channels, out_channels]
@@ -481,19 +468,24 @@ class Conv1D(Module):
         """Initializes the Conv1D layer with weights and optional bias.
 
         Args:
-            kernel_size: Size of the convolving kernel.
+            kernel_size: Size of the convolving kernel (width dimension).
             in_channels: Number of channels in the input signal.
             out_channels: Number of channels produced by the convolution.
             dtype: The data type for both weights and bias.
-            stride: Stride of the convolution. Default: 1
-            padding: Padding added to both sides of the input. Default: 0
-            dilation: Spacing between kernel elements. Default: 1
-            num_groups: Number of blocked connections from input channels to output channels. Default: 1
-            device: The target device for computation.
-                Weights remain on CPU until moved during computation.
-            name: Base name for weights (appended with ``.weight`` and
-                ``.bias`` if applicable).
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
+            stride: Stride of the convolution. Controls the step size when sliding the kernel. Default: 1
+            padding: Padding added to both sides of the input sequence. Default: 0
+            dilation: Spacing between kernel elements. Controls the kernel dilation rate. Default: 1
+            num_groups: Number of blocked connections from input channels to output channels.
+                Input channels and output channels are divided into groups. Default: 1
+            device: The target device for computation. If None, defaults to CPU.
+                Weights are initially stored on CPU and moved to target device during computation.
+            name: Base name for weights. If provided, weights are named ``{name}.weight`` and
+                ``{name}.bias`` (if bias is enabled). If None, uses "weight" and "bias".
+            has_bias: If true, adds a learnable bias vector to the layer.
+                Defaults to :obj:`False`.
+            permute: If true, permutes weights from PyTorch format to MAX format.
+                PyTorch order: (out_channels, in_channels / num_groups, kernel_size).
+                MAX API order: (kernel_size, in_channels / num_groups, out_channels).
                 Defaults to :obj:`False`.
         """
         super().__init__()
@@ -605,17 +597,7 @@ class Conv3DV1(Layer):
     """A 3D convolution over an input signal composed of several input
     planes.
 
-    Deprecated: Use `Conv3D` instead.
-
-    Example:
-        .. code-block:: python
-
-            conv = nn.Conv3DV1(
-                filter=filter_3d,
-                bias=bias_3d,
-                stride=1,
-                padding=1
-            )
+    DEPRECATED: Use :obj:`Conv3D` instead.
     """
 
     filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]
@@ -711,10 +693,10 @@ class Conv3D(Module):
     """Controls the amount of padding applied before and after the input for depth, height, and width dimensions."""
 
     dilation: tuple[int, int, int]
-    """Not implemented yet. Assuming dilation = 1 for now."""
+    """Controls the dilation rate for depth, height, and width dimensions."""
 
     num_groups: int
-    """Not implemented yet. Assuming num_groups = 1 for now."""
+    """Number of blocked connections from input channels to output channels."""
 
     bias: Union[Weight, None] = None
     """The optional bias vector stored on CPU with shape (out_channels,).
@@ -745,21 +727,30 @@ class Conv3D(Module):
         """Initializes the Conv3D layer with weights and optional bias.
 
         Args:
-            depth: kernel_size[0]
-            height: kernel_size[1]
-            width: kernel_size[2]
-            in_channels: number of channels in the input image.
-            out_channels: dimensionality of the output.
+            depth: Depth dimension of the convolution kernel (kernel_size[0]).
+            height: Height dimension of the convolution kernel (kernel_size[1]).
+            width: Width dimension of the convolution kernel (kernel_size[2]).
+            in_channels: Number of channels in the input image.
+            out_channels: Number of channels produced by the convolution.
             dtype: The data type for both weights and bias.
-            stride: Stride of the convolution. Default: 1
-            padding:  Padding added to all six sides of the input. Default: 0
-            dilation: Spacing between kernel elements. Default: 1
-            num_groups:  Number of blocked connections from input channels to output channels. Default: 1.
-            device: The target device for computation.
-                Weights remain on CPU until moved during computation.
-            name: Base name for weights (appended with ``.weight`` and
-                ``.bias`` if applicable).
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
+            stride: Stride of the convolution for depth, height, and width dimensions.
+                Can be int (applied to all dimensions) or tuple of 3 ints. Default: 1
+            padding: Padding added to all six sides of the input in order:
+                (pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right).
+                Can be int (applied to all sides) or tuple of 6 ints. Default: 0
+            dilation: Spacing between kernel elements for depth, height, and width dimensions.
+                Can be int (applied to all dimensions) or tuple of 3 ints. Default: 1
+            num_groups: Number of blocked connections from input channels to output channels.
+                Input channels and output channels are divided into groups. Default: 1.
+            device: The target device for computation. If None, defaults to CPU.
+                Weights are initially stored on CPU and moved to target device during computation.
+            name: Base name for weights. If provided, weights are named ``{name}.weight`` and
+                ``{name}.bias`` (if bias is enabled). If None, uses "weight" and "bias".
+            has_bias: If true, adds a learnable bias vector to the layer.
+                Defaults to :obj:`False`.
+            permute: If true, permutes weights from PyTorch format to MAX format.
+                PyTorch order: (out_channels, in_channels / num_groups, depth, height, width).
+                MAX API order: (depth, height, width, in_channels / num_groups, out_channels).
                 Defaults to :obj:`False`.
         """
         super().__init__()
