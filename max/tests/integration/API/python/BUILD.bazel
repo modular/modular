@@ -285,3 +285,20 @@ modular_run_binary_test(
         "requires-network",
     ],
 )
+
+modular_py_test(
+    name = "tests-fail-weight-loading",
+    srcs = [
+        "test_load_weights_no_deps.py",
+    ],
+    data = [
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+    ],
+)
