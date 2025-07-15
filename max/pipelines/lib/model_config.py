@@ -146,6 +146,15 @@ class MAXModelConfig(MAXModelConfigBase):
         2. Parse the weight path(s) and initialize the _weights_repo_id
         """
 
+        # Validate that --quantzation-encoding is given when --allow-safetensors-weights-float32-to-bfloat16-cast is True
+        if (
+            self.allow_safetensors_weights_float32_to_bfloat16_cast
+            and self.quantization_encoding is None
+        ):
+            raise ValueError(
+                "--quantization-encoding must be provided when --allow-safetensors-weights-float32-to-bfloat16-cast is enabled"
+            )
+
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
