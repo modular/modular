@@ -273,7 +273,6 @@ modular_py_binary(
     data = [
         "run_lm_eval.py",
         "//SDK/integration-test/pipelines/python/eval_tasks",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "pipelines_lm_eval.py",
@@ -281,6 +280,7 @@ modular_py_binary(
         ":lm-eval",
         ":mistral-eval",
         "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
         "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
         requirement("click"),
