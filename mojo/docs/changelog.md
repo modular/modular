@@ -169,6 +169,9 @@ mutation.
   - `is_x86()`
   - `has_sse4()`
 
+- `UnsafePointer.address_of()` has been removed.  Use `UnsafePointer(to=...)`
+  constructor instead.
+
 ### 🛠️ Fixed
 
 - [#4121](https://github.com/modular/modular/issues/4121) - better error message
