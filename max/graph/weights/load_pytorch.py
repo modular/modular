@@ -22,14 +22,9 @@ from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
-from max.graph import DeviceRef
-
-try:
-    import torch  # type: ignore
-except ImportError:
-    torch = None
-
+import torch  # type: ignore
 from max.dtype import DType
+from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
@@ -39,7 +34,7 @@ from .weights import WeightData
 
 @dataclass
 class TensorInfo:
-    dtype: Any  # torch.dtype
+    dtype: torch.dtype
     offset: int
     shape: tuple[int, ...]
 
@@ -92,11 +87,6 @@ class PytorchWeights:
         prefix: str = "",
         allocated=None,
     ) -> None:
-        if torch is None:
-            raise ImportError(
-                "Unable to import torch. Please make sure that PyTorch is"
-                " installed on your system."
-            )
         self._filepath = filepath
         if tensor_infos is not None:
             self._tensor_infos = tensor_infos
@@ -174,7 +164,6 @@ class PytorchWeights:
         return self._tensor_infos[self._prefix]
 
     def data(self) -> WeightData:
-        assert torch is not None
         tensor_info = self._tensor_infos[self._prefix]
         dtype = DType.from_torch(self._tensor_infos[self._prefix].dtype)
         return WeightData(

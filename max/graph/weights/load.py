@@ -15,9 +15,8 @@
 import os
 from pathlib import Path
 
+from ._loader_wrappers import GGUFWeights, PytorchWeights
 from .format import WeightsFormat, weights_format
-from .load_gguf import GGUFWeights
-from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
 from .weights import Weights
 
