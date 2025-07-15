@@ -251,7 +251,9 @@ struct BitSet[size: UInt](
         self = Self()
 
     fn toggle_all(mut self):
-        """Toggles (inverts) all bits in the set up to the compile-time `size`."""
+        """Toggles (inverts) all bits in the set up to the compile-time `size`.
+        """
+
         @parameter
         for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~UInt64(0)
