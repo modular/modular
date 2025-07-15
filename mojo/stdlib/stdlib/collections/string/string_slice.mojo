@@ -827,7 +827,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(self.unsafe_ptr(), len(self))
+        hasher._update_with_bytes(
+            Span[UInt8](ptr=self.unsafe_ptr(), length=len(self))
+        )
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of this string.
