@@ -52,8 +52,6 @@ _FEATURES_BY_PREFIX = {
         "neon_dotprod",
         "neon_matmul",
     },
-    "open-source/max/mojo/stdlib/test": {"has_not"},
-    "mojo/stdlib/test": {"has_not"},
 }
 
 

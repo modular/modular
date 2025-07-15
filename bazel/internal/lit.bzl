@@ -250,7 +250,7 @@ EOF
         tags = tags,
         path = ":".join(["$(rlocationpath {})".format(tool) for tool in tools] + extra_tool_paths),
         target_compatible_with = target_compatible_with,
-        available_features = ["has_not", "$(GPU_LIT_FEATURE)", "$(GPU_BRAND_LIT_FEATURE)"],
+        available_features = ["$(GPU_LIT_FEATURE)", "$(GPU_BRAND_LIT_FEATURE)"],
         toolchains = ["//bazel/internal:current_gpu_toolchain"] + mojo_test_deps,
     )
 
