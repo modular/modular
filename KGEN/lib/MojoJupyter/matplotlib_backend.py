@@ -25,7 +25,7 @@ from matplotlib._pylab_helpers import Gcf as _Gcf
 from matplotlib.backends.backend_agg import FigureCanvasAgg as _FigureCanvasAgg
 
 
-def show(close=None, block=None) -> None:
+def show(close=None, block=None) -> None:  # noqa: ANN001
     if close is None:
         close = show._close_figures
     try:
@@ -114,7 +114,7 @@ def flush_figures():
 FigureCanvas = _FigureCanvasAgg
 
 
-def _fetch_figure_metadata(fig):
+def _fetch_figure_metadata(fig):  # noqa: ANN001
     # determine if a background is needed for legibility
     if _is_transparent(fig.get_facecolor()):
         # the background is transparent
@@ -133,15 +133,15 @@ def _fetch_figure_metadata(fig):
     return None
 
 
-def _is_light(color):
+def _is_light(color):  # noqa: ANN001
     rgbaArr = colors.to_rgba_array(color)
     return rgbaArr[:, :3].dot((0.299, 0.587, 0.114)) > 0.5
 
 
-def _is_transparent(color):
+def _is_transparent(color):  # noqa: ANN001
     rgba = colors.to_rgba(color)
     return rgba[3] < 0.5
 
 
-def set_matplotlib_close(close=True) -> None:
+def set_matplotlib_close(close=True) -> None:  # noqa: ANN001
     show._close_figures = close

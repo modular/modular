@@ -14,7 +14,7 @@ def token_hash(file: str, line: int, token: str):
     # FNV-1a hash function for 64-bit hash computation
     hash_value = 0xCBF29CE484222325
 
-    def hash(value) -> None:
+    def hash(value) -> None:  # noqa: ANN001
         nonlocal hash_value
         hash_value ^= value
         hash_value *= 0x100000001B3
@@ -36,7 +36,7 @@ def find_token_hashes(line: str, path: str, line_number: int):
     matches = re.finditer(token_hash_pattern, line)
     results = []
 
-    def error(msg, g) -> None:
+    def error(msg, g) -> None:  # noqa: ANN001
         token = g["token_hash"]
         fullmatch = g["fullmatch"]
         sys.stderr.write(f"\n{path}:{line_number}\n")
@@ -75,7 +75,7 @@ def find_token_hashes(line: str, path: str, line_number: int):
 
 
 # Function to extract MOTR_TOKEN_HASH calls from a file
-def extract_token_hashes(full_file_path, repo_root):
+def extract_token_hashes(full_file_path, repo_root):  # noqa: ANN001
     hashes = {}
 
     assert full_file_path.startswith(repo_root), (
@@ -94,12 +94,12 @@ def extract_token_hashes(full_file_path, repo_root):
 
 
 # Function to generate the reverse mapping .cpp file
-def generate_reverse_mapping_text(hashes, repo_root):
+def generate_reverse_mapping_text(hashes, repo_root):  # noqa: ANN001
     text = ""
     newline = "\n"
     i = 0
 
-    def emit(new_text="") -> None:
+    def emit(new_text="") -> None:  # noqa: ANN001
         nonlocal text
         nonlocal i
         indent = "  " * i
