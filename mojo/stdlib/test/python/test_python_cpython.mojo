@@ -223,6 +223,26 @@ def test_PyCapsule(mut python: Python):
         )
 
 
+def test_PyType_GetName(mut python: Python) -> None:
+    """Test the PyType_GetName function."""
+    var cpython_env = python.cpython()
+
+    fn _get_type_name(obj: PythonObject) raises -> String:
+        """Helper function to get the type name in a format usable for asserting.
+        """
+        var actual_type = cpython_env.Py_TYPE(obj._obj_ptr)
+        var actual_type_name = PythonObject(
+            from_owned_ptr=cpython_env.PyType_GetName(actual_type)
+        )
+
+        return String(actual_type_name)
+
+    var str_obj = PythonObject("hello")
+    assert_equal(_get_type_name(str_obj).__str__(), "str")
+    var int_obj = PythonObject(32)
+    assert_equal(_get_type_name(int_obj).__str__(), "int")
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -255,3 +275,4 @@ def main():
 
     test_PyDict(python)
     test_PyCapsule(python)
+    test_PyType_GetName(python)
