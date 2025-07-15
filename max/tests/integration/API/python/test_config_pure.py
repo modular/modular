@@ -544,6 +544,17 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         allow_safetensors_weights_float32_to_bfloat16_cast=True,
     )
 
+    # Test that quantization_encoding is required when allow_safetensors_weights_float32_to_bfloat16_cast is True.
+    with pytest.raises(
+        ValueError,
+        match="--quantization-encoding must be provided when --allow-safetensors-weights-float32-to-bfloat16-cast is enabled",
+    ):
+        config = PipelineConfig(
+            model_path="test/model",
+            allow_safetensors_weights_float32_to_bfloat16_cast=True,
+            # Note: quantization_encoding is not provided, which should cause the error
+        )
+
 
 @pytest.mark.skip(
     "TODO: These tests are falling back to HuggingFace for some reason"
