@@ -14,10 +14,9 @@ class LogProbabilities(msgspec.Struct, tag=True, omit_defaults=True):
     for calculating or manipulating log probabilities - it is purely for data storage
     and serialization purposes.
 
-    Attributes:
-        token_log_probabilities (list[float]): Probabilities of each token.
-        top_log_probabilities (list[dict[int, float]]): Top tokens and their corresponding probabilities.
-
+    Configuration:
+        token_log_probabilities: Probabilities of each token.
+        top_log_probabilities: Top tokens and their corresponding probabilities.
     """
 
     token_log_probabilities: list[float] = msgspec.field(default_factory=list)

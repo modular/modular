@@ -18,16 +18,14 @@ import msgspec
 class EngineStatus(str, Enum):
     """
     Represents the status of an engine operation.
-
-    Status values:
-        SUCCESSFUL: Indicates that the engine executed the operation successfully and data is returned.
-        CANCELLED: Indicates that the request was cancelled before completion; no further data will be provided.
-        COMPLETE: Indicates that the request was previously finished and no further data should be streamed.
     """
 
     SUCCESSFUL = "successful"
+    """Indicates that the engine executed the operation successfully and data is returned."""
     CANCELLED = "cancelled"
+    """Indicates that the request was cancelled before completion; no further data will be provided."""
     COMPLETE = "complete"
+    """Indicates that the request was previously finished and no further data should be streamed."""
 
 
 T = TypeVar("T")
@@ -37,9 +35,9 @@ class EngineResult(msgspec.Struct, Generic[T], tag=True, omit_defaults=True):
     """
     Structure representing the result of an engine operation.
 
-    Attributes:
-        status (EngineStatus): The status of the operation.
-        result (Any): The result data of the operation.
+    Configuration:
+        status: The status of the operation.
+        result: The result data of the operation.
     """
 
     status: EngineStatus
@@ -71,7 +69,7 @@ class EngineResult(msgspec.Struct, Generic[T], tag=True, omit_defaults=True):
         Create an EngineResult representing a successful operation.
 
         Args:
-            result (T): The result data of the operation.
+            result: The result data of the operation.
 
         Returns:
             EngineResult: An EngineResult with SUCCESSFUL status and the provided result.
