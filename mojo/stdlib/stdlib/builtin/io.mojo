@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
-from sys import _libc as libc
+from sys.ffi.c import _libc as libc
 from sys import (
     bitwidthof,
     external_call,
@@ -28,7 +28,7 @@ from sys import (
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush
+from sys.ffi.c._libc import dup, fclose, fdopen, fflush
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
