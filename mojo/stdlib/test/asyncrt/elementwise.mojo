@@ -35,8 +35,8 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     alias dim_y = 8
     alias length = dim_x * dim_y
 
-    var in0 = ctx.enqueue_create_buffer[dtype](length)
-    var out = ctx.enqueue_create_buffer[dtype](length)
+    var in0 = ctx.create_buffer[dtype](length)
+    var out = ctx.create_buffer[dtype](length)
 
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in_host, out.map_to_host() as out_host:

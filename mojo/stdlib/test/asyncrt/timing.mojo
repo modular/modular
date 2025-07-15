@@ -19,10 +19,10 @@ from gpu.host import DeviceContext
 fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     alias length = 64
 
-    var in_host = context.enqueue_create_host_buffer[DType.float32](length)
-    var out_host = context.enqueue_create_host_buffer[DType.float32](length)
-    var in_dev = context.enqueue_create_buffer[DType.float32](length)
-    var out_dev = context.enqueue_create_buffer[DType.float32](length)
+    var in_host = context.create_host_buffer[DType.float32](length)
+    var out_host = context.create_host_buffer[DType.float32](length)
+    var in_dev = context.create_buffer[DType.float32](length)
+    var out_dev = context.create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
