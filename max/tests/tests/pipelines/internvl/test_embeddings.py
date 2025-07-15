@@ -94,7 +94,9 @@ def test_intern_vision_embeddings_init() -> None:
     ],
 )
 def test_position_embedding_shape(
-    image_size, patch_size, expected_patches
+    image_size,  # noqa: ANN001
+    patch_size,  # noqa: ANN001
+    expected_patches,  # noqa: ANN001
 ) -> None:
     """Test position embedding shape calculations."""
     from dataclasses import dataclass, field
@@ -128,7 +130,7 @@ def test_position_embedding_shape(
 
 
 @pytest.mark.parametrize("n_devices", [2, 4])
-def test_intern_vision_embeddings_shard(n_devices) -> None:
+def test_intern_vision_embeddings_shard(n_devices) -> None:  # noqa: ANN001
     """Test InternVisionEmbeddings sharding across multiple GPUs."""
     if n_devices > accelerator_count():
         pytest.skip(f"Not enough GPUs to run test with {n_devices} GPUs.")

@@ -70,7 +70,7 @@ def test_layer_norm_no_bias() -> None:
 
 
 @pytest.mark.parametrize("shape, dim", COMMON_NORM_TEST_SHAPES)
-def test_layer_norm_shapes(shape, dim) -> None:
+def test_layer_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     """Tests LayerNorm with various input shapes."""
     g = Graph(
         "test",

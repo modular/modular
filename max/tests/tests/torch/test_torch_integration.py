@@ -61,7 +61,7 @@ def test_unsupported_arg_type_error(op_library: CustomOpLibrary) -> None:
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(backend=backend, options={"force_disable_caches": True})
-    def grayscale(pic):
+    def grayscale(pic):  # noqa: ANN001
         result = pic.new_empty(pic.shape[:-1])
         op_library.grayscale(result, pic)
         return result
@@ -222,7 +222,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(
         backend=backend, fullgraph=True, options={"force_disable_caches": True}
     )
-    def increment_42(input):
+    def increment_42(input):  # noqa: ANN001
         result = torch.empty_like(input)
         parameter_increment_42(result, input)
         return result
@@ -244,7 +244,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(
         backend=backend, fullgraph=True, options={"force_disable_caches": True}
     )
-    def increment_17(input):
+    def increment_17(input):  # noqa: ANN001
         result = torch.empty_like(input)
         parameter_increment_17(result, input)
         return result
@@ -298,7 +298,7 @@ def test_scalar_add(op_library: CustomOpLibrary, backend: str) -> None:
 
 
 def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
-    def grayscale(pic):
+    def grayscale(pic):  # noqa: ANN001
         result = pic.new_empty(pic.shape[:-1])
         op_library.grayscale(result, pic)
         return result
@@ -309,7 +309,7 @@ def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
     event = threading.Event()
     real_load = op_library._session.load
 
-    def load(graph):
+    def load(graph):  # noqa: ANN001
         nonlocal load_count
         load_count += 1
         event.wait()

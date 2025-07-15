@@ -57,7 +57,7 @@ class MockTokenGenerator(TokenGenerator[str]):
 
 
 @pytest.fixture
-def token_generator(request):
+def token_generator(request):  # noqa: ANN001
     """Fixture for a pipeline's generator
     This is bound indirectly - hence the request.param pattern.
     See https://docs.pytest.org/en/7.1.x/example/parametrize.html
@@ -67,7 +67,7 @@ def token_generator(request):
 
 
 @pytest.fixture(scope="function")
-def app(token_generator):
+def app(token_generator):  # noqa: ANN001
     """Fixture for a FastAPI app using a given pipeline."""
     model_name, model_factory = token_generator
     config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
@@ -100,7 +100,7 @@ def reset_sse_starlette_appstatus_event() -> None:
 
 
 @pytest_asyncio.fixture
-async def test_client(app):
+async def test_client(app):  # noqa: ANN001
     """Fixture for a asgi TestClient using a given FastAPI app."""
     async with TestClient(app) as client:
         yield client
@@ -114,7 +114,7 @@ async def test_client(app):
 )
 @pytest.mark.parametrize("request_json", [None, "{{}"])
 @pytest.mark.asyncio
-async def test_llm_json_missing(test_client, request_url, request_json) -> None:
+async def test_llm_json_missing(test_client, request_url, request_json) -> None:  # noqa: ANN001
     """Test the server's response to malformed JSON."""
     logger.info("Test: Running Client: %s", request_url)
     response = await test_client.post(request_url, json=request_json)
@@ -129,7 +129,7 @@ async def test_llm_json_missing(test_client, request_url, request_json) -> None:
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error(test_client, request_url) -> None:
+async def test_llm_new_context_value_error(test_client, request_url) -> None:  # noqa: ANN001
     """Test the server's response to a value error when calling new context."""
     request_json = {
         "model": "test",
@@ -151,7 +151,8 @@ async def test_llm_new_context_value_error(test_client, request_url) -> None:
 )
 @pytest.mark.asyncio
 async def test_llm_new_context_value_error_stream(
-    test_client, request_url
+    test_client,  # noqa: ANN001
+    request_url,  # noqa: ANN001
 ) -> None:
     """Test the server's response to a value error when calling new context while streaming."""
     MAX_CHUNK_TO_READ_BYTES = 10 * 1024

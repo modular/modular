@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture(scope="function")
-def app(fixture_tokenizer):
+def app(fixture_tokenizer):  # noqa: ANN001
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
@@ -48,7 +48,7 @@ def app(fixture_tokenizer):
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_completion_single(app) -> None:
+async def test_openai_chat_completion_single(app) -> None:  # noqa: ANN001
     async with AsyncTestClient(app) as client:
         request_content = "test data"
         response_json = await client.post(
@@ -67,7 +67,7 @@ async def test_openai_chat_completion_single(app) -> None:
         assert choice.finish_reason == "stop"
 
 
-def test_openai_chat_completion_concurrent(app) -> None:
+def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
     request_contents: dict[int, str] = {}
     responses: dict[int, CreateChatCompletionResponse] = {}
 

@@ -30,7 +30,7 @@ def zmq_ctx():
 
 
 def test_serialization_and_deserialization_through_queue_with_pickle(
-    zmq_ctx,
+    zmq_ctx,  # noqa: ANN001
 ) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[int, TextContext]](
@@ -52,7 +52,7 @@ def test_serialization_and_deserialization_through_queue_with_pickle(
 
 
 def test_serialization_and_deserialization_through_queue_with_msgpack(
-    zmq_ctx,
+    zmq_ctx,  # noqa: ANN001
 ) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[str, TextContext]](
@@ -76,7 +76,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack(
     assert context == received_context
 
 
-def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:
+def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa: ANN001
     """Test that vision context serialization falls back gracefully when shared memory is exhausted."""
 
     # Create realistic vision context with InternVL-sized image

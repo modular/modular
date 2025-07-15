@@ -24,7 +24,7 @@ def create_test_image_bytes() -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_absolute_path(tmp_path) -> None:
+async def test_file_uri_absolute_path(tmp_path) -> None:  # noqa: ANN001
     """Test resolving absolute file URIs."""
     test_image = tmp_path / "test.jpg"
     test_data = create_test_image_bytes()
@@ -41,7 +41,7 @@ async def test_file_uri_absolute_path(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_not_found(tmp_path) -> None:
+async def test_file_uri_not_found(tmp_path) -> None:  # noqa: ANN001
     """Test error for missing files."""
     settings = MagicMock()
     settings.allowed_image_roots = [str(tmp_path)]
@@ -54,7 +54,7 @@ async def test_file_uri_not_found(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_path_traversal_blocked(tmp_path) -> None:
+async def test_file_uri_path_traversal_blocked(tmp_path) -> None:  # noqa: ANN001
     """Test path traversal protection."""
     allowed = tmp_path / "allowed"
     allowed.mkdir()
@@ -74,7 +74,7 @@ async def test_file_uri_path_traversal_blocked(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_directory_blocked(tmp_path) -> None:
+async def test_file_uri_directory_blocked(tmp_path) -> None:  # noqa: ANN001
     """Test directories cannot be accessed."""
     settings = MagicMock()
     settings.allowed_image_roots = [str(tmp_path)]
@@ -85,7 +85,7 @@ async def test_file_uri_directory_blocked(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_size_limit(tmp_path) -> None:
+async def test_file_uri_size_limit(tmp_path) -> None:  # noqa: ANN001
     """Test file size limit enforcement."""
     large_file = tmp_path / "large.jpg"
     large_file.write_bytes(b"x" * (21 * 1024 * 1024))  # 21MB
@@ -99,7 +99,7 @@ async def test_file_uri_size_limit(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_url_encoded_path(tmp_path) -> None:
+async def test_file_uri_url_encoded_path(tmp_path) -> None:  # noqa: ANN001
     """Test URL-encoded file paths."""
     test_image = tmp_path / "test image.jpg"
     test_data = create_test_image_bytes()
@@ -117,7 +117,7 @@ async def test_file_uri_url_encoded_path(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_localhost_host(tmp_path) -> None:
+async def test_file_uri_localhost_host(tmp_path) -> None:  # noqa: ANN001
     """Test file URI with localhost host."""
     test_image = tmp_path / "test.jpg"
     test_data = create_test_image_bytes()
@@ -134,7 +134,7 @@ async def test_file_uri_localhost_host(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_remote_host_rejected(tmp_path) -> None:
+async def test_file_uri_remote_host_rejected(tmp_path) -> None:  # noqa: ANN001
     """Test remote hosts are rejected."""
     settings = MagicMock()
     settings.allowed_image_roots = [str(tmp_path)]
@@ -147,7 +147,7 @@ async def test_file_uri_remote_host_rejected(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_no_allowed_roots(tmp_path) -> None:
+async def test_file_uri_no_allowed_roots(tmp_path) -> None:  # noqa: ANN001
     """Test access blocked with no allowed roots."""
     test_file = tmp_path / "test.jpg"
     test_file.write_bytes(create_test_image_bytes())
@@ -161,7 +161,7 @@ async def test_file_uri_no_allowed_roots(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_uri_symlink_escape(tmp_path) -> None:
+async def test_file_uri_symlink_escape(tmp_path) -> None:  # noqa: ANN001
     """Test symlinks cannot escape allowed roots."""
     allowed = tmp_path / "allowed"
     allowed.mkdir()

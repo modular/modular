@@ -27,7 +27,7 @@ class SimpleTestModule(Module):
             "fc1.bias", dtype=DType.int32, shape=[2], device=DeviceRef.CPU()
         )
 
-    def __call__(self, x):
+    def __call__(self, x):  # noqa: ANN001
         return x
 
 

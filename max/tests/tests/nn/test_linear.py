@@ -295,7 +295,8 @@ def test_linear_shard_non_divisible_output_dim() -> None:
     ],
 )
 def test_linear_columnwise_bias_only_on_device_0(
-    strategy_name, strategy_factory
+    strategy_name,  # noqa: ANN001
+    strategy_factory,  # noqa: ANN001
 ):
     """Test that bias is only present on device 0 for columnwise sharding strategies.
 

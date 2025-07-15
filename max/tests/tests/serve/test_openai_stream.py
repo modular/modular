@@ -54,7 +54,7 @@ def stream_app():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("num_tasks", [16])
-async def test_openai_chat_completion_streamed(stream_app, num_tasks) -> None:
+async def test_openai_chat_completion_streamed(stream_app, num_tasks) -> None:  # noqa: ANN001
     async def stream_request(client: TestClient, idx: int):
         request_content = f"Who was the {idx} president?"
         response_text = ""

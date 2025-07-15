@@ -20,7 +20,7 @@ def ipython():
     yield ipython
 
 
-def test_mojo_run_print(ipython) -> None:
+def test_mojo_run_print(ipython) -> None:  # noqa: ANN001
     with capture_output() as captured:
         ipython.run_cell_magic(
             magic_name="mojo",
@@ -33,14 +33,14 @@ def main():
     assert captured.stdout.strip() == "1"
 
 
-def test_compile_error(ipython) -> None:
+def test_compile_error(ipython) -> None:  # noqa: ANN001
     with pytest.raises(MojoCompilationError):
         ipython.run_cell_magic(
             magic_name="mojo", line="", cell='''var i: Int = "hello"'''
         )
 
 
-def test_mojo_package(ipython) -> None:
+def test_mojo_package(ipython) -> None:  # noqa: ANN001
     ipython.run_cell_magic(
         magic_name="mojo",
         line="package -o hello.mojopkg",

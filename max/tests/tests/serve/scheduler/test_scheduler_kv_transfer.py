@@ -54,7 +54,8 @@ from max.serve.scheduler.prefill_scheduler import (
 @pytest.fixture
 def mock_pipeline():
     def next_token_behavior(
-        batch: dict[str, TextContext], num_steps=1
+        batch: dict[str, TextContext],
+        num_steps=1,  # noqa: ANN001
     ) -> dict[str, TextGenerationResponse]:
         responses = {}
 
@@ -123,7 +124,8 @@ def decode_dispatch_endpoint() -> str:
 
 @pytest.fixture
 def decode_dispatcher_factory(
-    decode_dispatch_endpoint, prefill_dispatch_endpoint
+    decode_dispatch_endpoint,  # noqa: ANN001
+    prefill_dispatch_endpoint,  # noqa: ANN001
 ):
     config = DispatcherConfig(
         transport=TransportType.DYNAMIC_ZMQ,
@@ -147,13 +149,13 @@ def decode_dispatcher_factory(
 
 @pytest.fixture
 def decode_scheduler(
-    mock_pipeline,
-    decode_paged_manager,
-    decode_client_zmq_ctx,
-    decode_request_zmq_path,
-    decode_response_zmq_path,
-    decode_cancel_zmq_path,
-    decode_dispatcher_factory,
+    mock_pipeline,  # noqa: ANN001
+    decode_paged_manager,  # noqa: ANN001
+    decode_client_zmq_ctx,  # noqa: ANN001
+    decode_request_zmq_path,  # noqa: ANN001
+    decode_response_zmq_path,  # noqa: ANN001
+    decode_cancel_zmq_path,  # noqa: ANN001
+    decode_dispatcher_factory,  # noqa: ANN001
 ) -> Callable[[], DecodeScheduler]:
     def create_scheduler() -> DecodeScheduler:
         # Create dispatcher client
@@ -194,7 +196,8 @@ def prefill_dispatch_endpoint() -> str:
 
 @pytest.fixture
 def prefill_dispatcher_factory(
-    prefill_dispatch_endpoint, decode_dispatch_endpoint
+    prefill_dispatch_endpoint,  # noqa: ANN001
+    decode_dispatch_endpoint,  # noqa: ANN001
 ):
     config = DispatcherConfig(
         transport=TransportType.DYNAMIC_ZMQ,
@@ -244,10 +247,10 @@ def prefill_paged_manager():
 
 @pytest.fixture
 def prefill_scheduler(
-    mock_pipeline,
-    prefill_paged_manager,
-    prefill_client_zmq_ctx,
-    prefill_dispatcher_factory,
+    mock_pipeline,  # noqa: ANN001
+    prefill_paged_manager,  # noqa: ANN001
+    prefill_client_zmq_ctx,  # noqa: ANN001
+    prefill_dispatcher_factory,  # noqa: ANN001
 ) -> Callable[[], PrefillScheduler]:
     def create_scheduler() -> PrefillScheduler:
         # Create dispatcher client
@@ -277,13 +280,13 @@ def prefill_scheduler(
 @pytest.mark.skip(reason="May time out")
 @pytest.mark.asyncio
 async def test_transfer_between_prefill_and_decode_scheduler(
-    prefill_scheduler,
-    decode_scheduler,
-    decode_request_zmq_path,
-    decode_response_zmq_path,
-    decode_cancel_zmq_path,
-    decode_dispatcher_factory,
-    prefill_dispatcher_factory,
+    prefill_scheduler,  # noqa: ANN001
+    decode_scheduler,  # noqa: ANN001
+    decode_request_zmq_path,  # noqa: ANN001
+    decode_response_zmq_path,  # noqa: ANN001
+    decode_cancel_zmq_path,  # noqa: ANN001
+    decode_dispatcher_factory,  # noqa: ANN001
+    prefill_dispatcher_factory,  # noqa: ANN001
 ) -> None:
     # Create request push socket
     zmq_ctx = zmq.Context()
@@ -307,10 +310,10 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     decode_queue: Queue[Union[bool, Exception]] = Queue()
     prefill_queue: Queue[Union[bool, Exception]] = Queue()
 
-    def run_decode_scheduler_tests(decode_result_queue) -> None:
+    def run_decode_scheduler_tests(decode_result_queue) -> None:  # noqa: ANN001
         asyncio.run(_run_decode_scheduler_tests(decode_result_queue))
 
-    async def _run_decode_scheduler_tests(decode_result_queue) -> None:
+    async def _run_decode_scheduler_tests(decode_result_queue) -> None:  # noqa: ANN001
         try:
             # Create separate ZMQ contexts for each service
             decode_zmq_ctx = zmq.Context()

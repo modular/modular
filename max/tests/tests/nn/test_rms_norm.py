@@ -52,7 +52,7 @@ def test_rms_norm_basic() -> None:
 
 
 @pytest.mark.parametrize("shape, dim", COMMON_NORM_TEST_SHAPES)
-def test_rms_norm_shapes(shape, dim) -> None:
+def test_rms_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     """Tests RMSNorm with various input shapes."""
     g = Graph(
         "test",

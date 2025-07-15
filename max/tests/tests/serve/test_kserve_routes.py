@@ -37,7 +37,7 @@ def app():
 
 
 @pytest.mark.skip(reason="Implementing infer/ for real is a WIP.")
-def test_kserve_basic_infer(app) -> None:
+def test_kserve_basic_infer(app) -> None:  # noqa: ANN001
     with TestClient(app) as client:
         response = client.post(
             "/v2/models/Add/versions/0/infer",

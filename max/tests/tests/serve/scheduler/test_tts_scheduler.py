@@ -145,24 +145,24 @@ def zmq_ctx():
 
 
 def create_paged_scheduler(
-    zmq_ctx,
-    request_zmq_endpoint,
-    response_zmq_endpoint,
-    cancel_zmq_endpoint,
-    max_seq_len=2048,
-    num_blocks=9999,
-    max_batch_size=512,
-    page_size=128,
-    max_forward_steps_tg=10,
-    target_tokens_per_batch_tg=None,
-    target_tokens_per_batch_ce=8192,
-    enable_prefix_caching=False,
-    enable_in_flight_batching=False,
-    enable_kvcache_swapping_to_host=False,
-    max_queue_size_tg=None,
-    min_batch_size_tg=None,
-    ce_delay_ms=0.0,
-    enable_prioritize_first_decode=False,
+    zmq_ctx,  # noqa: ANN001
+    request_zmq_endpoint,  # noqa: ANN001
+    response_zmq_endpoint,  # noqa: ANN001
+    cancel_zmq_endpoint,  # noqa: ANN001
+    max_seq_len=2048,  # noqa: ANN001
+    num_blocks=9999,  # noqa: ANN001
+    max_batch_size=512,  # noqa: ANN001
+    page_size=128,  # noqa: ANN001
+    max_forward_steps_tg=10,  # noqa: ANN001
+    target_tokens_per_batch_tg=None,  # noqa: ANN001
+    target_tokens_per_batch_ce=8192,  # noqa: ANN001
+    enable_prefix_caching=False,  # noqa: ANN001
+    enable_in_flight_batching=False,  # noqa: ANN001
+    enable_kvcache_swapping_to_host=False,  # noqa: ANN001
+    max_queue_size_tg=None,  # noqa: ANN001
+    min_batch_size_tg=None,  # noqa: ANN001
+    ce_delay_ms=0.0,  # noqa: ANN001
+    enable_prioritize_first_decode=False,  # noqa: ANN001
 ) -> AudioGenerationScheduler:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -418,8 +418,8 @@ TG = BatchType.TokenGeneration
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])
 def test_paged_scheduler_tg_request_exceed_max_seq_len(
-    num_reqs,
-    zmq_ctx,
+    num_reqs,  # noqa: ANN001
+    zmq_ctx,  # noqa: ANN001
 ) -> None:
     max_seq_len = 2048
     page_size = 128
@@ -469,7 +469,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
-    zmq_ctx,
+    zmq_ctx,  # noqa: ANN001
 ) -> None:
     num_prompts = 100
     prompt_len = 500
@@ -520,7 +520,8 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
 
 @pytest.mark.parametrize("enable_prioritize_first_decode", [True, False])
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384(
-    zmq_ctx, enable_prioritize_first_decode
+    zmq_ctx,  # noqa: ANN001
+    enable_prioritize_first_decode,  # noqa: ANN001
 ) -> None:
     num_prompts = 100
     prompt_len = 500
@@ -602,8 +603,8 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     ],
 )
 def test_paged_scheduler_max_queue_size_tg(
-    zmq_ctx,
-    max_queue_size_tg,
+    zmq_ctx,  # noqa: ANN001
+    max_queue_size_tg,  # noqa: ANN001
 ) -> None:
     num_prompts = 100
     prompt_len = 500
@@ -705,10 +706,10 @@ def test_paged_scheduler_max_queue_size_tg(
     ],
 )
 def test_paged_scheduler_tg_batching(
-    zmq_ctx,
-    min_batch_size_tg,
-    max_batch_size,
-    max_queue_size_tg,
+    zmq_ctx,  # noqa: ANN001
+    min_batch_size_tg,  # noqa: ANN001
+    max_batch_size,  # noqa: ANN001
+    max_queue_size_tg,  # noqa: ANN001
 ) -> None:
     num_prompts = 128
     prompt_len = 500

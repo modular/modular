@@ -24,21 +24,21 @@ from max._core.dtype import DType
 from max.graph import Graph
 
 
-def test_mo_attr(mlir_context) -> None:
+def test_mo_attr(mlir_context) -> None:  # noqa: ANN001
     attr = mo.DTypeAttr(DType.bool)
     assert attr.dtype == DType.bool
     assert attr == mo.DTypeAttr(DType.bool)
     assert attr != mo.DTypeAttr(DType.int8)
 
 
-def test_mosh(mlir_context) -> None:
+def test_mosh(mlir_context) -> None:  # noqa: ANN001
     shape_type = mosh.ShapeType()
     assert isinstance(shape_type, mosh.ShapeType)
     assert isinstance(shape_type, Type)
     assert shape_type == mosh.ShapeType()
 
 
-def test_mosh_shapeattr(mlir_context) -> None:
+def test_mosh_shapeattr(mlir_context) -> None:  # noqa: ANN001
     shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([1, 2, 3], shape_type)
     dims = list(attr.values)
@@ -53,7 +53,7 @@ def test_mosh_shapeattr(mlir_context) -> None:
     assert dims != [UInt8(1), UInt8(2), UInt8(3)]
 
 
-def test_mosh_shapeattr_empty(mlir_context) -> None:
+def test_mosh_shapeattr_empty(mlir_context) -> None:  # noqa: ANN001
     shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([], shape_type)
     assert list(attr.values) == []
@@ -64,17 +64,17 @@ def test_no_active_context() -> None:
         shape_type = mosh.ShapeType()
 
 
-def test_builtin_integerattr(mlir_context) -> None:
+def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
     int_type = builtin.IntegerType(1, builtin.SignednessSemantics.unsigned)
     int_attr = builtin.IntegerAttr(int_type, 1)
     assert int_attr.type == int_type
 
 
-def test_builtin_moduleop(mlir_context) -> None:
+def test_builtin_moduleop(mlir_context) -> None:  # noqa: ANN001
     op = builtin.ModuleOp(mlir.Location.current)
 
 
-def test_mo_graph_op(mlir_context) -> None:
+def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
 
     module = builtin.ModuleOp(loc)
@@ -86,7 +86,7 @@ def test_mo_graph_op(mlir_context) -> None:
     assert graph.function_type == builtin.FunctionType([], [])
 
 
-def test_regions_and_blocks(mlir_context) -> None:
+def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
 
     module = builtin.ModuleOp(loc)
@@ -105,19 +105,19 @@ def test_regions_and_blocks(mlir_context) -> None:
     assert isinstance(ip, InsertPoint)
 
 
-def test_device_ref_attr(mlir_context) -> None:
+def test_device_ref_attr(mlir_context) -> None:  # noqa: ANN001
     attr = m.DeviceRefAttr("cpu", 0)
     assert attr.label == "cpu"
     assert attr.id == 0
 
 
-def test_dictattr_arrayview(mlir_context) -> None:
+def test_dictattr_arrayview(mlir_context) -> None:  # noqa: ANN001
     na = NamedAttribute("foo", builtin.StringAttr("bar"))
     attr = builtin.DictionaryAttr([na])
     assert list(attr.value) == [na]
 
 
-def test_arrayview_dead_attr_reference(mlir_context) -> None:
+def test_arrayview_dead_attr_reference(mlir_context) -> None:  # noqa: ANN001
     na = NamedAttribute("foo", builtin.StringAttr("bar"))
     attr = builtin.DictionaryAttr([na])
     array_view = attr.value
@@ -125,7 +125,7 @@ def test_arrayview_dead_attr_reference(mlir_context) -> None:
     assert array_view[0] == na
 
 
-def test_arrayview_dead_array_reference(mlir_context) -> None:
+def test_arrayview_dead_array_reference(mlir_context) -> None:  # noqa: ANN001
     na = NamedAttribute("foo", builtin.StringAttr("bar"))
     attr = builtin.DictionaryAttr([na])
     out = attr.value[0]
@@ -133,7 +133,7 @@ def test_arrayview_dead_array_reference(mlir_context) -> None:
     assert out == na
 
 
-def test_discardable_attributes(mlir_context) -> None:
+def test_discardable_attributes(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
 
     module = builtin.ModuleOp(loc)
@@ -179,7 +179,7 @@ def test_discardable_attributes(mlir_context) -> None:
     assert dict(attrs.items()) == {}
 
 
-def test_discardable_attrs__op_deleted(mlir_context) -> None:
+def test_discardable_attrs__op_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -192,7 +192,7 @@ def test_discardable_attrs__op_deleted(mlir_context) -> None:
     assert list(attrs) == ["foo"]
 
 
-def test_discardable_attrs__dict_deleted(mlir_context) -> None:
+def test_discardable_attrs__dict_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -209,7 +209,7 @@ def test_discardable_attrs__dict_deleted(mlir_context) -> None:
     assert foo.value == "foo"
 
 
-def test_discardable_attrs__attr_deleted(mlir_context) -> None:
+def test_discardable_attrs__attr_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -224,7 +224,7 @@ def test_discardable_attrs__attr_deleted(mlir_context) -> None:
     assert foo.value == "foo"
 
 
-def test_discardable_attrs__concurrent_modification(mlir_context) -> None:
+def test_discardable_attrs__concurrent_modification(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -258,7 +258,7 @@ def test_discardable_attrs__concurrent_modification(mlir_context) -> None:
     _ = list(values2)
 
 
-def test_lower_remove_dead_values(mlir_context) -> None:
+def test_lower_remove_dead_values(mlir_context) -> None:  # noqa: ANN001
     with Graph("empty", input_types=[]) as graph:
         graph.output()
     module = Operation._from_cmlir(graph._module.operation)
@@ -269,7 +269,7 @@ def test_lower_remove_dead_values(mlir_context) -> None:
     assert "mo.chain.create()" not in str(module)
 
 
-def test_lowering_failure_diagnostic(mlir_context) -> None:
+def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
     # graph with no output!
     graph = Graph("empty", input_types=[])
     module = Operation._from_cmlir(graph._module.operation)
@@ -280,7 +280,7 @@ def test_lowering_failure_diagnostic(mlir_context) -> None:
         lower(module, [builtin.passes.RemoveDeadValues()])
 
 
-def test_construct_pass_with_options(mlir_context) -> None:
+def test_construct_pass_with_options(mlir_context) -> None:  # noqa: ANN001
     # Tablegen doesn't generate a public-visibility way to inspect
     # pass options, so don't try to test the actual pass option values.
 
@@ -296,7 +296,7 @@ def test_construct_pass_with_options(mlir_context) -> None:
     assert with_options.name == "MOToMOGG"
 
 
-def test_get_context_from_cpp(mlir_context) -> None:
+def test_get_context_from_cpp(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     assert module.context is mlir_context

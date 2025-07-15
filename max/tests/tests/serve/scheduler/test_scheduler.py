@@ -44,7 +44,8 @@ def zmq_ctx():
 @pytest.fixture
 def mock_pipeline():
     def next_token_behavior(
-        batch: dict[str, TextContext], num_steps=1
+        batch: dict[str, TextContext],
+        num_steps=1,  # noqa: ANN001
     ) -> dict[str, TextGenerationResponse]:
         responses: dict[str, TextGenerationResponse] = {}
 
@@ -86,9 +87,9 @@ def scheduler_config():
 
 @pytest.fixture(scope="function")
 def scheduler(
-    mock_pipeline,
-    scheduler_config,
-    zmq_ctx,
+    mock_pipeline,  # noqa: ANN001
+    scheduler_config,  # noqa: ANN001
+    zmq_ctx,  # noqa: ANN001
 ):
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
@@ -101,9 +102,9 @@ def scheduler(
 
 
 def create_mock_request(
-    cache_seq_id=0,
-    seq_len=30,
-    start_idx=0,
+    cache_seq_id=0,  # noqa: ANN001
+    seq_len=30,  # noqa: ANN001
+    start_idx=0,  # noqa: ANN001
 ) -> TextContext:
     tokens = np.ones(seq_len, dtype=np.int32)
     assert len(tokens) == seq_len
@@ -118,11 +119,11 @@ def create_mock_request(
     return context
 
 
-def test_should_schedule_ce_empty_queue(scheduler) -> None:
+def test_should_schedule_ce_empty_queue(scheduler) -> None:  # noqa: ANN001
     assert not scheduler._should_schedule_ce()
 
 
-def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:
+def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     scheduler.active_batch = {
         i: create_mock_request(cache_seq_id=i, seq_len=5, start_idx=0)
         for i in range(scheduler.scheduler_config.max_batch_size_tg)
@@ -140,7 +141,7 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:
     assert not scheduler._should_schedule_ce()
 
 
-def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:
+def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_data = MagicMock()
     mock_data.active_length = 10
     # Create a push socket to send data.
@@ -163,7 +164,7 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
 
 
-def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:
+def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Configure scheduler for chunked prefill
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.max_forward_steps_ce = 1
@@ -192,7 +193,7 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:
     assert batch["req1"].active_length == 20
 
 
-def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:
+def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     batch_executed = {
         "req1": create_mock_request(cache_seq_id=0),
         "req2": create_mock_request(cache_seq_id=1),
@@ -210,7 +211,7 @@ def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:
     scheduler.pipeline.release.assert_called_once()
 
 
-def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:
+def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     req_1 = create_mock_request(cache_seq_id=0, seq_len=31, start_idx=30)
     req_2 = create_mock_request(
         cache_seq_id=0, seq_len=30, start_idx=20
@@ -231,7 +232,7 @@ def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:
     assert not scheduler.request_q.empty()
 
 
-def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:
+def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_request = create_mock_request(cache_seq_id=0)
     scheduler.active_batch = {"req1": mock_request}
     scheduler.available_cache_indices = set()
@@ -259,7 +260,7 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:
     scheduler.pipeline.release.assert_called_once_with(mock_request)
 
 
-def test_schedule_ce(scheduler, zmq_ctx) -> None:
+def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         "req1": mock_request
@@ -284,7 +285,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:
     )
 
 
-def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:
+def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.max_forward_steps_ce = 1
@@ -330,7 +331,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:
     assert data.active_length == 10
 
 
-def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:
+def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.enable_in_flight_batching = True
@@ -381,7 +382,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:
     assert batch["req2"].active_length == 19
 
 
-def test_schedule_tg(scheduler, zmq_ctx) -> None:
+def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         "req1": mock_request

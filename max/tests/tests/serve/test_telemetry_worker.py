@@ -168,7 +168,7 @@ def test_process_unreliable() -> None:
     assert_empty(q)
 
 
-def assert_empty(q) -> None:
+def assert_empty(q) -> None:  # noqa: ANN001
     empty = False
 
     # prove that stuff gets handled since the queue is empty
