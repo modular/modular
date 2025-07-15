@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/serve-custom-model-architectures.mdx
+
 from __future__ import annotations
 
 from typing import Optional
