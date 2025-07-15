@@ -9,5 +9,3 @@ modular_py_library(
         "//SDK/lib/API/python/max/mojo",
     ],
 )
-
-exports_files(glob(["*.mojo"]))
