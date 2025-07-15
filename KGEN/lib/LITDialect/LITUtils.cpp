@@ -332,7 +332,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ParameterEvaluator &evaluator) {
   // Substitute input parameters when printing default parameters.
   for (ParamDeclAttr param : paramDecls)
-    evaluator.addInputValue(ParamDeclRefAttr::get(param));
+    evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
 
   DefaultValueHandler defaultHandler(paramListAttr);
   size_t idx = 0;
@@ -1128,7 +1128,7 @@ LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   evaluator.setEvaluationContext(this);
   for (auto [param, value] :
        llvm::zip(structDecl.getInputParams(), structType.getParamValues()))
-    evaluator.setParameterValue(param, value);
+    evaluator.setDeclBinding(param, value);
 
   FailureOr<TypedAttr> simplified =
       getWitness.simplify(conformance, &evaluator);

@@ -978,7 +978,7 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
     ParameterEvaluator evaluator;
     for (Type type : sig.getParamTypes()) {
       unbound.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
-      evaluator.addInputValue(unbound.back());
+      evaluator.appendIndexBinding(unbound.back());
     }
     return LIT::StructType::get(symbol, unbound, sig);
   }

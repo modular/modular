@@ -352,7 +352,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
                                b.getStringAttr("_" + Twine(idx))),
                            evaluator.getReboundType(type)));
     paramValues.push_back(ParamDeclRefAttr::get(paramDecls.back()));
-    evaluator.addInputValue(paramValues.back());
+    evaluator.appendIndexBinding(paramValues.back());
   }
   // Rebind the argument and result types into the scope of the body.
   FunctionType functionType =
@@ -641,7 +641,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     // Add these mentioned param refs as "clarifying" parameters to the thunk,
     // see TAPCPTTT.
     thunkParamTypes.push_back(paramRefsReplacer.getReboundType(ref.getType()));
-    paramRefsReplacer.setParameterValue(
+    paramRefsReplacer.setDeclBinding(
         ref.getName(), ParamIndexRefAttr::get(i, thunkParamTypes.back()));
   }
   auto reparamActualForThunkKey = cast<FnTypeGeneratorType>(
@@ -659,7 +659,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   for (auto [i, type] : llvm::enumerate(expected.getInputParamTypes())) {
     // Note that `type` might contain UnboundAttr at this point, that's fine.
     thunkParamTypes.push_back(paramRefsReplacer.getReboundType(type));
-    paramRefsReplacer.addInputParam(ParamIndexRefAttr::get(
+    paramRefsReplacer.appendIndexBinding(ParamIndexRefAttr::get(
         i + mentionedParamRefs.size(), thunkParamTypes.back()));
   }
   // The thunk metadata and function type will mostly look like `expected`,
@@ -712,7 +712,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   ParserParameterEvaluator evaluator(emitter.shared);
   for (ParamDeclRefAttr ref : mentionedParamRefs) {
     // Bind the clarifying parameter (see TAPCPTTT).
-    evaluator.addInputParam(ref);
+    evaluator.appendIndexBinding(ref);
   }
   for (Type type : expected.getInputParamTypes()) {
     // If there are "remaining input parameters", like in:
@@ -720,13 +720,14 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     //     alias my_func_alias: fn[Y: Bool]() -> None = ...
     //
     // then we leave them unbound (see TARIPNBITM).
-    evaluator.addInputParam(UnboundAttr::get(evaluator.getReboundType(type)));
+    evaluator.appendIndexBinding(
+        UnboundAttr::get(evaluator.getReboundType(type)));
   }
-  evaluator.addInputParam(calleeParam);
+  evaluator.appendIndexBinding(calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
       emitter.shared.getEvaluationContext(),
-      ParameterExprArrayAttr::get(ctx, evaluator.getInputParams()));
+      ParameterExprArrayAttr::get(ctx, evaluator.getIndexBindings()));
 
   // Finally, cast the result back to the expected type.
   return emitter.emitCResult(

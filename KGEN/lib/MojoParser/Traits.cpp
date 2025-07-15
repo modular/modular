@@ -310,8 +310,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     //
     // TODO(MOCO-1993): Make sure this is consistently followed other places we
     // do trait substitution, and maybe centralize this arcana to somewhere.
-    traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
-                                         convertedValue.getIfPValue());
+    traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(),
+                                      convertedValue.getIfPValue());
     aliasValues[name] = convertedValue.getIfPValue();
 
     return success();
@@ -609,12 +609,14 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
   ParserParameterEvaluator evaluator(declResolver.shared);
-  evaluator.addInputValue(UnknownAttr::get(signature.getInputParamTypes()[0]));
+  evaluator.appendIndexBinding(
+      UnknownAttr::get(signature.getInputParamTypes()[0]));
   // Use UnboundAttr for any other parameters so they remain in the result.
   for (Type type : signature.getInputParamTypes().drop_front())
-    evaluator.addInputValue(UnboundAttr::get(evaluator.getReboundType(type)));
+    evaluator.appendIndexBinding(
+        UnboundAttr::get(evaluator.getReboundType(type)));
   signature = signature.getSpecializedGenerator(
-      evaluator.getInputParams(),
+      evaluator.getIndexBindings(),
       /*emitErrorFn=*/{}, &declResolver.shared.getEvaluationContext());
 
   return signature;

@@ -528,7 +528,7 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
         paramName, generateTypeString(shared, reboundType, variadicKind),
         paramListAttr.getPassingKind(idx), variadicKind,
         std::move(defaultValue)));
-    evaluator.addInputValue(
+    evaluator.appendIndexBinding(
         KGEN::ParamDeclRefAttr::get(paramName, reboundType));
   }
   return evaluator;
@@ -1048,10 +1048,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     Type reboundType = evaluator.getReboundType(paramTypes[parIdx]);
     StringAttr paramName = signature.getParamName(parIdx);
     if (paramName.getValue().empty()) {
-      evaluator.addInputValue(
+      evaluator.appendIndexBinding(
           KGEN::ParamIndexRefAttr::get(parIdx, reboundType));
     } else {
-      evaluator.addInputValue(
+      evaluator.appendIndexBinding(
           KGEN::ParamDeclRefAttr::get(paramName, reboundType));
     }
     // Ignore implicitly passed parameters.

@@ -320,7 +320,7 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
 
     ParameterEvaluator evaluator;
     for (ParamDeclAttr param : func.getInputParams())
-      evaluator.addInputValue(ParamDeclRefAttr::get(param));
+      evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
 
     NamedAttrList defaultValues;
     for (auto [index, decl] : llvm::enumerate(func.getInputParams())) {

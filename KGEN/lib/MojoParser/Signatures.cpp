@@ -751,7 +751,7 @@ static ASTType addImplicitTypeParams(ASTType type,
 
     // FIXME: Autoparam of variadics looks broken?
     variadicKinds.push_back(VariadicKind::None);
-    evaluator.addInputValue(paramValues.back());
+    evaluator.appendIndexBinding(paramValues.back());
   };
 
   // First check for a function type.
@@ -1137,21 +1137,21 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                     EC_Type, isMutType);
   if (!isMut)
     return {};
-  evaluator.addInputValue(isMut);
+  evaluator.appendIndexBinding(isMut);
 
   auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
   PValue isVarVal =
       emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
   if (!isVarVal)
     return {};
-  evaluator.addInputValue(isVarVal);
+  evaluator.appendIndexBinding(isVarVal);
 
   PValue origin =
       emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
                          evaluator.getReboundType(originType));
   if (!origin)
     return {};
-  evaluator.addInputValue(origin);
+  evaluator.appendIndexBinding(origin);
 
   // The default element_trait param type is
   // !lit.anytrait<<@stdlib::@builtin::@anytype::@AnyType>>
@@ -1163,7 +1163,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                       EC_Type, traitMetaType);
   if (!traitMT)
     return {};
-  evaluator.addInputValue(traitMT);
+  evaluator.appendIndexBinding(traitMT);
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.

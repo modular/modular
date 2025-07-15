@@ -138,7 +138,7 @@ SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   evaluator.setEvaluationContext(this);
   for (auto [param, value] :
        llvm::zip(structDecl.getInputParams(), genRef.getParamValues()))
-    evaluator.setParameterValue(param, value);
+    evaluator.setDeclBinding(param, value);
 
   FailureOr<TypedAttr> simplified =
       getWitness.simplify(conformance, &evaluator);
@@ -153,14 +153,14 @@ SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
 //===----------------------------------------------------------------------===//
 
 ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
-                                       ArrayRef<TypedAttr> paramValues) {
-  for (auto [decl, value] : llvm::zip(paramDecls, paramValues))
-    setParameterValue(decl, value);
+                                       ArrayRef<TypedAttr> declBindings) {
+  for (auto [decl, value] : llvm::zip(paramDecls, declBindings))
+    setDeclBinding(decl, value);
 }
 
-ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> paramValues) {
-  for (TypedAttr param : paramValues)
-    addInputValue(param);
+ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> declBindings) {
+  for (TypedAttr param : declBindings)
+    appendIndexBinding(param);
 }
 
 std::pair<IntegerAttr, bool>
@@ -194,15 +194,16 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     // If the referenced parameter is not bound, forward the reference.
-    if (auto it = paramValues.find(declRef.getName()); it != paramValues.end())
+    if (auto it = declBindings.find(declRef.getName());
+        it != declBindings.end())
       result = upbindValue(it->second);
     else
       result = declRef;
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
-    assert(indexRef.getIndex() < inputParamValues.size() &&
+    assert(indexRef.getIndex() < indexBindings.size() &&
            "parameter index out of range");
-    result = upbindValue(inputParamValues[indexRef.getIndex()]);
+    result = upbindValue(indexBindings[indexRef.getIndex()]);
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
@@ -310,9 +311,9 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
 void ParameterEvaluator::dump() const {
   auto &os = llvm::errs();
   os << "ParameterEvaluator: \n";
-  for (auto [name, value] : paramValues)
+  for (auto [name, value] : declBindings)
     os << "  " << name << " = " << value << "\n";
-  for (auto [idx, value] : llvm::enumerate(inputParamValues))
+  for (auto [idx, value] : llvm::enumerate(indexBindings))
     os << "  *(0," << idx << ") = " << value << "\n";
 }
 
@@ -368,7 +369,7 @@ PartiallySpecializedInputParams::from(
       auto value = ParamIndexRefAttr::get(
           /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
       unboundParamTypes.push_back(remappedDeclType);
-      evaluator.addInputValue(value);
+      evaluator.appendIndexBinding(value);
     } else {
       // We must remap the value type being provided as well, because it may
       // be referring to outer-context indexed parameters, whose depth will be
@@ -383,7 +384,7 @@ PartiallySpecializedInputParams::from(
         return {};
       }
 
-      evaluator.addInputValue(value);
+      evaluator.appendIndexBinding(value);
       boundParams.set(paramNo);
     }
   }

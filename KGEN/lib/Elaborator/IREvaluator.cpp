@@ -437,7 +437,7 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
   // IREvaluator for concretizing the witness entries.
   for (auto [param, value] :
        llvm::zip(gen.getInputParams(), genNode->inputParams))
-    nestedEvaluator.setParameterValue(param, value);
+    nestedEvaluator.setDeclBinding(param, value);
   FailureOr<TypedAttr> simplified =
       getWitnessEntry.simplify(witnessTable, &nestedEvaluator);
   if (failed(simplified)) {

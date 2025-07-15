@@ -251,7 +251,7 @@ static ElaborationState processParamDeclareOp(ImplNode *inode,
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getValue());
 
   // Bind it to the parameter declaration it is setting.
-  inode->getEvaluator().setParameterValue(op.getParamDecl(), value);
+  inode->getEvaluator().setDeclBinding(op.getParamDecl(), value);
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -854,7 +854,7 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   }
 
   // Bind the result and erase the operation.
-  inode->getEvaluator().setParameterValue(op.getParamDecl(), cached);
+  inode->getEvaluator().setDeclBinding(op.getParamDecl(), cached);
   op.erase();
   return ElaborationState::advance();
 }
@@ -1382,7 +1382,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     // to the loop decl parameter.
     assert(iterParamDecl.getType() == value.getType() &&
            "iterator value type should match the loop decl type");
-    nextItem.evaluator.setParameterValue(iterParamDecl, value);
+    nextItem.evaluator.setDeclBinding(iterParamDecl, value);
     parent->stack.push_back(std::move(nextItem));
   }
 
@@ -1805,7 +1805,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
 
   IREvaluator evaluator(*this, newFuncNode);
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(decl, val);
+    evaluator.setDeclBinding(decl, val);
 
   ImplNode::WorkItem item{std::move(opsToRewrite), std::move(onComplete),
                           std::move(evaluator)};
