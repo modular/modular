@@ -45,7 +45,7 @@ dependencies = [
   "pre-commit",
   "prometheus-async",
   "prometheus-client",
-  "protobuf==5.29.5 ", # Must match bazel protobuf version since the codegen versions must match
+  "protobuf==5.29.1 ", # Must match bazel protobuf version since it doesn't the codegen
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
   "py-cpuinfo",
   "pyarrow",
