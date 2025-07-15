@@ -103,10 +103,16 @@ class Qwen3Attention(Module):
             )
 
         self.q_norm = RMSNorm(
-            self.kv_params.head_dim, dtype=dtype, eps=self.qk_norm_eps
+            self.kv_params.head_dim,
+            dtype=dtype,
+            eps=self.qk_norm_eps,
+            multiply_before_cast=False,
         )
         self.k_norm = RMSNorm(
-            self.kv_params.head_dim, dtype=dtype, eps=self.qk_norm_eps
+            self.kv_params.head_dim,
+            dtype=dtype,
+            eps=self.qk_norm_eps,
+            multiply_before_cast=False,
         )
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
@@ -212,6 +218,8 @@ class Qwen3Attention(Module):
             total_seq_len=total_seq_len,
             input_row_offsets=input_row_offsets,
             weight_offset=0.0,
+            multiply_before_cast=False,
+            per_head_norm=True,
         )
 
         # Apply rotary embedding.
