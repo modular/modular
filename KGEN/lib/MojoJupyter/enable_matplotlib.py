@@ -44,7 +44,7 @@ try:
     _plt.switch_backend(backend)
     _plt.show._needmain = False
 
-    def display(fig, metadata) -> None:
+    def display(fig, metadata) -> None:  # noqa: ANN001
         if fig.canvas is None:
             _FigureCanvasBase(fig)
 
