@@ -243,6 +243,13 @@ def main():
             transpose_b=False,
         ](bench, ctx, dynamic(4096), static[1](), static[4096]())
 
+        # N = 1, K % simd_width == 0, transpose_b = True
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.bfloat16,
+            transpose_b=True,
+        ](bench, ctx, dynamic(5120), static[1](), static[13824]())
+
         # GEMV_KERNEL
 
         # M = 1, K % simd_width !=0, transpose_b = True
