@@ -13,8 +13,8 @@ class EmbeddingsResponse(msgspec.Struct, tag=True, omit_defaults=True):
     """
     Response structure for embedding generation.
 
-    Attributes:
-        embeddings (np.ndarray): The generated embeddings as a NumPy array.
+    Configuration:
+        embeddings: The generated embeddings as a NumPy array.
     """
 
     embeddings: np.ndarray

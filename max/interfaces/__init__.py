@@ -6,7 +6,7 @@
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
 from .context import InputContext, SamplingParams
-from .engine import EngineResult
+from .engine import EngineResult, EngineStatus
 from .log_probabilities import LogProbabilities
 from .pipeline_variants import (
     AudioGenerationResponse,
@@ -20,6 +20,7 @@ from .task import PipelineTask
 
 __all__ = [
     "EngineResult",
+    "EngineStatus",
     "LogProbabilities",
     "GenerationStatus",
     "TextGenerationResponse",
