@@ -19,11 +19,7 @@ from enum import Enum
 from typing import Any, Generic, Optional, TypeVar, Union
 
 import zmq
-from max.interfaces import (
-    EngineResult,
-    TextGenerationResponse,
-    TokenGenerator,
-)
+from max.interfaces import EngineResult, TextGenerationResponse, TokenGenerator
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
@@ -31,6 +27,7 @@ from max.pipelines.core import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -801,25 +798,24 @@ def load_text_generation_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    max_batch_size_tg: int,
-    max_forward_steps_tg: int,
-    target_tokens_per_batch_tg: Optional[int],
-    max_batch_size_ce: int,
-    max_forward_steps_ce: int,
-    target_tokens_per_batch_ce: Optional[int],
-    enable_chunked_prefill: bool = True,
-    enable_in_flight_batching: bool = False,
+    pipeline_config: PipelineConfig,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
-        max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
-        max_batch_size_ce=max_batch_size_ce,
-        max_forward_steps_ce=max_forward_steps_ce,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        enable_chunked_prefill=enable_chunked_prefill,
-        enable_in_flight_batching=enable_in_flight_batching,
+        max_batch_size_tg=pipeline_config.max_batch_size
+        if pipeline_config.max_batch_size is not None
+        else 1,
+        max_forward_steps_tg=pipeline_config.max_new_tokens
+        if pipeline_config.max_new_tokens != -1
+        else 1,
+        target_tokens_per_batch_tg=pipeline_config.target_num_new_tokens,
+        max_batch_size_ce=pipeline_config.max_ce_batch_size,
+        max_forward_steps_ce=pipeline_config.max_new_tokens
+        if pipeline_config.max_new_tokens != -1
+        else 1,
+        target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
+        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+        enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
     )
 
     # Retrieve Paged Manager

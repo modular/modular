@@ -35,7 +35,6 @@ from max.serve.api_server import (
     fastapi_config,
 )
 from max.serve.config import Settings
-from max.serve.pipelines.llm import batch_config_from_pipeline_config
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
     get_performance_fake,
@@ -136,11 +135,6 @@ def serve_pipeline(
             KVCacheStrategy.CONTINUOUS
         )
 
-    # Load batch config.
-    batch_config = batch_config_from_pipeline_config(
-        pipeline_config=pipeline_config, pipeline_task=pipeline_task
-    )
-
     # If explicit model name is not provided, set to model_path.
     if model_name is None:
         model_name = pipeline_config.model_config.model_path
@@ -148,7 +142,7 @@ def serve_pipeline(
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=pipeline_factory,
-        pipeline_config=batch_config,
+        pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
     )

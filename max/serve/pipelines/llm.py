@@ -23,22 +23,17 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
-from max.pipelines.lib.config import PipelineConfig
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-from max.support.human_readable_formatter import to_human_readable_bytes
 
 logger = logging.getLogger("max.serve")
 
@@ -310,81 +305,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             # Shut server down.
             # Sending SIGTERM is ugly, but simplifies the internal plumbing.
             os.kill(os.getpid(), signal.SIGTERM)
-
-
-def batch_config_from_pipeline_config(
-    pipeline_config: PipelineConfig,
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-) -> TokenGeneratorSchedulerConfig:
-    assert pipeline_config.max_batch_size is not None
-    if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
-        logger.info(
-            "Scheduler configured with no cache and batch size %s",
-            pipeline_config.max_batch_size,
-        )
-        return TokenGeneratorSchedulerConfig.no_cache(
-            batch_size=pipeline_config.max_batch_size,
-            pipeline_role=pipeline_config.pipeline_role,
-        )
-
-    assert pipeline_config.max_ce_batch_size is not None
-    kv_cache_config = pipeline_config.model_config.kv_cache_config
-    cache_strategy = kv_cache_config.cache_strategy
-    if cache_strategy == KVCacheStrategy.CONTINUOUS:
-        batch_config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
-            tg_batch_size=pipeline_config.max_batch_size,
-            ce_batch_size=min(
-                pipeline_config.max_batch_size,
-                pipeline_config.max_ce_batch_size,
-            ),
-            max_forward_steps=pipeline_config.max_num_steps,
-            target_ce_batch_tokens=pipeline_config.target_num_new_tokens,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-            pipeline_role=pipeline_config.pipeline_role,
-        )
-    elif cache_strategy == KVCacheStrategy.PAGED:
-        batch_config = TokenGeneratorSchedulerConfig.paged(
-            tg_batch_size=pipeline_config.max_batch_size,
-            ce_batch_size=min(
-                pipeline_config.max_batch_size,
-                pipeline_config.max_ce_batch_size,
-            ),
-            max_forward_steps=pipeline_config.max_num_steps,
-            target_ce_batch_tokens=pipeline_config.target_num_new_tokens,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-            pipeline_role=pipeline_config.pipeline_role,
-            max_queue_size_tg=pipeline_config.max_queue_size_tg,
-            min_batch_size_tg=pipeline_config.min_batch_size_tg,
-            ce_delay_ms=pipeline_config.ce_delay_ms,
-            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
-        )
-    else:
-        raise ValueError(
-            f"{cache_strategy} caching strategy is not supported by Serving."
-        )
-
-    log_str = "Scheduler configured with:\n\n"
-    log_str += f"\tCache Strategy: {cache_strategy}\n"
-    if cache_strategy == KVCacheStrategy.PAGED:
-        log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
-        log_str += f"\tPrefix Caching: {'Enabled' if kv_cache_config.enable_prefix_caching else 'Disabled'}\n"
-    if kv_cache_config.enable_kvcache_swapping_to_host:
-        host_kvcache_swap_space_gb = kv_cache_config.host_kvcache_swap_space_gb
-        log_str += "\tKVCache Swapping to Host: Enabled\n"
-        GiB = 1024 * 1024 * 1024
-        host_kvcache_swap_space_str = to_human_readable_bytes(
-            int(host_kvcache_swap_space_gb * GiB)
-        )
-        log_str += f"\tKVCache Host Swap Space: {host_kvcache_swap_space_str}\n"
-    log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
-    log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
-    if pipeline_config.enable_chunked_prefill:
-        log_str += f"\tChunked Prefill Chunk Size: {pipeline_config.target_num_new_tokens} Tokens\n"
-    logger.info(log_str)
-
-    return batch_config
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
