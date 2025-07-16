@@ -17,7 +17,14 @@ from hashlib import Hasher, default_hasher
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
-    Boolable, Comparable, Copyable, ExplicitlyCopyable, Hashable, KeyElement, Movable, Sized
+    Boolable,
+    Comparable,
+    Copyable,
+    ExplicitlyCopyable,
+    Hashable,
+    KeyElement,
+    Movable,
+    Sized,
 ):
     """A set data type.
 
