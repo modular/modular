@@ -187,14 +187,14 @@ atom: ('(' [yield_expr|testlist_gexp] ')' |
 listmaker: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 lambdef: 'lambda' [varargslist] ':' test
-trailer: '(' [arglist] ')' | '[' [subscriptlist] ']' | '.' NAME
+trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
 subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' test] | '**' test
 sliceop: ':' [test]
 exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
 testlist: test (',' test)* [',']
-dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
-                 (comp_for | (',' (test ':' asexpr_test | '**' expr))* [','])) |
+dictsetmaker: ( ((test ':' asexpr_test | test '=' asexpr_test | test | '**' expr)
+                 (comp_for | (',' (test ':' asexpr_test | test '=' asexpr_test | test | '**' expr))* [','])) |
                 ((test [':=' test] | star_expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
 
