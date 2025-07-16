@@ -504,6 +504,25 @@ struct String(
             _write(buffer)
             buffer.flush()
 
+    fn write[T: Writable](mut self, value: T):
+        """Write a single Writable argument to the provided Writer.
+
+        Args:
+            value: The Writable argument to write.
+        """
+        value.write_to(self)
+
+    @staticmethod
+    fn write[T: Writable](value: T) -> Self:
+        """Write a single Writable argument to the provided Writer.
+
+        Args:
+            value: The Writable argument to write.
+        """
+        var result = String()
+        value.write_to(result)
+        return result^
+
     @always_inline("nodebug")
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
