@@ -34,6 +34,7 @@ load(
                 "$(location //Support/tools/system-info)"
             ),
         },
+        env_inherit = ["HF_TOKEN"],
         imports = ["."],
         tags = [
             "no-sandbox",
@@ -93,6 +94,7 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
+    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
         "resources:gpu-memory": "24",

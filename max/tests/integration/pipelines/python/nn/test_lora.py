@@ -20,7 +20,7 @@ import torch.nn as nn
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import AttentionWithRopeAndLoRA, LinearLoRA, RotaryEmbedding
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -338,7 +338,7 @@ def linear_lora_max_output(
     rank: int,
     alpha: int,
     is_gpu: bool = False,
-) -> torch.Tensor:
+) -> list[Tensor]:
     """Generate MAX LinearLoRA output with full LoRA functionality."""
     max_adapters = 2
     session, device_ref, device = setup_session_and_device(is_gpu)
@@ -367,8 +367,8 @@ def linear_lora_max_output(
         "LinearLoRA",
         input_types=[
             TensorType(DTYPE, x.shape, device=device_ref),
-            BufferType(DType.uint32, ["lora_ids"], device=device_ref),
-            BufferType(DType.uint32, ["lora_ranks"], device=device_ref),
+            TensorType(DType.uint32, ["lora_ids"], device=device_ref),
+            TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
         ],
     ) as graph:
@@ -376,7 +376,7 @@ def linear_lora_max_output(
             graph.inputs
         )
         max_lora.set_lora_batch_info(
-            lora_ids_input.buffer, lora_ranks_input.buffer
+            lora_ids_input.tensor, lora_ranks_input.tensor
         )
         output = max_lora.apply_lora(
             x_input.tensor, input_row_offsets_input.tensor
@@ -428,7 +428,7 @@ def compare_linear_lora_outputs(
 
     torch.testing.assert_close(
         torch_lora_output,
-        torch.tensor(max_output[0].numpy()).to(TORCH_DTYPE),
+        torch.tensor(max_output[0].to_numpy()).to(TORCH_DTYPE),
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
     )
@@ -541,8 +541,8 @@ def attention_lora_max_output(
                 DTYPE, [x.shape[0] * x.shape[1], hidden_size], device=device_ref
             ),
             TensorType(DType.uint32, [x.shape[0] + 1], device=device_ref),
-            BufferType(DType.uint32, ["lora_ids"], device=device_ref),
-            BufferType(DType.uint32, ["lora_ranks"], device=device_ref),
+            TensorType(DType.uint32, ["lora_ids"], device=device_ref),
+            TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
             TensorType(
                 DType.uint32, ["lora_input_row_offsets"], device=device_ref
             ),
@@ -572,7 +572,7 @@ def attention_lora_max_output(
         ]:
             if hasattr(proj, "set_lora_batch_info"):
                 proj.set_lora_batch_info(
-                    lora_ids_input.buffer, lora_ranks_input.buffer
+                    lora_ids_input.tensor, lora_ranks_input.tensor
                 )
 
         fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)

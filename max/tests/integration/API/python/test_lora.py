@@ -37,7 +37,9 @@ def mock_weights():
 
 
 def test_load_single_adapter(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
-    manager = LoRAManager(base_weights=mock_weights, max_num_loras=2)
+    manager = LoRAManager(
+        base_weights=mock_weights, max_num_loras=2, max_lora_rank=16
+    )
 
     name = manager.load_adapter("my_cool_lora=/path/to/lora")
 
@@ -47,7 +49,9 @@ def test_load_single_adapter(mock_weights, configured_mock_lora) -> None:  # noq
 
 
 def test_load_adapter_no_equals(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
-    manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
+    manager = LoRAManager(
+        base_weights=mock_weights, max_num_loras=2, max_lora_rank=16
+    )
 
     name = manager.load_adapter("/path/to/lora")
 
@@ -56,7 +60,9 @@ def test_load_adapter_no_equals(mock_weights, configured_mock_lora) -> None:  # 
 
 
 def test_load_adapters_bulk(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
-    manager = LoRAManager(base_weights=mock_weights, max_num_loras=2)
+    manager = LoRAManager(
+        base_weights=mock_weights, max_num_loras=3, max_lora_rank=16
+    )
 
     names = manager.load_adapters(["a=/path/a", "b=/path/b"])
 
@@ -69,7 +75,9 @@ def test_load_adapter_limit_exceeded(
     mock_weights,  # noqa: ANN001
     configured_mock_lora,  # noqa: ANN001
 ) -> None:
-    manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
+    manager = LoRAManager(
+        base_weights=mock_weights, max_num_loras=2, max_lora_rank=16
+    )
 
     manager.load_adapter("first=/path/first")
 
@@ -81,7 +89,9 @@ def test_reloading_existing_adapter_warns(
     mock_weights,  # noqa: ANN001
     configured_mock_lora,  # noqa: ANN001
 ) -> None:
-    manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
+    manager = LoRAManager(
+        base_weights=mock_weights, max_num_loras=2, max_lora_rank=16
+    )
 
     manager.load_adapter("existing=/path/existing")
 
