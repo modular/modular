@@ -124,13 +124,15 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     try:
         if dryrun:
             print(list2cmdline(cmd))
-            return ProcessOutput(None, None)
+            return ProcessOutput(None, None, -1, None)
 
         # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
         env = os.environ.copy()
         output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
-            output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+            output.stdout.decode("utf-8"),
+            output.stderr.decode("utf-8"),
+            output.returncode,
         )
 
     except Exception as exc:
@@ -163,6 +165,7 @@ class ParamSpace:
 class ProcessOutput:
     stdout: str | None = None
     stderr: str | None = None
+    return_code: int = -1
     path: Path | None = None
 
     def log(self) -> None:
@@ -303,9 +306,11 @@ class SpecInstance:
             ]
         )
         out = _run_cmdline(cmd, dryrun)
-        if out.stderr:
-            return ProcessOutput(out.stdout, out.stderr, None)
-        return ProcessOutput(out.stdout, out.stderr, bin_path)
+        if out.return_code == os.EX_OK:
+            out.path = bin_path
+        else:
+            out.path = None
+        return out
 
     def execute(
         self,
@@ -878,7 +883,7 @@ class Scheduler:
                 # - cache is active
                 # - no error is reported in stderr
                 # - build_output path is found
-                if not build_output.stderr and build_output.path:
+                if build_output.return_code == os.EX_OK and build_output.path:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
