@@ -32,7 +32,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     # Copy to and from device buffers.
     in_dev.copy_from(in_host)
     if use_context:
-        ctx.enqueue_copy(out_dev, in_dev)
+        ctx.memcopy(out_dev, in_dev)
     else:
         in_dev.copy_to(out_dev)
     out_dev.copy_to(out_host)
@@ -165,14 +165,14 @@ fn _run_cpu_ctx_memcpy_async(
     for i in range(length):
         host_buf[i] = 2 * i
 
-    ctx.enqueue_copy(dev_buf, host_buf)
+    ctx.memcopy(dev_buf, host_buf)
 
     with dev_buf.map_to_host() as dev_buf:
         for i in range(length):
             expect_eq(dev_buf[i], 2 * i)
 
     host_buf = host_buf.fill(12)
-    cpu_ctx.enqueue_copy(host_buf, dev_buf)
+    cpu_ctx.memcopy(host_buf, dev_buf)
 
     for i in range(length):
         expect_eq(host_buf[i], 2 * i)
