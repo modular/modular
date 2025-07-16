@@ -513,7 +513,6 @@ dependencies = [
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "pathspec", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "pillow", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
-    { name = "pip", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "platformdirs", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "plotly", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "pre-commit", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -580,7 +579,6 @@ amd = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "lm-eval", extra = ["api", "ifeval", "math"], marker = "(sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "mteb", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "nvtx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "optimum", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytorch-triton-rocm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "sentence-transformers", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -611,7 +609,6 @@ nvidia = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "lm-eval", extra = ["api", "ifeval", "math"], marker = "(sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "mteb", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "nvtx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "optimum", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sentence-transformers", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "timm", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -676,7 +673,6 @@ requires-dist = [
     { name = "pandas", specifier = ">=1.4.2" },
     { name = "pathspec", specifier = ">=0.9.0" },
     { name = "pillow", specifier = ">=10.0.0" },
-    { name = "pip", specifier = ">=22.3.1" },
     { name = "platformdirs", specifier = ">=2" },
     { name = "plotly" },
     { name = "pre-commit" },
@@ -743,7 +739,6 @@ amd = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },
     { name = "lm-eval", extras = ["api", "ifeval", "math"] },
     { name = "mteb" },
-    { name = "nvtx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "optimum" },
     { name = "pytorch-triton-rocm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", index = "https://download.pytorch.org/whl/rocm6.3" },
     { name = "sentence-transformers" },
@@ -771,7 +766,6 @@ nvidia = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },
     { name = "lm-eval", extras = ["api", "ifeval", "math"] },
     { name = "mteb" },
-    { name = "nvtx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "optimum" },
     { name = "sentence-transformers" },
     { name = "timm" },
@@ -4156,29 +4150,6 @@ wheels = [
 ]
 
 [[package]]
-name = "nvtx"
-version = "0.2.11"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c0/ef/173a5dc1bf8f6f7054f89986ab32140ec238c9fcc4f061d221b8e5b87e31/nvtx-0.2.11.tar.gz", hash = "sha256:88d52cf424a0e68b1c05a6b1983fdfa1b35575f983aadc3118cee578491b043e", size = 71671, upload-time = "2025-02-21T07:45:08.053Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/47/97b435e425186b5d9b44aec24646af0df9149634544100171776e427abe0/nvtx-0.2.11-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d843978a3f25d15ea2bd6dd7a741a7ee717d07e759dc8fb679d0a9cdeff79bef", size = 470207, upload-time = "2025-02-21T07:13:10.209Z" },
-    { url = "https://files.pythonhosted.org/packages/a8/92/300e0f76a2f3b4ded154b0204a15f7ca9ea3842a0dae90ed1dd8ca1f5350/nvtx-0.2.11-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c1b68d2e91a828eef4b28931131e8bf15e6fb8fd9ce07279e4acf57e03e40a55", size = 474662, upload-time = "2025-02-21T07:15:46.197Z" },
-    { url = "https://files.pythonhosted.org/packages/7e/2e/450da811b9bcbd5d01d9e94cdb5831fb0147436cbbc9312d763b826ec3a6/nvtx-0.2.11-cp310-cp310-win_amd64.whl", hash = "sha256:2c63d6d063b166af26d3f6d3573a9eb4dd868edc7427318f08f648d67674bee3", size = 88982, upload-time = "2025-02-21T07:07:32.767Z" },
-    { url = "https://files.pythonhosted.org/packages/88/13/3dabc92583d2dd124588925d269e9ae25451280543a52c33c1058afe1fb5/nvtx-0.2.11-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:182b5a44d9f2fcdc23d5fb06836e3ea36f612c67114ab6b6f78d751d9852c444", size = 525917, upload-time = "2025-02-21T07:10:49.316Z" },
-    { url = "https://files.pythonhosted.org/packages/88/09/d9d84bd8ea4ef75e039aa998dbf24985e314b6e52d5af8ab3b8e02d612e5/nvtx-0.2.11-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fc940027d5d61830d0fe90f3ab01b8baf73a5931e5c2757e0eac10bd42195d72", size = 527904, upload-time = "2025-02-21T07:14:14.335Z" },
-    { url = "https://files.pythonhosted.org/packages/de/93/60448e0fedf9b48ba63f475ca84e16418bb931ebc06df592d4c67740ff5f/nvtx-0.2.11-cp311-cp311-win_amd64.whl", hash = "sha256:d9d740c3d31c8ce07f252af695fae05cf870c816aaab54b335e14221a9fb947b", size = 89448, upload-time = "2025-02-21T07:06:41.323Z" },
-    { url = "https://files.pythonhosted.org/packages/80/43/a96ed8aa60b8fc0b376db1cd73012208906dc04028fc3142a5186ee7f6b8/nvtx-0.2.11-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:01835a894ef232575359918bb55b98821cc24cb867ca700006fb89db383114c6", size = 559333, upload-time = "2025-02-21T07:09:12.082Z" },
-    { url = "https://files.pythonhosted.org/packages/52/fe/9572c52876fc919de23c244451e71faffb753e5adddb70caad502956a435/nvtx-0.2.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:41fdebc5a55448c1a165e3b283b4cc64ad37882f199b5f22119370aec917bd38", size = 562598, upload-time = "2025-02-21T07:13:41.784Z" },
-    { url = "https://files.pythonhosted.org/packages/e5/89/529a5426ce530ccbbc973ee6953758a56dd28ba20817d030471e8542dd6c/nvtx-0.2.11-cp312-cp312-win_amd64.whl", hash = "sha256:1bca6f1695101fc2b2eec39677c650db78bf54c2e3c965a4a5a046701d51b0a6", size = 88780, upload-time = "2025-02-21T07:07:55.311Z" },
-    { url = "https://files.pythonhosted.org/packages/8c/7c/6b72b9925aded900e7ab9d298eb1428ad7db383c1883927b88edbec51d41/nvtx-0.2.11-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:93717700c6bff8b220224232d5ae1c4483f911f542dda2b9efaaa46cb325d97a", size = 535167, upload-time = "2025-02-21T07:10:02.301Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/bf/9fc7e7cb379bcb2c141865c82d279cb1c2a139c4a83d2122bee4e053f9ef/nvtx-0.2.11-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7f51649a377a4c105d731322816872f75fed6cafff6e627e43033e76e6241f19", size = 538457, upload-time = "2025-02-21T07:14:51.674Z" },
-    { url = "https://files.pythonhosted.org/packages/05/6b/36b2a1fc7e7140d5fdc0a8c8698e00d3389fdfc352199e925b2974596f1b/nvtx-0.2.11-cp313-cp313-win_amd64.whl", hash = "sha256:b5eb454a123ac0a58defc7434daaff54d7f22b031c50f5ce028aadf38ebd40b2", size = 86910, upload-time = "2025-02-21T07:06:08.671Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/b0/3a5f2350d93b7385e26628fce5b8f2defda03116c097c5d576fc32bf2132/nvtx-0.2.11-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5d0ed9147d6403897d9424564e81b1e4a282a6fc86bfa364c6d7677a5e2878dd", size = 477052, upload-time = "2025-02-21T07:12:23.218Z" },
-    { url = "https://files.pythonhosted.org/packages/47/b4/88c6504c56e60e90bf82225ca37bdb6ad005f0cf26771570956d10d04ab5/nvtx-0.2.11-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d832f98e446587b41a826bc15f55bd0bdd04760b726c88d0aa340f36c9722566", size = 480776, upload-time = "2025-02-21T07:15:24.504Z" },
-    { url = "https://files.pythonhosted.org/packages/02/01/68c405eb9da22cb0e36b03fff2311bb67a14790b93a3a326a1c5b7d5235c/nvtx-0.2.11-cp39-cp39-win_amd64.whl", hash = "sha256:2b769060778dde9f842b60a92a864e3ca75e652e213479277ffd8b916d23e614", size = 90109, upload-time = "2025-02-21T07:05:07.028Z" },
-]
-
-[[package]]
 name = "onnxruntime"
 version = "1.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4567,15 +4538,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/de/cebaca6fb79905b3a1aa0281d238769df3fb2ede34fd7c0caa286575915a/pillow-10.4.0-pp39-pypy39_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:2db98790afc70118bd0255c2eeb465e9767ecf1f3c25f9a1abb8ffc8cfd1fe0a", size = 3476048, upload-time = "2024-07-01T09:48:33.292Z" },
     { url = "https://files.pythonhosted.org/packages/71/f0/86d5b2f04693b0116a01d75302b0a307800a90d6c351a8aa4f8ae76cd499/pillow-10.4.0-pp39-pypy39_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:f7baece4ce06bade126fb84b8af1c33439a76d8a6fd818970215e0560ca28c27", size = 3579366, upload-time = "2024-07-01T09:48:36.527Z" },
     { url = "https://files.pythonhosted.org/packages/37/ae/2dbfc38cc4fd14aceea14bc440d5151b21f64c4c3ba3f6f4191610b7ee5d/pillow-10.4.0-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:cfdd747216947628af7b259d274771d84db2268ca062dd5faf373639d00113a3", size = 2554652, upload-time = "2024-07-01T09:48:38.789Z" },
-]
-
-[[package]]
-name = "pip"
-version = "24.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/12/3d/d899257cace386bebb7bdf8a872d5fe3b935cc6381c3ddb76d3e5d99890d/pip-24.1.2.tar.gz", hash = "sha256:e5458a0b89f2755e0ee8c0c77613fe5273e05f337907874d64f13171a898a7ff", size = 1926029, upload-time = "2024-07-07T18:38:53.386Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/54/0c1c068542cee73d8863336e974fc881e608d0170f3af15d0c0f28644531/pip-24.1.2-py3-none-any.whl", hash = "sha256:7cd207eed4c60b0f411b444cd1464198fe186671c323b6cd6d433ed80fc9d247", size = 1824406, upload-time = "2024-07-07T18:38:49.986Z" },
 ]
 
 [[package]]
@@ -6654,6 +6616,7 @@ wheels = [
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:a845b6f3bda3c40f736847dede95d8bfec81fb7e11458cd25973ba13542cf1f6" },
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:64123c05615e27368c7a7816f6e39c6d219998693beabde0b0b9cedf91b5ed8b" },
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:69e25c973bdd7ea24b0fa9f9792114950afaeb8f819e5723819b923f50989175" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp312-cp312-win_arm64.whl", hash = "sha256:1d7a6f33868276770a657beec7f77c7726b4da9d0739eff1b3ae64cc9a09d8e3" },
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:addf9107939522ffb3b60d2900fee838a77dbe098e2643e01164f46f8612f9c0" },
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:3b09aa2c8d30fa567a8d13270fbf9af7ee472fdfafbc7dfdc87c607bf46001f7" },
     { url = "https://download.pytorch.org/whl/cpu/torch-2.7.0%2Bcpu-cp313-cp313-win_amd64.whl", hash = "sha256:99ca8f4cb53484c45bb668657069c17139c07367ea20ddef2c0ce8412f42da2f" },
