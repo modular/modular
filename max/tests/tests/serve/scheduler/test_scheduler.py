@@ -78,9 +78,7 @@ def scheduler_config():
     return TokenGenerationSchedulerConfig(
         max_batch_size_tg=4,
         max_forward_steps_tg=8,
-        target_tokens_per_batch_tg=32,
         max_batch_size_ce=4,
-        max_forward_steps_ce=8,
         target_tokens_per_batch_ce=32,
     )
 
@@ -167,7 +165,6 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Configure scheduler for chunked prefill
     scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.max_forward_steps_ce = 1
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_data = create_mock_request(cache_seq_id=0, seq_len=30)
@@ -268,7 +265,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     sch_output = SchedulerOutput(
         batch_type=BatchType.ContextEncoding,
         batch_inputs=batch_to_execute,
-        num_steps=scheduler.scheduler_config.max_forward_steps_ce,
+        num_steps=1,
     )
 
     # Create a response queue endpoint to receive from.
@@ -281,14 +278,13 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     assert "req1" in scheduler.active_batch
     scheduler.pipeline.next_token.assert_called_once_with(
         batch_to_execute,
-        num_steps=scheduler.scheduler_config.max_forward_steps_ce,
+        num_steps=1,
     )
 
 
 def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.max_forward_steps_ce = 1
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_request = create_mock_request(cache_seq_id=0, seq_len=30)
@@ -335,7 +331,6 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.enable_in_flight_batching = True
-    scheduler.scheduler_config.max_forward_steps_ce = 1
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_request_tg = create_mock_request(cache_seq_id=0, seq_len=10)

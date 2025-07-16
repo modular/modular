@@ -154,7 +154,6 @@ def create_paged_scheduler(
     max_batch_size=512,  # noqa: ANN001
     page_size=128,  # noqa: ANN001
     max_forward_steps_tg=10,  # noqa: ANN001
-    target_tokens_per_batch_tg=None,  # noqa: ANN001
     target_tokens_per_batch_ce=8192,  # noqa: ANN001
     enable_prefix_caching=False,  # noqa: ANN001
     enable_in_flight_batching=False,  # noqa: ANN001
@@ -177,9 +176,7 @@ def create_paged_scheduler(
     scheduler_config = AudioGenerationSchedulerConfig(
         max_batch_size_tg=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
         max_batch_size_ce=max_batch_size,
-        max_forward_steps_ce=1,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         enable_in_flight_batching=enable_in_flight_batching,
         max_queue_size_tg=max_queue_size_tg,

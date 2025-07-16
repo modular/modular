@@ -26,10 +26,7 @@ from max.interfaces import (
     TokenGenerator,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
-from max.pipelines.core import (
-    TextContext,
-    msgpack_numpy_encoder,
-)
+from max.pipelines.core import TextContext, msgpack_numpy_encoder
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
@@ -152,7 +149,6 @@ def create_paged_scheduler(
     max_batch_size=512,  # noqa: ANN001
     page_size=128,  # noqa: ANN001
     max_forward_steps_tg=10,  # noqa: ANN001
-    target_tokens_per_batch_tg=None,  # noqa: ANN001
     target_tokens_per_batch_ce=8192,  # noqa: ANN001
     enable_prefix_caching=False,  # noqa: ANN001
     enable_in_flight_batching=False,  # noqa: ANN001
@@ -173,9 +169,7 @@ def create_paged_scheduler(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size_tg=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
         max_batch_size_ce=max_batch_size,
-        max_forward_steps_ce=1,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
