@@ -609,23 +609,6 @@ kgen.generator @bad_return() -> index {
   kgen.return
 }
 
-// -----
-
-// expected-error @below {{'kgen.global' op constructor @global_ctor does not reference a function with zero arguments and zero results}}
-kgen.global @global_var : i32 [@global_ctor, @global_dtor](2)
-
-// -----
-
-kgen.func @global_ctor() {
-  kgen.return
-}
-
-kgen.func @global_dtor(%arg0: i32) -> i32 {
-  kgen.return %arg0 : i32
-}
-
-// expected-error @below {{'kgen.global' op destructor @global_dtor does not reference a function with zero arguments and zero results}}
-kgen.global @global_var : i32 [@global_ctor, @global_dtor](2)
 
 // -----
 

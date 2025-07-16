@@ -364,69 +364,6 @@ lit.fn @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> mut) throws -> !kgen
 // -----
 
 //===----------------------------------------------------------------------===//
-// Globals
-//===----------------------------------------------------------------------===//
-
-// CHECK: kgen.generator{{.*}}(ctor_fn)foo
-// CHECK-NEXT: kgen.return
-// CHECK: kgen.generator{{.*}}(dtor_fn)foo
-// CHECK-NEXT: kgen.return
-// CHECK: kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0)
-lit.globalvar.decl @foo : index {
-}, {
-}
-
-// CHECK: (ctor_fn)bar
-lit.globalvar.decl @bar : index {
-  // CHECK-NEXT: %0 = kgen.global.address @foo
-  lit.globalvar.ref @foo : <index, mut #lit.any.origin>
-  // CHECK-NEXT: %1 = kgen.global.address @baz
-  lit.globalvar.ref @baz : <index, mut #lit.any.origin>
-  // CHECK-NEXT: kgen.return
-}, {
-}
-// CHECK: kgen.global @bar : index [{{.*}}](2)
-
-// CHECK: kgen.global @baz : index [{{.*}}](1)
-lit.globalvar.decl @baz : index {
-  lit.globalvar.ref @foo : <index, mut #lit.any.origin>
-}, {
-}
-
-// CHECK: kgen.global @boo : index [{{.*}}](3)
-lit.globalvar.decl @boo : index {
-  lit.globalvar.ref @bar : <index, mut #lit.any.origin>
-  lit.globalvar.ref @baz : <index, mut #lit.any.origin>
-}, {
-}
-
-// -----
-
-lit.file_module @module {
-  // CHECK: kgen.global export @foo : index
-  lit.globalvar.decl export @exported : index attributes {linkageName = "foo"} {}, {}
-
-  // CHECK-LABEL: kgen.generator @"module::ref_exported"
-  lit.fn @ref_exported() {
-    // CHECK-NEXT: kgen.global.address @foo : <index>
-    %0 = lit.globalvar.ref @module::@exported : <index, mut #lit.any.origin>
-    kgen.return
-  }
-}
-
-// -----
-
-// CHECK: kgen.generator @"(ctor_fn)self"
-lit.globalvar.decl @self : index {
-  // CHECK-NEXT: kgen.global.address @self
-  lit.globalvar.ref @self : <index, mut #lit.any.origin>
-}, {
-  lit.globalvar.ref @self : <index, mut #lit.any.origin>
-}
-
-// -----
-
-//===----------------------------------------------------------------------===//
 // Modules
 //===----------------------------------------------------------------------===//
 

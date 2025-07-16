@@ -1063,19 +1063,6 @@ kgen.generator @dtype_utils<DT: dtype>(%arg0: !kgen.dtype) {
   kgen.return
 }
 
-kgen.func @global_var_ctor() {
-  kgen.return
-}
-
-// CHECK: kgen.global @global_var : i32 [@global_var_ctor, @global_var_ctor](2)
-kgen.global @global_var : i32 [@global_var_ctor, @global_var_ctor](2)
-
-// CHECK-LABEL: @global_address
-kgen.func @global_address() -> !kgen.pointer<i32> {
-  // CHECK-NEXT: kgen.global.address @global_var : <i32>
-  %0 = kgen.global.address @global_var : <i32>
-  kgen.return %0 : !kgen.pointer<i32>
-}
 
 // CHECK-LABEL: @aligned_alloc
 kgen.func @aligned_alloc(%arg0: index, %arg1: index) {

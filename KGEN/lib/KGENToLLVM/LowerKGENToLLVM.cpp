@@ -781,28 +781,6 @@ struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
     return success();
   }
 };
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENGlobalAddress
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENGlobalAddress
-    : public ConvertPOPToLLVMPattern<GlobalAddressOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(GlobalAddressOp op,
-                                GlobalAddressOpAdaptor adaptor,
-                                ConversionPatternRewriter &b) const override {
-    Type type = convertType(op.getType());
-    if (!type)
-      return b.notifyMatchFailure(op.getLoc(), "failed to convert result type");
-    // Trivial lowering to `llvm.mlir.addressof`.
-    b.replaceOpWithNewOp<LLVM::AddressOfOp>(
-        op, type, cast<FlatSymbolRefAttr>(op.getGlobal()));
-    return success();
-  }
-};
-
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -918,7 +896,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
   patterns.insert<
       // clang-format off
       ConvertKGENCall,
-      ConvertKGENGlobalAddress,
       ConvertKGENSourceLoc,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
@@ -932,107 +909,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids);
   patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
       typeConverter, imc, passFailed);
-}
-
-//===----------------------------------------------------------------------===//
-// convertGlobals
-//===----------------------------------------------------------------------===//
-
-/// Convert all the `kgen.global` operations in the module to LLVM globals. This
-/// involves generating `llvm.mlir.global` operations for each but also
-/// generating the correct global constructors and destructors.
-///
-/// In JIT mode, instead of generating `llvm.global_ctors` and
-/// `llvm.global_dtors`, an extra pair of constructor and destructor functions
-/// are generated with the provided names.
-static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
-                                    StringRef globalCtorFnName,
-                                    StringRef globalDtorFnName) {
-  SmallVector<FlatSymbolRefAttr> ctors, dtors;
-  SmallVector<int32_t> priorities;
-
-  for (auto global : llvm::make_early_inc_range(module.getOps<GlobalOp>())) {
-    // Replace the `pop.global` with an `llvm.mlir.global`, raise the
-    // constructor and destructor into functions, and collect a list of them.
-    IRRewriter b{OpBuilder(global)};
-    Type type = tc.convertType(global.getType());
-    if (!type)
-      return global.emitError("could not convert global type");
-
-    if (global.getCtor()) {
-      ctors.push_back(cast<FlatSymbolRefAttr>(global.getCtorAttr()));
-      dtors.push_back(cast<FlatSymbolRefAttr>(global.getDtorAttr()));
-      priorities.push_back(*global.getPriority());
-    }
-
-    // Create the LLVM global.
-    bool isExported = global.isExported();
-    auto llvmGlobal = b.replaceOpWithNewOp<LLVM::GlobalOp>(
-        global, type, /*constant=*/false,
-        getLinkageKind(global.getExportKind()), global.getSymName(),
-        /*value=*/Attribute());
-
-    // If the global is not exported, then no need to initialize it.
-    if (!isExported)
-      continue;
-
-    // If the global is exported, explicitly initialize it as undef.
-    b.createBlock(&llvmGlobal.getBodyRegion());
-    Value undef = b.create<LLVM::UndefOp>(llvmGlobal.getLoc(), type);
-    b.create<LLVM::ReturnOp>(llvmGlobal.getLoc(), undef);
-  }
-
-  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
-  // HACK: NVPTX doesn't support global destructors.
-  if (tc.getTarget().isGPU())
-    return success();
-
-  auto b = OpBuilder::atBlockBegin(module.getBody());
-  // Sort the constructor function indices. Lower priority is earlier.
-  SmallVector<unsigned> order =
-      llvm::to_vector(llvm::seq<unsigned>(0, priorities.size()));
-  llvm::sort(order, [&](unsigned lhs, unsigned rhs) {
-    return priorities[lhs] < priorities[rhs];
-  });
-
-  auto populateCalls = [&b](LLVM::LLVMFuncOp func,
-                            ArrayRef<FlatSymbolRefAttr> refs, auto order) {
-    b.createBlock(&func.getRegion());
-    for (unsigned i : order)
-      b.create<LLVM::CallOp>(func.getLoc(), TypeRange(),
-                             cast<FlatSymbolRefAttr>(refs[i]));
-    b.create<LLVM::ReturnOp>(func.getLoc(), ValueRange());
-  };
-
-  auto type =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(b.getContext()), {});
-  LLVM::LLVMFuncOp ctor =
-      createLLVMFunc(b, tc.getTarget(), module.getLoc(), globalCtorFnName, type,
-                     LLVM::Linkage::Weak);
-  LLVM::LLVMFuncOp dtor =
-      createLLVMFunc(b, tc.getTarget(), module.getLoc(), globalDtorFnName, type,
-                     LLVM::Linkage::Weak);
-  populateCalls(ctor, ctors, order);
-  populateCalls(dtor, dtors, llvm::reverse(order));
-
-  // Create the `llvm.mlir.global_ctors` and `llvm.mlir.global_dtors`, where
-  // each just invokes the respective functions we generated.
-  b.setInsertionPointToStart(module.getBody());
-  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr({b.getI32IntegerAttr(0)});
-  // if the associated data is not `#llvm.zero`, functions are only run if the
-  // data is not discarded. If the data is discarded, the functions are not
-  // executed.
-  mlir::ArrayAttr dataListAttr =
-      b.getArrayAttr({mlir::LLVM::ZeroAttr::get(module.getContext())});
-  b.create<LLVM::GlobalCtorsOp>(
-      module.getLoc(),
-      b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalCtorFnName))),
-      prioritiesAttr, dataListAttr);
-  b.create<LLVM::GlobalDtorsOp>(
-      module.getLoc(),
-      b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalDtorFnName))),
-      prioritiesAttr, dataListAttr);
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1352,11 +1228,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
       StringAttr::get(&getContext(), targetInfo.getDataLayout().toString()));
   moduleAttrs.erase(EnvAttr::getEnvAttrName());
   theModule->setAttrs(moduleAttrs.getDictionary(&getContext()));
-
-  // Convert global ops and generator global constructors and destructors.
-  if (failed(convertGlobals(theModule, typeConverter, globalCtorFnName,
-                            globalDtorFnName)))
-    return signalPassFailure();
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

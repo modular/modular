@@ -329,8 +329,7 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   }
 
   llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
-      .Case<FnOp, GlobalVarDeclOp>(
-          [aliasName](auto op) { op.setLinkageName(aliasName); });
+      .Case([aliasName](FnOp op) { op.setLinkageName(aliasName); });
   if (isCExport)
     itf.setCExported();
   else
@@ -1822,84 +1821,6 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     }
   }
 
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// GlobalVarDecl implementation
-//===----------------------------------------------------------------------===//
-
-LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
-                                             ASTDecl &decl) {
-  ParserBase p(shared, lexer);
-  auto decoratorExprs = p.parseDecorators(decl);
-  rejectDecorators(decoratorExprs, decl, shared);
-
-  // Re-parse the preamble. The syntax should have been checked already.
-  if (!p.consumeIf(Token::kw_var)) {
-    return shared.emitError(
-        decl.getLoc(), "internal error: should be checked by statement parser");
-  }
-  StringAttr name;
-  SMLoc identifierLoc;
-  if (p.parseIdentifier(name,
-                        "internal error: should be checked by statement parser",
-                        &identifierLoc))
-    return failure();
-
-  // Parse the type if present.
-  ASTType parsedType;
-  IREmitter emitter(*decl.getParentDecl(), EC_VarInit);
-  if (p.consumeIf(Token::colon)) {
-    ExprNode *typeExpr = nullptr;
-    if (p.parseExpression(typeExpr, decl.getIndentation()))
-      return failure();
-    parsedType = emitter.emitExprType(typeExpr);
-    if (!parsedType)
-      return failure();
-  }
-
-  // Global variables require an initializer.
-  ExprNode *initExpr = nullptr;
-  if (p.parseToken(Token::equal, "expected '=' in global variable") ||
-      p.parseVarInitExpression(initExpr, decl.getIndentation()))
-    return failure();
-
-  // Emit the initializer into an initializer function. If we have a type, then
-  // emit directly into the LValue. Otherwise emit into the global to infer its
-  // type.
-  if (parsedType)
-    op.setType(parsedType);
-  // If we don't, we emit into the varOp itself, because this will infer the
-  // type of the varOp from the initializer expression.
-  ValueDest dest(op, EC_VarInit);
-
-  op.getCtor().push_back(new Block);
-  emitter.builder = OpBuilder::atBlockBegin(&op.getCtor().front());
-  if (!emitter.emitExpr(initExpr, dest))
-    return failure();
-
-  assert(!isa<UnresolvedType>(op.getType()) &&
-         "RValue emission should have inferred var type");
-
-  // Emit the destructor call, if present, into the destructor function.
-  op.getDtor().push_back(new Block());
-  if (shared.typeHasMember(ASTType(op.getType()), "__del__",
-                           initExpr->getLoc())) {
-    emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
-    MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
-    ValueDest dest(EC_Destructor);
-    (void)emitter.emitNamedMethodCall("__del__",
-                                      CallOperands({{owned, initExpr}}), dest,
-                                      CallSyntax::kDestructor, initExpr);
-  }
-
-  shared.notifyListenerOnVariableDecl(decl, identifierLoc);
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
-                                      ASTDecl &decl) {
   return success();
 }
 

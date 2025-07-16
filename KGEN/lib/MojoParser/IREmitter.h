@@ -153,7 +153,6 @@ public:
   ValueDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
   ValueDest(VarDeclOp dest, ExprContext context);
-  ValueDest(GlobalVarDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
       : representation(requiredType), context(context) {
     if (!requiredType)

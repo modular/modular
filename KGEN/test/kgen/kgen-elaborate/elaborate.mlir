@@ -1219,21 +1219,6 @@ kgen.generator export @main() {
 
 // -----
 
-// CHECK: kgen.global @global_var : f32 [@global_init, @global_dtor](0)
-kgen.global @global_var : f32 [@global_init, @global_dtor](0)
-
-// CHECK: kgen.func @global_init
-kgen.generator @global_init() {
-  kgen.return
-}
-
-// CHECK: kgen.func @global_dtor
-kgen.generator @global_dtor() {
-  kgen.return
-}
-
-// -----
-
 // CHECK-LABEL: kgen.func @preelaborated()
 kgen.func @preelaborated() {
   // CHECK-NEXT: kgen.return

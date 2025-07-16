@@ -1141,7 +1141,7 @@ alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 top_level_func_param[a]()
 
-# expected-warning @below {{global vars are deprecated; they are known-broken}}
+# expected-error @below {{global vars are not supported}}
 var globalVar = 1
 
 ##===----------------------------------------------------------------------===##

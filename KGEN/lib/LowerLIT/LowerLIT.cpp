@@ -343,16 +343,6 @@ void LITLowerer::lowerLITOps(FnOp func) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getResult());
     } else if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
       HLCF::replaceElifWithIfOps(elifOp);
-    } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
-      Value newAddr = b.create<GlobalAddressOp>(
-          op->getLoc(), globalRefOp.getType().getAsPointerType(),
-          globalRefOp.getGlobal());
-
-      // Replace !lit.ref result type with a cast from the pointer.  This will
-      // get squashed by LowerLITTypes.
-      b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
-          globalRefOp, ArrayRef<Type>(globalRefOp.getType()), newAddr);
-
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     } else if (auto closureInit = dyn_cast<LIT::ClosureInitOp>(op)) {
@@ -692,13 +682,6 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
                   op->erase();
                   return mlir::success();
                 })
-            .Case([&](GlobalOp op) {
-              flattenAndRenameSymbol(op, symbolTable, opSymTableIt);
-              if (StringAttr linkageName =
-                      renamedSymbols.lookup(op.getSymNameAttr()))
-                op.setSymNameAttr(linkageName);
-              return mlir::success();
-            })
             .Case([&](mlir::SymbolOpInterface symbol) {
               flattenAndRenameSymbol(symbol, symbolTable, opSymTableIt);
               return mlir::success();
@@ -873,158 +856,6 @@ static void lowerAttributesAndTypes(
 }
 
 //===----------------------------------------------------------------------===//
-// Global Variables
-//===----------------------------------------------------------------------===//
-
-/// Global variables have initializers that can reference other global
-/// variables. This function will pass over all global variable declarations and
-/// determine an initialization order based on the reference graph between
-/// global variables in their initializers. It is not possible for the parser to
-/// generate global variables that reference each other in a cycle.
-static LogicalResult
-orderAndLowerGlobalVariables(ModuleOp module,
-                             DenseMap<StringAttr, StringAttr> &renamedSymbols,
-                             llvm::dwarf::SourceLanguage debugInfoLanguage) {
-  struct GlobalRefNode {
-    unsigned numRefs = 0;
-    unsigned numReady = 0;
-    SmallVector<GlobalRefNode *> refdBy;
-    GlobalVarDeclOp op = nullptr;
-  };
-
-  DenseMap<SymbolRefAttr, std::unique_ptr<GlobalRefNode>> state;
-  auto getOrCreate = [&](SymbolRefAttr ref) -> GlobalRefNode & {
-    std::unique_ptr<GlobalRefNode> &cur = state[ref];
-    if (!cur)
-      cur = std::make_unique<GlobalRefNode>();
-    return *cur;
-  };
-
-  module.walk([&](Operation *op) {
-    if (auto global = dyn_cast<GlobalVarDeclOp>(op)) {
-      // Ensure a node has been created for this global.
-      SymbolRefAttr symbol = getFullyResolvedSymbolRef(global);
-      GlobalRefNode &cur = getOrCreate(symbol);
-      cur.op = global;
-      // Find references to other globals.
-      global.walk([&](GlobalVarRefOp ref) {
-        // Global variables are allowed to reference themselves.
-        if (ref.getGlobal() == symbol)
-          return;
-        GlobalRefNode &refNode = getOrCreate(ref.getGlobal());
-        ++cur.numRefs;
-        refNode.refdBy.push_back(&cur);
-      });
-      // No global variable declarations inside the bodies.
-      return WalkResult::skip();
-    }
-
-    // Skip over the bodies of operations where global variables cannot exist.
-    if (isa<LIT::StructDeclOp, FnOp>(op))
-      return WalkResult::skip();
-    return WalkResult::advance();
-  });
-
-  // Process nodes breadth-first.
-  std::deque<GlobalRefNode *> queue;
-  uint32_t initOrder = 0;
-  for (auto &[_, node] : state)
-    if (node->numRefs == node->numReady)
-      queue.push_back(node.get());
-
-  while (!queue.empty()) {
-    GlobalRefNode *node = queue.front();
-    queue.pop_front();
-
-    GlobalVarDeclOp op = node->op;
-    IRRewriter b{OpBuilder(op)};
-    MLIRContext *ctx = op.getContext();
-
-    // Prepare locations and names for outlining the constructor and destructor.
-    StringRef name = op.getSymName();
-    auto ctorName = b.getStringAttr("(ctor_fn)" + name);
-    auto dtorName = b.getStringAttr("(dtor_fn)" + name);
-    Location ctorLoc = op->getLoc();
-    Location dtorLoc = op->getLoc();
-    if (DebugInfo::DIScopeAttr scope = op.getLocScope()) {
-      // GlobalVarDeclOp either has a file scope or no scope.
-      auto fileAttr = cast<DebugInfo::DIFileAttr>(scope);
-
-      DebugInfo::DIBuilder dib(ctx);
-      dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
-                                /*isOptimized=*/true,
-                                DebugInfo::EmissionKind::Full);
-
-      // We set the scoped location for the outlined methods.
-      auto spType = DebugInfo::DISubroutineType::get(ctx, {}, {});
-      auto fileLoc = op->getLoc()->findInstanceOf<FileLineColLoc>();
-      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
-      auto getXtorLoc = [&](StringAttr xtorName) {
-        guard = dib.pushSubprogram(
-            DebugInfo::SourceNameAttr::get(xtorName), xtorName, fileAttr,
-            fileLoc.getLine(), fileLoc.getLine(),
-            DebugInfo::SubprogramFlags::Definition, spType);
-        return dib.createScopedLoc(fileLoc);
-      };
-      ctorLoc = getXtorLoc(ctorName);
-      dtorLoc = getXtorLoc(dtorName);
-    }
-
-    // Outline the constructor and destructor into functions.
-    auto sig = LITGeneratorType::get(
-        /*inputParamTypes=*/{},
-        FnType::get(b.getContext(), /*inputs=*/TypeRange{},
-                    /*results=*/TypeRange{},
-                    /*numImplicitOriginDecls=*/0),
-        PogListAttr::get(b.getContext()));
-    auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
-      b.setInsertionPoint(op);
-      auto fn = b.create<FnOp>(xtorLoc, xtorName, StringAttr(), sig);
-      fn.getBodyRegion().takeBody(body);
-
-      // If we have a debuginfo scope available, we update the ops in the body.
-      if (auto sp = fn.getSubprogramScope()) {
-        fn.getBodyRegion().walk([&](Operation *op) {
-          op->setLoc(mlir::FusedLoc::get(
-              ctx, {op->getLoc()->findInstanceOf<FileLineColLoc>()}, sp));
-        });
-      }
-      b.setInsertionPointToEnd(fn.getBody());
-      b.create<KGEN::ReturnOp>(xtorLoc);
-      return fn;
-    };
-    FnOp ctorFn = makeXtor(ctorLoc, ctorName, op.getCtor());
-    FnOp dtorFn = makeXtor(dtorLoc, dtorName, op.getDtor());
-
-    // If the global had a linkage name, make sure it gets renamed.
-    StringAttr linkageName = op.getLinkageNameAttr();
-    if (linkageName) {
-      renamedSymbols.try_emplace(b.getStringAttr(getFlattenedSymbolName(
-                                     getFullyResolvedSymbolRef(op))),
-                                 linkageName);
-    }
-
-    // Replace the `lit.globalvar.decl` operation with a `kgen.global`.
-    b.setInsertionPoint(op);
-    b.replaceOpWithNewOp<GlobalOp>(
-        op, name, op.getType(), b.getI32IntegerAttr(initOrder++),
-        getFullyResolvedSymbolRef(ctorFn), getFullyResolvedSymbolRef(dtorFn),
-        op.getExportKind());
-
-    for (GlobalRefNode *refdBy : node->refdBy)
-      if (++refdBy->numReady == refdBy->numRefs)
-        queue.push_back(refdBy);
-  }
-
-  if (initOrder != state.size()) {
-    return mlir::emitError(
-        module.getLoc(),
-        "cyclic dependencies between global variables in 'lower-lit' pass");
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
 
@@ -1041,12 +872,6 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
 
     {
       DenseMap<StringAttr, StringAttr> renamedSymbols;
-      if (failed(orderAndLowerGlobalVariables(
-              module, renamedSymbols,
-              static_cast<llvm::dwarf::SourceLanguage>(
-                  debugInfoLanguage.getValue()))))
-        return signalPassFailure();
-
       SingletonTypeHelper singletonTypeHelper(
           module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab.getTopLevelSymbolTable(), renamedSymbols,

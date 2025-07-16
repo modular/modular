@@ -120,8 +120,7 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   if (!decl->getIfOperation())
     return {};
   return TypeSwitch<Operation &, MojoASTTypeRef>(*decl->getIfOperation())
-      .Case<GlobalVarDeclOp, VarDeclOp>(
-          [&](auto op) { return MojoASTTypeRef(op.getType()); })
+      .Case([&](VarDeclOp op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FnOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
       .Case([&](TraitDeclOp op) { return decl->computeSelfTypeForTrait(op); })
@@ -133,7 +132,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     if (!op)
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
-        .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarDeclOp>(
+        .Case<StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
         .Case([](FnOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
@@ -258,9 +257,6 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
       // Otherwise, this is a regular variable.
       return createPublicDecl<ResultType, PublicVariableDecl>(*this);
     }
-
-    if (isa<GlobalVarDeclOp>(declOp))
-      return createPublicDecl<ResultType, PublicVariableDecl>(*this);
 
     if (isa<PackageOp>(declOp))
       return createPublicDecl<ResultType, PublicPackageDecl>(*this);

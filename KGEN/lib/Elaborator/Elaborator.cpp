@@ -2723,19 +2723,10 @@ public:
     // generators, then elaborate anything with no input parameters.
     llvm::SetVector<std::pair<GeneratorOp, ParameterExprArrayAttr>> roots;
     auto emptyParams = ParameterExprArrayAttr::get(&getContext(), {});
-    auto addAsRoot = [&](SymbolRefAttr ref,
-                         ParameterExprArrayAttr params = {}) {
-      if (GeneratorOp gen = symtab.lookup<GeneratorOp>(ref.getLeafReference()))
-        roots.insert({gen, params});
-    };
     for (Operation &op : theModule.getOps()) {
       if (auto gen = dyn_cast<GeneratorOp>(op);
           gen && gen.isExported() && gen.getInputParams().empty()) {
         roots.insert({gen, emptyParams});
-      } else if (auto global = dyn_cast<GlobalOp>(op);
-                 global && global.getCtor()) {
-        addAsRoot(*global.getCtor(), emptyParams);
-        addAsRoot(*global.getDtor(), emptyParams);
       }
     }
 

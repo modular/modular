@@ -1518,10 +1518,6 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                 return failure();
               return mlir::success();
             })
-            .Case([&](GlobalVarDeclOp varDecl) {
-              refWalker.walk(varDecl.getType());
-              return mlir::success();
-            })
             .Case([&](AliasDeclOp aliasDecl) {
               refWalker.walk(aliasDecl.getType());
               if (TypedAttr value = aliasDecl.getValueAttr())
@@ -1644,9 +1640,6 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                                  op.getParamDecl().getName())));
           })
           .Case([&](StructFieldOp op) { addDeclForOp(op, op.getNameAttr()); })
-          .Case([&](GlobalVarDeclOp op) {
-            addDeclForOp(op, op.getSymNameAttr());
-          })
           .Case<FileModuleOp, PackageOp>([&](auto op) {
             assert(packageState &&
                    "FileModule or Package nested in non-package");

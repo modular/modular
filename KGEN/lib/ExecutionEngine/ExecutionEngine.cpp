@@ -452,23 +452,15 @@ ErrorOrSuccess
 ExecutionEngine::runProgram(StringRef libName, StringRef entryPoint,
                             function_ref<ErrorOrSuccess(void *)> runFn) {
   using namespace llvm::orc;
-
-  ErrorOr<CompiledFunc> ctorResult = lookup(getGlobalCtorFnName());
-  if (failed(ctorResult))
-    return ctorResult.takeError();
-  ErrorOr<CompiledFunc> dtorResult = lookup(getGlobalDtorFnName());
-  if (failed(dtorResult))
-    return dtorResult.takeError();
+  // There is not global ctor/dtor in mojo.
 
   // Lookup the entry point symbol and directly invoke it rather than going
   // through the runtime.
   ErrorOr<CompiledFunc> mainFn = lookup(entryPoint);
   if (mainFn.isError())
     return mainFn.takeError();
-  ctorResult->invoke<void>();
   if (ErrorOrSuccess err = runFn(mainFn->getFunctionPointer()))
     return err.takeError();
-  dtorResult->invoke<void>();
   return success();
 }
 

@@ -470,7 +470,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   SymbolTable symbolTable(*module);
   ExportMap exportedSymbols;
   exportedSymbols.insert({StringAttr::get(module->getContext(), exprFnName),
-                          ExportedSymbol(ExportKind::Exported)});
+                          ExportKind::Exported});
   OwningOpRef<ModuleOp> sliceModule =
       produceStandaloneModule(symbolTable, exportedSymbols);
   auto bufferOr = impl->objCompiler->emitArchive(std::move(sliceModule));
@@ -526,7 +526,7 @@ Status MojoExpressionParser::prepareForExecution(
   ExportMap exportedSymbols;
   exportedSymbols.insert(
       {StringAttr::get(mlirModule->getContext(), functionName.GetStringRef()),
-       ExportedSymbol(ExportKind::Exported)});
+       ExportKind::Exported});
   executionUnit = std::make_shared<JITExecutionUnit>(
       symbolTable, exportedSymbols, std::move(impl->object), functionName,
       exeCtx.GetTargetSP(), sc, features);

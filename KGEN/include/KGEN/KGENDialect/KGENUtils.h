@@ -23,19 +23,8 @@ namespace M::KGEN {
 class DeclInterface;
 class FuncInterface;
 
-/// This struct represents the data for an exported symbol.
-struct ExportedSymbol {
-  ExportedSymbol(ExportKind kind, bool isData = false)
-      : kind(kind), isData(isData) {}
-
-  /// The export kind of the symbol.
-  ExportKind kind;
-  /// True if the symbol is a global variable.
-  bool isData;
-};
-
 /// This type is a bit of a mouthful, add a useful alias for it.
-using ExportMap = llvm::MapVector<StringAttr, ExportedSymbol>;
+using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
 
 /// Given a module operation, return its exported symbols and aliases.
 ExportMap getExportedSymbols(ModuleOp module);

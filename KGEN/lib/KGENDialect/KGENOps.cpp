@@ -1239,55 +1239,6 @@ Type CreateRegStubOp::getCalleeArgType(unsigned index) {
 }
 
 //===----------------------------------------------------------------------===//
-// GlobalOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult GlobalOp::verify() {
-  if (getCtor() || getDtor() || getPriority()) {
-    if (!getCtor() || !getDtor() || !getPriority()) {
-      return emitOpError("does not define all of the constructor, destructor, "
-                         "or priority values, if one of these values is "
-                         "defined, then all must be defined");
-    }
-  }
-  return success();
-}
-
-LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
-  auto module = (*this)->getParentOfType<ModuleOp>();
-  auto verifyFunc = [&](SymbolRefAttr ref, StringRef name) -> LogicalResult {
-    auto func = symtab.lookupSymbolIn<mlir::FunctionOpInterface>(module, ref);
-    if (!func || func.getNumArguments() != 0) {
-      return emitOpError() << name << ' ' << ref
-                           << " does not reference a function with zero "
-                              "arguments and zero results";
-    }
-    return success();
-  };
-  if (!getCtor() || !getDtor())
-    return success();
-  if (failed(verifyFunc(*getCtor(), "constructor")) ||
-      failed(verifyFunc(*getDtor(), "destructor")))
-    return failure();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// GlobalAddressOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
-  auto global = symtab.lookupSymbolIn<GlobalOp>(
-      (*this)->getParentOfType<ModuleOp>(), getGlobal());
-  if (!global)
-    return emitOpError("does not reference a `pop.global` operation");
-  if (global.getType() != getResult().getType().getElementType())
-    return emitOpError("result type does not match global type ")
-           << global.getType();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // PackCreateOp
 //===----------------------------------------------------------------------===//
 

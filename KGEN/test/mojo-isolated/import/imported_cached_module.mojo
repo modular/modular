@@ -8,8 +8,6 @@
 
 alias StringLiteralAlias = __mlir_attr.`"foobar" : !kgen.string`
 
-var __global_variable = __mlir_attr.`1234 : index`
-
 
 # COM: AnyType stub to allow testing without builtins.
 trait AnyType:
