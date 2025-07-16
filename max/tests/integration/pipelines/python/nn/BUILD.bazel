@@ -91,6 +91,9 @@ modular_py_test(
     name = "nn_distributed_gpu_tests",
     size = "enormous",
     srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = ["gpu"],
     deps = [
