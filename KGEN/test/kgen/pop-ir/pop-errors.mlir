@@ -202,28 +202,6 @@ kgen.func @struct_gep_type(%a: !kgen.pointer<struct<(i32)>>) {
 
 // -----
 
-kgen.func @func() {
-  // expected-error @below {{'kgen.global.address' op does not reference a `pop.global` operation}}
-  kgen.global.address @func : <i32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_ctor() {
-  kgen.return
-}
-
-kgen.global @global_var : i32 [@global_ctor, @global_ctor](2)
-
-kgen.func @func() {
-  // expected-error @below {{'kgen.global.address' op result type does not match global type 'i32'}}
-  kgen.global.address @global_var : <i64>
-  kgen.return
-}
-
-// -----
-
 kgen.func @load_atomic(%p: !kgen.pointer<scalar<f32>>) {
   // expected-error @below {{invalid combination of volatile or invariant with atomic load}}
   pop.load volatile<1> atomic acquire %p: !kgen.pointer<scalar<f32>>

@@ -667,7 +667,7 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
                                           IREmitter &emitter) {
   for (ASTDecl *decl : lookup.getIfSuccess()) {
     // If this contains anything mutable, return false.
-    if (isa_and_nonnull<VarDeclOp, GlobalVarDeclOp>(decl->getIfOperation()) ||
+    if (isa_and_nonnull<VarDeclOp>(decl->getIfOperation()) ||
         decl->getIfIRValue().getIfLValue())
       return false;
 
@@ -937,17 +937,6 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           emitter.builder->create<RefLoadOp>(expr->getLocation(emitter), var);
       value = CValue::getMValueForRef(ref);
     }
-  } else if (auto globalOp =
-                 dyn_cast_or_null<GlobalVarDeclOp>(decl.getIfOperation())) {
-    // If this is a parameter context then we cannot return a dynamic field.
-    if (!emitter.builder) {
-      emitter.emitErrorForDynamicValueInParameter(expr);
-      return {};
-    }
-    // Return a mutable value only if the global variable is mutable.
-    auto ref = emitter.builder->create<GlobalVarRefOp>(
-        expr->getLocation(emitter), globalOp);
-    value = MLValue(ref);
   } else if (auto cv = decl.getIfIRValue()) {
     value = cv;
   } else {

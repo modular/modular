@@ -12,9 +12,7 @@ using namespace KGEN;
 
 llvm::JITSymbolFlags
 KGEN::getFlagsForExportedSymbol(const ExportedSymbol &symbol) {
-  return (symbol.isData ? llvm::JITSymbolFlags::None
-                        : llvm::JITSymbolFlags::Callable) |
-         llvm::JITSymbolFlags::Exported;
+  return llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported;
 }
 
 llvm::JITSymbolFlags KGEN::getGlobalFnSymbolFlags() {

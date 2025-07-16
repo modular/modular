@@ -259,28 +259,6 @@ kgen.func @call_empty_thing(%arg0: !kgen.generator<() -> !kgen.struct<()>>) -> !
 // -----
 
 module {
-  // CHECK-LABEL: kgen.global @func : !kgen.generator<(!kgen.pointer<none>) -> ()> [@func1, @func2](1)
-  // CHECK-NEXT:  kgen.func @test(%arg0: !kgen.generator<(!kgen.pointer<none>) -> ()>) {
-  // CHECK-NEXT:     %0 = kgen.global.address @func : <(!kgen.pointer<none>) -> ()>
-  // CHECK-NEXT:     pop.store %arg0, %0 : !kgen.pointer<(!kgen.pointer<none>) -> ()>
-  kgen.global @func : !kgen.generator<(!kgen.pointer<none>) -> !kgen.none> [@func1, @func2](1)
-  kgen.func @test(%arg0 : !kgen.generator<(!kgen.pointer<none>) -> !kgen.none>) {
-    %0 = kgen.global.address @"func" : <(!kgen.pointer<none>) -> !kgen.none>
-    pop.store %arg0, %0 : !kgen.pointer<(!kgen.pointer<none>) -> !kgen.none>
-    kgen.return
-  }
-
-  kgen.func @func1() {
-    kgen.return
-  }
-  kgen.func @func2() {
-    kgen.return
-  }
-}
-
-// -----
-
-module {
   // CHECK: kgen.func @func1(%arg0: !kgen.none) always_inline_no_debug
   kgen.func @func1(%arg0: !kgen.none) -> !kgen.pack<[]> always_inline_no_debug {
     %0 = kgen.pack.create() : !kgen.pack<[]>

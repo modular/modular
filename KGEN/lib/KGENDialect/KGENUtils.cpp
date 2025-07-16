@@ -2168,12 +2168,10 @@ LogicalResult KGEN::verifyCallResults(Operation *op, ValueRange results,
 }
 
 ExportMap KGEN::getExportedSymbols(ModuleOp module) {
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
+  ExportMap exportedSymbols;
   for (auto op : module.getOps<ExportInterface>()) {
     if (op.isExported())
-      exportedSymbols.insert(
-          {op.getLinkageNameAttr(),
-           ExportedSymbol(op.getExportKind(), isa<GlobalOp>(*op))});
+      exportedSymbols.insert({op.getLinkageNameAttr(), op.getExportKind()});
   }
   return exportedSymbols;
 }

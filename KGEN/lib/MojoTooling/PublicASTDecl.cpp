@@ -626,10 +626,6 @@ PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarDeclOp op) {
         type = declRef.getType().getReferenceElementType().getAsString(shared);
-      })
-      .Case([&](GlobalVarDeclOp op) {
-        type = declRef.getType().getAsString(shared);
-        isGlobalVariable = true;
       });
 }
 

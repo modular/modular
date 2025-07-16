@@ -153,9 +153,6 @@ const char *LIT::getContextMessage(ExprContext context) {
 ValueDest::ValueDest(VarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
-ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
-    : representation(dest.getOperation()), context(context) {}
-
 void ValueDest::dump() const { llvm::errs() << *this; }
 
 [[maybe_unused]] raw_ostream &LIT::operator<<(raw_ostream &os,
@@ -189,18 +186,8 @@ void ValueDest::dump() const { llvm::errs() << *this; }
 
 /// If this indicates an explicit expected RValue type, return that type.
 ASTType ValueDest::getExpectedTypeIfSpecified() const {
-  // Operations generally don't have implied types, except if this is global
-  // variable declaration.
-  if (auto op = dyn_cast<Operation *>(representation)) {
-    if (auto globalVarDecl = dyn_cast<GlobalVarDeclOp>(*op)) {
-      if (!isa<UnresolvedType>(globalVarDecl.getType()))
-        return globalVarDecl.getType();
-    }
-    return {};
-  }
-
   // These have no implied type.
-  if (isa<NullRepresentation, LValueBufferTaken, const ExprNode *>(
+  if (isa<NullRepresentation, LValueBufferTaken, Operation *, const ExprNode *>(
           representation))
     return {};
 
@@ -255,19 +242,8 @@ void ValueDest::resetForError(IREmitter &emitter) {
 /// into an LValue to store to.
 ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
                                       IREmitter &emitter) {
-  // Operations generally don't have implied types, except if this is global
-  // variable declaration.
-  if (auto op = dyn_cast<Operation *>(representation)) {
-    if (auto globalVarDecl = dyn_cast<GlobalVarDeclOp>(*op)) {
-      if (isa<UnresolvedType>(globalVarDecl.getType()))
-        return existingValueType;
-      return globalVarDecl.getType();
-    }
-    return {};
-  }
-
   // These have no implied type.
-  if (isa<NullRepresentation, LValueBufferTaken>(representation))
+  if (isa<NullRepresentation, LValueBufferTaken, Operation *>(representation))
     return {};
 
   // If we just have a contextual type, return it.
@@ -395,12 +371,6 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       varOp.getResult().setType(
           varOp.getType().getWithElement(materializedType));
       typedRef = varOp.getResult();
-    } else {
-      auto globalOp = cast<GlobalVarDeclOp>(opDest);
-      if (isa<UnresolvedType>(globalOp.getType()))
-        globalOp.setType(materializedType);
-      typedRef = emitter.builder->create<GlobalVarRefOp>(
-          emitter.translateLocation(loc), globalOp);
     }
     // Now that we inferred the 'var' type, we can treat this like a normal
     // MLValue.

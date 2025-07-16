@@ -27,22 +27,6 @@ lit.struct.decl @Foo {
 // CHECK: bar.mlir:10:5: error: 'lit.struct.decl' op must have file scope in location, but got #debuginfo.compile_unit
 } loc(fused<#compile_unit>[#loc])
 
-// -----
-
-#file = #debuginfo.file<"bar.mlir" in "">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_Mojo,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#loc = loc("bar.mlir":12:7)
-
-// CHECK: bar.mlir:12:7: error: 'lit.globalvar.decl' op must have file scope in location, but got #debuginfo.compile_unit
-lit.globalvar.decl @foo : index {
-}, {
-} loc(fused<#compile_unit>[#loc])
 
 // -----
 

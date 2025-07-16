@@ -33,7 +33,6 @@ class PackageOp;
 class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
-class GlobalVarDeclOp;
 class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
@@ -273,9 +272,6 @@ private:
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(GlobalVarDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
 

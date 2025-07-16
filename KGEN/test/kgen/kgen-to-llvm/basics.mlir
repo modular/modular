@@ -156,44 +156,6 @@ kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
 
 // -----
 
-// CHECK-LABEL: module
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK: llvm.mlir.global_ctors ctors = [@kgenGlobalCtor], priorities = [0 : i32], data = [#llvm.zero]
-  // CHECK: llvm.mlir.global_dtors dtors = [@kgenGlobalDtor], priorities = [0 : i32], data = [#llvm.zero]
-
-  // CHECK: llvm.func weak @kgenGlobalCtor
-  // CHECK-NEXT: call @noop()
-  // CHECK-NEXT: call @foo_c()
-  // CHECK-NEXT: call @bar_c()
-
-  // CHECK: llvm.func weak @kgenGlobalDtor
-  // CHECK-NEXT: call @bar_d()
-  // CHECK-NEXT: call @foo_d()
-  // CHECK-NEXT: call @noop()
-
-  llvm.func @foo_c() {
-    llvm.return
-  }
-  llvm.func @foo_d() {
-    llvm.return
-  }
-  llvm.func @bar_c() {
-    llvm.return
-  }
-  llvm.func @bar_d() {
-    llvm.return
-  }
-  llvm.func @noop() {
-    llvm.return
-  }
-
-  kgen.global @foo : i32 [@foo_c, @foo_d](2)
-  kgen.global @bar : i64 [@bar_c, @bar_d](5)
-  kgen.global @exported : f32 [@noop, @noop](0)
-}
-
-// -----
-
 module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 // CHECK-LABEL: llvm.func @kernel() attributes {dso_local, nvvm.kernel
 kgen.func export @kernel() {

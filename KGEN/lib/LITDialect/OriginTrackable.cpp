@@ -54,16 +54,6 @@ OriginTrackable::OriginTrackable(Value v) {
     return;
   }
 
-  // Global variable references start and end initialized.
-  if (auto globalRef = v.getDefiningOp<GlobalVarRefOp>()) {
-    // FIXME: The global variable's name is attached to the symbol op.
-    name = StringAttr::get(v.getContext(), "(global variable)");
-    isIndirect = true;
-    startsUninit = false;
-    endInitState = EndsInit;
-    return;
-  }
-
   if (v.getDefiningOp<LoadConsumeOp>() ||
       v.getDefiningOp<ParamMaterializeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
@@ -514,11 +504,6 @@ OverallOpValueEffect LIT::getOperationEffects(
                                          : ResultEffect::memDefineInitToInit;
     }
     results.push_back(effect);
-    return {};
-  }
-
-  if (isa<GlobalVarRefOp>(op)) {
-    results.push_back(ResultEffect::memDefineInitToInit);
     return {};
   }
 

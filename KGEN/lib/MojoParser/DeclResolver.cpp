@@ -493,21 +493,22 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     if (auto declOp = decl.getIfOperation()) {
       TypeSwitch<Operation &>(*declOp)
-          .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, GlobalVarDeclOp,
-                AliasDeclOp>([&](auto op) {
-            Lexer lexer(shared.diags, decl.getCursor());
+          .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
+              [&](auto op) {
+                Lexer lexer(shared.diags, decl.getCursor());
 
-            // Generate pretty stack traces if a crash happens in this scope.
-            LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                             "resolving decl signature");
+                // Generate pretty stack traces if a crash happens in this
+                // scope.
+                LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                                 "resolving decl signature");
 
-            // Resolve the signature: on a parse error, we note that the decl
-            // is malformed and should not be referenced to silence downstream
-            // errors.
-            if (failed(resolveSignature(op, lexer, decl)))
-              decl.setErroneous();
-            decl.getCursor() = lexer.getCursor();
-          })
+                // Resolve the signature: on a parse error, we note that the
+                // decl is malformed and should not be referenced to silence
+                // downstream errors.
+                if (failed(resolveSignature(op, lexer, decl)))
+                  decl.setErroneous();
+                decl.getCursor() = lexer.getCursor();
+              })
           .Case<UnresolvedImportOp>([&](auto op) {
             // Resolve the signature: on a parse error, we note that the decl
             // is malformed and should not be referenced to silence downstream
@@ -596,7 +597,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     if (auto declOp = decl.getIfOperation()) {
       TypeSwitch<Operation &>(*declOp)
           .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
-                GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+                AliasDeclOp>([&](auto op) {
             // If this is a synthetic decl, complete it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
@@ -715,8 +716,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
         // allowlist the decls that we can safely ignore when unparsed.
         if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, UnresolvedImportOp,
                             UnresolvedWildcardImportOp, StructDeclOp,
-                            TraitDeclOp, AliasDeclOp, GlobalVarDeclOp>(
-                decl.getIfOperation())) {
+                            TraitDeclOp, AliasDeclOp>(decl.getIfOperation())) {
           deferredDecls.insert(&decl);
           continue;
         }

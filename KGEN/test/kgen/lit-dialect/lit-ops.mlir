@@ -425,26 +425,6 @@ lit.struct.decl @FuncParamStruct<c: !lit.generator<<type>(!kgen.param<*(0,0)>) -
 
 // -----
 
-lit.struct.decl @Error {}
-
-// CHECK-LABEL: lit.fn @throwing_func
-lit.fn @throwing_func() throws -> i1 {
-  %0 = kgen.param.constant: i1 = <0>
-  // CHECK: lit.error_return %0 : i1
-  lit.error_return %0 : i1
-}
-
-// CHECK: lit.globalvar.decl @global_var : !lit.struct<@Error> {
-lit.globalvar.decl @global_var : !lit.struct<@Error> {
-  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error, mut #lit.any.origin>
-  %0 = lit.globalvar.ref @global_var : <@Error, mut #lit.any.origin>
-// CHECK-NEXT: }, {
-}, {
-// CHECK-NEXT: }
-}
-
-// -----
-
 #file = #debuginfo.file<"foo.mlir" in "">
 #loc = loc("foo.mlir":7:8)
 

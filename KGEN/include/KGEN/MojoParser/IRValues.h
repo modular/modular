@@ -61,7 +61,6 @@ class OverloadSet;
 class FnOp;
 class ValueDest;
 class StructFieldOp;
-class GlobalVarDeclOp;
 class CallOperands;
 class AnyValue;
 

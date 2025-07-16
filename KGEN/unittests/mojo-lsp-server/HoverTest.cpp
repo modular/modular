@@ -421,28 +421,6 @@ Another Int param.
       .execute();
 }
 
-TEST(HoverTest, testGlobalVariables) {
-  Document doc("test:///foo.mojo", R"(
-var var_global_variable: Int = 345
-
-
-fn main():
-    var sum = var_global_variable
-)");
-  lsp::Range rangeGlobalVar = *doc.findFirstRange("var_global_variable");
-
-  createTestClient()
-      .open(doc)
-      .hover(doc, rangeGlobalVar.start,
-             [&](const lsp::Hover &hover) {
-               EXPECT_EQ(hover.range, rangeGlobalVar);
-               EXPECT_EQ(hover.contents.value, R"(```mojo
-(variable) var var_global_variable: Int
-```)");
-             })
-      .execute();
-}
-
 TEST(HoverTest, testHoverImport) {
   Document doc = createDocumentFromInputFileWithinPackage("imports.mojo");
 
@@ -727,33 +705,6 @@ TEST(HoverTest, testStructAliasHoverAndDef) {
                   [&](const std::vector<lsp::Location> &locations) {
                     ASSERT_EQ((int)locations.size(), 1);
                     EXPECT_EQ(locations[0].range, rangeAlias);
-                  })
-      .execute();
-}
-
-TEST(HoverTest, testGlobalVariableHoverAndDef) {
-  Document doc("test:///foo.mojo",
-               R"(
-var var_global_variable: Int = 345
-
-
-fn main():
-    var sum = let_global_variable + var_global_variable
-
-  )");
-
-  lsp::Range rangeGlobalVar = *doc.findFirstRange("var_global_variable");
-
-  createTestClient()
-      .open(doc)
-      .hover(doc, rangeGlobalVar.start,
-             [&](const lsp::Hover &hover) {
-               EXPECT_EQ(hover.range, rangeGlobalVar);
-             })
-      .definition(doc, rangeGlobalVar.start,
-                  [&](const std::vector<lsp::Location> &locations) {
-                    ASSERT_EQ((int)locations.size(), 1);
-                    EXPECT_EQ(locations[0].range, rangeGlobalVar);
                   })
       .execute();
 }

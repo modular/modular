@@ -56,7 +56,7 @@ bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
     return false;
   // Otherwise, check to see if this was marked explicitly to be hidden.
   return TypeSwitch<Operation *, bool>(decl.getIfOperation())
-      .Case<FnOp, GlobalVarDeclOp, StructDeclOp>(
+      .Case<FnOp, StructDeclOp>(
           [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
       .Default(false);
 }

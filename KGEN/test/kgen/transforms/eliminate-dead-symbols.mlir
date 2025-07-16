@@ -39,25 +39,3 @@ kgen.func @B() {
   kgen.call @A() : () -> ()
   kgen.return
 }
-
-// CHECK: @global_var_fn
-kgen.func @global_var_fn() {
-  kgen.return
-}
-
-// CHECK-NOT: @unused_global_fn
-kgen.func @unused_global_fn() {
-  kgen.return
-}
-
-// CHECK: kgen.global @global_var
-kgen.global @global_var : i32 [@global_var_fn, @global_var_fn](2)
-
-// CHECK-NOT: kgen.global @global_var
-kgen.global @unused_global : i64 [@unused_global_fn, @unused_global_fn](3)
-
-// CHECK: kgen.func export @anchor_global
-kgen.func export @anchor_global() {
-  kgen.global.address @global_var : <i32>
-  kgen.return
-}

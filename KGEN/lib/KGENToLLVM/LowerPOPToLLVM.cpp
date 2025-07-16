@@ -2091,7 +2091,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
   // These ops are handled by other passes.
   target.addLegalOp<GlobalAllocOp>();
   target.addLegalOp<GlobalConstantOp>();
-  target.addLegalOp<GlobalAddressOp>();
   target.addLegalOp<ExternalCallOp>();
   target.addLegalOp<ExternPointerSymbolOp>();
   target.addLegalOp<AlignedAllocOp>();

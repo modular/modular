@@ -126,7 +126,7 @@ M::produceStandaloneModule(const SymbolTable &symtab,
   IRMapping reusedMapping;
   DenseSet<ExportInterface> exported;
 
-  for (auto [sym, exportVal] : exportedSymbols) {
+  for (auto [sym, exportValKind] : exportedSymbols) {
     auto func = symtab.lookup<ExportInterface>(sym);
     assert(func && "Unknown exported symbol");
 
@@ -143,7 +143,7 @@ M::produceStandaloneModule(const SymbolTable &symtab,
       mapping.map(func.getOperation(), sliceFn.getOperation());
     }
     ExportKind kind = func.getExportKind();
-    sliceFn.setExportKind(kind == ExportKind::NotExported ? exportVal.kind
+    sliceFn.setExportKind(kind == ExportKind::NotExported ? exportValKind
                                                           : kind);
     exported.insert(sliceFn);
   }

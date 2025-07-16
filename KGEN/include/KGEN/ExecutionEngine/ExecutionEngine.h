@@ -65,8 +65,11 @@ public:
   /// Invoke this func. This has exactly the signature the compiled func
   /// does. Intended to have perfect forwarding of arguments into the
   /// function, and of return values from the function.
+  ///
+  /// Disable ubsan function type check here because the function pointer might
+  /// be jitted without ubsan, thus does not contain RTTI for ubsan to look up.
   template <typename ReturnT, typename... Args>
-  ReturnT invoke(Args... args) {
+  __attribute__((no_sanitize("function"))) ReturnT invoke(Args... args) {
     // Cast the function pointer and invoke it directly.
     return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
   }
