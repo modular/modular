@@ -16,10 +16,6 @@ modular_py_test(
     name = "unittests",
     srcs = glob(["tests/**/*.py"]),
     args = ["--doctest-modules"],
-    env = {
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-    },
-    tags = ["requires-network"],
     deps = [
         ":support",
     ],
