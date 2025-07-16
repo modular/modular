@@ -11,15 +11,19 @@ import pytest
 from max.interfaces import PipelineTask, TextGenerationResponse
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
+from max.pipelines.lib import PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import batch_config_from_pipeline_config
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.telemetry.common import configure_metrics
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self.max_batch_size = 1
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -39,13 +43,12 @@ def echo_factory():
 
 @pytest.fixture()
 def echo_app():
-    pipeline_config = TokenGeneratorSchedulerConfig.no_cache(batch_size=1)
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=echo_factory,
-        pipeline_config=pipeline_config,
+        pipeline_config=MockPipelineConfig(),
         tokenizer=tokenizer,
     )
 
@@ -80,14 +83,10 @@ def app(pipeline_config, settings_config):  # noqa: ANN001
         pipeline_config, task=pipeline_task
     )
 
-    pipeline_batch_config = batch_config_from_pipeline_config(
-        pipeline_config, pipeline_task
-    )
-
     serving_settings = ServingTokenGeneratorSettings(
         model_name=pipeline_config.model_config.model_path,
         model_factory=pipeline_factory,
-        pipeline_config=pipeline_batch_config,
+        pipeline_config=pipeline_config,
         tokenizer=tokenizer,
     )
 
