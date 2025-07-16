@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_python_binding_py_library")
+load("//bazel:api.bzl", "copy_files", "modular_py_library")
 
 copy_files(
     name = "ir_py",
@@ -6,10 +6,10 @@ copy_files(
     outs = ["ir.py"],
 )
 
-modular_python_binding_py_library(
+modular_py_library(
     name = "_mlir_nanobind",
     srcs = [],
-    bindings_data = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir"],
+    data = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir"],
     visibility = ["//visibility:public"],
 )
 
