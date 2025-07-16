@@ -8,7 +8,7 @@
 import time
 
 import pytest
-from max.interfaces import TokenGenerator
+from max.interfaces import PipelineTask, TokenGenerator
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
@@ -37,6 +37,7 @@ async def test_model_worker_propagates_exception() -> None:
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
+            pipeline_task=PipelineTask.TEXT_GENERATION,
         ):
             raise AssertionError
 
@@ -74,6 +75,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
+            pipeline_task=PipelineTask.TEXT_GENERATION,
         ):
             pass
 
@@ -106,5 +108,6 @@ async def test_model_worker_start_timeout() -> None:
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
+            pipeline_task=PipelineTask.TEXT_GENERATION,
         ):
             pass
