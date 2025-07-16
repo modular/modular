@@ -9,7 +9,7 @@
 import enum
 import inspect
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any, Union, overload
 
 import max._core.driver
@@ -49,11 +49,6 @@ class TensorSpec:
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
-
-class TensorData:
-    def __init__(
-        self, ptr: int, shape: Sequence[int], dtype: max._core.dtype.DType
-    ) -> None: ...
 
 class MojoValue:
     pass
