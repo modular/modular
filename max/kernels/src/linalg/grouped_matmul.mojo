@@ -104,6 +104,7 @@ fn naive_grouped_matmul[
     b_shape: DimList, //,
     *,
     transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
@@ -124,6 +125,7 @@ fn naive_grouped_matmul[
             a_shape,
             b_type,
             b_shape,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
     ](
         c,
@@ -147,6 +149,8 @@ fn naive_grouped_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
+    *,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
@@ -182,8 +186,15 @@ fn naive_grouped_matmul_kernel[
             * b_by_expert[n * K + k].cast[accum_type]()
         )
 
-    c_by_expert = c.data + a_start_row * N
-    c_by_expert[m * N + n] = accum.cast[c_type]()
+    @parameter
+    if elementwise_lambda_fn:
+        alias elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1](
+            Index(a_start_row + m, n), accum.cast[c_type]()
+        )
+    else:
+        c_by_expert = c.data + a_start_row * N
+        c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -671,6 +682,7 @@ fn grouped_matmul[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList, //,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
@@ -688,7 +700,7 @@ fn grouped_matmul[
 
     @parameter
     if is_sm90_kernel_applicable:
-        grouped_matmul_sm90(
+        grouped_matmul_sm90[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
             a,
             a_offsets,
@@ -699,7 +711,7 @@ fn grouped_matmul[
             ctx,
         )
     else:
-        naive_grouped_matmul(
+        naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
             a,
             b,

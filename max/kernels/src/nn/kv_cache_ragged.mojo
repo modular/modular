@@ -27,6 +27,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
+from linalg.grouped_matmul import grouped_matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -2500,6 +2501,320 @@ fn generic_cross_attention_kv_cache[
             output,
             context,
         )
+
+
+# ===-----------------------------------------------------------------------=== #
+
+# Unfused K or V cache grouped matmul (ragged)
+# ===-----------------------------------------------------------------------=== #
+
+
+fn k_grouped_matmul_ragged_paged[
+    dtype: DType,
+    target: StaticString,
+](
+    a: NDBuffer[dtype, 2, _, _],
+    b: NDBuffer[dtype, 3, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    ids: NDBuffer[DType.uint32, 1, *_],
+    max_seq_len: Int,
+    active_ids: Int,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a matmul, writing the output into a mutable PagedKVCacheCollection object.
+
+    NOTE:
+        This function is a additive against the KV cache and not a typical
+        store operation.
+
+    Args:
+        a: Input tensor with shape (sum(seq_lens), input_dim).
+        b: Weight tensor with shape (num_experts, output_dim, input_dim).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        ids: Expert IDs tensor.
+        max_seq_len: Maximum sequence length per expert.
+        active_ids: Number of active experts.
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("a", a),
+            trace_arg("b", b),
+            "layer_idx=" + String(layer_idx),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.k_grouped_matmul.ragged.paged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _grouped_matmul_k_cache_ragged[dtype, target,](
+            a,
+            b,
+            input_row_offsets,
+            ids,
+            max_seq_len,
+            active_ids,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@always_inline
+fn _grouped_matmul_k_cache_ragged[
+    dtype: DType,
+    target: StaticString,
+](
+    a: NDBuffer[dtype, 2, _, _],
+    b: NDBuffer[dtype, 3, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    ids: NDBuffer[DType.uint32, 1, *_],
+    max_seq_len: Int,
+    active_ids: Int,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    context: DeviceContextPtr,
+) raises:
+    """Helper for performing grouped matmul with k cache from KVCacheCollection.
+
+    Args:
+        a: Input tensor.
+        b: Weight tensor with shape (num_experts, N, K).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+        ids: Expert IDs.
+        max_seq_len: Maximum sequence length per expert.
+        active_ids: Number of active experts.
+        kv_collection: The KV cache collection.
+        layer_idx: The layer index.
+        context: Device context pointer.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+
+    @parameter
+    if is_gpu[target]():
+        cuda_ctx = context.get_device_context()
+
+    _grouped_matmul_cache_ragged_impl[dtype, __type_of(k_cache)](
+        k_cache,
+        a,
+        b,
+        input_row_offsets,
+        ids,
+        max_seq_len,
+        active_ids,
+        cuda_ctx,
+    )
+
+
+fn v_grouped_matmul_ragged_paged[
+    dtype: DType,
+    target: StaticString,
+](
+    a: NDBuffer[dtype, 2, _, _],
+    b: NDBuffer[dtype, 3, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    ids: NDBuffer[DType.uint32, 1, *_],
+    max_seq_len: Int,
+    active_ids: Int,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a matmul, writing the output into a mutable PagedKVCacheCollection object.
+
+    NOTE:
+        This function is a additive against the KV cache and not a typical
+        store operation.
+
+    Args:
+        a: Input tensor with shape (sum(seq_lens), input_dim).
+        b: Weight tensor with shape (num_experts, output_dim, input_dim).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        ids: Expert IDs tensor.
+        max_seq_len: Maximum sequence length per expert.
+        active_ids: Number of active experts.
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("a", a),
+            trace_arg("b", b),
+            "layer_idx=" + String(layer_idx),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.v_grouped_matmul.ragged.paged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _grouped_matmul_v_cache_ragged[dtype, target=target,](
+            a,
+            b,
+            input_row_offsets,
+            ids,
+            max_seq_len,
+            active_ids,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@always_inline
+fn _grouped_matmul_v_cache_ragged[
+    dtype: DType,
+    *,
+    target: StaticString,
+](
+    a: NDBuffer[dtype, 2, _, _],
+    b: NDBuffer[dtype, 3, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    ids: NDBuffer[DType.uint32, 1, *_],
+    max_seq_len: Int,
+    active_ids: Int,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    context: DeviceContextPtr,
+) raises:
+    """Helper for performing grouped matmul with V cache from KVCacheCollection.
+
+    Args:
+        a: Input tensor.
+        b: Weight tensor with shape (num_experts, N, K).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+        ids: Expert IDs.
+        max_seq_len: Maximum sequence length per expert.
+        active_ids: Number of active experts.
+        kv_collection: The KV cache collection.
+        layer_idx: The layer index.
+        context: Device context pointer.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+    var layer_idx_cast = Int(layer_idx)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+
+    @parameter
+    if is_gpu[target]():
+        cuda_ctx = context.get_device_context()
+
+    _grouped_matmul_cache_ragged_impl[dtype, __type_of(v_cache)](
+        v_cache,
+        a,
+        b,
+        input_row_offsets,
+        ids,
+        max_seq_len,
+        active_ids,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn _grouped_matmul_cache_ragged_impl[
+    dtype: DType,
+    cache_t: KVCacheT,
+](
+    cache: cache_t,
+    a: NDBuffer[dtype, 2, _, _],
+    b: NDBuffer[dtype, 3, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, _, _],
+    ids: NDBuffer[DType.uint32, 1, _, _],
+    max_seq_len: Int,
+    active_ids: Int,
+    ctx: Optional[DeviceContext],
+) raises:
+    """Helper for performing grouped matmul with custom KVCacheT dtypes.
+
+    Args:
+        cache: The KV cache to write to.
+        a: Input tensor with shape (sum(seq_lens), input_dim).
+        b: Weight tensor with shape (num_experts, output_dim, input_dim).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        ids: Expert IDs tensor.
+        max_seq_len: Maximum sequence length per expert.
+        active_ids: Number of active experts.
+        ctx: Optional device context.
+    """
+    if active_ids == 0:
+        return
+
+    alias kv_params = cache_t.kv_params
+    alias kv_type = cache_t.dtype
+    var batch_size = input_row_offsets.dim[0]() - 1
+
+    # Create a dummy output buffer (not used since we write to cache via lambda)
+    var output_shape = IndexList[2](a.dim[0](), b.dim[1]())
+    var c_nd = NDBuffer[kv_type, 2, MutableAnyOrigin](
+        UnsafePointer[Scalar[kv_type]](),
+        output_shape,
+    )
+
+    @parameter
+    @__copy_capture(cache, input_row_offsets, batch_size)
+    @always_inline
+    fn write_to_cache[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
+        constrained[
+            kv_type == dtype,
+            "Mismatch in dtype between computation and KV tensors",
+        ]()
+
+        # Token index in the "ragged" combined sequence dimension.
+        var global_token_idx = idx[0]
+
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        var h_idx: UInt
+        var hd_idx: UInt
+        h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+        var c_val = rebind[SIMD[kv_type, width]](val) + cache.load[width=width](
+            batch_idx, h_idx, cache_token_idx, hd_idx
+        )
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            c_val,
+        )
+
+    grouped_matmul[elementwise_lambda_fn=write_to_cache,](
+        c_nd,
+        a,
+        b,
+        input_row_offsets,
+        ids,
+        max_seq_len,
+        active_ids,
+        ctx.value(),
+    )
 
 
 # TODO: Remove this when we're no longer using NDBuffers.

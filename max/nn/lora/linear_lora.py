@@ -132,15 +132,13 @@ class LinearLoRA(Linear):
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        return (
-            y
-            + sgmv_lora_kernel(
-                input=y,  # should be X but graph comp crashes because of stubbed kernel
-                lora_a=self.lora_A,
-                lora_b=self.lora_B,
-                lora_ids=self.lora_ids,
-                lora_ranks=self.lora_ranks,
-                input_row_offsets=input_row_offsets,
-                bias=self.lora_bias,
-            )
+        return y + sgmv_lora_kernel(
+            input=x,
+            lora_a=self.lora_A,
+            lora_b=self.lora_B,
+            lora_ids=self.lora_ids,
+            lora_ranks=self.lora_ranks,
+            input_row_offsets=input_row_offsets,
+            max_lora_seq_len=self.in_dim,
+            bias=self.lora_bias,
         )

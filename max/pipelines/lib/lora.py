@@ -107,7 +107,6 @@ class LoRAModel:
 
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]
-        self.scale: float = self.adapter_config["lora_alpha"] / self.rank
 
     def get(self, key: str) -> WeightData | None:
         """
@@ -208,6 +207,7 @@ class LoRAModel:
             # TODO (E2EOPT-279)
             raise ValueError("LoRA only supports files in safetensors format.")
 
+        scale = adapter_config["lora_alpha"] / adapter_config["r"]
         for key, weight in weights.items():
             key = self._normalize_lora_key(key)
             data = weight.data()
@@ -215,6 +215,10 @@ class LoRAModel:
             if LoRAType.A.value in key:
                 self._lora_A[key] = data
             elif LoRAType.B.value in key:
+                # A minor optimization so we don't have to multiply scale
+                # by LoRA B in the kernel every forward.
+                # The loaded safetensors weights are read-only, so we must copy.
+                data.data = data.data.copy() * scale
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
                 self._lora_bias[key] = data

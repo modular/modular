@@ -100,6 +100,9 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             clip_qkv=clip_qkv,
         )
 
+        self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
+        self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
+
     @property
     def qkv_loras(self) -> list[LinearLoRA]:
         # MyPy isn't intelligent enough to know we have checks elsewhere.
@@ -137,7 +140,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         )
 
         xq += self.fused_qkv_lora(
-            xq,  # should be X but graph comp crashes because of stubbed kernel
+            x,
             kv_collection,
             input_row_offsets,
             layer_idx,
@@ -223,15 +226,19 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             lora_b = qkv_loras[0].lora_B
             lora_bias = None
 
-        y = sgmv_qkv_lora_kernel(
+        return sgmv_qkv_lora_kernel(
             input=x,
             lora_a=lora_a,
             lora_b=lora_b,
             lora_ids=lora_ids,
             lora_ranks=lora_ranks,
             input_row_offsets=input_row_offsets,
-            kv_params=self.kv_params,
             kv_collection=kv_collection,
-            n_heads=self.n_heads,
+            kv_params=self.kv_params,
+            layer_idx=layer_idx,
+            max_lora_seq_len=self.rope.max_seq_len,
+            max_rank=qkv_loras[0].max_lora_rank,
+            q_dim=self.q_weight_dim,
+            kv_dim=self.kv_weight_dim,
             bias=lora_bias,
         )
