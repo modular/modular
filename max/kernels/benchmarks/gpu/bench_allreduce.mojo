@@ -82,10 +82,8 @@ fn bench_reduce[
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
-        out_bufs_list.append(
-            list_of_ctx[i].enqueue_create_buffer[dtype](length)
-        )
+        in_bufs_list.append(list_of_ctx[i].create_buffer[dtype](length))
+        out_bufs_list.append(list_of_ctx[i].create_buffer[dtype](length))
 
         # Create and initialize host buffers
         var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)

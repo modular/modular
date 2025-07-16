@@ -48,7 +48,7 @@ fn bench_concat[
     # TODO: Generalize for arbitrary num of inputs.
     var shape = shapes[0]
     var size = shape.flattened_length()
-    var input0_ptr = ctx.enqueue_create_buffer[type](size)
+    var input0_ptr = ctx.create_buffer[type](size)
     inputs[0] = NDBuffer[type, rank](input0_ptr.unsafe_ptr(), shape)
     inputs_host[0] = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(size), shape
@@ -60,7 +60,7 @@ fn bench_concat[
 
     shape = shapes[1]
     size = shape.flattened_length()
-    var input1_ptr = ctx.enqueue_create_buffer[type](size)
+    var input1_ptr = ctx.create_buffer[type](size)
     inputs[1] = NDBuffer[type, rank](input1_ptr.unsafe_ptr(), shape)
     inputs_host[1] = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(size), shape
@@ -73,9 +73,7 @@ fn bench_concat[
     var out_shape = shapes[0]
     out_shape[axis] = out_axis
     name += String("->", out_shape)
-    var output_ptr = ctx.enqueue_create_buffer[type](
-        out_shape.flattened_length()
-    )
+    var output_ptr = ctx.create_buffer[type](out_shape.flattened_length())
     var output = NDBuffer[type, rank](output_ptr.unsafe_ptr(), out_shape)
     var output_host = NDBuffer[type, rank](
         UnsafePointer[Scalar[type]].alloc(output.size()), out_shape

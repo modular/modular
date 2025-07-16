@@ -143,8 +143,8 @@ fn bench_memcpy(
     # want to put this allocation inside the timed region, so we always allocate
     # both and drop the size of the second buffer to zero in the case of a non
     # d2d test.
-    var mem_device = context.enqueue_create_buffer[dtype](length_in_elements)
-    var mem2_device = context.enqueue_create_buffer[dtype](
+    var mem_device = context.create_buffer[dtype](length_in_elements)
+    var mem2_device = context.create_buffer[dtype](
         length_in_elements if config.direction == Config.DToD else 0
     )
 
@@ -206,8 +206,8 @@ fn bench_p2p(
     iota(host_ptr, length_in_elements)
 
     # Create and initialize device buffers
-    var src_buf = ctx1.enqueue_create_buffer[dtype](length_in_elements)
-    var dst_buf = ctx2.enqueue_create_buffer[dtype](length_in_elements)
+    var src_buf = ctx1.create_buffer[dtype](length_in_elements)
+    var dst_buf = ctx2.create_buffer[dtype](length_in_elements)
 
     # Copy initial data to source buffer
     ctx1.enqueue_copy(src_buf, host_ptr)

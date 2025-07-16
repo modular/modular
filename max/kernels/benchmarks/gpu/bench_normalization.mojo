@@ -47,9 +47,9 @@ fn bench_layer_norm_gpu[
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
         beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
-    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
+    var beta_d = ctx.create_buffer[dtype](cols)
 
     var param_shape = IndexList[1](cols)
 
@@ -139,8 +139,8 @@ fn bench_rms_norm_gpu[
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
 
     var param_shape = IndexList[1](cols)
 
