@@ -69,11 +69,20 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             request_zmq_endpoint,
             serialize=SharedMemoryEncoder(),
         )
-        self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
-            zmq_ctx,
-            response_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
-        )
+
+        # TODO: Fix Pickle Deserialization for AUDIO_GENERATION
+        if pipeline_task == PipelineTask.AUDIO_GENERATION:
+            self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
+                zmq_ctx,
+                response_zmq_endpoint,
+            )
+        else:
+            self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
+                zmq_ctx,
+                response_zmq_endpoint,
+                deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
+            )
+
         self.cancel_push_socket = ZmqPushSocket[list[str]](
             zmq_ctx, cancel_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
