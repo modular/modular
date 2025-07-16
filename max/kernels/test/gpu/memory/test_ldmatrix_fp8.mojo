@@ -120,8 +120,8 @@ fn check_ldmatrix_fp8[
     var c_device = ctx.create_buffer[DType.float32](M * N)
     var c_device_ref = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     ctx.enqueue_function[test_ldmatrix_fp8[input_type]](
         c_device,
@@ -131,7 +131,7 @@ fn check_ldmatrix_fp8[
         block_dim=WARP_SIZE,
     )
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
@@ -150,7 +150,7 @@ fn check_ldmatrix_fp8[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.memcopy(c_host_ref, c_device_ref)
 
     ctx.synchronize()
 

@@ -113,8 +113,8 @@ fn overlap_matmul_allreduce_test[
             B_host_list[i][j] = 1.0
 
         # Copy A and B to device
-        list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
-        list_of_ctx[i].enqueue_copy(B_list[i], B_host_list[i])
+        list_of_ctx[i].memcopy(A_list[i], A_host_list[i])
+        list_of_ctx[i].memcopy(B_list[i], B_host_list[i])
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -217,7 +217,7 @@ fn overlap_matmul_allreduce_test[
     @parameter
     for i in range(ngpus):
         expected_sum += i * k.value
-        list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
+        list_of_ctx[i].memcopy(C_reduced_host_list[i], C_reduced_list[i])
 
     @parameter
     for i in range(ngpus):

@@ -77,9 +77,9 @@ fn run_group_norm_gpu[
     var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[dtype](1e-5)
 
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
-    ctx.enqueue_copy(beta_d, beta_h)
+    ctx.memcopy(data_d, data_h)
+    ctx.memcopy(gamma_d, gamma_h)
+    ctx.memcopy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -104,7 +104,7 @@ fn run_group_norm_gpu[
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
         shape, epsilon, num_groups, data_buf, ctx=ctx
     )
-    ctx.enqueue_copy(res, data_d)
+    ctx.memcopy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):

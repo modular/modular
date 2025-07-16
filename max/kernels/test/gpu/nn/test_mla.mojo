@@ -172,9 +172,9 @@ fn test[
     var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
-    ctx.enqueue_copy(q_device_ptr, q_ptr)
-    ctx.enqueue_copy(k_device_ptr, k_ptr)
-    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
+    ctx.memcopy(q_device_ptr, q_ptr)
+    ctx.memcopy(k_device_ptr, k_ptr)
+    ctx.memcopy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
     var q_device = NDBuffer[
@@ -260,7 +260,7 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
+    ctx.memcopy(flash_output_ptr, output_device_ptr)
 
     @parameter
     if against_gpu_naive:
@@ -271,7 +271,7 @@ fn test[
             output_ref_device_ptr.unsafe_ptr(),
             Index(batch_size, seq_len, num_heads, depth),
         )
-        ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
+        ctx.memcopy(output_ref_device_ptr, output_ptr)
 
         @parameter
         if use_causal_mask:
@@ -334,7 +334,7 @@ fn test[
             )
 
         ctx.synchronize()
-        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.memcopy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
     # since we pass the whole K tensor as the V tensor to our naive mha kernel,
@@ -456,12 +456,12 @@ fn test_prefill[
     )
 
     # copy from host to device
-    ctx.enqueue_copy(q_device_ptr, q_ptr)
-    ctx.enqueue_copy(k_device_ptr, k_ptr)
-    ctx.enqueue_copy(v_device_ptr, v_ptr)
-    ctx.enqueue_copy(cache_device_ptr, cache_ptr)
-    ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
-    ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
+    ctx.memcopy(q_device_ptr, q_ptr)
+    ctx.memcopy(k_device_ptr, k_ptr)
+    ctx.memcopy(v_device_ptr, v_ptr)
+    ctx.memcopy(cache_device_ptr, cache_ptr)
+    ctx.memcopy(input_row_offsets_device_ptr, input_row_offsets)
+    ctx.memcopy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     # construct device buffers
     var q_device = NDBuffer[qkv_type, 3, _, DimList(Dim(), num_heads, depth)](
@@ -553,7 +553,7 @@ fn test_prefill[
         kernel_launch(ctx)
 
     ctx.synchronize()
-    ctx.enqueue_copy(output_ptr, output_device_ptr)
+    ctx.memcopy(output_ptr, output_device_ptr)
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
@@ -636,8 +636,8 @@ fn test_prefill[
     )
 
     # copy from host to device
-    ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
-    ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
+    ctx.memcopy(k_ref_device_ptr, k_ref_ptr)
+    ctx.memcopy(v_ref_device_ptr, v_ref_ptr)
 
     var null_valid_length = NDBuffer[DType.uint32, 1](
         UnsafePointer[UInt32](), Index(0)
@@ -667,7 +667,7 @@ fn test_prefill[
         ctx,
     )
 
-    ctx.enqueue_copy(output_ref_ptr, output_ref_device_ptr)
+    ctx.memcopy(output_ref_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
     # view output as a rank 4 buffer
@@ -809,11 +809,11 @@ fn test_cascade_prefill[
     )
 
     # copy from host to device
-    ctx.enqueue_copy(q_device_ptr, q_ptr)
-    ctx.enqueue_copy(k_device_ptr, k_ptr)
-    ctx.enqueue_copy(v_device_ptr, v_ptr)
-    ctx.enqueue_copy(cache_device_ptr, cache_ptr)
-    ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
+    ctx.memcopy(q_device_ptr, q_ptr)
+    ctx.memcopy(k_device_ptr, k_ptr)
+    ctx.memcopy(v_device_ptr, v_ptr)
+    ctx.memcopy(cache_device_ptr, cache_ptr)
+    ctx.memcopy(input_row_offsets_device_ptr, input_row_offsets)
 
     # construct device buffers
     var q_device = NDBuffer[qkv_type, 3, _, DimList(Dim(), num_heads, depth)](
@@ -895,10 +895,10 @@ fn test_cascade_prefill[
                         ]
 
         # copy to device
-        ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
-        ctx.enqueue_copy(cache_offsets_device_ptr, cache_offsets)
-        ctx.enqueue_copy(k_chunk_device_ptr, k_chunk_ptr)
-        ctx.enqueue_copy(v_chunk_device_ptr, v_chunk_ptr)
+        ctx.memcopy(cache_row_offsets_device_ptr, cache_row_offsets)
+        ctx.memcopy(cache_offsets_device_ptr, cache_offsets)
+        ctx.memcopy(k_chunk_device_ptr, k_chunk_ptr)
+        ctx.memcopy(v_chunk_device_ptr, v_chunk_ptr)
 
         if i_iter == 0:
             flare_mla_prefill[write_softmax_info=True](
@@ -945,7 +945,7 @@ fn test_cascade_prefill[
                 ](cache_offsets_device),
             )
 
-    ctx.enqueue_copy(output_ptr, output_device_ptr)
+    ctx.memcopy(output_ptr, output_device_ptr)
 
     # create reference output
     var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
@@ -973,7 +973,7 @@ fn test_cascade_prefill[
     )
 
     # copy from host to device
-    ctx.enqueue_copy(cache_row_offsets_ref_device_ptr, cache_row_offsets_ref)
+    ctx.memcopy(cache_row_offsets_ref_device_ptr, cache_row_offsets_ref)
 
     var cache_row_offsets_ref_device = NDBuffer[
         DType.uint32, 1, _, DimList(Dim())
@@ -998,7 +998,7 @@ fn test_cascade_prefill[
         q_max_seq_len=seq_len,
     )
 
-    ctx.enqueue_copy(output_ref_ptr, output_ref_device_ptr)
+    ctx.memcopy(output_ref_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
     # compare output with reference

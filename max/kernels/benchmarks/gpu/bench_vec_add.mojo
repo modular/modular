@@ -50,8 +50,8 @@ fn bench_vec_add(
     var in1_device = context.create_buffer[dtype](length)
     var out_device = context.create_buffer[dtype](length)
 
-    context.enqueue_copy(in0_device, in0_host)
-    context.enqueue_copy(in1_device, in1_host)
+    context.memcopy(in0_device, in0_host)
+    context.memcopy(in1_device, in1_host)
 
     @always_inline
     @parameter
@@ -80,7 +80,7 @@ fn bench_vec_add(
         ThroughputMeasure(BenchMetric.flops, length),
     )
     context.synchronize()
-    context.enqueue_copy(out_host, out_device)
+    context.memcopy(out_host, out_device)
 
     for i in range(length):
         assert_equal(i + 2, out_host[i])

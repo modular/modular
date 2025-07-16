@@ -68,7 +68,7 @@ fn run_reduce[
     var input_buf_device = vec_device.tensor
     var output_buf_device = res_device.tensor
 
-    ctx.enqueue_copy(vec_device.buffer, in_host)
+    ctx.memcopy(vec_device.buffer, in_host)
 
     @always_inline
     @parameter
@@ -121,7 +121,7 @@ fn run_reduce[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(res_host, res_device.buffer)
+    ctx.memcopy(res_host, res_device.buffer)
 
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])

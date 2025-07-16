@@ -60,8 +60,8 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     var b_device_n = ctx.create_buffer[DType.float32](K * N)
     var c_device_n = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -85,11 +85,11 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     run_func_bf16()
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy(a_device_n, a_host_n)
-    ctx.enqueue_copy(b_device_n, b_host_n)
+    ctx.memcopy(a_device_n, a_host_n)
+    ctx.memcopy(b_device_n, b_host_n)
 
     @always_inline
     @parameter
@@ -111,7 +111,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     run_func_fp32()
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     for i in range(M * N):
@@ -196,15 +196,15 @@ fn run_matmul[
     var b_device_n = ctx.create_buffer[dtype](K * N)
     var c_device_n = ctx.create_buffer[dtype](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     _matmul_gpu(c_buf, a_buf, b_buf, ctx)
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy(a_device_n, a_host_n)
-    ctx.enqueue_copy(b_device_n, b_host_n)
+    ctx.memcopy(a_device_n, a_host_n)
+    ctx.memcopy(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
 
@@ -226,7 +226,7 @@ fn run_matmul[
 
     run_func_naive()
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     for i in range(M * N):
@@ -317,8 +317,8 @@ fn run_matmul_split_k[
     var b_device_n = ctx.create_buffer[dtype](K * N)
     var c_device_n = ctx.create_buffer[dtype](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
@@ -335,12 +335,12 @@ fn run_matmul_split_k[
         ctx,
     )
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
     ctx.synchronize()
 
     # running naive
-    ctx.enqueue_copy(a_device_n, a_host)
-    ctx.enqueue_copy(b_device_n, b_host)
+    ctx.memcopy(a_device_n, a_host)
+    ctx.memcopy(b_device_n, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -355,7 +355,7 @@ fn run_matmul_split_k[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     for i in range(M * N):
@@ -441,17 +441,17 @@ fn run_matmul_transpose[
     var b_device_n = ctx.create_buffer[dtype](N * K)
     var c_device_n = ctx.create_buffer[dtype](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
         c_buf, a_buf, b_buf, ctx
     )
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
     # running naive
-    ctx.enqueue_copy(a_device_n, a_host_n)
-    ctx.enqueue_copy(b_device_n, b_host_n)
+    ctx.memcopy(a_device_n, a_host_n)
+    ctx.memcopy(b_device_n, b_host_n)
 
     alias BLOCK_DIM = 16
 
@@ -473,7 +473,7 @@ fn run_matmul_transpose[
 
     run_func_naive()
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     for i in range(M * N):
@@ -556,8 +556,8 @@ fn run_batched_matmul(
         c_device_n._unsafe_ptr(), Index(B, M, N)
     )
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     @always_inline
     @__copy_capture(c_buf)
@@ -575,10 +575,10 @@ fn run_batched_matmul(
         c_buf, a_buf, b_buf, ctx
     )
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
-    ctx.enqueue_copy(a_device_n, a_host_n)
-    ctx.enqueue_copy(b_device_n, b_host_n)
+    ctx.memcopy(a_device_n, a_host_n)
+    ctx.memcopy(b_device_n, b_host_n)
 
     @always_inline
     @__copy_capture(c_buf_n)
@@ -598,7 +598,7 @@ fn run_batched_matmul(
         c_buf_n, a_buf_n, b_buf_n, ctx
     )
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     for i in range(B * M * N):

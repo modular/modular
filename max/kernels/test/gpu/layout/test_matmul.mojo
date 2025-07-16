@@ -94,8 +94,8 @@ struct test_matmul[
         zero(self.c_host.tensor)
         zero(self.c_host_ref.tensor)
 
-        ctx.enqueue_copy(self.a_device_buffer, self.a_host.tensor.data)
-        ctx.enqueue_copy(self.b_device_buffer, self.b_host.tensor.data)
+        ctx.memcopy(self.a_device_buffer, self.a_host.tensor.data)
+        ctx.memcopy(self.b_device_buffer, self.b_host.tensor.data)
         ctx.memset(self.c_device_buffer_ref, 0)
 
         run_cublas[dtype, enable_tc](
@@ -109,7 +109,7 @@ struct test_matmul[
             self.c_device_buffer_ref._unsafe_ptr(),
         )
 
-        ctx.enqueue_copy(self.c_host_ref.tensor.data, self.c_device_buffer_ref)
+        ctx.memcopy(self.c_host_ref.tensor.data, self.c_device_buffer_ref)
 
     fn run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
         print("=== test_matmul")
@@ -143,7 +143,7 @@ struct test_matmul[
 
         gemm(m, ctx, a, b, c)
 
-        ctx.enqueue_copy(self.c_host.tensor.data, self.c_device_buffer)
+        ctx.memcopy(self.c_host.tensor.data, self.c_device_buffer)
         assert_almost_equal(
             self.c_host_ref.tensor,
             self.c_host.tensor,

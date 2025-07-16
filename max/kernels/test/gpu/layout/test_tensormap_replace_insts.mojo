@@ -132,7 +132,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
+    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
 
     ctx.synchronize()
 
@@ -288,7 +288,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
+    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
 
     ctx.synchronize()
 
@@ -481,7 +481,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
+    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
 
     var tensormaps = TMATensorTileArray[
         num_of_subtensors,

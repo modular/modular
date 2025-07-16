@@ -42,7 +42,7 @@ def _init_device_ndbuffer_from_goldens[
         host_tensor.rank,
         shape = host_tensor.shape,
     ](ctx=ctx)
-    ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
+    ctx.memcopy(device_tensor.buffer, host_tensor.tensor.data)
     ctx.synchronize()
 
     # Ensure the host buffer outlives the copy.
@@ -286,17 +286,13 @@ def execute_fused_qk_rope_ragged(
         output=mixed_ce_output_device.tensor,
         context=ctx,
     )
-    ctx.enqueue_copy(
-        mixed_ce_output_host.tensor.data, mixed_ce_output_device.buffer
-    )
-    ctx.enqueue_copy(
-        true_ce_output_host.tensor.data, true_ce_output_device.buffer
-    )
-    ctx.enqueue_copy(
+    ctx.memcopy(mixed_ce_output_host.tensor.data, mixed_ce_output_device.buffer)
+    ctx.memcopy(true_ce_output_host.tensor.data, true_ce_output_device.buffer)
+    ctx.memcopy(
         true_ce_kv_block_paged_host.tensor.data,
         true_ce_kv_block_paged_device.buffer,
     )
-    ctx.enqueue_copy(
+    ctx.memcopy(
         mixed_ce_kv_block_paged_host.tensor.data,
         mixed_ce_kv_block_paged_device.buffer,
     )
@@ -601,8 +597,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     )
 
     # copy the output back to host
-    ctx.enqueue_copy(output_host.tensor.data, output_device.buffer)
-    ctx.enqueue_copy(output_host_ref.tensor.data, output_device_ref.buffer)
+    ctx.memcopy(output_host.tensor.data, output_device.buffer)
+    ctx.memcopy(output_host_ref.tensor.data, output_device_ref.buffer)
     ctx.synchronize()
 
     # compare the output, the first 128 elements in each head should be the same
@@ -634,11 +630,11 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
             kv_params.head_size,
         )
     )
-    ctx.enqueue_copy(
+    ctx.memcopy(
         kv_block_paged_host_copy.tensor.data, kv_block_paged_device.buffer
     )
     # copy the kv_block_paged_device_64 back to the original host buffer
-    ctx.enqueue_copy(
+    ctx.memcopy(
         kv_block_paged_host_64.tensor.data, kv_block_paged_device_64.buffer
     )
     ctx.synchronize()

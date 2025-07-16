@@ -111,9 +111,9 @@ fn test_conv_cudnn[
         output_dim, ctx=ctx
     )
 
-    ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
-    ctx.enqueue_copy(filter_dev.buffer, filter_host.tensor.data)
-    ctx.enqueue_copy(filter_nchw_dev.buffer, filter_nchw_host.tensor.data)
+    ctx.memcopy(input_dev.buffer, input_host.tensor.data)
+    ctx.memcopy(filter_dev.buffer, filter_host.tensor.data)
+    ctx.memcopy(filter_nchw_dev.buffer, filter_nchw_host.tensor.data)
 
     conv_gpu[
         4,
@@ -146,8 +146,8 @@ fn test_conv_cudnn[
         ctx,
     )
 
-    ctx.enqueue_copy(output_ref_host.tensor.data, output_ref_dev.buffer)
-    ctx.enqueue_copy(output_host.tensor.data, output_dev.buffer)
+    ctx.memcopy(output_ref_host.tensor.data, output_ref_dev.buffer)
+    ctx.memcopy(output_host.tensor.data, output_dev.buffer)
 
     # verifying results
     output_host_buf = output_host.tensor

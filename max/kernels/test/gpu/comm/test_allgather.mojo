@@ -73,7 +73,7 @@ def all_gather_test[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy to device.
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].memcopy(in_bufs_list[i], host_buffers[i])
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
@@ -160,7 +160,7 @@ fn _verify_results[
             var host_output = UnsafePointer[Scalar[dtype]].alloc(length)
 
             # Copy output back to host.
-            list_of_ctx[device_idx].enqueue_copy(
+            list_of_ctx[device_idx].memcopy(
                 host_output, out_bufs_list[device_idx][input_idx]
             )
             list_of_ctx[device_idx].synchronize()

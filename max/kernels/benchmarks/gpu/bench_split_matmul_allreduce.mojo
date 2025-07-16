@@ -131,8 +131,8 @@ fn bench_matmul_all_reduce[
         random.randn(B_host_list[i], nk)
 
         # Copy A and B to device
-        list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
-        list_of_ctx[i].enqueue_copy(B_list[i], B_host_list[i])
+        list_of_ctx[i].memcopy(A_list[i], A_host_list[i])
+        list_of_ctx[i].memcopy(B_list[i], B_host_list[i])
 
         # Create and initialize signal buffers
         signal_buffers.append(

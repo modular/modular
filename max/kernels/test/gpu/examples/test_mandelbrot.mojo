@@ -106,7 +106,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
         ctx.execution_time[run_mandelbrot](1) / 1_000_000_000.0,
     )
 
-    ctx.enqueue_copy(out_host, out_device)
+    ctx.memcopy(out_host, out_device)
 
     ctx.synchronize()
 

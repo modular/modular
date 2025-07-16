@@ -149,7 +149,7 @@ fn run_elementwise[
     var in_buffer = ctx.create_buffer[dtype](N_cache)
     var out_buffer = ctx.create_buffer[dtype](N_cache)
 
-    ctx.enqueue_copy(in_buffer, in_host.data)
+    ctx.memcopy(in_buffer, in_host.data)
 
     @parameter
     @__copy_capture(stride, N_cache)
@@ -221,7 +221,7 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(out_host.data, out_buffer)
+    ctx.memcopy(out_host.data, out_buffer)
 
     _ = in_buffer
     _ = out_buffer

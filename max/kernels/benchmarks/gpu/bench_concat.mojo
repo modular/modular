@@ -54,7 +54,7 @@ fn bench_concat[
         UnsafePointer[Scalar[type]].alloc(size), shape
     )
     randn(inputs_host[0].data, size)
-    ctx.enqueue_copy(input0_ptr, inputs_host[0].data)
+    ctx.memcopy(input0_ptr, inputs_host[0].data)
     name += String(shape)
     out_axis += shape[axis]
 
@@ -66,7 +66,7 @@ fn bench_concat[
         UnsafePointer[Scalar[type]].alloc(size), shape
     )
     randn(inputs_host[1].data, size)
-    ctx.enqueue_copy(input1_ptr, inputs_host[1].data)
+    ctx.memcopy(input1_ptr, inputs_host[1].data)
     name += String(shape)
     out_axis += shape[axis]
 
@@ -80,7 +80,7 @@ fn bench_concat[
     )
     randn(output_host.data, output.size())
 
-    ctx.enqueue_copy(output_ptr, output_host.data)
+    ctx.memcopy(output_ptr, output_host.data)
 
     @parameter
     @always_inline
@@ -102,7 +102,7 @@ fn bench_concat[
         ),
     )
 
-    ctx.enqueue_copy(output_host.data, output_ptr)
+    ctx.memcopy(output_host.data, output_ptr)
 
     var offset = 0
     for i in range(num_inputs):

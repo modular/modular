@@ -46,13 +46,13 @@ fn _kernel_launch_helper[
     ctx: DeviceContext,
 ) raises:
     var device_ptr = ctx.create_buffer[dtype](buffer_size)
-    ctx.enqueue_copy(device_ptr, host_ptr)
+    ctx.memcopy(device_ptr, host_ptr)
 
     ctx.enqueue_function[kernel_wrapper[dtype, simd_width, kernel_fn]](
         device_ptr, simd_width, grid_dim=1, block_dim=block_size
     )
 
-    ctx.enqueue_copy(host_ptr, device_ptr)
+    ctx.memcopy(host_ptr, device_ptr)
     ctx.synchronize()
     _ = device_ptr
 

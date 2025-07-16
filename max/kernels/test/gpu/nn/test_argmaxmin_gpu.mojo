@@ -59,7 +59,7 @@ fn test_argmaxmin_gpu[
     var device_in = DeviceNDBuffer[dtype, rank](in_shape, ctx=ctx)
     var device_out_idxs = DeviceNDBuffer[output_type, rank](out_shape, ctx=ctx)
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    ctx.memcopy(device_in.buffer, in_buffer.tensor.data)
 
     @parameter
     if largest:
@@ -67,7 +67,7 @@ fn test_argmaxmin_gpu[
     else:
         argmin_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
 
-    ctx.enqueue_copy(out_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.memcopy(out_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     # Test for correctness against CPU reference

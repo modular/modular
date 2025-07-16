@@ -83,7 +83,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
 
     var gmem_dev = ctx.create_buffer[DType.float32](8 * 8)
 
-    ctx.enqueue_copy(gmem_dev, gmem_host)
+    ctx.memcopy(gmem_dev, gmem_host)
 
     var descriptor = create_tma_descriptor[DType.float32, 2](
         gmem_dev, (8, 8), (8, 1), (4, 4)

@@ -59,8 +59,8 @@ fn run_rms_norm_gpu[
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.memcopy(data_d, data_h)
+    ctx.memcopy(gamma_d, gamma_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -81,7 +81,7 @@ fn run_rms_norm_gpu[
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape, gamma, epsilon, weight_offset, ctx
     )
-    ctx.enqueue_copy(res, data_d)
+    ctx.memcopy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):

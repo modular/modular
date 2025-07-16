@@ -69,8 +69,8 @@ def main():
         rhs_device_buffer = ctx.create_buffer[float_dtype](vector_size)
 
         # Copy the input vectors from the HostBuffers to the DeviceBuffers
-        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
-        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
+        ctx.memcopy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
+        ctx.memcopy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
         result_device_buffer = ctx.create_buffer[float_dtype](vector_size)
@@ -93,9 +93,7 @@ def main():
         result_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
 
         # Copy the result vector from the DeviceBuffer to the HostBuffer
-        ctx.enqueue_copy(
-            dst_buf=result_host_buffer, src_buf=result_device_buffer
-        )
+        ctx.memcopy(dst_buf=result_host_buffer, src_buf=result_device_buffer)
 
         # Finally, synchronize the DeviceContext to run all enqueued operations
         ctx.synchronize()

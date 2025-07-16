@@ -57,9 +57,9 @@ fn run_layer_norm_block[
     var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[dtype]()
 
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
-    ctx.enqueue_copy(beta_d, beta_h)
+    ctx.memcopy(data_d, data_h)
+    ctx.memcopy(gamma_d, gamma_h)
+    ctx.memcopy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -105,7 +105,7 @@ fn run_layer_norm_block[
         )
 
     run_func_ln()
-    ctx.enqueue_copy(res, data_d)
+    ctx.memcopy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
@@ -162,9 +162,9 @@ fn run_layer_norm_gpu[
     var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[dtype]()
 
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
-    ctx.enqueue_copy(beta_d, beta_h)
+    ctx.memcopy(data_d, data_h)
+    ctx.memcopy(gamma_d, gamma_h)
+    ctx.memcopy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -193,7 +193,7 @@ fn run_layer_norm_gpu[
         )
 
     layer_norm_gpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon, ctx=ctx)
-    ctx.enqueue_copy(res, data_d)
+    ctx.memcopy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
@@ -250,9 +250,9 @@ fn run_layer_norm_warp_tiling[
     var beta = NDBuffer[dtype, 1](beta_d._unsafe_ptr(), param_shape)
     var epsilon = Scalar[dtype]()
 
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
-    ctx.enqueue_copy(beta_d, beta_h)
+    ctx.memcopy(data_d, data_h)
+    ctx.memcopy(gamma_d, gamma_h)
+    ctx.memcopy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -300,7 +300,7 @@ fn run_layer_norm_warp_tiling[
         )
 
     run_func_ln()
-    ctx.enqueue_copy(res, data_d)
+    ctx.memcopy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):

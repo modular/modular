@@ -227,8 +227,8 @@ def execute_ragged_flash_attention[
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
-    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.memcopy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor
