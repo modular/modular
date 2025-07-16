@@ -32,8 +32,6 @@ PINS = {
     "google-cloud-bigquery": "google-cloud-bigquery@3.22.0",
     "gptqmodel": "gptqmodel@2.0.0+cu126torch2.6",
     "grpcio": "grpcio@1.73.1",
-    "grpcio-reflection": "grpcio-reflection@1.57.0",
-    "grpcio-tools": "grpcio-tools@1.68.0",
     "hf-transfer": "hf-transfer@0.1.9",
     "httpx": "httpx@0.27.2",
     "huggingface-hub": "huggingface-hub@0.30.1",
@@ -1846,22 +1844,6 @@ def targets():
         wheel = ":_wheel_grpcio@1.73.1",
     )
 
-    _grpcio_reflection_1_57_0_deps = [
-        ":grpcio@1.73.1",
-        ":protobuf@5.29.1",
-    ]
-
-    native.alias(
-        name = "_wheel_grpcio-reflection@1.57.0",
-        actual = "@pycross_lock_file_wheel_grpcio_reflection_1.57.0_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "grpcio-reflection@1.57.0",
-        deps = _grpcio_reflection_1_57_0_deps,
-        wheel = ":_wheel_grpcio-reflection@1.57.0",
-    )
-
     _grpcio_status_1_57_0_deps = [
         ":googleapis-common-protos@1.63.2",
         ":grpcio@1.73.1",
@@ -1877,39 +1859,6 @@ def targets():
         name = "grpcio-status@1.57.0",
         deps = _grpcio_status_1_57_0_deps,
         wheel = ":_wheel_grpcio-status@1.57.0",
-    )
-
-    _grpcio_tools_1_68_0_deps = [
-        ":grpcio@1.73.1",
-        ":protobuf@5.29.1",
-        ":setuptools@80.9.0",
-    ]
-
-    native.alias(
-        name = "_wheel_grpcio-tools@1.68.0",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_macosx_12_0_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_manylinux_2_17_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_manylinux_2_17_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_manylinux_2_17_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_macosx_10_13_universal2//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_manylinux_2_17_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_macosx_10_9_universal2//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_manylinux_2_17_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "grpcio-tools@1.68.0",
-        deps = _grpcio_tools_1_68_0_deps,
-        wheel = ":_wheel_grpcio-tools@1.68.0",
     )
 
     native.alias(
@@ -10824,172 +10773,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_grpcio_reflection_1.57.0_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/de/68/f819495562615d1b8d4c2b71a669fc3a50113903deb42059407744849f2b/grpcio_reflection-1.57.0-py3-none-any.whl",
-        ],
-        sha256 = "d7deb8587f9d0095fb5d367c2aa5ce1380e3f23b0f8bca6c00bc404c5429cb6a",
-        downloaded_file_path = "grpcio_reflection-1.57.0-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_grpcio_status_1.57.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/d0/3f/347d93056572fdbd64d4f0fc58a18d420763a7118f8b177437d9dab0ae6f/grpcio_status-1.57.0-py3-none-any.whl",
         ],
         sha256 = "15d6af055914ebbc4ed17e55ebfb8e6bb17a45a57fea32e6af19978fb7844690",
         downloaded_file_path = "grpcio_status-1.57.0-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_macosx_12_0_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/f4/81/224f910ff994d67ed51e40d3f2078473a83b5ddced192ddf5283ee8b1b88/grpcio_tools-1.68.0-cp310-cp310-macosx_12_0_universal2.whl",
-        ],
-        sha256 = "59a885091bf29700ba0e14a954d156a18714caaa2006a7f328b18e1ac4b1e721",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp310-cp310-macosx_12_0_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_manylinux_2_17_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/af/e1/44d45e385149b5daf96cc4bd7865f0d38f6830caf3eb8ba50ce4d4323216/grpcio_tools-1.68.0-cp310-cp310-manylinux_2_17_aarch64.whl",
-        ],
-        sha256 = "d3e678162e1d7a8720dc05fdd537fc8df082a50831791f7bb1c6f90095f8368b",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp310-cp310-manylinux_2_17_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/d8/e1/6a8c3bf5573cecd99e28f5e5f5405033dceeafe994eaed820bc1616117f4/grpcio_tools-1.68.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "1769d7f529de1cc102f7fb900611e3c0b69bdb244fca1075b24d6e5b49024586",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/c4/a2/78a4c5c3e3ae3bd209519da5a4fc6669a5f3d06423d466028d01e7fbbbce/grpcio_tools-1.68.0-cp311-cp311-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "8fefc6d000e169a97336feded23ce614df3fb9926fc48c7a9ff8ea459d93b5b0",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp311-cp311-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_manylinux_2_17_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/74/58/9da5fd8840d13389805bf52c347e6405665380244c01b26fb5580b743749/grpcio_tools-1.68.0-cp311-cp311-manylinux_2_17_aarch64.whl",
-        ],
-        sha256 = "6dd69c9f3ff85eee8d1f71adf7023c638ca8d465633244ac1b7f19bc3668612d",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp311-cp311-manylinux_2_17_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/da/21/f2ed730aa8a5e8f4ab7500d4863c6b2a1cbb33beaff717a01ddacff995db/grpcio_tools-1.68.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "849b12bec2320e49e988df104c92217d533e01febac172a4495caab36d9f0edc",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/8e/55/25a9a8e47d0b7f0551309bb9af641f04d076e2995e10866b5e08d0d73628/grpcio_tools-1.68.0-cp312-cp312-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "0f77957e3a0916a0dd18d57ce6b49d95fc9a5cfed92310f226339c0fda5394f6",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp312-cp312-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_manylinux_2_17_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a5/db/518695c93b86db44eef2445c245b51f8d3c7413cb22941b4ce5fc0377dc7/grpcio_tools-1.68.0-cp312-cp312-manylinux_2_17_aarch64.whl",
-        ],
-        sha256 = "92a09afe64fe26696595de2036e10967876d26b12c894cc9160f00152cacebe7",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp312-cp312-manylinux_2_17_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/e5/f8/7b0bc247c3607c5a3a5f09c81d37b887f684cb3863837eaeacc24835a951/grpcio_tools-1.68.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "5d3150d784d8050b10dcf5eb06e04fb90747a1547fed3a062a608d940fe57066",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_macosx_10_13_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/4d/28/1bbc4cd976f518bd45c1c1ec0d1d0a3db35adcdaf5245cbaaa95c2fdf548/grpcio_tools-1.68.0-cp313-cp313-macosx_10_13_universal2.whl",
-        ],
-        sha256 = "51e5a090849b30c99a2396d42140b8a3e558eff6cdfa12603f9582e2cd07724e",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp313-cp313-macosx_10_13_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_manylinux_2_17_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/77/80/2ccdf2fd60b5ab822ff800c315afd5cbaf9368a58882b802cb64865740bb/grpcio_tools-1.68.0-cp313-cp313-manylinux_2_17_aarch64.whl",
-        ],
-        sha256 = "4fe611d89a1836df8936f066d39c7eb03d4241806449ec45d4b8e1c843ae8011",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp313-cp313-manylinux_2_17_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ed/95/19a545674b81ad8b8783807a125f8b51210c29ab0cea6e79a2d21c0077c1/grpcio_tools-1.68.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "46b537480b8fd2195d988120a28467601a2a3de2e504043b89fb90318e1eb754",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/3f/63/23fd9a044b3aa10734c688a077eeb6514622a630cdcf1ad59510924fbe99/grpcio_tools-1.68.0-cp39-cp39-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "5afd2f3f7257b52228a7808a2b4a765893d4d802d7a2377d9284853e67d045c6",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp39-cp39-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_manylinux_2_17_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/9f/89/2ad3445190fb670e55526d54112ed0a891c9330bcc09943a55a440066329/grpcio_tools-1.68.0-cp39-cp39-manylinux_2_17_aarch64.whl",
-        ],
-        sha256 = "453ee3193d59c974c678d91f08786f43c25ef753651b0825dc3d008c31baf68d",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp39-cp39-manylinux_2_17_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_grpcio_tools_1.68.0_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/1d/07/d1bc5bf19fe13fd4d927ee6141d421790d0fc43be06e19524b50d05e8efb/grpcio_tools-1.68.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ],
-        sha256 = "26335eea976dfc1ff5d90b19c309a9425bd53868112a0507ad20f297f2c21d3e",
-        downloaded_file_path = "grpcio_tools-1.68.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(

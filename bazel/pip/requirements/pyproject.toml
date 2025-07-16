@@ -119,8 +119,6 @@ dependencies = [
   "librosa==0.10.2",
   "soundfile==0.12.1",
   "grpcio",
-  "grpcio-tools",
-  "grpcio-reflection",
   "pytest-grpc",
 
   # mypy types
