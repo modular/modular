@@ -15,6 +15,7 @@
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/VectorType.h"
+#include <cinttypes>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -276,6 +277,86 @@ simdBoolVectorSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
+// Summary provider for Mojo reference pointers (ref y = x)
+static bool
+mojoReferenceSummaryProvider(ValueObject &valobj, Stream &stream,
+                             const TypeSummaryOptions &summaryOptions) {
+  // Check if this is a pointer that represents a Mojo reference
+  if (!valobj.IsPointerType())
+    return false;
+
+  // Skip if this is a pointer to String type - let specific handler take it
+  ConstString typeNameConst = valobj.GetTypeName();
+  if (typeNameConst) {
+    llvm::StringRef typeName = typeNameConst.GetStringRef();
+    if (typeName.contains("String"))
+      return false;
+  }
+
+  // Try to dereference the pointer to get the actual value
+  Status error;
+  ValueObjectSP derefValObj = valobj.Dereference(error);
+  if (!derefValObj || error.Fail())
+    return false;
+
+  // Get the raw value directly without triggering formatters to avoid recursion
+  DataExtractor data;
+  Status dataError;
+  size_t bytesRead = derefValObj->GetData(data, dataError);
+  if (dataError.Fail() || bytesRead == 0)
+    return false;
+
+  // For simple integer types, extract and display the value
+  CompilerType derefType = derefValObj->GetCompilerType();
+  if (derefType.IsInteger()) {
+    lldb::offset_t offset = 0;
+    uint64_t intValue = data.GetMaxU64(&offset, bytesRead);
+    stream.Printf("%" PRIu64, intValue);
+    return true;
+  }
+
+  // For other types, fall back to default behavior to avoid recursion
+  return false;
+}
+
+// Summary provider for pointer<String> types (including UnsafePointer[String])
+static bool
+pointerToStringSummaryProvider(ValueObject &valobj, Stream &stream,
+                               const TypeSummaryOptions &summaryOptions) {
+  // Get the type name
+  ConstString typeNameConst = valobj.GetTypeName();
+  if (!typeNameConst)
+    return false;
+
+  // Check if this is a pointer to a String type
+  llvm::StringRef typeName = typeNameConst.GetStringRef();
+  if (!typeName.contains("String"))
+    return false;
+
+  // Only handle pointer types
+  if (!valobj.IsPointerType())
+    return false;
+
+  // Try to dereference the pointer to get the String object
+  Status error;
+  ValueObjectSP derefValObj = valobj.Dereference(error);
+  if (!derefValObj || error.Fail())
+    return false;
+
+  // Check if the dereferenced type is a String
+  ConstString derefTypeName = derefValObj->GetTypeName();
+  if (!derefTypeName)
+    return false;
+
+  llvm::StringRef derefType = derefTypeName.GetStringRef();
+  if (!derefType.contains("String"))
+    return false;
+
+  // The dereferenced object is a String, so we need to format it
+  // Use the existing string formatter
+  return builtinStringSummaryProvider(*derefValObj, stream, summaryOptions);
+}
+
 static void
 LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   if (!mojoCategorySP)
@@ -316,6 +397,19 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, MojoLLDBWrappingTypeSummaryProvider,
                 "Mojo decorator-based summary provider",
                 kLLDBFormatterWrappingTypeRegex, summaryFlags, /*regex=*/true);
+
+  // Add summary provider for Mojo reference pointers
+  AddCXXSummary(mojoCategorySP, mojoReferenceSummaryProvider,
+                "Mojo reference pointer summary provider", R"(pointer<.*>)",
+                summaryFlags, /*regex=*/true);
+
+  // Add summary provider for pointer<String> types - MUST be AFTER generic
+  // pointer handler because summary providers are matched in reverse order
+  AddCXXSummary(
+      mojoCategorySP, pointerToStringSummaryProvider,
+      "pointer<String> summary provider",
+      R"(pointer<(@stdlib::)?@collections::@string::@string::@String>)",
+      summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
