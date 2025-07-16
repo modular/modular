@@ -1293,7 +1293,7 @@ fn mha_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -1970,7 +1970,7 @@ fn mha_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -3163,7 +3163,7 @@ fn mha_decoding_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -3806,7 +3806,7 @@ fn mha_decoding_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
