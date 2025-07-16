@@ -98,8 +98,10 @@ fn blackwell_tma_pair_umma_kernel[
     alias BK = block_tile_shape[2]
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
     alias num_m_mmas = BM // (mma_shape[0] // cta_group)
     alias num_n_mmas = BN // (mma_shape[1] // cta_group)
+    alias num_k_mmas = BK // mma_shape[2]
 
     alias CLUSTER_M = Int(cluster_shape[0])
     alias CLUSTER_N = Int(cluster_shape[1])
@@ -119,7 +121,29 @@ fn blackwell_tma_pair_umma_kernel[
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
+    alias sub_a_smem_layout = tile_layout_k_major[
+        a_type, BM, 64, swizzle_mode=a_swizzle
+    ]()
+    alias sub_b_smem_layout = tile_layout_k_major[
+        b_type, BN, 64, swizzle_mode=b_swizzle
+    ]() if transpose_b else tile_layout_mn_major[
+        b_type, BN, 64, swizzle_mode=b_swizzle
+    ]()
 
+    alias sub_a_smem_tile_t = LayoutTensor[
+        a_type,
+        sub_a_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    alias sub_b_smem_tile_t = LayoutTensor[
+        b_type,
+        sub_b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
     alias c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
@@ -273,26 +297,35 @@ fn blackwell_tma_pair_umma_kernel[
                 + block_idx.y * MMA_N
             )
 
-            var a_smem_slice = __type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
-            )
-            var b_smem_slice = __type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
-            )
+            @parameter
+            for j in range(BK // 64):
+                alias k = 64 * j
+                alias a_offset = a_smem_layout(IntTuple(0, k))
+                alias b_offset = b_smem_layout(IntTuple(0, k))
+                constrained[((a_offset * sizeof[a_type]()) % 128) == 0]()
+                constrained[((b_offset * sizeof[b_type]()) % 128) == 0]()
+                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
-            a_tma_op.async_multicast_load[cta_group](
-                a_smem_slice,
-                tma_mbar[0],
-                (UInt(i) * BK, a_gmem_slice_coord),
-                a_multicast_mask,
-            )
+                var a_smem_slice = __type_of(sub_a_smem_tile)(
+                    sub_a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+                )
+                var b_smem_slice = __type_of(sub_b_smem_tile)(
+                    sub_b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+                )
+                a_tma_op.async_multicast_load[cta_group](
+                    a_smem_slice,
+                    tma_mbar[0],
+                    (UInt(i) * BK + k, a_gmem_slice_coord),
+                    a_multicast_mask,
+                )
 
-            b_tma_op.async_multicast_load[cta_group](
-                b_smem_slice,
-                tma_mbar[0],
-                (UInt(i) * BK, b_gmem_slice_coord),
-                b_multicast_mask,
-            )
+                b_tma_op.async_multicast_load[cta_group](
+                    b_smem_slice,
+                    tma_mbar[0],
+                    (UInt(i) * BK + k, b_gmem_slice_coord),
+                    b_multicast_mask,
+                )
 
         if elect_one_cta:
             tma_mbar[0].wait(tma_phase)
@@ -302,30 +335,20 @@ fn blackwell_tma_pair_umma_kernel[
                 adesc = adesc_base
                 bdesc = bdesc_base
 
-                if i == 0:
+                @parameter
+                for j in range(num_k_mmas):
+                    var c_scale = 0 if i == 0 and j == 0 else 1
+                    alias idx = IntTuple(0, MMA_K * j)
+                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
+                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
                     if elect_one_thread:
-                        mma[cta_group, c_scale=0](
-                            adesc, bdesc, tmem_addr, idesc
+                        mma[cta_group](
+                            adesc + a_offset,
+                            bdesc + b_offset,
+                            tmem_addr,
+                            idesc,
+                            c_scale=c_scale,
                         )
-
-                    @parameter
-                    for j in range(1, BK // mma_shape[2]):
-                        adesc += mma_shape[2] * sizeof[a_type]()
-                        bdesc += b_k_stride
-                        if elect_one_thread:
-                            mma[cta_group, c_scale=1](
-                                adesc, bdesc, tmem_addr, idesc
-                            )
-                else:
-
-                    @parameter
-                    for j in range(BK // mma_shape[2]):
-                        if elect_one_thread:
-                            mma[cta_group, c_scale=1](
-                                adesc, bdesc, tmem_addr, idesc
-                            )
-                        adesc += mma_shape[2] * sizeof[a_type]()
-                        bdesc += b_k_stride
 
                 if elect_one_thread:
                     mma_arrive_multicast[cta_group](mma_mbar, c_mma_mask)
@@ -510,15 +533,15 @@ fn blackwell_matmul_tma_pair_mma[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        a_type, 2, Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
         b_type,
         2,
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            BN // (cluster_shape[0] // cta_group), 64
+        ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
@@ -824,125 +847,93 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 64, 64),
-            Index(128, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(8192), static[2560](), static[8192]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 64, 64),
-            Index(128, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(4096), static[2560](), static[8192]())
+        @parameter
+        for mma_m_scale in range(1, 3):
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 64),
-            Index(128, 256, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(512), static[2560](), static[8192]())
+            @parameter
+            for mma_n_scale in range(1, 3):
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 64),
-            Index(128, 256, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, static[8192](), static[8192](), static[2048]())
+                @parameter
+                for k_scale in range(1, 3):
+                    alias block_tile_shape = Index(
+                        64 * mma_m_scale, 64 * mma_n_scale, 64 * k_scale
+                    )
+                    alias umma_shape = Index(
+                        128 * mma_m_scale, 128 * mma_n_scale, 16
+                    )
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 64, 64),
-            Index(128, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(500), static[2048](), static[4096]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, dynamic(1000), static[1024](), static[1024]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(1024), static[256](), static[128]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, dynamic(512), static[4096](), static[1024]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(1024), static[1024](), static[128]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, dynamic(500), static[2048](), static[4096]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(1000), static[1024](), static[128]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, dynamic(1024), static[256](), static[128]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(8192), static[2560](), static[8192]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, static[1024](), static[1024](), static[2048]())
 
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(500), static[2048](), static[4096]())
+                    test_blackwell_matmul_tma_pair_mma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    ](ctx, dynamic(8192), static[2560](), static[8192]())
 
         # print("\n\n========== Running Benchmarks ==========\n")
         # benchmark_blackwell_matmul(ctx)
