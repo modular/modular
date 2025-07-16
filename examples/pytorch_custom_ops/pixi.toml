@@ -9,6 +9,7 @@ version = "0.1.0"
 [tasks]
 addition = "python addition.py"
 grayscale = "python grayscale.py"
+graph = "python graph.py"
 test = { depends-on = [
   # FIXME
   #"whisper",
