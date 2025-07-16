@@ -346,7 +346,7 @@ fn main():
 This is a critical feature of Mojo's lifetime checker, because it ensures that no
 two variables can have ownership of the same value. To fix the error, you must
 not use the `message` variable after you end its lifetime with the `^` transfer
-operator. So here is the corrected code:
+sigil. So here is the corrected code:
 
 ```mojo
 fn take_text(var text: String):
