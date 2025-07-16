@@ -22,7 +22,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/torch",
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("safetensors"),
         requirement("torch"),
     ],
 )
