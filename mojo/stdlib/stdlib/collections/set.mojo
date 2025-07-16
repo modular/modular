@@ -94,7 +94,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data = data^
 
-    @deprecated("Use .copy() instead.")
+    @deprecated("Using an implicit copy on `Set` is deprecated. Use `my_set.copy()` instead.")
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
 
