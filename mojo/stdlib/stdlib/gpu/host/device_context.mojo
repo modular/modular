@@ -638,7 +638,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     @deprecated("Use `fill()` instead.")
@@ -659,7 +659,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -1378,7 +1378,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     @deprecated("Use `fill()` instead.")
@@ -1399,7 +1399,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -5621,6 +5621,55 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
+    fn memset[
+        dtype: DType
+    ](self, dst: DeviceBuffer[dtype, **_], val: Scalar[dtype]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            dtype: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
+        alias bitwidth = bitwidthof[dtype]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
+        ]()
+        var value: UInt64
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt64,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[dtype](),
+            )
+        )
+
+    @deprecated("Use `memset()` instead.")
+    @always_inline
     fn enqueue_memset[
         dtype: DType
     ](self, dst: DeviceBuffer[dtype, **_], val: Scalar[dtype]) raises:
@@ -5668,6 +5717,54 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    fn memset[
+        dtype: DType
+    ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination host buffer to the specified value.
+
+        Parameters:
+            dtype: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
+        alias bitwidth = bitwidthof[dtype]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
+        ]()
+        var value: UInt64
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt64,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[dtype](),
+            )
+        )
+
+    @deprecated("Use `memset()` instead.")
     fn enqueue_memset[
         dtype: DType
     ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:

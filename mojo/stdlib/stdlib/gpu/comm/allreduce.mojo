@@ -339,7 +339,7 @@ fn _allreduce_naive[
 
         # Create temporary accumulation buffer.
         var accum_buffer = curr_ctx.create_buffer[dtype](num_elements)
-        curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
+        curr_ctx.memset(accum_buffer, 0)  # Initialize to zero
 
         # Create temporary buffers for remote data.
         var tmp_buffers = List[DeviceBuffer[dtype]]()
