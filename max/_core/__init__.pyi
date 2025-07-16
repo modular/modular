@@ -37,6 +37,9 @@ from . import (
 from . import (
     profiler as profiler,
 )
+from . import (
+    safetensors as safetensors,
+)
 
 class Attribute:
     @staticmethod
