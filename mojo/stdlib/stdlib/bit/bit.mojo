@@ -19,6 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
+from bit._mask import is_negative
 from sys import llvm_intrinsic, sizeof
 from sys.info import bitwidthof
 
@@ -354,15 +355,57 @@ fn log2_floor(val: Int) -> Int:
 
     Returns:
         The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns -1 if val is 0.
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
     if val == 32:
         return 5
-    if val == 64:
+    elif val == 64:
         return 6
+    else:
+        return Int(log2_floor(Scalar[DType.index](val)))
 
-    alias bitwidth = bitwidthof[Int]()
-    return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
+
+@always_inline
+fn log2_floor(val: UInt) -> UInt:
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns UInt.MAX if val is 0.
+    """
+    return bitwidthof[UInt]() - count_leading_zeros(val) - 1
+
+
+@always_inline
+fn log2_floor[
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
+    """
+    constrained[dtype.is_integral(), "dtype must be integral"]()
+
+    alias bitwidth = bitwidthof[dtype]()
+    var res = bitwidth - count_leading_zeros(val) - 1
+
+    @parameter
+    if dtype.is_signed():
+        return res | is_negative(val)
+    else:
+        return res
 
 
 # ===-----------------------------------------------------------------------===#
