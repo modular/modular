@@ -72,7 +72,7 @@ fn named_barrier[
         - All threads participating in the barrier must specify the same num_threads value.
     """
 
-    debug_assert(id <= MaxHardwareBarriers, "barrier id should not exceed 16")
+    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
     constrained[
         is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
     ]()
