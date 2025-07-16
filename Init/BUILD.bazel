@@ -11,6 +11,7 @@ modular_cc_library(
     deps = [
         "//AsyncRT:Runtime",
         "//Support:Configuration",
+        "//Support:Context",
         "//Support:CrashReporting",
         "//Support:HTTP",
         "//Support:Telemetry",

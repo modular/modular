@@ -28,6 +28,7 @@ modular_cc_binary(
         "//KGEN:ToolCommon",
         "//Support:Base",
         "//Support:Compiler",
+        "//Support:Context",
         "//Support:Globals",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirOptLib",

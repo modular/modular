@@ -20,6 +20,7 @@ modular_cc_binary(
         "//KGEN:ToolCommon",
         "//KGEN:TransformUtils",
         "//Support:Base",
+        "//Support:Context",
         "//Support:Globals",
         "@llvm-project//mlir:MlirOptLib",
     ],

@@ -17,6 +17,7 @@ modular_cc_binary(
         "//KGEN:ToolCommon",
         "//KGEN/tools/common/lsp-protocol",
         "//Support:Base",
+        "//Support:Context",
         "//Support:Globals",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",

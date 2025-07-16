@@ -18,6 +18,7 @@ modular_cc_binary(
         "//KGEN:Pipeline",
         "//KGEN:ToolCommon",
         "//Support:Base",
+        "//Support:Context",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
     ],

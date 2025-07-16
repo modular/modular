@@ -12,6 +12,7 @@ modular_cc_library(
         "//Support:Buffer",
         "//Support:Compiler",
         "//Support:Configuration",
+        "//Support:Context",
         "//Support:HTTP",
         "//Support:HashUtils",
         "//Support:Telemetry",
