@@ -27,6 +27,7 @@ from sys.arg import argv
 from sys.ffi import (
     DLHandle,
     c_char,
+    c_double,
     c_int,
     c_long,
     c_size_t,
@@ -964,6 +965,42 @@ alias PyType_FromSpec = ExternalFunction[
     fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
 ]
 
+# Integer Objects
+alias PyLong_FromSsize_t = ExternalFunction[
+    "PyLong_FromSsize_t",
+    # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyLong_FromSize_t = ExternalFunction[
+    "PyLong_FromSize_t",
+    # PyObject *PyLong_FromSize_t(size_t v)
+    fn (c_size_t) -> PyObjectPtr,
+]
+alias PyLong_AsSsize_t = ExternalFunction[
+    "PyLong_AsSsize_t",
+    # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
+    fn (PyObjectPtr) -> Py_ssize_t,
+]
+
+# Boolean Objects
+alias PyBool_FromLong = ExternalFunction[
+    "PyBool_FromLong",
+    # PyObject *PyBool_FromLong(long v)
+    fn (c_long) -> PyObjectPtr,
+]
+
+# Floating-Point Objects
+alias PyFloat_FromDouble = ExternalFunction[
+    "PyFloat_FromDouble",
+    # PyObject *PyFloat_FromDouble(double v)
+    fn (c_double) -> PyObjectPtr,
+]
+alias PyFloat_AsDouble = ExternalFunction[
+    "PyFloat_AsDouble",
+    # double PyFloat_AsDouble(PyObject *pyfloat)
+    fn (PyObjectPtr) -> c_double,
+]
+
 # Module Objects
 alias PyModule_GetDict = ExternalFunction[
     "PyModule_GetDict",
@@ -984,12 +1021,6 @@ alias PyModule_AddObjectRef = ExternalFunction[
     "PyModule_AddObjectRef",
     # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
     fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
-]
-
-# PyObject *PyLong_FromSsize_t(Py_ssize_t v)
-alias PyLong_FromSsize_t = ExternalFunction[
-    "PyLong_FromSsize_t",
-    fn (Py_ssize_t) -> PyObjectPtr,
 ]
 
 # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
@@ -1190,13 +1221,21 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyType_FromSpec: PyType_FromSpec.type
     # The None Object
     var _Py_None: PyObjectPtr
+    # Integer Objects
+    var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
+    var _PyLong_FromSize_t: PyLong_FromSize_t.type
+    var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
+    # Boolean Objects
+    var _PyBool_FromLong: PyBool_FromLong.type
+    # Floating-Point Objects
+    var _PyFloat_FromDouble: PyFloat_FromDouble.type
+    var _PyFloat_AsDouble: PyFloat_AsDouble.type
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
     var _PyModule_AddFunctions: PyModule_AddFunctions.type
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
 
-    var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
 
     # Object Implementation Support
@@ -1338,6 +1377,15 @@ struct CPython(Copyable, Defaultable, Movable):
                 self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
 
+        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
+        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
+        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+
+        self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+
+        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
+        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
@@ -1346,7 +1394,6 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
 
-        self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
         if self.version.minor >= 10:
@@ -2099,6 +2146,124 @@ struct CPython(Copyable, Defaultable, Movable):
         return self._Py_None
 
     # ===-------------------------------------------------------------------===#
+    # Integer Objects
+    # ref: https://docs.python.org/3/c-api/long.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
+        on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
+        """
+        var r = self._PyLong_FromSsize_t(value)
+        self.log(
+            r,
+            " NEWREF PyLong_FromSsize_t, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `size_t`, or `NULL` on
+        failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
+        """
+        var r = self._PyLong_FromSize_t(value)
+        self.log(
+            r,
+            " NEWREF PyLong_FromSize_t, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyLong_AsSsize_t(self, pylong: PyObjectPtr) -> Py_ssize_t:
+        """Return a C `Py_ssize_t` representation of `pylong`.
+
+        Raise `OverflowError` if the value of `pylong` is out of range for
+        a `Py_ssize_t`.
+
+        Returns `-1` on error. Use `PyErr_Occurred()` to disambiguate.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
+        """
+        return self._PyLong_AsSsize_t(pylong)
+
+    # ===-------------------------------------------------------------------===#
+    # Boolean Objects
+    # ref: https://docs.python.org/3/c-api/bool.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
+        """Return `Py_True` or `Py_False`, depending on the truth value
+        of `value`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
+        """
+        var r = self._PyBool_FromLong(value)
+        self.log(
+            r,
+            " NEWREF PyBool_FromLong, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Floating-Point Objects
+    # ref: https://docs.python.org/3/c-api/float.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyFloat_FromDouble(self, value: c_double) -> PyObjectPtr:
+        """Create a PyFloatObject object from `value`, or `NULL` on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble
+        """
+        var r = self._PyFloat_FromDouble(value)
+        self.log(
+            r,
+            " NEWREF PyFloat_FromDouble, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyFloat_AsDouble(self, pyfloat: PyObjectPtr) -> c_double:
+        """Return a C double representation of the contents of `pyfloat`.
+
+        This method returns `-1.0` upon failure, so one should call
+        `PyErr_Occurred()` to check for errors.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble
+        """
+        return self._PyFloat_AsDouble(pyfloat)
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2426,100 +2591,6 @@ struct CPython(Copyable, Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/concrete.html
     # ===-------------------------------------------------------------------===#
 
-    # ===-------------------------------------------------------------------===#
-    # Boolean Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
-        """Return `Py_True` or `Py_False`, depending on the truth value
-        of `value`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
-        """
-        # PyObject *PyBool_FromLong(long v)
-        var r = self.lib.call["PyBool_FromLong", PyObjectPtr](value)
-        self.log(
-            r,
-            " NEWREF PyBool_FromLong, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyBool_Check(self, obj: PyObjectPtr) -> Bool:
-        """Return true if `obj` is of type `PyBool_Type`. This function always
-        succeeds.
-
-        References:
-        - https://docs.python.org/3/c-api/bool.html#c.PyBool_Check
-        """
-        # int PyBool_Check(PyObject *o)
-        return Bool(self.lib.call["PyBool_Check", c_int](obj))
-
-    # ===-------------------------------------------------------------------===#
-    # Integer Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
-        """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
-        on failure.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
-        """
-        var r = self.PyLong_FromSsize_t_func(value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSsize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
-        """Return a new `PyLongObject` object from a C `unsigned long`,
-        or `NULL` on failure.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
-        """
-        # PyObject *PyLong_FromSize_t(size_t v)
-        var r = self.lib.call["PyLong_FromSize_t", PyObjectPtr](value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_AsSsize_t(self, obj: PyObjectPtr) -> Py_ssize_t:
-        """Return a C `Py_ssize_t` representation of `pylong`.
-
-        Raise `OverflowError` if the value of `pylong` is out of range for
-        a `Py_ssize_t`.
-
-        Returns `-1` on error. Use `PyErr_Occurred()` to disambiguate.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
-        """
-        # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
-        return self.lib.call["PyLong_AsSsize_t", c_ssize_t](obj)
-
     fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Returns the `obj` converted to an integer object on success,
         or `NULL` on failure. This is the equivalent of the Python expression
@@ -2544,30 +2615,6 @@ struct CPython(Copyable, Defaultable, Movable):
         https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
         """
         return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
-
-    fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble).
-        """
-
-        var r = self.lib.call["PyFloat_FromDouble", PyObjectPtr](value)
-
-        self.log(
-            r,
-            " NEWREF PyFloat_FromDouble, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyFloat_AsDouble(self, py_object: PyObjectPtr) -> Float64:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble).
-        """
-        return self.lib.call["PyFloat_AsDouble", Float64](py_object)
 
     # ===-------------------------------------------------------------------===#
     # Unicode Objects
