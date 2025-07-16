@@ -4543,6 +4543,97 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
+    # TODO: Rename to enqueue_function once we're sure this works for every
+    # callsite.
+    fn enqueue_function_experimental[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        declared_arg_types: Optional[
+            __mlir_type[`!kgen.variadic<`, AnyType, `>`]
+        ],
+        *Ts: DevicePassable,
+    ](
+        self,
+        f: DeviceFunction[func, declared_arg_types, **_],
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            func_type: Something.
+            func: Something.
+            declared_arg_types: Something.
+            Ts: Argument dtypes.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim
+        )
+
+        constrained[
+            Bool(f.declared_arg_types), "Calling a non-checked function."
+        ]()
+        self._enqueue_function_checked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
     fn _enqueue_function_unchecked[
         *Ts: AnyType
     ](
