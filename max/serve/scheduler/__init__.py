@@ -76,9 +76,7 @@ def load_scheduler(
             max_forward_steps_tg=pipeline_config.max_new_tokens
             if pipeline_config.max_new_tokens != -1
             else 1,
-            target_tokens_per_batch_tg=pipeline_config.target_num_new_tokens,
             max_batch_size_ce=pipeline_config.max_batch_size,
-            max_forward_steps_ce=pipeline_config.max_num_steps,
             target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
