@@ -208,7 +208,7 @@ fn test_conv_transposed_cudnn[
         ctx,
     )
 
-    # Copy result back to host using enqueue_copy
+    # Copy result back to host using memcopy
     ctx.memcopy(output_nchw_host.tensor.data, d_output.buffer)
 
     # -------------------------------------------------------------

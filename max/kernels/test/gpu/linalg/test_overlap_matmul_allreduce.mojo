@@ -122,7 +122,7 @@ fn overlap_matmul_allreduce_test[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.
