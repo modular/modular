@@ -115,7 +115,7 @@ def test_id(ctx: DeviceContext):
 def test_print(ctx: DeviceContext):
     alias size = 15
 
-    var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
+    var host_buffer = ctx.create_host_buffer[DType.uint16](size)
     ctx.synchronize()
 
     iota(host_buffer.unsafe_ptr(), size)
@@ -135,7 +135,7 @@ def test_print(ctx: DeviceContext):
     assert_equal(String(dev_buffer), expected_dev)
 
     alias large_size = 1001
-    var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
+    var large_buffer = ctx.create_host_buffer[DType.float32](large_size)
     ctx.synchronize()
 
     iota(large_buffer.unsafe_ptr(), large_size)

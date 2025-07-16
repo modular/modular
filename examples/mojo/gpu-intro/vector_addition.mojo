@@ -52,12 +52,8 @@ def main():
         ctx = DeviceContext()
 
         # Create HostBuffers for input vectors
-        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
-        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
+        lhs_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
+        rhs_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
         ctx.synchronize()
 
         # Initialize the input vectors
@@ -94,9 +90,7 @@ def main():
         )
 
         # Create a HostBuffer for the result vector
-        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
+        result_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
 
         # Copy the result vector from the DeviceBuffer to the HostBuffer
         ctx.enqueue_copy(

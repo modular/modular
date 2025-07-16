@@ -61,9 +61,7 @@ def main():
         ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-            num_elements
-        )
+        host_buffer = ctx.create_host_buffer[DType.float32](num_elements)
 
         # Wait for buffer creation to complete.
         ctx.synchronize()
