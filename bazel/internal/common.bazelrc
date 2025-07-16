@@ -139,7 +139,7 @@ build:ci-no-config --verbose_failures
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
 
 build:ci-gpu-common --config=ci
-build:ci-gpu-common --test_tag_filters=gpu,-clang-tidy,-mojo-docs
+build:ci-gpu-common --test_tag_filters=gpu,-lint-test
 
 build:remote-h100 --config=remote
 build:remote-h100 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1

@@ -314,6 +314,7 @@ EOF
         tags = [
             "no-mypy",
             "validate-lit-features",
+            "lint-test",
         ],
         timeout = "short",
     )

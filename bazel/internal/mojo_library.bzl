@@ -37,6 +37,6 @@ def mojo_library(
     build_test(
         name = name + ".docs_test",
         targets = [name + ".docs"],
-        tags = ["mojo-docs"] + tags,
+        tags = ["mojo-docs", "lint-test"] + tags,
         visibility = ["//visibility:private"],
     )
