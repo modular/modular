@@ -521,7 +521,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             # this method never returns the same tokens more than once.
             res.append(
                 (
-                    self.tokens[token_idx],
+                    int(self.tokens[token_idx]),
                     self._log_probabilities_data.pop(token_idx, None),
                 )
             )

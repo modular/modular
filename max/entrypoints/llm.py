@@ -197,6 +197,7 @@ async def _async_worker(
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
+    pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
@@ -205,6 +206,7 @@ async def _async_worker(
             settings=settings,
             metric_client=metric_client,
             dispatcher_factory=dispatcher_factory,
+            pipeline_task=pipeline_task,
         ) as engine_queue,
         TokenGeneratorPipeline(
             model_name=model_name,

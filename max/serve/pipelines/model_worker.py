@@ -25,6 +25,7 @@ from typing import Callable
 
 import uvloop
 import zmq
+from max.interfaces import PipelineTask
 from max.pipelines.core import PipelinesFactory
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -218,6 +219,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     dispatcher_factory: DispatcherFactory,
+    pipeline_task: PipelineTask,
     zmq_io_threads: int = 1,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
@@ -246,6 +248,7 @@ async def start_model_worker(
         response_zmq_endpoint=settings.response_zmq_endpoint,
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
         zmq_ctx=zmq_ctx,
+        pipeline_task=pipeline_task,
     )
 
     logger.debug("Starting worker: %s", worker_name)

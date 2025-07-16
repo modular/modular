@@ -29,6 +29,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
     msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
@@ -175,7 +176,11 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.response_q = ZmqPushSocket[
             dict[str, EngineResult[TextGenerationResponse]]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -738,7 +743,6 @@ class TokenGenerationScheduler(Scheduler):
         if not batch_responses:
             return
 
-        # Convert this to list[dict[str, Any]]
         responses: dict[str, EngineResult[TextGenerationResponse]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:

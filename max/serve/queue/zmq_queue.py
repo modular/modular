@@ -270,6 +270,7 @@ class ZmqPullSocket(Generic[T]):
         try:
             return self.deserialize(msg)
         except Exception as e:
+            logger.exception(e)
             raise
 
     def get(self, **kwargs) -> T:
