@@ -16,6 +16,7 @@ import copy
 import csv
 import functools
 import logging
+import math
 import os
 import pickle
 import shutil
@@ -784,13 +785,20 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
+    def get_chunksize(self, num_elements: int) -> int:
+        elements_per_cpu = int(math.ceil(num_elements / self.num_cpu))
+        return min(elements_per_cpu, self.CHUNKSIZE)
+
     def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [b.output_dir for b in self.build_items]
+
         for r in self.cpu_pool.imap(
-            self.kbench_mkdir, output_dir_list, chunksize=self.CHUNKSIZE
+            self.kbench_mkdir,
+            output_dir_list,
+            chunksize=self.get_chunksize(len(output_dir_list)),
         ):
             logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
