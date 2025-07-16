@@ -318,7 +318,7 @@ fn matmul_stream_k[
     )
 
     var locks_data = ctx.create_buffer[DType.int32](total_tiles_streamk)
-    ctx.enqueue_memset(locks_data, 0)
+    ctx.memset(locks_data, 0)
 
     print("M=", M, ", N=", N, ", K=", K)
     print(

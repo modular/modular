@@ -1231,7 +1231,7 @@ fn multistage_gemm[
             var locks_data = ctx.create_buffer[DType.int32](
                 ceildiv(M, BM) * ceildiv(N, BN)
             )
-            ctx.enqueue_memset(locks_data, 0)
+            ctx.memset(locks_data, 0)
 
             alias gemm_kernel_type = multistage_gemm_split_k_kernel[
                 c_type,
