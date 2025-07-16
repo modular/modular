@@ -7,9 +7,26 @@ common --incompatible_strict_action_env
 # Enable --config=(macos|windows|linux) based on the host OS
 common --enable_platform_specific_config
 
+# Allow --modify_execution_info to be passed any number of times
+common --incompatible_modify_execution_info_additive
+
+# Reduce the impact of transitions on rebuilding C++ files
+build --modify_execution_info=CppCompile=+supports-path-mapping
+build --modify_execution_info=CcStrip=+supports-path-mapping
+build --modify_execution_info=Objc.*=+supports-path-mapping
+build --experimental_output_paths=strip
+
 # Force hermetic toolchain, make sure we don't accidentally used the default one
 common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
+# TODO: Break lit tests finding FileCheck
+# Disable legacy duplicate runfiles creation
+common --legacy_external_runfiles=false
+common --build_runfile_links=false
+
+# Differentiate between accidental 'bazel run' vs 'bazel test'
+test --test_env=MODULAR_RUNNING_TESTS=true
 
 # Don't fail on unknown GPUs, add needed GPUs to common.MODULE.bazel
 common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
@@ -38,9 +55,6 @@ build --features=-layering_check --host_features=-layering_check
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
-# Use the target platform for tests to correctly resolve GPU settings
-build --use_target_platform_for_tests
-
 # Load config generated from tools/bazel
 try-import %workspace%/build/wrapper.bazelrc
 
@@ -61,6 +75,9 @@ build --grpc_keepalive_time=30s
 build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 build --remote_instance_name=modular-public
+
+build --disk_cache=~/.cache/bazel-disk-cache
+build --experimental_disk_cache_gc_max_size=100G
 
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io

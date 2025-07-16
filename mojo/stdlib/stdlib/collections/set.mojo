@@ -13,10 +13,10 @@
 """Implements the  Set datatype."""
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-from hashlib import Hasher
+from hashlib import Hasher, default_hasher
 
 
-struct Set[T: KeyElement](
+struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
 ):
     """A set data type.
@@ -42,10 +42,11 @@ struct Set[T: KeyElement](
 
     Parameters:
         T: The element type of the set. Must implement KeyElement.
+        H: The tpe of the hasher used to hash keys.
     """
 
     # Fields
-    var _data: Dict[T, NoneType]
+    var _data: Dict[T, NoneType, H]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -61,7 +62,7 @@ struct Set[T: KeyElement](
         """
         # TODO: Reserve space in this set. Also, take the elements as 'owned'
         # and transfer them into the set to eliminate copyability.
-        self._data = Dict[T, NoneType]()
+        self._data = Dict[T, NoneType, H]()
         for t in ts:
             self.add(t)
 
@@ -352,7 +353,9 @@ struct Set[T: KeyElement](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> _DictKeyIter[T, NoneType, __origin_of(self._data)]:
+    fn __iter__(
+        ref self,
+    ) -> _DictKeyIter[T, NoneType, H, __origin_of(self._data)]:
         """Iterate over elements of the set, returning immutable references.
 
         Returns:
@@ -426,7 +429,7 @@ struct Set[T: KeyElement](
             A new set containing only the elements which appear in both
             this set and the `other` set.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
         for v in self:
             if v in other:
                 result.add(v)
@@ -443,7 +446,7 @@ struct Set[T: KeyElement](
             A new set containing elements that are in this set but not in
             the `other` set.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
         for e in self:
             if e not in other:
                 result.add(e)
@@ -549,7 +552,7 @@ struct Set[T: KeyElement](
         Returns:
             A new set containing the symmetric difference of the two sets.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
 
         for element in self:
             if element not in other:

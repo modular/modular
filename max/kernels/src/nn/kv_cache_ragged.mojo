@@ -1200,8 +1200,8 @@ fn _matmul_kv_cache_ragged_impl[
         )
 
     # Cast to a register passable dtype so the function closure works on GPU.
-    k_cache_reg = rebind[ContinuousBatchingKVCache[dtype, kv_params]](k_cache)
-    v_cache_reg = rebind[ContinuousBatchingKVCache[dtype, kv_params]](v_cache)
+    k_cache_reg = rebind[cache_t](k_cache)
+    v_cache_reg = rebind[cache_t](v_cache)
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
@@ -1719,7 +1719,8 @@ fn _qmatmul_gguf_quantized_common[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
-    dtype: DType, //,
+    dtype: DType,
+    freq_dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -1727,7 +1728,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: NDBuffer[dtype, 2, *_],
+    freqs_cis: NDBuffer[freq_dtype, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr,
@@ -1772,7 +1773,8 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged[
-    dtype: DType, //,
+    dtype: DType,
+    freq_dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -1780,7 +1782,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: NDBuffer[dtype, 2, *_],
+    freqs_cis: NDBuffer[freq_dtype, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr = DeviceContextPtr(),

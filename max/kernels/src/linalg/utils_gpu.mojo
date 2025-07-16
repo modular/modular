@@ -222,7 +222,7 @@ struct MatmulConfig[
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("ampere_")
+        writer.write("kernel_")
         writer.write(a_type, "_")
         writer.write(c_type, "_")
         # Use BNxBM to match cublas

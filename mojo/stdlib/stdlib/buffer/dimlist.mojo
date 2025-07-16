@@ -30,10 +30,7 @@ from utils import IndexList, StaticTuple
 struct Dim(
     Defaultable,
     EqualityComparable,
-    EqualityComparable,
     ImplicitlyBoolable,
-    ImplicitlyBoolable,
-    Indexer,
     Indexer,
     Intable,
     Stringable,

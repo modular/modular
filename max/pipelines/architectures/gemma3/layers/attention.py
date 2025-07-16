@@ -242,7 +242,7 @@ class _Gemma3Attention(Module):
         # Calculate Flash Attention.
         mask_variant = (
             MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if bool((layer_idx + 1) % self.sliding_window_pattern)
+            if bool((self.layer_idx + 1) % self.sliding_window_pattern)
             else MHAMaskVariant.CAUSAL_MASK
         )
         attn_out = flash_attention_ragged(

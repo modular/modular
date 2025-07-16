@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections.dict import OwnedKwargsDict
 
 from test_utils import CopyCounter
-from hashlib import Hashable, Hasher
+from hashlib import Hashable, Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -245,6 +244,15 @@ def test_iter_items():
     assert_equal(sum, 3)
 
 
+def test_dict_contains():
+    var dict: Dict[String, Int] = {}
+    dict["abc"] = 1
+    dict["def"] = 2
+    assert_true("abc" in dict)
+    assert_true("def" in dict)
+    assert_false("c" in dict)
+
+
 def test_dict_copy():
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
@@ -460,6 +468,7 @@ def test_dict():
     test["test_iter_values", test_iter_values]()
     test["test_iter_values_mut", test_iter_values_mut]()
     test["test_iter_items", test_iter_items]()
+    test["test_dict_contains", test_dict_contains]()
     test["test_dict_copy", test_dict_copy]()
     test["test_dict_copy_add_new_item", test_dict_copy_add_new_item]()
     test["test_dict_copy_delete_original", test_dict_copy_delete_original]()
@@ -613,8 +622,8 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict():
     alias N = 10
 
-    fn _get_dict() -> Dict[String, Int32]:
-        var res = Dict[String, Int32]()
+    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = i
         return res

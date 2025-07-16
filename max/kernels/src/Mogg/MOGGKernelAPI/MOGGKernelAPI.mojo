@@ -7238,13 +7238,17 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-    dtype: DType, //, *, interleaved: Bool, target: StaticString
+    dtype: DType,
+    freq_dtype: DType, //,
+    *,
+    interleaved: Bool,
+    target: StaticString,
 ](
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
@@ -7266,7 +7270,11 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        dtype: DType,
+        freq_dtype: DType,
+        num_heads: Int,
+        head_dim: Int, //,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
@@ -7275,7 +7283,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
             dtype,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -7294,7 +7302,8 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-    dtype: DType, //,
+    dtype: DType,
+    freq_dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -7305,7 +7314,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         dtype,
         *_,
     ],
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     context: DeviceContextPtr,
@@ -7329,6 +7338,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
@@ -7342,7 +7352,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
@@ -8895,7 +8905,7 @@ struct DistributedAllReduceSum:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8903,15 +8913,13 @@ struct DistributedAllReduceSum:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8985,7 +8993,7 @@ struct DistributedAllGather:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8993,15 +9001,13 @@ struct DistributedAllGather:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9081,10 +9087,10 @@ struct DistributedMatmulAllReduce:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
-        ](NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]())
+        ](fill={})
         var weight_bufs = InlineArray[
             NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
-        ](NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9095,7 +9101,7 @@ struct DistributedMatmulAllReduce:
 
         var out_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9103,9 +9109,7 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9131,7 +9135,7 @@ struct DistributedMatmulAllReduce:
         # Allocate temporarie buffers to store the matmul outputs
         var c_temp_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](uninitialized=True)
 
         @parameter
         for i in range(num_devices):

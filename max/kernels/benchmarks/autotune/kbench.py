@@ -37,6 +37,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,7 +47,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from utils import YAML, pretty_exception_handler
+from utils import pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -125,7 +126,9 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        output = subprocess.run(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
@@ -228,6 +231,15 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
+                )
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")
@@ -508,7 +520,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -522,7 +534,7 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
         if "name" not in obj.keys():
             logging.warning("Field [name] is not set in YAML")
@@ -554,7 +566,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
@@ -927,7 +941,7 @@ def run(
     yaml_path_list,
     obj_cache: KbenchCache,
     shape: SpecInstance,
-    output_path=None,
+    output_path: Path = Path(),
     mode=KBENCH_MODE.RUN,
     param_list=None,
     filter_list=None,
@@ -967,6 +981,10 @@ def run(
     # Generate a tmp path for intermediate results.
     if not output_dir:
         output_dir = _get_tmp_path(spec.file)
+    else:
+        output_path = output_dir / output_path
+    os.makedirs(output_path.parent, exist_ok=True)
+
     output_dir = Path(output_dir)
     logging.info(f"output-dir: [{output_dir}]")
 
@@ -1121,23 +1139,27 @@ def run(
     if output_path:
         output_dict["name"] = spec.name
         output_dict["file"] = spec.file
-        store_pickle(f"{output_path}.pkl", output_dict)
+        pkl_path = Path(output_path).with_suffix(".pkl")
+        csv_path = Path(output_path).with_suffix(".csv")
+        txt_path = Path(output_path).with_suffix(".txt")
+        store_pickle(f"{pkl_path}", output_dict)
 
         # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
-        # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
+        # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
         if mode == KBENCH_MODE.RUN and valid_specs:
             merged_df.drop(columns=["mesh_idx"]).to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
             )
+            logging.info(f"wrote results to [{csv_path}]")
         elif mode == KBENCH_MODE.BUILD:
-            build_df.to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        else:
-            with open(output_path, "w") as f:
-                f.write(output_str + "\n")
+            build_df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+            logging.info(f"wrote results to [{csv_path}]")
 
-        logging.info(f"wrote results to [{output_path}]")
+        with open(txt_path, "w") as f:
+            f.write(output_str + "\n")
+
+        logging.info(f"wrote results to [{txt_path}]")
+        logging.info(f"wrote results to [{pkl_path}]")
     logging.info(f"output-dir: [{output_dir}]")
     print(LINE + "\n\n")
 
@@ -1221,9 +1243,7 @@ def set_build_opts(
     return build_opts
 
 
-help_str = (
-    "Grid-search all the params for a mojo benchmark and pick the top value"
-)
+help_str = "Benchmarking toolkit for Mojo kernels"
 
 
 @click.command(help=help_str, no_args_is_help=True)
@@ -1239,7 +1259,11 @@ help_str = (
     multiple=True,
 )
 @click.option(
-    "--output", "-o", "output_path", default=None, help="Path to output file."
+    "--output",
+    "-o",
+    "output_path",
+    default="output.csv",
+    help="Path to output file.",
 )
 @click.option(
     "--output-dir",
@@ -1405,9 +1429,9 @@ def cli(
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.hash(with_variables=True) for sh in shape_list]
+        [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
-        else [output_path]
+        else [Path(output_path)]
     )
 
     assert len(shape_path_list) == len(shape_list), (
@@ -1461,4 +1485,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
+
     main()

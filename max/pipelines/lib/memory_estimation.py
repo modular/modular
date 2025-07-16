@@ -67,16 +67,28 @@ class MemoryEstimator:
             pipeline_config
         )
 
-        if model_weights_size > free_memory:
-            raise RuntimeError(
-                f"Model size exceeds available memory ({to_human_readable_bytes(model_weights_size)} > {to_human_readable_bytes(free_memory)}). "
-                "Try running a smaller model, using a smaller precision, or using a device with more memory."
-            )
+        # Get activation memory estimate from the model
+        activation_memory_size = pipeline_model.estimate_activation_memory(
+            pipeline_config, huggingface_config
+        )
 
-        total_size = model_weights_size
+        # Total static memory requirement (weights + activations)
+        static_memory_size = model_weights_size + activation_memory_size
+
+        if static_memory_size > free_memory:
+            error_msg = f"Model size exceeds available memory ({to_human_readable_bytes(static_memory_size)} > {to_human_readable_bytes(free_memory)}). "
+            if activation_memory_size > 0:
+                error_msg += (
+                    f"Model weights: {to_human_readable_bytes(model_weights_size)}, "
+                    f"Activation memory: {to_human_readable_bytes(activation_memory_size)}. "
+                )
+            error_msg += "Try running a smaller model, using a smaller precision, or using a device with more memory."
+            raise RuntimeError(error_msg)
+
+        total_size = static_memory_size
         available_kv_cache_memory = int(
             free_memory * model_config.kv_cache_config.device_memory_utilization
-            - model_weights_size
+            - static_memory_size
         )
         available_kv_cache_memory = max(0, available_kv_cache_memory)
 
@@ -162,6 +174,10 @@ class MemoryEstimator:
         if model_weights_size:
             weights_str = f"\n\t    Weights:                {to_human_readable_bytes(model_weights_size)}"
 
+        activation_str = ""
+        if activation_memory_size:
+            activation_str = f"\n\t    Activation memory:      {to_human_readable_bytes(activation_memory_size)}"
+
         if not user_provided_max_length:
             max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
         else:
@@ -180,8 +196,9 @@ class MemoryEstimator:
             "\n"
             f"\n\tEstimated memory consumption:"
             f"{weights_str}"
+            f"{activation_str}"
             f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {to_human_readable_bytes(model_weights_size + actual_kv_cache_size)} used{free_memory_str}"
+            f"\n\t    Total estimated:        {to_human_readable_bytes(static_memory_size + actual_kv_cache_size)} used{free_memory_str}"
             f"\n\t{max_length_str}"
             f"\n\t{max_batch_size_str}\n"
         )

@@ -212,6 +212,16 @@ struct _WriteBufferHeap(Writable, Writer):
             Span[Byte, __origin_of(self)](ptr=self.data, length=self.pos)
         )
 
+    fn nul_terminate(mut self):
+        if self.pos + 1 > HEAP_BUFFER_BYTES:
+            _printf[
+                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
+                " HEAP_BUFFER_BYTES=4096`\n"
+            ]()
+            abort()
+        self.data[self.pos] = 0
+        self.pos += 1
+
 
 struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
     var data: InlineArray[UInt8, STACK_BUFFER_BYTES]

@@ -1,2 +1,0 @@
-# https://docs.astral.sh/uv/reference/settings/#environments
-environments = ["sys_platform == 'linux'"]

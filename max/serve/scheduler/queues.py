@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -22,9 +23,12 @@ import queue
 from collections.abc import AsyncGenerator, Generator
 from typing import Generic, Optional, TypeVar
 
-import sentinel
 import zmq
-from max.pipelines.core import InputContext, msgpack_numpy_encoder
+from max.interfaces import InputContext
+from max.pipelines.core.serialization import (
+    SharedMemoryEncoder,
+    msgpack_numpy_encoder,
+)
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -35,7 +39,6 @@ ReqInput = TypeVar("ReqInput", bound=InputContext)
 ReqOutput = TypeVar("ReqOutput")
 
 """The sentinel used to indicate a queue is finished."""
-STOP_STREAM = sentinel.create("STOP_STREAM")
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
@@ -60,7 +63,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
         # Create Queues
         self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
-            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
+            zmq_ctx,
+            request_zmq_endpoint,
+            serialize=SharedMemoryEncoder(),
         )
         self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
             zmq_ctx, response_zmq_endpoint
@@ -99,6 +104,23 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     def open_channel(
         self, req_id: ReqId, data: ReqInput
     ) -> Generator[asyncio.Queue, None, None]:
+        """
+        Context manager to open a communication channel for a specific request.
+
+        This method registers a new asyncio.Queue for the given request ID, sends the request data
+        through the request push socket, and yields the queue for streaming results. Upon exiting
+        the context, the queue is cleaned up from the pending output queues.
+
+        Args:
+            req_id (ReqId): The unique identifier for the request.
+            data (ReqInput): The input data associated with the request.
+
+        Yields:
+            asyncio.Queue: The queue to receive streamed results for the request.
+
+        Raises:
+            RuntimeError: If a queue for the given req_id already exists, indicating a duplicate request.
+        """
         try:
             if req_id in self.pending_out_queues:
                 raise RuntimeError(
@@ -109,6 +131,10 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
             out_queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
+
+            # put_nowait will fail if the request_push_socket is unavailable
+            # this will immediately trigger the finally block, resulting in
+            # the request being purged, and returned without result.
             self.request_push_socket.put_nowait((req_id, data))
             yield out_queue
         finally:
@@ -117,11 +143,53 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     async def stream(
         self, req_id: ReqId, data: ReqInput
     ) -> AsyncGenerator[ReqOutput, None]:
+        """
+        Asynchronously streams results for a given request ID and input data.
+
+        Opens a channel for the request, yields each result as it becomes available,
+        and closes the channel when the stream ends.
+        """
         with self.open_channel(req_id, data) as queue:
-            while (item := await queue.get()) is not STOP_STREAM:
-                yield item
+            # queue.get() will wait until an item is available.
+            # This will exit when continue_stream is false.
+            # continue_stream is false when the EngineResult.status
+            # is either EngineStatus.completed or EngineStatus.cancelled
+            while (item := await queue.get()).continue_stream():
+                yield item.result
 
     async def response_worker(self) -> None:
+        """
+        Continuously processes responses from the remote worker process.
+
+        This method runs in a loop, pulling responses from the response socket and routing them
+        to the appropriate pending queues. It also handles distributed garbage collection by
+        detecting and cancelling requests that are no longer being waited for.
+
+        Cancellation Handling:
+        When a response is received for a request ID that doesn't have a pending queue,
+        it means the client has given up waiting (due to disconnect, timeout, exception, or
+        early termination). In this case, we send a cancellation message to the worker to:
+
+        1. **Resource Optimization**: Tell the worker to stop wasting CPU/memory on requests
+           nobody is waiting for
+        2. **Prevent Resource Leaks**: The worker might be holding onto resources (memory,
+           file handles, etc.) for cancelled requests
+        3. **Backpressure Management**: Remove cancelled requests from the worker's queue
+           to prevent them from blocking other work
+
+        Common scenarios that trigger cancellation:
+        - Client disconnects or times out while streaming
+        - Exception occurs during stream processing
+        - Async generator is closed early (stream.__aclose__())
+        - Client process terminates unexpectedly
+
+        This implements a distributed garbage collection pattern common in async systems
+        where network operations are asynchronous and either side can fail or disconnect.
+
+        Raises:
+            Exception: If the worker process becomes unhealthy and cannot be recovered.
+            asyncio.CancelledError: If the response worker task is cancelled.
+        """
         try:
             while True:
                 try:

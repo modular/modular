@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s -r 2 -o %t.csv | FileCheck %s
+# RUN: %mojo %s -r 2 -o %t.csv | FileCheck %s
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
-# RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
+# RUN: %mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
 from benchmark import (
     Bench,

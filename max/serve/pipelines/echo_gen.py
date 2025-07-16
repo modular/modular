@@ -16,13 +16,15 @@ from dataclasses import dataclass
 from typing import Union, cast
 
 import numpy as np
+from max.interfaces import (
+    GenerationStatus,
+    TextGenerationResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from max.pipelines.core import (
     PipelineTokenizer,
     TextContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )
@@ -148,7 +150,7 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
         for request_id, context in batch.items():
             if request_id not in responses:
                 responses[request_id] = TextGenerationResponse(
-                    [], TextGenerationStatus.ACTIVE
+                    [], GenerationStatus.ACTIVE
                 )
 
             # Initialize echo index if not exists
@@ -181,7 +183,7 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
                 else:
                     # Finished echoing all tokens or reached max length
                     responses[request_id].update_status(
-                        TextGenerationStatus.MAXIMUM_LENGTH
+                        GenerationStatus.MAXIMUM_LENGTH
                     )
                     # Clean up the echo index
                     if request_id in self._echo_indices:

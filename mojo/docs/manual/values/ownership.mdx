@@ -101,7 +101,7 @@ reference and one that's immutable:
 
 ```mojo
 fn add(mut x: Int, read y: Int):
-    var x += y
+    x += y
 
 fn main():
     var a = 1
@@ -157,13 +157,12 @@ mutability in the callee. However, the read convention differs from
 * The Mojo compiler implements a lifetime checker that ensures that values are
   not destroyed when there are outstanding references to those values.
 
-* Small values like `Int`, `Float`, and `SIMD` are passed directly in machine
-  registers instead of through an extra indirection (this is because they are
-  declared with the `@register_passable` decorator). This is a [significant
-  performance
-  enhancement](https://www.forrestthewoods.com/blog/should-small-rust-structs-be-passed-by-copy-or-by-borrow/)
-  when compared to languages like C++ and Rust, and moves this optimization from
-  every call site to a declaration on the type definition.
+* Small values like `Int`, `Float`, and `SIMD` are always passed in machine
+  registers—instead of through an extra indirection or optimized at every call
+  site—because these types are declared with the
+  [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
+  This is a significant performance enhancement compared to languages
+  like C++ and Rust.
 
 The major difference between Rust and Mojo is that Mojo does not require a sigil
 on the caller side to pass by immutable reference. Also, Mojo is more efficient

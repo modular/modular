@@ -34,6 +34,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import InputContext
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -51,7 +52,7 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.nn.layer import Layer
-from max.pipelines.core import InputContext, TextAndVisionContext
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -683,7 +684,7 @@ class LlamaVisionLanguageModel(Layer):
         return ops.cast(logits, DType.float32)
 
 
-class LlamaVision(PipelineModel[TextAndVisionContext]):
+class LlamaVision(PipelineModel[TextAndVisionContext]):  # type: ignore
     """The entire (multimodal) Llama3.2 vision model.
 
     A note on multi-step and vision inputs:
@@ -979,12 +980,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             msg = "Llama Vision only supports paged cache strategy"
             raise ValueError(msg)
 
-        def has_image(pixel_values: Sequence[np.ndarray]) -> bool:
-            return pixel_values is not None and len(pixel_values) > 0
-
-        has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
+        has_images = any(ctx.needs_vision_encoding for ctx in context_batch)
         if has_images and not all(
-            has_image(ctx.pixel_values) for ctx in context_batch
+            ctx.needs_vision_encoding for ctx in context_batch
         ):
             msg = (
                 "expected context batch to all have images, or no images at all"
@@ -992,7 +990,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             raise RuntimeError(msg)
 
         def initial_prompt_missing_image(ctx: TextAndVisionContext) -> bool:
-            return ctx.is_initial_prompt and not has_image(ctx.pixel_values)
+            return ctx.is_initial_prompt and not ctx.pixel_values
 
         if any(initial_prompt_missing_image(ctx) for ctx in context_batch):
             msg = "The Llama Vision model currently requires a prompt with an image. Consider using the regular text-only models for non-image prompts"
@@ -1020,9 +1018,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 [0]
                 + [
                     # Use an input row offset of 0 to mean no image.
-                    self.vision_max_seq_len
-                    if has_image(ctx.pixel_values)
-                    else 0
+                    self.vision_max_seq_len if ctx.needs_vision_encoding else 0
                     for ctx in context_batch
                 ],
                 dtype=np.uint32,
@@ -1042,10 +1038,10 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
         )
 
-        # Unset the context's pixel values so that subsequent next_token
-        # calls reusing the same context won't run the vision encoder.
+        # Mark that vision encoding is complete for all contexts in the batch
+        # This prevents re-encoding on subsequent calls before update() is called
         for ctx in context_batch:
-            ctx.pixel_values = tuple()
+            ctx.needs_vision_encoding = False
 
         return LlamaVisionInputs(
             input_id_values=input_id_values,

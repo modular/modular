@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash mojo -D ASSERT=all %s 2>&1
 
 
 # CHECK: test_range_uint_bad_step_size

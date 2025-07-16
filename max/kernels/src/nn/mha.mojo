@@ -1413,15 +1413,9 @@ fn mha_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
-                kv_num_heads * depth, 1
-            ),
+        var kv_runtime_layout = RuntimeLayout[kv_gmem_layout](
+            {kv_tile_num_rows, depth},
+            {kv_num_heads * depth, 1},
         )
 
         var k_gmem_block = LayoutTensor[
@@ -3663,21 +3657,14 @@ fn mha_decoding_single_batch[
     # Guard writing to shared memory.
     barrier()
 
+    # FIXME: Using RuntimeLayout to override the layout of the output tensor.
     alias output_gmem_layout = Layout.row_major(BM, depth)
     var output_gmem_runtime_layout = RuntimeLayout[
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ](
-        RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
-            group, depth
-        ),
-        RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
-            depth, 1
-        ),
-    )
+        output_gmem_layout
+    ].row_major(Index(group, depth))
     var output_gmem_tile = LayoutTensor[
         output_type,
-        Layout.row_major(BM, depth),
+        output_gmem_layout,
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
         masked=True,

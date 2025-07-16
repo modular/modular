@@ -1911,29 +1911,23 @@ fn _rowmax_online_softmax[
     @parameter
     for col_tile in range(num_colwise_tiles):
         # Initialize local max with the running max.
-        score_frag_rowmax._set[col_tile](
-            score_reg_tile._get[col_tile, 0]().reduce_max[frag_num_rows]()
-        )
+        score_frag_rowmax[col_tile] = score_reg_tile[col_tile, 0].reduce_max[
+            frag_num_rows
+        ]()
 
         @parameter
         for row_tile in range(1, num_rowwise_tiles):
-            score_frag_rowmax._set[col_tile](
-                max(
-                    score_frag_rowmax._get[col_tile](),
-                    score_reg_tile._get[col_tile, row_tile]().reduce_max[
-                        frag_num_rows
-                    ](),
-                )
+            score_frag_rowmax[col_tile] = max(
+                score_frag_rowmax[col_tile],
+                score_reg_tile[col_tile, row_tile].reduce_max[frag_num_rows](),
             )
     if not init_rowmax:
 
         @parameter
         for col_tile in range(num_colwise_tiles):
-            score_frag_rowmax._set[col_tile](
-                max(
-                    score_frag_rowmax._get[col_tile](),
-                    rowmax_tensor._get[col_tile](),
-                )
+            score_frag_rowmax[col_tile] = max(
+                score_frag_rowmax[col_tile],
+                rowmax_tensor[col_tile],
             )
 
     @parameter
@@ -1941,20 +1935,24 @@ fn _rowmax_online_softmax[
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
-        score_frag_rowmax._set[col_tile](
-            warp.lane_group_max_and_broadcast[Int(num_rowwise_lanes)](
-                score_frag_rowmax._get[col_tile]()
-            )
-        )
+        score_frag_rowmax[col_tile] = warp.lane_group_max_and_broadcast[
+            Int(num_rowwise_lanes)
+        ](score_frag_rowmax[col_tile])
 
         # Softmax numerator based on mma results.
         @parameter
         for row_tile in range(num_rowwise_tiles):
-            score_reg_tile._set[col_tile, row_tile](
-                exp_function(
-                    score_reg_tile._get[col_tile, row_tile]()
-                    - score_frag_rowmax._get[col_tile, size=frag_size]()
+            var sfm: SIMD[dtype, frag_size]
+
+            @parameter
+            if accum_frag_layout.size() == 1:
+                sfm = {rebind[Scalar[dtype]](score_frag_rowmax[col_tile])}
+            else:
+                sfm = rebind[SIMD[dtype, frag_size]](
+                    score_frag_rowmax[col_tile]
                 )
+            score_reg_tile[col_tile, row_tile] = exp_function(
+                score_reg_tile[col_tile, row_tile] - sfm
             )
 
 
@@ -1996,9 +1994,9 @@ fn _rowsum[
     # Initialize local max with the running max, and local sum with zero.
     @parameter
     for col_tile in range(num_colwise_tiles):
-        score_frag_rowsum._set[col_tile](
-            score_reg_tile._get[col_tile, 0]().reduce_add[frag_num_rows]()
-        )
+        score_frag_rowsum[col_tile] = score_reg_tile[col_tile, 0].reduce_add[
+            frag_num_rows
+        ]()
 
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
@@ -2007,20 +2005,16 @@ fn _rowsum[
 
         @parameter
         for col_tile in range(num_colwise_tiles):
-            score_frag_rowsum._set[col_tile](
-                score_frag_rowsum._get[col_tile]()
-                + score_reg_tile._get[col_tile, row_tile]().reduce_add[
-                    frag_num_rows
-                ]()
+            score_frag_rowsum[col_tile] = (
+                score_frag_rowsum[col_tile]
+                + score_reg_tile[col_tile, row_tile].reduce_add[frag_num_rows]()
             )
 
     @parameter
     for col_tile in range(num_colwise_tiles):
-        score_frag_rowsum._set[col_tile](
-            warp.lane_group_sum_and_broadcast[Int(num_rowwise_lanes)](
-                score_frag_rowsum._get[col_tile]()
-            )
-        )
+        score_frag_rowsum[col_tile] = warp.lane_group_sum_and_broadcast[
+            Int(num_rowwise_lanes)
+        ](score_frag_rowsum[col_tile])
 
 
 @always_inline
@@ -2051,8 +2045,8 @@ fn _online_softmax_correction[
     @parameter
     for col_tile in range(num_colwise_tiles):
         # Corrention since previous max may be updated.
-        sfr = score_frag_rowmax._get[col_tile]()
-        score_frag_rowmax._set[col_tile](
-            exp_function(rowmax_tensor._get[col_tile]() - sfr)
+        sfr = score_frag_rowmax[col_tile]
+        score_frag_rowmax[col_tile] = exp_function(
+            rowmax_tensor[col_tile] - sfr
         )
-        rowmax_tensor._set[col_tile](sfr)
+        rowmax_tensor[col_tile] = sfr

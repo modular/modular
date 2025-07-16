@@ -33,14 +33,19 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_method[Person.get_age]("get_age")
             .def_method[Person._get_birth_year]("_get_birth_year")
             .def_method[Person._with_first_last_name]("_with_first_last_name")
-            # # def_method with no return, raising
+            # def_method with no return, raising
             .def_method[Person.erase_name]("erase_name")
             .def_method[Person.set_age]("set_age")
             .def_method[Person.set_name_and_age]("set_name_and_age")
-            # # def_method with no return, not raising
+            # def_method with no return, not raising
             .def_method[Person.reset]("reset")
             .def_method[Person.set_name]("set_name")
             .def_method[Person._set_age_from_dates]("_set_age_from_dates")
+            # def_method using automatic self downcasting
+            .def_method[Person.set_name_auto]("set_name_auto")
+            .def_method[Person.get_name_auto]("get_name_auto")
+            .def_method[Person.increment_age_auto]("increment_age_auto")
+            .def_method[Person.reset_auto]("reset_auto")
         )
         return b.finalize()
     except e:
@@ -180,3 +185,26 @@ struct Person(Copyable, Defaultable, Movable, Representable):
             self_ptr[].age = Int(this_year) - Int(birth_year)
         except e:
             abort(String("failed to set age: ", e))
+
+    @staticmethod
+    fn set_name_auto(self_ptr: UnsafePointer[Self], name: PythonObject):
+        try:
+            self_ptr[].name = String(name)
+        except e:
+            abort(String("failed to set name: ", e))
+
+    @staticmethod
+    fn get_name_auto(self_ptr: UnsafePointer[Self]) raises -> PythonObject:
+        return PythonObject(self_ptr[].name)
+
+    @staticmethod
+    fn increment_age_auto(
+        self_ptr: UnsafePointer[Self], increment: PythonObject
+    ) raises -> PythonObject:
+        self_ptr[].age += Int(increment)
+        return PythonObject(self_ptr[].age)
+
+    @staticmethod
+    fn reset_auto(self_ptr: UnsafePointer[Self]):
+        self_ptr[].name = "Auto Reset Person"
+        self_ptr[].age = 999

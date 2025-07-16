@@ -16,9 +16,15 @@ import queue
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Union, cast
+from typing import Union
 
 import zmq
+from max.interfaces import (
+    EngineResult,
+    TextGenerationResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -27,9 +33,6 @@ from max.nn.kv_cache import (
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    TextGenerationResponse,
-    TextResponse,
-    TokenGenerator,
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -41,7 +44,6 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
 from .base import Scheduler
-from .queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
 
@@ -168,7 +170,7 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: list[dict[str, TextResponse]] = [{}]
+        self, responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
     ) -> None:
         """Pushes response messages to the response socket.
 
@@ -409,7 +411,7 @@ class DecodeScheduler(Scheduler):
             return
 
         # Convert this to list[dict[str, Any]]
-        stream_responses: list[dict[str, TextResponse]] = [{}]
+        stream_responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
         for request_id, response in responses.items():
             # This will just ensure that there is always a response for each token
             # We add one here, as we need to send a stop sentinel
@@ -419,11 +421,13 @@ class DecodeScheduler(Scheduler):
                 stream_responses.append({})
 
             for token_idx, text_response in enumerate(response.tokens):
-                stream_responses[token_idx][request_id] = text_response
+                stream_responses[token_idx][request_id] = (
+                    EngineResult.successful(text_response)
+                )
 
             if response.is_done:
-                stream_responses[len(response.tokens)][request_id] = cast(
-                    TextResponse, STOP_STREAM
+                stream_responses[len(response.tokens)][request_id] = (
+                    EngineResult.complete()
                 )
 
         self.push_to_response_socket(stream_responses)

@@ -25,11 +25,14 @@ from max.nn import (
 )
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.kv_cache import FetchPagedKVCacheCollection
+from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
+from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
+    DeepSeekV2MoEGate,
+)
 
 from .model_config import DeepseekV2Config
 
@@ -77,10 +80,16 @@ class DeepseekV2(Transformer):
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(
-                    config.hidden_size, config.dtype, config.rms_norm_eps
+                    config.hidden_size,
+                    config.dtype,
+                    config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
                 mlp_norm=RMSNorm(
-                    config.hidden_size, config.dtype, config.rms_norm_eps
+                    config.hidden_size,
+                    config.dtype,
+                    config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
             )
             for i in range(config.num_hidden_layers)
@@ -105,7 +114,12 @@ class DeepseekV2(Transformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=RMSNorm(config.hidden_size, config.dtype, config.rms_norm_eps),
+            norm=RMSNorm(
+                config.hidden_size,
+                config.dtype,
+                config.rms_norm_eps,
+                multiply_before_cast=False,
+            ),
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
@@ -132,14 +146,16 @@ class DeepseekV2(Transformer):
         ):
             assert len(config.devices) == 1, "Expect only one device"
             return MoE(
-                num_experts_per_tok=config.num_experts_per_tok,
-                ep_size=config.ep_size,
-                experts_per_rank=config.n_routed_experts // config.ep_size,
-                moe_intermediate_size=config.moe_intermediate_size,
-                hidden_size=config.hidden_size,
-                n_shared_experts=config.n_shared_experts,
+                devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.n_routed_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.moe_intermediate_size,
+                gate_cls=DeepSeekV2MoEGate,
+                has_shared_experts=True,
+                shared_experts_dim=config.n_shared_experts
+                * config.moe_intermediate_size,
                 dtype=config.dtype,
-                device=config.devices[0],
             )
         else:
             return MLP(

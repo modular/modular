@@ -48,8 +48,43 @@ class QuantizationConfig:
 class QuantizationEncoding(enum.Enum):
     """Quantization encodings supported by MAX Graph.
 
-    Each encoding represents a different method of quantizing model weights with
-    specific trade-offs between compression ratio, accuracy, and computational efficiency.
+    Quantization reduces the precision of neural network weights to decrease
+    memory usage and potentially improve inference speed. Each encoding represents
+    a different compression method with specific trade-offs between model size,
+    accuracy, and computational efficiency.
+    These encodings are commonly used with pre-quantized model checkpoints
+    (especially `GGUF` format) or can be applied during weight allocation.
+
+    The following example shows how to create a quantized weight using the `Q4_K` encoding:
+
+    .. code-block:: python
+
+        from max.graph.quantization import QuantizationEncoding
+        from max.graph import Weight
+
+        # Create a quantized weight using Q4_K encoding
+        encoding = QuantizationEncoding.Q4_K
+        quantized_weight = Weight(
+            name="linear.weight",
+            dtype=DType.uint8,
+            shape=[4096, 4096],
+            device=DeviceRef.GPU(0),
+            quantization_encoding=encoding
+        )
+
+    MAX supports several quantization formats optimized for different use cases.
+
+    Attributes:
+        Q4_0
+            Basic 4-bit quantization with 32 elements per block.
+        Q4_K
+            4-bit K-quantization with 256 elements per block.
+        Q5_K
+            5-bit K-quantization with 256 elements per block.
+        Q6_K
+            6-bit K-quantization with 256 elements per block.
+        GPTQ
+            Group-wise Post-Training Quantization for large language models.
     """
 
     Q4_0 = "Q4_0"

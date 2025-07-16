@@ -19,7 +19,9 @@ modular_py_library(
 modular_py_test(
     name = "graph",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+    ),
     data = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:counter_ops",

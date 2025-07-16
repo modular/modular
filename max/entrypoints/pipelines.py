@@ -103,12 +103,12 @@ def main() -> None:
     configure_telemetry()
 
 
-def configure_telemetry() -> None:
+def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
     settings = Settings()
-    configure_logging(settings)
+    configure_logging(settings, color)
     configure_metrics(settings)
 
 
@@ -184,10 +184,10 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_pipeline
     from max.entrypoints.cli.config import parse_task_flags
+    from max.interfaces import PipelineTask
     from max.pipelines import (
         AudioGenerationConfig,
         PipelineConfig,
-        PipelineTask,
     )
 
     # Initialize config, and serve.

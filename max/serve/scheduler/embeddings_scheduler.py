@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
+from max.interfaces import EngineResult
 from max.pipelines.core import (
     EmbeddingsGenerator,
     TextContext,
@@ -25,7 +26,6 @@ from max.pipelines.core import (
 from max.profiler import traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import Scheduler
-from max.serve.scheduler.queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
 
@@ -96,7 +96,7 @@ class EmbeddingsScheduler(Scheduler):
             if req_id in already_terminated:
                 continue
             del batch_executed[req_id]
-            batch_response[req_id] = STOP_STREAM
+            batch_response[req_id] = EngineResult.complete()
             already_terminated.add(req_id)
 
     @traced

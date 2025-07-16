@@ -44,7 +44,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import LogProbabilities
+from max.interfaces import (
+    GenerationStatus,
+    InputContext,
+    LogProbabilities,
+    TextGenerationResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -54,13 +61,6 @@ from max.nn.kv_cache import (
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import (
-    InputContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
-)
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
@@ -308,6 +308,28 @@ class PipelineModel(ABC, Generic[T]):
         # Better yet, make this more accurate by loading and measuring memory consumption
         # after we load the model
         return pipeline_config.model_config.weights_size()
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Estimates the activation memory required for model execution.
+
+        This accounts for temporary memory buffers used during model execution,
+        such as intermediate activations and working buffers.
+
+        The default implementation returns 0 for backward compatibility.
+        Models with significant activation memory requirements should override
+        this method to provide accurate estimates.
+
+        Args:
+            pipeline_config: Pipeline configuration
+            huggingface_config: HuggingFace model configuration
+
+        Returns:
+            Estimated activation memory in bytes
+        """
+        return 0
 
     @abstractmethod
     def execute(
@@ -1095,7 +1117,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = TextGenerationStatus.ACTIVE
+            status = GenerationStatus.ACTIVE
             res[request_id] = TextGenerationResponse([], status)
             for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.

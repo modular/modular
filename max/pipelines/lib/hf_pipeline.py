@@ -32,14 +32,16 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from max.pipelines.core import (
-    EmbeddingsGenerator,
+from max.interfaces import (
     EmbeddingsResponse,
-    TextContext,
+    GenerationStatus,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
+)
+from max.pipelines.core import (
+    EmbeddingsGenerator,
+    TextContext,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -186,7 +188,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         # Prepare the response, pruning away completed requests as we go.
         res: dict[str, TextGenerationResponse] = {}
         for batch_idx, (request_id, context) in enumerate(batch.items()):
-            status = TextGenerationStatus.ACTIVE
+            status = GenerationStatus.ACTIVE
             res[request_id] = TextGenerationResponse([], status)
             for step in range(num_steps):
                 next_token_id = generated_tokens[batch_idx, step].item()
@@ -205,17 +207,17 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
                 )
 
                 if next_token_id in self._eos_token_id:
-                    status = TextGenerationStatus.END_OF_SEQUENCE
+                    status = GenerationStatus.END_OF_SEQUENCE
                     res[request_id].update_status(status)
                 elif context.current_length > max_length:
-                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    status = GenerationStatus.MAXIMUM_LENGTH
                     res[request_id].update_status(status)
                 elif context.current_length == max_length:
-                    res[request_id].append_token(TextResponse(next_token))
-                    status = TextGenerationStatus.MAXIMUM_LENGTH
+                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
+                    status = GenerationStatus.MAXIMUM_LENGTH
                     res[request_id].update_status(status)
                 else:
-                    res[request_id].append_token(TextResponse(next_token))
+                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
 
                 if status.is_done:
                     break

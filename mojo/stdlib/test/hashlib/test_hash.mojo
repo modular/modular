@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-# RUN: %mojo  -O0 %s
 
 # Issue #31111 -- run this test with -O0 also.
 
 # These tests aren't _great_. They're platform specific, and implementation
 # specific. But for now they test behavior and reproducibility.
 
+from hashlib import default_comp_time_hasher
 from testing import assert_equal, assert_not_equal, assert_true
 
 
@@ -138,11 +137,15 @@ fn test_issue_31111():
 
 
 def test_hash_comptime():
-    alias hash_123 = hash(StaticString("123"))
-    assert_equal(hash_123, hash(StaticString("123")))
+    alias hash_123 = hash[HasherType=default_comp_time_hasher](
+        StaticString("123")
+    )
+    assert_equal(
+        hash_123, hash[HasherType=default_comp_time_hasher](StaticString("123"))
+    )
 
-    alias hash_22 = hash(22)
-    assert_equal(hash_22, hash(22))
+    alias hash_22 = hash[HasherType=default_comp_time_hasher](22)
+    assert_equal(hash_22, hash[HasherType=default_comp_time_hasher](22))
 
 
 def main():

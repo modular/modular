@@ -21,7 +21,6 @@ def custom_op_example_py_binary(
             #   for a `modular_py_binary` target is the runfiles root directory.
             "PATH": "KGEN/tools/mojo:/usr/bin:/bin",
         },
-        use_sitecustomize = True,
         imports = ["."],
         mojo_deps = [
             "@mojo//:compiler",

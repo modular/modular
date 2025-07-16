@@ -670,15 +670,11 @@ def fused_qk_ragged_rope(
         interleaved:
 
     `input` and `input_row_offsets` are used together to implement the ragged tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    `input_row_offsets` indicates where each batch starts and ends in `input`. If `input`
+    is not of the same dtype as `freqs_cis`, it will be cast to the dtype of `freqs_cis`
+    for the computation, and cast back to the original dtype after the computation is
+    finished.
     """
-
-    if input.dtype != freqs_cis.dtype:
-        msg = (
-            "expected input and freqs_cis to share a dtype, but got"
-            f" {input.dtype} and {freqs_cis.dtype} respectively"
-        )
-        raise ValueError(msg)
 
     if input_row_offsets.dtype != DType.uint32:
         msg = (

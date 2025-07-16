@@ -32,6 +32,7 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
+from max.interfaces import SamplingParams
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
@@ -41,7 +42,6 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
@@ -49,6 +49,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.router.json_utils import parse_json_from_text
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
@@ -326,21 +327,8 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
 
     def _parse_resp_to_json(self, text: str) -> Optional[list[dict]]:
         """Parse the response message to valid tool call JSON objects."""
-        segments = [
-            segment.strip() for segment in text.splitlines() if segment.strip()
-        ]
-        split_segments = []
-        for segment in segments:
-            split_segments.extend(segment.split(";"))
 
-        # Filter out empty segments and parse as JSON
-        json_objects = []
-        for segment in split_segments:
-            if segment.strip():  # Ignore empty segments
-                try:
-                    json_objects.append(json.loads(segment))
-                except json.JSONDecodeError as e:
-                    return None
+        json_objects = parse_json_from_text(text)
 
         if not json_objects:
             return None

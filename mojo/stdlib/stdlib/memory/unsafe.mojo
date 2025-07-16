@@ -20,6 +20,10 @@ from memory import bitcast
 """
 
 from sys import bitwidthof
+from sys import (
+    is_amd_gpu,
+    is_nvidia_gpu,
+)
 
 # ===-----------------------------------------------------------------------===#
 # bitcast
@@ -72,6 +76,48 @@ fn bitcast[
         bitwidthof[SIMD[dtype, width]]() == bitwidthof[__type_of(val)](),
         "the source and destination types must have the same bitwidth",
     ]()
+
+    # TODO(MOCO-2179): Change this to be more precise check for Arm devices, or
+    # generate different ops on Arm.
+    @parameter
+    if not is_nvidia_gpu() and not is_amd_gpu():
+        # Arm doesnt support casting between float16 and two ints.
+        constrained[
+            not (
+                src_dtype == DType.float16
+                and src_width == 1
+                and dtype == DType.int8
+                and width == 2
+            ),
+            "Can't cast a float16 directly to a 2 x i8",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.float16
+                and src_width == 1
+                and dtype == DType.uint8
+                and width == 2
+            ),
+            "Can't cast a float16 directly to a 2 x ui8",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.int8
+                and src_width == 2
+                and dtype == DType.float16
+                and width == 1
+            ),
+            "Can't cast a 2 x i8 directly to a float16",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.uint8
+                and src_width == 2
+                and dtype == DType.float16
+                and width == 1
+            ),
+            "Can't cast a 2 x ui8 directly to a float16",
+        ]()
 
     @parameter
     if dtype == src_dtype:

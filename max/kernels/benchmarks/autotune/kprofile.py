@@ -15,7 +15,9 @@
 import ast
 import pickle
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 import click
 import numpy as np
@@ -25,6 +27,22 @@ from rich.console import Console
 from rich.table import Table
 
 LINE = 80 * "-"
+
+
+HEADER = """
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""
 
 
 def spec_to_dict(spec):
@@ -82,7 +100,8 @@ def top_idx(x, top_percentage=0.05):
     return x.where(x < threshold).dropna().index
 
 
-def replace_vals_snippet(p_spec, snippet_path, output_path) -> None:
+def replace_vals_snippet(p_spec, snippet_path) -> str:
+    # TODO: raise an error if the parameter is not successfully replaced.
     with open(snippet_path) as f:
         c_init = f.read()
 
@@ -90,11 +109,7 @@ def replace_vals_snippet(p_spec, snippet_path, output_path) -> None:
     for k, v in p_spec.items():
         print(f"Replacing [{k}]:[{v}]")
         c = c.replace(f"[@{k}]", v)
-
-    output_path = f"{output_path}"
-    with open(output_path, "w") as f:
-        f.write(c)
-    print(f"wrote results to [{output_path}]")
+    return c
 
 
 def find_common_params(subset):
@@ -130,6 +145,17 @@ def df_to_console_table(
         table.add_row(*l)
         table.add_section()
     console.print(table)
+
+
+# TODO: could this be refactored into a kbench class?
+@dataclass(frozen=True)
+class TuningSpec:
+    name: str = ""
+    file: Path = Path("")
+    params: list[dict] = field(default_factory=list)
+    pkl_path: Path = Path()
+    git_sha: str = ""
+    datetime: str = ""
 
 
 @dataclass(repr=True)
@@ -194,8 +220,6 @@ def df_round_floats(df, prec=3):
 
 def profile_results(
     pickle_path,
-    snippet_path,
-    output_path="output.mojo",
     top_percentage=0.0,
     ratio=False,
     head=-1,
@@ -203,8 +227,12 @@ def profile_results(
     metric: str = "met (ms)",
     pivots: list[str] = [],
     verbose=False,
-) -> None:
-    pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
+) -> Optional[TuningSpec]:
+    try:
+        pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
+    except:
+        print(f"Invalid pkl [{pickle_path}]")
+        return None
     merged_df, tune_df, pkl_data = (
         pkl.merged_df,
         pkl.tune_df,
@@ -262,22 +290,17 @@ def profile_results(
         df_to_console_table(merged_df)
 
     print("[Best Spec]\n")
-
-    out_yaml_path = "result.yaml"
-    dump_yaml(
-        {
-            "name": str(pkl_data.get("name", None)),
-            "file": str(pkl_data.get("file", None)),
-            "params": [spec],
-        },
-        out_yaml_path,
+    spec = TuningSpec(
+        name=str(pkl_data.get("name", None)),
+        file=Path(pkl_data.get("file", Path())),
+        params=[spec],
+        pkl_path=pickle_path,
+        git_sha=str(pkl_data.get("git-revision", None)),
+        datetime=str(pkl_data.get("datetime", None)),
     )
+    print(spec)
     print(LINE)
-    print(f"wrote best pick to [{out_yaml_path}]")
-
-    if snippet_path:
-        replace_vals_snippet(spec, snippet_path, output_path)
-        print(LINE)
+    return spec
 
 
 def identical_pivot_values(x, y, pivots) -> bool:
@@ -332,7 +355,7 @@ def diff_baseline(
                 f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
             )
             print(
-                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f}) / {current_metric:.{prec}f}"
+                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f} / {current_metric:.{prec}f})"
             )
             d = {
                 "shape": [shape],
@@ -345,6 +368,51 @@ def diff_baseline(
             shape_path = shape.replace("/", "_")
             pd.DataFrame.from_dict(d).to_csv(f"{shape_path}.csv", index=False)
             print(LINE)
+
+
+def codegen(specs: list[TuningSpec], snippet_path: Path, output_path: Path):
+    details = []
+    details += [HEADER]
+
+    prefix = """alias configs = List("""
+    suffix = """)"""
+
+    details += [prefix]
+    sep = ","
+    for s in specs:
+        config_str = replace_vals_snippet(s.params[0], snippet_path)
+        print(LINE)
+        details += [f"# Automatically generated from [{s.pkl_path}]"]
+        details += [f"# date: [{s.datetime}]"]
+        details += [f"# git-sha: [{s.git_sha}]"]
+        details += [config_str + sep]
+        details += [""]
+    details += [suffix]
+
+    with open(output_path, "w") as f:
+        f.write("\n".join(details))
+    import os
+
+    os.system(f"mojo format {output_path}")
+    print(f"wrote results to [{output_path}]")
+
+
+def check_specs(specs: list[TuningSpec]):
+    # TODO: check specs have the same tuning hash
+    spec_list = [pd.DataFrame([s.params[0]]) for s in specs]
+    merged_specs = pd.concat(spec_list, axis=0, ignore_index=True)
+    print(merged_specs.to_string())
+
+    key_cols = ["M", "N", "K"]
+    key_cols_values = merged_specs[key_cols]
+    key_cols_values_uniq = key_cols_values.drop_duplicates()
+    if len(key_cols_values) == len(key_cols_values_uniq):
+        print("PASS: UNIQUE KEY COLUMNS")
+    else:
+        # TODO: add check for finding the mismatched rows
+        raise ValueError(
+            "Found duplicates in specs! Make sure you pass each pkl once."
+        )
 
 
 class ComplexParamList(click.Option):
@@ -472,18 +540,12 @@ def cli(
     assert files
 
     if diff:
-        assert len(files) > 1, (
-            "Should provide at least two pkl's for --diff option."
-        )
-    else:
-        assert len(files) == 1
+        assert len(files) > 1, "Provide at least two pkl's for --diff option."
 
-    # TODO: rework
-    for pickle_path in files:
-        print(f"pickle_path: [{pickle_path}]")
-    print(f"top_percentage: [{top}]")
-    print(f"snippet_path: [{snippet_path}]")
-    print(LINE)
+    if verbose:
+        print(f"top_percentage: [{top}]")
+        print(f"snippet_path: [{snippet_path}]")
+        print(LINE)
 
     top_percentage = float(top) if top else 0
     if diff:
@@ -493,18 +555,37 @@ def cli(
             files, metric=metric, pivots=pivots, head=head, verbose=verbose
         )
     else:
-        profile_results(
-            pickle_path=files[0],
-            snippet_path=snippet_path,
-            output_path=output_path,
-            top_percentage=top_percentage,
-            ratio=ratio,
-            head=head,
-            tail=tail,
-            metric=metric,
-            pivots=pivots,
-            verbose=verbose,
+        specs = []
+        invalid_pkls = []
+        for pkl_path in files:
+            top_spec = profile_results(
+                pickle_path=pkl_path,
+                top_percentage=top_percentage,
+                ratio=ratio,
+                head=head,
+                tail=tail,
+                metric=metric,
+                pivots=pivots,
+                verbose=verbose,
+            )
+            if top_spec:
+                specs += [top_spec]
+            else:
+                invalid_pkls += [pkl_path]
+
+        if snippet_path:
+            check_specs(specs=specs)
+            codegen(
+                specs=specs, snippet_path=snippet_path, output_path=output_path
+            )
+
+        print(
+            f"num invalid pkls: {len(invalid_pkls)} out of num-files: {len(files)}"
         )
+        for i, pkl in enumerate(invalid_pkls):
+            print(f"invalid pkl [{i}]: [{pkl}]")
+
+        print(LINE)
     return True
 
 

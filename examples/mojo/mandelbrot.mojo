@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
-
 from math import iota
 from sys import num_physical_cores, simdwidthof
 
@@ -102,7 +100,6 @@ fn main() raises:
     var parallelized = benchmark.run[bench_parallel]().mean(unit)
     print("Parallelized:", parallelized, unit)
 
-    # CHECK: Parallel speedup
     print("Parallel speedup:", vectorized / parallelized)
 
     matrix.data.free()

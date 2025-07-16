@@ -16,7 +16,6 @@ from nn.argsort import argsort
 from testing import assert_true
 
 
-# CHECK-LABEL: test_argsort
 fn test_argsort[
     *,
     ascending: Bool,

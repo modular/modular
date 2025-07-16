@@ -91,12 +91,31 @@ mutation.
   `var` and `owned` are allowed in an argument list, but `owned` will be removed
   in a subsequent release, so please move your code over.
 
+- Function overloading is now fully supported as long as, among two function
+  signatures with the same list of argument types, one position is a
+  keyword-only argument in at least one signature, and that position differs in
+  argument name. Previously an edge case prevented this support when the return
+  types are different. For example, these two functions can now co-exist:
+
+  ```mojo
+  fn get(self, idx: Int) -> Int
+  fn get(self, *, idx2: Int) -> Float32
+  ```
+
 ### Standard library changes
+
+- The `Dict` now has an `H` parameter which allows users to provider a
+  custom `Hasher` type.
+  - `default_hasher` (AHasher) and `default_comp_time_hasher` (Fnv1a)
+    are now provided
+  - The `H` parameter of `Dict` defaults to `default_hasher`
 
 - The `Hashable` trait has been updated to use a new data flow strategy.
   - Users are now required to implement the method
     `fn __hash__[H: Hasher](self, mut hasher: H):`
     (see `Hashable` docstring for further details).
+
+- Indexing into a `String` now returns a `StringSlice`, avoiding an allocation.
 
 - Added support for a wider range of consumer-grade AMD hardware, including:
   - AMD Radeon RX 7xxx GPUs

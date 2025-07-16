@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import randn, seed
@@ -230,14 +229,19 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
+    var const_val = 4.0
+
     @parameter
     @always_inline
-    @__copy_capture(c_device_nd)
+    @__copy_capture(c_device_nd, const_val)
     fn epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
-            idx, rebind[SIMD[DType.float32, width]](val + 4.0)
+            idx,
+            rebind[SIMD[DType.float32, width]](
+                val + SIMD[dtype, width](const_val)
+            ),
         )
 
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
@@ -245,15 +249,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gemv_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            reduction_method=reduction_method,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -267,15 +272,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -321,15 +327,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,

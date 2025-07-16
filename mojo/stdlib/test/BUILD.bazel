@@ -1,9 +1,7 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test", "requirement")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 _DATA = [
     "builtin/test_file_dummy_input.txt",
-    "python/custom_indexable.py",
-    "python/my_module.py",
 ]
 
 _TEST_UTILS = [
@@ -32,14 +30,6 @@ _NO_ASAN = [
     "builtin/test_format_float.mojo",
     "builtin/test_int.mojo",
     "collections/string/test_string.mojo",
-    "python/test_ownership.mojo",
-    "python/test_python_cpython.mojo",
-    "python/test_python_error_handling.mojo",
-    "python/test_python_info.mojo",
-    "python/test_python_interop.mojo",
-    "python/test_python_module_create.mojo",
-    "python/test_python_object.mojo",
-    "python/test_python_to_mojo.mojo",
     "subprocess/test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
     "testing/test_assertion.mojo",
 ]
@@ -160,9 +150,9 @@ _EXPECT_FAIL = [
 _FILECHECK_TESTS = [
     "algorithm/test_elementwise.mojo",
     "algorithm/test_elementwise_1d.mojo",
-    "algorithm/test_map.mojo",
-    "algorithm/test_parallelize.mojo",
-    "algorithm/test_reductions.mojo",
+    "algorithm/test_map.mojo",  # TODO: Move off filecheck
+    "algorithm/test_parallelize.mojo",  # TODO: Move off filecheck
+    "algorithm/test_reductions.mojo",  # TODO: Move off filecheck
     "algorithm/test_stencil.mojo",
     "algorithm/test_tile.mojo",
     "algorithm/test_vectorize.mojo",
@@ -197,6 +187,7 @@ _FILECHECK_TESTS = [
     "runtime/test_asyncrt.mojo",
     "runtime/test_locks.mojo",
     "sys/test_exit_1.mojo",
+    "utils/test_write_to_stdout.mojo",
 ]
 
 [
@@ -238,7 +229,6 @@ _FILECHECK_TESTS = [
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
-            requirement("numpy"),
         ],
     )
     for src in glob(
@@ -264,10 +254,6 @@ lit_tests(
     name = "test",
     size = "large",
     srcs = _LIT_TESTS,
-    env = {
-        "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
-    },
-    generate_litcfg = False,
     mojo_deps = [
         "@mojo//:stdlib",
     ],
@@ -276,7 +262,4 @@ lit_tests(
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
 )

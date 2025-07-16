@@ -13,8 +13,8 @@
 
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.lib import (

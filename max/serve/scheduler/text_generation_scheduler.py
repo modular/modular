@@ -16,16 +16,19 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar, Union, cast
+from typing import Any, Generic, Optional, TypeVar, Union
 
 import zmq
+from max.interfaces import (
+    EngineResult,
+    TextGenerationResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    TextGenerationResponse,
-    TextResponse,
-    TokenGenerator,
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -36,7 +39,6 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
-from .queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
 
@@ -172,9 +174,9 @@ class TokenGenerationScheduler(Scheduler):
                 tuple[str, Union[TextContext, TextAndVisionContext]]
             ),
         )
-        self.response_q = ZmqPushSocket[list[dict[str, TextResponse]]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
-        )
+        self.response_q = ZmqPushSocket[
+            list[dict[str, EngineResult[TextResponse]]]
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -720,8 +722,9 @@ class TokenGenerationScheduler(Scheduler):
                         )
                         del self.active_batch[req_id]
 
-                        stop_stream = cast(TextResponse, STOP_STREAM)
-                        self.response_q.put_nowait([{req_id: stop_stream}])
+                        self.response_q.put_nowait(
+                            [{req_id: EngineResult.cancelled()}]
+                        )
                 except queue.Empty:
                     break
         except Exception:
@@ -737,7 +740,7 @@ class TokenGenerationScheduler(Scheduler):
             return
 
         # Convert this to list[dict[str, Any]]
-        responses: list[dict[str, TextResponse]] = [{}]
+        responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
         for request_id, response in batch_responses.items():
             # This will just ensure that there is always a response for each token
             # We add one here, as we need to send a stop sentinel
@@ -747,11 +750,14 @@ class TokenGenerationScheduler(Scheduler):
                 responses.append({})
 
             for token_idx, text_response in enumerate(response.tokens):
-                responses[token_idx][request_id] = text_response
+                responses[token_idx][request_id] = EngineResult.successful(
+                    text_response
+                )
 
             if response.is_done:
-                stop_stream = cast(TextResponse, STOP_STREAM)
-                responses[len(response.tokens)][request_id] = stop_stream
+                responses[len(response.tokens)][request_id] = (
+                    EngineResult.complete()
+                )
 
         self.response_q.put_nowait(responses)
 

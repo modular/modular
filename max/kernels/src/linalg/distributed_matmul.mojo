@@ -121,13 +121,13 @@ fn _matmul_allreduce_split_m[
     # Create list of partial A and C NDBuffers for matmul.
     var A_parts = InlineArray[
         NDBuffer[a_dtype, 2, MutableAnyOrigin, a_part_static_shape], ngpus
-    ](NDBuffer[a_dtype, 2, MutableAnyOrigin, a_part_static_shape]())
+    ](fill={})
     var C_parts = InlineArray[
         NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
-    ](NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape]())
+    ](fill={})
     var Out_parts = InlineArray[
         NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
-    ](NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape]())
+    ](fill={})
 
     # Overlap matmul with previous partition's allreduce
     for stage in range(num_partitions):
@@ -254,13 +254,13 @@ fn _matmul_allreduce_split_n[
     # Create list of partial B and C NDBuffers for matmul.
     var B_parts = InlineArray[
         NDBuffer[b_dtype, 2, MutableAnyOrigin, b_part_static_shape], ngpus
-    ](NDBuffer[b_dtype, 2, MutableAnyOrigin, b_part_static_shape]())
+    ](fill={})
     var C_parts = InlineArray[
         NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
-    ](NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape]())
+    ](fill={})
     var Out_parts = InlineArray[
         NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
-    ](NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape]())
+    ](fill={})
 
     # Overlap matmul with previous partition's allreduce
     @parameter

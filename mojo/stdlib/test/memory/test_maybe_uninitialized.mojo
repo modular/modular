@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter

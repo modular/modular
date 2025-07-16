@@ -275,6 +275,46 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
+    O: ImmutableOrigin,
+](
+    lhs: StringSlice[O],
+    rhs: String,
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    """Asserts that a `StringSlice` is equal to a `String`."""
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            lhs.__str__(),
+            rhs,
+            msg=msg,
+            loc=location.or_else(__call_location()),
+        )
+
+
+@always_inline
+fn assert_equal[
+    O: ImmutableOrigin,
+](
+    lhs: String,
+    rhs: StringSlice[O],
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    """Asserts that a `String` is equal to a `StringSlice`."""
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            lhs,
+            rhs.__str__(),
+            msg=msg,
+            loc=location.or_else(__call_location()),
+        )
+
+
+@always_inline
+fn assert_equal[
     dtype: DType
 ](
     lhs: List[Scalar[dtype]],

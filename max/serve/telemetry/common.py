@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import logging
 import logging.handlers
@@ -60,7 +61,7 @@ def _getCloudProvider() -> str:
 
 def _getGPUInfo() -> str:
     try:
-        import torch  # type: ignore
+        import torch
 
         device_properties = torch.cuda.get_device_properties(0)
         return f"{torch.cuda.device_count()}:{device_properties.total_memory}:{device_properties.name}"
@@ -145,9 +146,17 @@ def flush_batch_logger(logger: logging.Logger) -> None:
             handler.flush()
 
 
+COLOR_MAP = {
+    "green": "\033[92m",
+    "blue": "\033[94m",
+    "red": "\033[91m",
+}
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
-def configure_logging(settings: Settings) -> None:
+# Note that the color is not propagated to subprocesses. eg: ModelWorker
+def configure_logging(settings: Settings, color: str | None = None) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry
 
@@ -174,18 +183,27 @@ def configure_logging(settings: Settings) -> None:
 
     # Create a console handler
     if settings.logs_console_level is not None:
+        if color is not None:
+            if color not in COLOR_MAP:
+                raise ValueError(f"Invalid color: {color}")
+            color_code = COLOR_MAP[color]
+            color_terminator = "\033[0m"
+        else:
+            color_code = ""
+            color_terminator = ""
+
         console_handler = logging.StreamHandler()
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
+                f"{color_code}%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s{color_terminator}",
                 timestamp=True,
             )
         else:
             console_formatter = logging.Formatter(
                 (
-                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    " %(name)s: %(message)s"
+                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
+                    f" %(name)s:{color_terminator} %(message)s"
                 ),
                 datefmt="%H:%M:%S",
             )

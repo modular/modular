@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash %bare-mojo -D BUILD_TYPE=debug %s 2>&1 | FileCheck %s
 
 
 # CHECK-LABEL: test_fail_list_index_uint

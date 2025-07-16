@@ -57,6 +57,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule
+from logger import Logger
 from memory import bitcast, stack_allocation
 
 from utils import IndexList
@@ -319,6 +320,9 @@ fn _matmul_sm100[
     var n = shape.N
     var k = shape.K
 
+    var logger = Logger()
+    logger.info("------ Dispatching to SM100 (B200+) ------")
+
     try:
         # On B200 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
         @parameter
@@ -329,6 +333,7 @@ fn _matmul_sm100[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, ctx)
 
+        logger.info("Executing vendor BLAS (cuBLAS)")
         return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
@@ -339,6 +344,8 @@ fn _matmul_sm100[
 
     except:
         # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
+        logger.warning("Vendor BLAS failed")
+
         @parameter
         if not a_type.is_float8() and K * sizeof[a_type]() >= 8 * 16:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
@@ -356,6 +363,9 @@ fn _matmul_sm100[
             )
         else:
             alias BLOCK_DIM = 16
+            logger.info(
+                "Executing: Naive MATMUL kernel (BLOCK_DIM=", BLOCK_DIM, ")"
+            )
             ctx.enqueue_function[
                 matmul_kernel_naive[
                     c_type,
@@ -407,6 +417,15 @@ fn _matmul_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
+
+    var logger = Logger()
+    logger.info("---- MATMUL GPU execution started ----")
+    logger.info("MxNxK: ", m, "x", n, "x", k)
+    logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
+    logger.info("Device: ", ctx.name())
+    logger.info(
+        "Transpose B: ", transpose_b, " Use Tensor Core: ", use_tensor_core
+    )
 
     alias s_type = DType.float32 if (
         a_type is DType.bfloat16 or a_type is DType.float16
@@ -462,10 +481,13 @@ fn _matmul_gpu[
     alias has_static_NK = b_shape.all_known[2]() \
                       and a_shape.has_value[1]() \
                       and c_shape.has_value[1]()
+
+    logger.info("Static shapes available: N=", b_shape.has_value[1](), " K=", a_shape.has_value[1]())
     # fmt: on
 
     @parameter
     if env_get_bool["MODULE_USE_VENDOR_BLAS", False]():
+        logger.info("Executing: Vendor BLAS")
         return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
@@ -1049,6 +1071,7 @@ fn _matmul_gpu[
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
     ):
+        logger.info("Executing: vendor BLAS fallback")
         try:
             return matmul_vendor[
                 use_tensor_core=use_tensor_core,
@@ -1058,6 +1081,7 @@ fn _matmul_gpu[
                 _trace_description=_trace_description,
             ](c, a, b, ctx)
         except:
+            logger.warning("Vendor BLAS failed")
             alias BLOCK_DIM = 16
             ctx.enqueue_function[
                 matmul_kernel_naive[
@@ -1081,7 +1105,11 @@ fn _matmul_gpu[
             return
     else:
         # For unsupported dtypes like FP8, directly use the naive implementation
+        logger.info("Unsupported dtypes or vendor disabled")
         alias BLOCK_DIM = 16
+        logger.info(
+            "Executing: Naive MATMUL kernel (BLOCK_DIM=", BLOCK_DIM, ")"
+        )
         ctx.enqueue_function[
             matmul_kernel_naive[
                 c_type,
@@ -1170,6 +1198,12 @@ fn multistage_gemm[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
+    var logger = Logger()
+    logger.info("------ Dispatching to Multistage GEMM ------")
+    logger.info(String(config))
+    logger.info("K partitions: ", runtime_config.num_k_partitions)
+    logger.info("Serial reduction: ", serial_reduction)
+
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b = from_ndbuffer_row_major(b)
@@ -1178,6 +1212,7 @@ fn multistage_gemm[
 
         @parameter
         if serial_reduction:
+            logger.info("Executing: split-K with serial reduction (lock-based)")
             constrained[
                 c_type is DType.bfloat16,
                 "serial reduction is unsupported for this config",
@@ -1231,6 +1266,9 @@ fn multistage_gemm[
             return
 
         else:
+            logger.info(
+                "Executing: split-K with parallel reduction (workspace-based)"
+            )
             alias work_space_type = config.split_k_reduction_type
             var work_space_data = ctx.enqueue_create_buffer[work_space_type](
                 runtime_config.num_k_partitions * M * N
@@ -1296,6 +1334,7 @@ fn multistage_gemm[
     # Dispatch w/o split K
     @parameter
     if has_amd_gpu_accelerator() and transpose_b:
+        logger.info("Executing: AMD standard GEMM (no split-K)")
         alias gemm_kernel_type = amd_gemm_kernel[
             c_type,
             tensor_c.layout,
@@ -1322,6 +1361,7 @@ fn multistage_gemm[
         )
 
     else:
+        logger.info("Executing: standard GEMM (no split-K)")
         alias gemm_kernel_type = multistage_gemm_kernel[
             c_type,
             tensor_c.layout,

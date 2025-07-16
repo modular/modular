@@ -747,10 +747,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             index: The index or slice to access. Can be an integer, slice, ellipsis, or tuple of indices.
         """
-        return ops.slice_tensor(
-            self,
-            index if isinstance(index, Iterable) else (index,),  # type: ignore
-        )
+        if isinstance(index, TensorValue) or not isinstance(index, Iterable):
+            index = (index,)
+        return ops.slice_tensor(self, index)
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.

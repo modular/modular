@@ -23,8 +23,9 @@ from typing import Union
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines.core import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.pipelines.core import PipelinesFactory, PipelineTokenizer
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
@@ -205,7 +206,7 @@ def fastapi_app(
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
-            RecorderMiddleware,
+            RecorderMiddleware,  # type: ignore
             recorder_factory=(
                 lambda: JSONLFileRecorder(transaction_recording_file)
             ),

@@ -21,6 +21,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm100_0.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_1.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_2.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_3.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
     "test_vendor_blas.mojo": [
@@ -38,7 +39,7 @@ _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
-    "test_gemv.mojo",
+    "test_gemv.mojo",  # TODO: Remove filecheck usage
 ]
 
 [
@@ -62,7 +63,7 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
-        enable_assertions = not src in "test_warp_specialization_gemm.mojo",
+        enable_assertions = not src in "test_warp_specialization_gemm.mojo",  # TODO: Fix assertions exception
         tags = ["gpu"] + (
             ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
         ),

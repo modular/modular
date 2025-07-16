@@ -1,6 +1,6 @@
 """Define the Mojo toolchain"""
 
-MOJO_VERSION = "25.5.0.dev2025070505"
+MOJO_VERSION = "25.5.0.dev2025071505"
 
 # NOTE: Used internally when pushing new releases
 URL_OVERRIDE = ""

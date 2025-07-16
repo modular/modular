@@ -108,7 +108,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         @always_inline
         fn loop_body[lane_count: Int](k: Int):
-            var a_tile = InlineArray[SIMD[dtype, lane_count], tile_m](0)
+            var a_tile = InlineArray[SIMD[dtype, lane_count], tile_m](fill=0)
 
             @parameter
             for m in range(tile_m):
@@ -149,7 +149,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         @always_inline
         fn loop_body[unroll_factor: Int](k: Int):
-            var b_tile = InlineArray[SIMD[dtype, simd_width], tile_n](0)
+            var b_tile = InlineArray[SIMD[dtype, simd_width], tile_n](fill=0)
 
             @parameter
             for k in range(unroll_factor):
@@ -356,7 +356,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             ) -> InlineArray[SIMD[dtype, target_width], tile_n]:
                 var accum_reduce = InlineArray[
                     SIMD[dtype, target_width], tile_n
-                ](0)
+                ](fill=0)
 
                 @parameter
                 for nn in range(tile_n):
@@ -369,7 +369,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             var unroll_loop_end = align_down(K, unroll_simd_width)
             var unroll_accum = InlineArray[
                 SIMD[dtype, unroll_simd_width], tile_n
-            ](0)
+            ](fill=0)
             do_reduce(0, unroll_loop_end, unroll_accum)
 
             var simd_loop_end = align_down(K, simd_width)

@@ -49,7 +49,6 @@ fn copy_via_shared(
     dst[thread_id] = mem_buff[thread_id]
 
 
-# CHECK-LABEL: run_copy_via_shared
 fn run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = UnsafePointer[Float32].alloc(16)

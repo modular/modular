@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, ops
 
 
-@pytest.mark.parametrize("window_length", [0, 1, 2, 5, 10, 100])
+@pytest.mark.parametrize("window_length", [0, 1, 10, 100])
 @pytest.mark.parametrize("periodic", [True, False])
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_hann_window(

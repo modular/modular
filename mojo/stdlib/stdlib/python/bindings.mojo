@@ -41,7 +41,7 @@ from python._cpython import (
     Typed_newfunc,
 )
 from python._python_func import PyObjectFunction
-from python.python_object import _unsafe_alloc_init
+from python.python_object import _unsafe_alloc, _unsafe_init
 from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
@@ -160,6 +160,10 @@ struct PyMojoObject[T: AnyType]:
     the registered type methods and bindings.
     """
 
+    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable and Movable anymore.
+    var is_initialized: Bool
+    """Whether the Mojo value has been initialized."""
+
 
 fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
@@ -174,18 +178,17 @@ fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     Args:
         py_self: Pointer to the Python object to be deallocated.
     """
-    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
+    var cpython = Python().cpython()
+
+    ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
-    # Destroy this `Person` instance.
-    self_ptr.destroy_pointee()
+    if self.is_initialized:
+        UnsafePointer(to=self.mojo_value).destroy_pointee()
 
-    var cpython = Python().cpython()
-
-    cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
+    cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
 
 fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
@@ -206,15 +209,16 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         A new Python string object containing the string representation,
         or null pointer if an error occurs.
     """
-    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var self_ptr = UnsafePointer(to=self_obj_ptr[].mojo_value)
+    var cpython = Python().cpython()
 
-    var repr_str = repr(self_ptr[])
+    ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
-    # NOTE: it is possible that `repr` returns an invalid UTF-8 string, so we
-    # let Python decode it (which will return a null pointer and set an error
-    # if it is invalid).
-    cpython = Python().cpython()
+    var repr_str: String
+    if self.is_initialized:
+        repr_str = repr(self.mojo_value)
+    else:
+        repr_str = "<uninitialized " + get_type_name[T]() + ">"
+
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
 
@@ -389,19 +393,17 @@ struct PythonModuleBuilder:
 
     fn def_function[
         func_type: AnyTrivialRegType, //,
-        func: PyObjectFunction[func_type, has_self=False],
+        func: PyObjectFunction[func_type, NoneType],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
+        """Declare a binding for a module-level function.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6, can optionally return a PythonObject, and can raise.
+        Accepts functions with PythonObject arguments (up to 6), can optionally
+        return a PythonObject, and can raise.
 
-        Example signature types:
+        Example signatures:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn func(arg1: PythonObject) -> PythonObject
+        fn func(arg1: PythonObject, arg2: PythonObject) raises
         ```
 
         Parameters:
@@ -522,7 +524,8 @@ struct PythonTypeBuilder(Copyable, Movable):
             type_name,
             basicsize=sizeof[PyMojoObject[T]](),
         )
-        b._insert_slot(PyType_Slot.tp_new(_py_new_function_nonregistered))
+        b._insert_slot(PyType_Slot.tp_new(_py_new_function_wrapper[T]))
+        b._insert_slot(PyType_Slot.tp_init(_py_init_function_nonregistered))
         b._insert_slot(PyType_Slot.tp_dealloc(_tp_dealloc_wrapper[T]))
         b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
 
@@ -628,12 +631,12 @@ struct PythonTypeBuilder(Copyable, Movable):
         fn default_init_func(
             out self: T, args: PythonObject, kwargs: PythonObject
         ) raises:
-            if len(args) > 0 or kwargs.py_object:
+            if len(args) > 0 or kwargs._obj_ptr:
                 raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
             self = T()
 
         self._insert_slot(
-            PyType_Slot.tp_new(_py_new_function_wrapper[T, default_init_func])
+            PyType_Slot.tp_init(_py_init_function_wrapper[T, default_init_func])
         )
         return self
 
@@ -657,7 +660,7 @@ struct PythonTypeBuilder(Copyable, Movable):
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type."""
         self._insert_slot(
-            PyType_Slot.tp_new(_py_new_function_wrapper[T, init_func])
+            PyType_Slot.tp_init(_py_init_function_wrapper[T, init_func])
         )
         return self
 
@@ -699,7 +702,10 @@ struct PythonTypeBuilder(Copyable, Movable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PyObject signature for the type.
+        """Declare a binding for a method with PyFunction signature.
+
+        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) -> PythonObject`
+        where the first arg is self and the second is a tuple of arguments.
 
         Parameters:
             method: The method to declare a binding for.
@@ -728,7 +734,14 @@ struct PythonTypeBuilder(Copyable, Movable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PyObject signature for the type.
+        """Declare a binding for a method with PyFunctionRaising signature.
+
+        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
+        where the first arg is self and the second is a tuple of arguments.
+
+        Parameters:
+            method: The method to declare a binding for.
+            static_method: Whether the method is exposed as a staticmethod.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -745,24 +758,21 @@ struct PythonTypeBuilder(Copyable, Movable):
 
     fn def_method[
         method_type: AnyTrivialRegType, //,
-        method: PyObjectFunction[method_type, has_self=True],
+        method: PyObjectFunction[method_type, PythonObject],
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
+        """Declare a binding for a method that receives self as PythonObject.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6 (including self), can optionally return a
-        PythonObject, and can raise.
+        Use this when you need generic Python object access. For direct access to the wrapped
+        Mojo type, use the typed self `def_method` overload instead.
 
-        Example signature types:
+        Example signatures:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn method(mut self: PythonObject) -> PythonObject
+        fn method(mut self: PythonObject, arg1: PythonObject) raises
         ```
 
         Parameters:
@@ -788,25 +798,65 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         return self.def_py_method[wrapper](method_name, docstring)
 
-    fn def_staticmethod[
+    fn def_method[
+        method_self: AnyType,
         method_type: AnyTrivialRegType, //,
-        method: PyObjectFunction[method_type, has_self=False],
+        method: PyObjectFunction[method_type, method_self],
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a staticmethod with PythonObject signature for
-        the type.
+        """Declare a binding for a method that takes a typed self as first argument.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6, can optionally return a PythonObject, and can raise.
+        This method automatically handles the downcasting of the Python self object
+        to the specified Mojo type. To receive a generic PythonObject as self, use
+        the generic self `def_method` overload instead.
 
-        Example signature types:
+        Example usage:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn my_method(self: UnsafePointer[Self], arg: PythonObject) -> PythonObject
+        ```
+
+        Parameters:
+            method_self: The type of the self parameter (inferred from the method).
+            method_type: The type signature of the method to declare a binding for.
+            method: The method to declare a binding for. The first parameter should
+                be the typed self parameter.
+
+        Args:
+            method_name: The name with which the method will be exposed on the type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        @always_inline
+        fn wrapper(
+            mut py_self: PythonObject, mut py_args: PythonObject
+        ) raises -> PythonObject:
+            return method._call_method(py_self, py_args)
+
+        return self.def_py_method[wrapper](method_name, docstring)
+
+    fn def_staticmethod[
+        method_type: AnyTrivialRegType, //,
+        method: PyObjectFunction[method_type, NoneType],
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref [self] Self:
+        """Declare a binding for a static method (no self parameter).
+
+        Accepts functions with PythonObject arguments (up to 6), can optionally
+        return a PythonObject, and can raise.
+
+        Example signatures:
+        ```mojo
+        fn static_method(arg1: PythonObject) -> PythonObject
+        fn static_method(arg1: PythonObject, arg2: PythonObject) raises
         ```
 
         Parameters:
@@ -842,9 +892,9 @@ struct PythonTypeBuilder(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _py_new_function_nonregistered(
-    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
-) -> PyObjectPtr:
+fn _py_init_function_nonregistered(
+    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> c_int:
     var cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
@@ -852,39 +902,49 @@ fn _py_new_function_nonregistered(
         "No initializer registered for this type. Use def_py_init() or"
         " def_init_defaultable() to register an initializer.".unsafe_cstr_ptr(),
     )
-    return {}
+    return -1
 
 
 fn _py_new_function_wrapper[
-    T: Movable,
-    user_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+    T: AnyType
 ](
     subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> PyObjectPtr:
+    var cpython = Python().cpython()
+
+    try:
+        return _unsafe_alloc[T](subtype)
+    except e:
+        var error_type = cpython.get_error_global("PyExc_TypeError")
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return {}
+
+
+fn _py_init_function_wrapper[
+    T: Movable,
+    init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+](
+    py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> c_int:
     """Wrapper function that adapts a Mojo `PyInitFunction` to be callable from
     Python.
     """
 
-    var kwargs = PythonObject(from_owned_ptr=kwargs_ptr)
-    var args = PythonObject(from_owned_ptr=args_ptr)
-
-    __disable_del args
-    __disable_del kwargs
+    var kwargs = PythonObject(from_borrowed_ptr=kwargs_ptr)
+    var args = PythonObject(from_borrowed_ptr=args_ptr)
 
     var cpython = Python().cpython()
 
     try:
-
-        fn create_func(out self: T) raises capturing:
-            self = user_func(args, kwargs)
-
-        return _unsafe_alloc_init[create_func](subtype).steal_data()
+        var value = init_func(args, kwargs)
+        _unsafe_init(py_self, value^)
+        return 0
 
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
-        return {}
+        return -1
 
 
 fn _py_c_function_wrapper[
@@ -1191,7 +1251,7 @@ fn check_and_get_or_convert_arg[
 fn _get_type_name(obj: PythonObject) raises -> String:
     var cpython = Python().cpython()
 
-    var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())
+    var actual_type = cpython.Py_TYPE(obj._obj_ptr)
     var actual_type_name = PythonObject(
         from_owned_ptr=cpython.PyType_GetName(actual_type)
     )

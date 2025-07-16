@@ -73,7 +73,7 @@ class MPNetInputs(ModelInputs):
         self.kv_cache_inputs = None
 
 
-class MPNetPipelineModel(PipelineModel[TextContext]):
+class MPNetPipelineModel(PipelineModel[TextContext]):  # type: ignore
     def __init__(
         self,
         pipeline_config: PipelineConfig,

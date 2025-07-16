@@ -12,4 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the hashlib package that provides various hash algorithms."""
 from .hash import Hashable, hash
-from .hasher import Hasher
+from .hasher import Hasher, default_hasher, default_comp_time_hasher

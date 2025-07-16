@@ -21,13 +21,13 @@ import sys
 from typing import Optional, Union
 
 import uvloop
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
-from max.pipelines.core import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
