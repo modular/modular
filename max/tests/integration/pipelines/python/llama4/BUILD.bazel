@@ -27,7 +27,7 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "resources:gpu-memory": "24",
+        "test.resources:gpu-memory": "24",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -61,7 +61,7 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "resources:gpu-memory": "11",
+        "test.resources:gpu-memory": "11",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [

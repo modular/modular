@@ -135,7 +135,7 @@ modular_py_test(
     srcs = ["test_pipelines_cli_gpu.py"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
-        "resources:gpu-memory": "24",
+        "test.resources:gpu-memory": "24",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -229,7 +229,7 @@ modular_py_test(
     srcs = ["test_generate_llm_logits_gpu.py"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
-        "resources:gpu-memory": "24",
+        "test.resources:gpu-memory": "24",
     },
     gpu_constraints = ["//:has_gpu"],
     ignore_collisions = True,

@@ -77,7 +77,7 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "20",
     },
     gpu_constraints = [
         "//:has_gpu",

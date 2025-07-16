@@ -74,7 +74,7 @@ modular_py_test(
     ],
     exec_properties = {
         # Ensure the test has at least 8GB of GPU memory available.
-        "resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "8",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -115,7 +115,7 @@ modular_py_test(
     },
     exec_properties = {
         # Ensure the test has at least 23GB of GPU memory available.
-        "resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "23",
     },
     gpu_constraints = [
         "//:has_gpu",
