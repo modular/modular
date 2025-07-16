@@ -86,7 +86,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             self.add(e)
 
     @doc_private
-    fn __init__(out self, owned data: Dict[T, NoneType, H]):
+    fn __init__(out self, var data: __type_of(self._data)):
         """Construct a set from an existing Dict.
 
         Args:
