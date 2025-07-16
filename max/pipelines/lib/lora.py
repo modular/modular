@@ -20,7 +20,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -30,6 +30,7 @@ from max.graph import Weight
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, Weights, WeightsFormat, load_weights
+from max.interfaces import InputContext
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
 
@@ -38,6 +39,8 @@ from .hf_utils import HuggingFaceRepo
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
+
+T = TypeVar("T", bound=InputContext)
 
 
 class LoRAType(Enum):
@@ -470,7 +473,7 @@ class LoRAManager:
         Returns:
             A WeightData object with the weights from the loaded LoRAs.
         """
-        weight = np.zeros(base_weight.shape.static_dims)
+        weight = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
 
         for name, lora in self._loras.items():
             if lora_weight := lora.get(key):
@@ -483,13 +486,15 @@ class LoRAManager:
                 elif LoRAType.BIAS.value in key:
                     weight[slot, :] = lora_weight.data
 
-        return WeightData(
+        lora_weights = WeightData(
             weight,
             key,
-            base_weight.dtype,
+            DType.float32,
             base_weight.shape,
             base_weight.quantization_encoding,
         )
+        lora_weights = lora_weights.astype(base_weight.dtype)
+        return lora_weights
 
     def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:
         """
@@ -587,3 +592,20 @@ class LoRAManager:
         for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
                 layer.set_lora_batch_info(lora_ids, lora_ranks)
+
+    def sort_lora_batch(self, batch: dict[str, T]) -> dict[str, T]:
+        """ "
+        Sorts the LoRA batch by name
+        Args:
+            batch: The context batch to sort
+        """
+        batch_by_model_names = {
+            req_id: batch[req_id]
+            for req_id, _ in sorted(
+                batch.items(),
+                key=lambda item: self._model_name_to_rank(
+                    getattr(item[1], "model_name")
+                ),
+            )
+        }
+        return batch_by_model_names

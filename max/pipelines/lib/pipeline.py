@@ -216,14 +216,16 @@ class PipelineModel(ABC, Generic[T]):
                 session, self.kv_cache_config._available_cache_memory
             )
 
-        self._lora_manager: LoRAManager | None = None
-        if self.pipeline_config.lora_config is not None:
-            self._lora_manager = LoRAManager(
+        self._lora_manager = (
+            LoRAManager(
                 weights,
                 self.pipeline_config.lora_config.max_num_loras,
                 self.pipeline_config.lora_config.max_lora_rank,
                 self.pipeline_config.lora_config.lora_paths,
             )
+            if self.pipeline_config.lora_config
+            else None
+        )
 
     @property
     def dtype(self) -> DType:
@@ -904,6 +906,16 @@ class TextGenerationPipeline(TokenGenerator[T]):
         assert isinstance(new_seed, Tensor)
         return (tokens, generated_tokens, new_seed)
 
+    def _maybe_sort_loras(self, batch: dict[str, T]):
+        """
+        Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
+        to be adjacent to each other.
+        """
+        if self._pipeline_model._lora_manager is None:
+            return batch
+
+        return self._pipeline_model._lora_manager.sort_lora_batch(batch)
+
     @traced
     def next_token(
         self,
@@ -913,6 +925,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
+
+        batch = self._maybe_sort_loras(batch)
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
