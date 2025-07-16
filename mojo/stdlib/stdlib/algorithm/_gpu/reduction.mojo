@@ -368,7 +368,7 @@ fn reduce_launch[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    ctx.enqueue_function[
+    ctx.call_function[
         reduce_kernel[
             rank,
             num_reductions,
