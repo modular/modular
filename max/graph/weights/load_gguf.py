@@ -14,88 +14,60 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from os import PathLike
 from typing import Any, Optional, Union
 
+# This is only imported internally if gguf is available
+import gguf  # type: ignore
 import numpy as np
 import numpy.typing as npt
-from max.graph import DeviceRef
-
-# Only import gguf when used.
-try:
-    import gguf  # type: ignore
-except ImportError:
-    gguf = None
-
-
 from max.dtype import DType
+from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
 from ..weight import Weight
+from ._gguf_reader import TokenSkippingGGUFReader
 from .weights import WeightData, Weights
 
-_GGML_TO_DTYPE: dict[gguf.GGMLQuantizationType, DType] = {}
-_FROM_QUANTIZED_GGML_DTYPES = {}
-_TO_QUANTIZED_GGML_DTYPES = {}
+_GGML_TO_DTYPE = {
+    gguf.GGMLQuantizationType.I8: DType.int8,
+    gguf.GGMLQuantizationType.I16: DType.int16,
+    gguf.GGMLQuantizationType.I32: DType.int32,
+    gguf.GGMLQuantizationType.I64: DType.int64,
+    gguf.GGMLQuantizationType.F16: DType.float16,
+    gguf.GGMLQuantizationType.F32: DType.float32,
+    gguf.GGMLQuantizationType.F64: DType.float64,
+    gguf.GGMLQuantizationType.BF16: DType.bfloat16,
+}
 
+_FROM_QUANTIZED_GGML_DTYPES = {
+    gguf.GGMLQuantizationType.Q4_0: QuantizationEncoding.Q4_0,
+    # gguf.GGMLQuantizationType.Q4_1,
+    # gguf.GGMLQuantizationType.Q5_0,
+    # gguf.GGMLQuantizationType.Q5_1,
+    # gguf.GGMLQuantizationType.Q8_0,
+    # gguf.GGMLQuantizationType.Q8_1,
+    # gguf.GGMLQuantizationType.Q2_K,
+    # gguf.GGMLQuantizationType.Q3_K,
+    gguf.GGMLQuantizationType.Q4_K: QuantizationEncoding.Q4_K,
+    gguf.GGMLQuantizationType.Q5_K: QuantizationEncoding.Q5_K,
+    gguf.GGMLQuantizationType.Q6_K: QuantizationEncoding.Q6_K,
+    # gguf.GGMLQuantizationType.Q8_K,
+    # gguf.GGMLQuantizationType.IQ2_XXS,
+    # gguf.GGMLQuantizationType.IQ2_XS,
+    # gguf.GGMLQuantizationType.IQ3_XXS,
+    # gguf.GGMLQuantizationType.IQ1_S,
+    # gguf.GGMLQuantizationType.IQ4_NL,
+    # gguf.GGMLQuantizationType.IQ3_S,
+    # gguf.GGMLQuantizationType.IQ2_S,
+    # gguf.GGMLQuantizationType.IQ4_XS,
+    # gguf.GGMLQuantizationType.IQ1_M,
+}
 
-def _install(package) -> None:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-
-def _check_gguf() -> None:
-    global \
-        gguf, \
-        _GGML_TO_DTYPE, \
-        _FROM_QUANTIZED_GGML_DTYPES, \
-        _TO_QUANTIZED_GGML_DTYPES
-    if gguf is None:
-        _install("gguf")
-        import gguf as _gguf
-
-        gguf = _gguf
-
-    if not _GGML_TO_DTYPE:
-        _GGML_TO_DTYPE = {
-            gguf.GGMLQuantizationType.I8: DType.int8,
-            gguf.GGMLQuantizationType.I16: DType.int16,
-            gguf.GGMLQuantizationType.I32: DType.int32,
-            gguf.GGMLQuantizationType.I64: DType.int64,
-            gguf.GGMLQuantizationType.F16: DType.float16,
-            gguf.GGMLQuantizationType.F32: DType.float32,
-            gguf.GGMLQuantizationType.F64: DType.float64,
-            gguf.GGMLQuantizationType.BF16: DType.bfloat16,
-        }
-
-        _FROM_QUANTIZED_GGML_DTYPES = {
-            gguf.GGMLQuantizationType.Q4_0: QuantizationEncoding.Q4_0,
-            # gguf.GGMLQuantizationType.Q4_1,
-            # gguf.GGMLQuantizationType.Q5_0,
-            # gguf.GGMLQuantizationType.Q5_1,
-            # gguf.GGMLQuantizationType.Q8_0,
-            # gguf.GGMLQuantizationType.Q8_1,
-            # gguf.GGMLQuantizationType.Q2_K,
-            # gguf.GGMLQuantizationType.Q3_K,
-            gguf.GGMLQuantizationType.Q4_K: QuantizationEncoding.Q4_K,
-            gguf.GGMLQuantizationType.Q5_K: QuantizationEncoding.Q5_K,
-            gguf.GGMLQuantizationType.Q6_K: QuantizationEncoding.Q6_K,
-            # gguf.GGMLQuantizationType.Q8_K,
-            # gguf.GGMLQuantizationType.IQ2_XXS,
-            # gguf.GGMLQuantizationType.IQ2_XS,
-            # gguf.GGMLQuantizationType.IQ3_XXS,
-            # gguf.GGMLQuantizationType.IQ1_S,
-            # gguf.GGMLQuantizationType.IQ4_NL,
-            # gguf.GGMLQuantizationType.IQ3_S,
-            # gguf.GGMLQuantizationType.IQ2_S,
-            # gguf.GGMLQuantizationType.IQ4_XS,
-            # gguf.GGMLQuantizationType.IQ1_M,
-        }
-        _TO_QUANTIZED_GGML_DTYPES = {
-            value: key for key, value in _FROM_QUANTIZED_GGML_DTYPES.items()
-        }
+_TO_QUANTIZED_GGML_DTYPES = {
+    value: key for key, value in _FROM_QUANTIZED_GGML_DTYPES.items()
+}
 
 
 class GGUFWeights(Weights):
@@ -107,9 +79,9 @@ class GGUFWeights(Weights):
     def __init__(
         self,
         source: Union[PathLike, gguf.GGUFReader],
-        tensors=None,
+        tensors=None,  # noqa: ANN001
         prefix: str = "",
-        allocated=None,
+        allocated=None,  # noqa: ANN001
     ) -> None:
         """Creates a GGUF weights reader.
 
@@ -119,9 +91,6 @@ class GGUFWeights(Weights):
             prefix: Weight name or prefix.
             allocated: Dictionary of allocated values.
         """
-        _check_gguf()
-        assert gguf is not None
-        from ._gguf_reader import TokenSkippingGGUFReader
 
         self._reader = (
             source
@@ -151,7 +120,7 @@ class GGUFWeights(Weights):
                     ),
                 )
 
-    def __getattr__(self, attr) -> GGUFWeights:
+    def __getattr__(self, attr) -> GGUFWeights:  # noqa: ANN001
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:
@@ -251,7 +220,7 @@ class GGUFWeights(Weights):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
-        device=DeviceRef.CPU(),
+        device=DeviceRef.CPU(),  # noqa: ANN001
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
         tensor = self._raw_tensor()

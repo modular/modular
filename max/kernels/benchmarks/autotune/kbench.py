@@ -124,13 +124,15 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     try:
         if dryrun:
             print(list2cmdline(cmd))
-            return ProcessOutput(None, None)
+            return ProcessOutput(None, None, -1, None)
 
         # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
         env = os.environ.copy()
         output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
-            output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+            output.stdout.decode("utf-8"),
+            output.stderr.decode("utf-8"),
+            output.returncode,
         )
 
     except Exception as exc:
@@ -163,6 +165,7 @@ class ParamSpace:
 class ProcessOutput:
     stdout: str | None = None
     stderr: str | None = None
+    return_code: int = -1
     path: Path | None = None
 
     def log(self) -> None:
@@ -303,9 +306,11 @@ class SpecInstance:
             ]
         )
         out = _run_cmdline(cmd, dryrun)
-        if out.stderr:
-            return ProcessOutput(out.stdout, out.stderr, None)
-        return ProcessOutput(out.stdout, out.stderr, bin_path)
+        if out.return_code == os.EX_OK:
+            out.path = bin_path
+        else:
+            out.path = None
+        return out
 
     def execute(
         self,
@@ -355,7 +360,7 @@ class SpecInstance:
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params) -> None:
+    def __init__(self, name, file, params) -> None:  # noqa: ANN001
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -388,13 +393,13 @@ class GridSearchStrategy:
         self.offset += 1
         return res
 
-    def __getitem__(self, i):
+    def __getitem__(self, i):  # noqa: ANN001
         return self.instances[i]
 
     def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other) -> None:
+    def extend(self, other) -> None:  # noqa: ANN001
         self.instances.extend(other.instances)
 
 
@@ -668,7 +673,7 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_tmp_path(file_path):
+def _get_tmp_path(file_path):  # noqa: ANN001
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
     return Path(tf)
@@ -764,7 +769,7 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(output_dir):
+    def kbench_mkdir(output_dir):  # noqa: ANN001
         """Run the following command:
         `rm -rf {output_dir} && mkdir -p {output_dir}`
         """
@@ -878,7 +883,7 @@ class Scheduler:
                 # - cache is active
                 # - no error is reported in stderr
                 # - build_output path is found
-                if not build_output.stderr and build_output.path:
+                if build_output.return_code == os.EX_OK and build_output.path:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
@@ -887,7 +892,11 @@ class Scheduler:
         return unique_build_paths
 
     def execute_all(
-        self, unique_build_paths, profile, exec_prefix, exec_suffix
+        self,
+        unique_build_paths,  # noqa: ANN001
+        profile,  # noqa: ANN001
+        exec_prefix,  # noqa: ANN001
+        exec_suffix,  # noqa: ANN001
     ) -> None:
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
@@ -936,23 +945,27 @@ class Scheduler:
 
             self.progress.update(exec_progress, advance=1)
 
+    def close_pool(self):
+        self.cpu_pool.close()
+        self.cpu_pool.join()
+
 
 def run(
-    yaml_path_list,
+    yaml_path_list,  # noqa: ANN001
     obj_cache: KbenchCache,
     shape: SpecInstance,
     output_path: Path = Path(),
-    mode=KBENCH_MODE.RUN,
-    param_list=None,
-    filter_list=None,
+    mode=KBENCH_MODE.RUN,  # noqa: ANN001
+    param_list=None,  # noqa: ANN001
+    filter_list=None,  # noqa: ANN001
     build_opts: list[str] = [],
     profile: str = "",
     exec_prefix: list[str] = [],
     exec_suffix: list[str] = [],
     dryrun: bool = False,
-    verbose=False,
-    output_dir=None,
-    num_cpu=1,
+    verbose=False,  # noqa: ANN001
+    output_dir=None,  # noqa: ANN001
+    num_cpu=1,  # noqa: ANN001
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -1033,7 +1046,9 @@ def run(
                     exec_prefix=exec_prefix,
                     exec_suffix=exec_suffix,
                 )
+            scheduler.close_pool()
         except KeyboardInterrupt:
+            scheduler.close_pool()
             obj_cache.dump()
             sys.exit(0)
 
@@ -1220,11 +1235,11 @@ class FileGlobArg:
 
 
 def set_build_opts(
-    debug_level=None,
-    optimization_level=None,
-    use_experimental_kernels=None,
-    target_accelerator=None,
-    disable_warnings=None,
+    debug_level=None,  # noqa: ANN001
+    optimization_level=None,  # noqa: ANN001
+    use_experimental_kernels=None,  # noqa: ANN001
+    target_accelerator=None,  # noqa: ANN001
+    disable_warnings=None,  # noqa: ANN001
 ):
     build_opts = []
     if debug_level:
@@ -1377,29 +1392,29 @@ help_str = "Benchmarking toolkit for Mojo kernels"
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,
-    filter,
-    output_path,
-    output_dir,
-    tune,
-    build,
-    param,
-    debug_level,
-    use_experimental_kernels,
-    optimization_level,
-    target_accelerator,
-    disable_warnings,
-    force,
-    cached,
-    clear_cache,
-    num_cpu,
-    dryrun,
-    verbose,
-    shapes,
-    build_opts,
-    profile,
-    exec_prefix,
-    exec_suffix,
+    files,  # noqa: ANN001
+    filter,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    output_dir,  # noqa: ANN001
+    tune,  # noqa: ANN001
+    build,  # noqa: ANN001
+    param,  # noqa: ANN001
+    debug_level,  # noqa: ANN001
+    use_experimental_kernels,  # noqa: ANN001
+    optimization_level,  # noqa: ANN001
+    target_accelerator,  # noqa: ANN001
+    disable_warnings,  # noqa: ANN001
+    force,  # noqa: ANN001
+    cached,  # noqa: ANN001
+    clear_cache,  # noqa: ANN001
+    num_cpu,  # noqa: ANN001
+    dryrun,  # noqa: ANN001
+    verbose,  # noqa: ANN001
+    shapes,  # noqa: ANN001
+    build_opts,  # noqa: ANN001
+    profile,  # noqa: ANN001
+    exec_prefix,  # noqa: ANN001
+    exec_suffix,  # noqa: ANN001
 ) -> bool:
     configure_logging(verbose=verbose)
 

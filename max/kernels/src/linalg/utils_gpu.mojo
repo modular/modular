@@ -568,7 +568,7 @@ fn create_hilbert_lut(
         d += 1
 
     # Allocate device buffer and copy.
-    var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+    var device_buf = ctx.create_buffer[DType.uint32](num_blocks)
     ctx.enqueue_copy(device_buf, host_ptr)
     host_ptr.free()
     return device_buf

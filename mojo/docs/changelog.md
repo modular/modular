@@ -168,6 +168,17 @@ mutation.
   on `CompilationTarget` from `sys.info` instead.
   - `is_x86()`
   - `has_sse4()`
+  - `has_avx()`
+  - `has_avx2()`
+  - `has_avx512f()`
+  - `has_fma()`
+  - `has_vnni()`
+  - `has_neon()`
+  - `has_neon_int8_dotprod()`
+  - `has_neon_int8_matmul()`
+
+- `UnsafePointer.address_of()` has been removed.  Use `UnsafePointer(to=...)`
+  constructor instead.
 
 ### 🛠️ Fixed
 

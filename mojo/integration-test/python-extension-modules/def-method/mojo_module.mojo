@@ -92,7 +92,9 @@ struct Person(Copyable, Defaultable, Movable, Representable):
         # TODO: replace with property once we have them
         var self_ptr = Self._get_self_ptr(py_self)
 
-        var s = Python().evaluate("hasattr(sys.modules[__name__], 'deny_name')")
+        var s = Python().evaluate(
+            "hasattr(sys.modules['test_module'], 'deny_name')"
+        )
         if s:
             raise String("name cannot be accessed")
 

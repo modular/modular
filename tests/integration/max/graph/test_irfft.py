@@ -20,7 +20,12 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def max_irfft(
-    session, input_tensor, n, axis, normalization, input_is_complex=False
+    session,  # noqa: ANN001
+    input_tensor,  # noqa: ANN001
+    n,  # noqa: ANN001
+    axis,  # noqa: ANN001
+    normalization,  # noqa: ANN001
+    input_is_complex=False,  # noqa: ANN001
 ):
     if input_is_complex:
         input_tensor = torch.view_as_real(input_tensor)
@@ -40,7 +45,7 @@ def max_irfft(
     return output
 
 
-def torch_irfft(input_tensor, n, axis, normalization):
+def torch_irfft(input_tensor, n, axis, normalization):  # noqa: ANN001
     output = torch.fft.irfft(input_tensor, n=n, dim=axis, norm=normalization)
     return output
 
@@ -57,7 +62,12 @@ def torch_irfft(input_tensor, n, axis, normalization):
     ],
 )
 def test_irfft(
-    session, input_shape, n, axis, normalization, input_is_complex
+    session,  # noqa: ANN001
+    input_shape,  # noqa: ANN001
+    n,  # noqa: ANN001
+    axis,  # noqa: ANN001
+    normalization,  # noqa: ANN001
+    input_is_complex,  # noqa: ANN001
 ) -> None:
     if md.accelerator_count() == 0:
         pytest.skip("No GPU available")

@@ -133,8 +133,8 @@ class TokenGeneratorSchedulerConfig:
         cls,
         tg_batch_size: int,
         ce_batch_size: int,
-        max_forward_steps=1,
-        target_ce_batch_tokens=4096,
+        max_forward_steps=1,  # noqa: ANN001
+        target_ce_batch_tokens=4096,  # noqa: ANN001
         enable_chunked_prefill: bool = True,
         enable_in_flight_batching: bool = False,
         pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,

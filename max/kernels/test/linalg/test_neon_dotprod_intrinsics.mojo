@@ -17,7 +17,7 @@
 # REQUIRES: neon_dotprod
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import has_neon_int8_dotprod
+from sys.info import CompilationTarget
 
 from linalg.neon_intrinsics import _neon_dotprod, _neon_dotprod_lane
 
@@ -27,7 +27,7 @@ fn test_has_neon_int8_dotprod():
     print("== test_has_neon_int8_dotprod")
 
     # CHECK: True
-    print(has_neon_int8_dotprod())
+    print(CompilationTarget.has_neon_int8_dotprod())
 
 
 # CHECK-LABEL: test_int8_dotprod

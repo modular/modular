@@ -555,8 +555,8 @@ struct PythonObject(
         Returns:
             True if they are the same object and False otherwise.
         """
-        var cpython = Python().cpython()
-        return cpython.Py_Is(self._obj_ptr, other._obj_ptr)
+        var cpy = Python().cpython()
+        return cpy.Py_Is(self._obj_ptr, other._obj_ptr) != 0
 
     fn __isnot__(self, other: PythonObject) -> Bool:
         """Test if the PythonObject is not the `other` PythonObject, the same as `x is not y` in

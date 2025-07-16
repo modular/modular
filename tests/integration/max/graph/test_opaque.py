@@ -108,7 +108,7 @@ def test_opaque_simple(
 
 
 class PythonCounter:
-    def __init__(self, a=0, b=0) -> None:
+    def __init__(self, a=0, b=0) -> None:  # noqa: ANN001
         self.a = a
         self.b = b
 
@@ -156,7 +156,7 @@ def test_pyobject_opaque(
 def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,
-    monkeypatch,
+    monkeypatch,  # noqa: ANN001
 ) -> None:
     # Opaque parameterization is only supported using the new MOGG dialect based
     # compilation path.

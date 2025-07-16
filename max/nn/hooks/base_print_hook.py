@@ -61,7 +61,7 @@ class BasePrintHook(ABC):
         # Maps step number -> [list of printed tensors]
         self._recorded_prints: dict[int, list[str]] = {}
 
-    def add_layer(self, layer, name) -> None:
+    def add_layer(self, layer, name) -> None:  # noqa: ANN001
         self._known_layers[layer] = LayerInfo(name)
 
     @property
@@ -83,7 +83,7 @@ class BasePrintHook(ABC):
 
         self.write_keys_file()
 
-    def __call__(self, layer, args, kwargs, outputs):
+    def __call__(self, layer, args, kwargs, outputs):  # noqa: ANN001
         """Print all TensorValues."""
         if layer not in self._known_layers:
             # If layer is not yet named, use the class name.

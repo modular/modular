@@ -1228,7 +1228,7 @@ fn multistage_gemm[
             alias BM = config.block_tile_shape[0]
             alias BN = config.block_tile_shape[1]
 
-            var locks_data = ctx.enqueue_create_buffer[DType.int32](
+            var locks_data = ctx.create_buffer[DType.int32](
                 ceildiv(M, BM) * ceildiv(N, BN)
             )
             ctx.enqueue_memset(locks_data, 0)
@@ -1270,7 +1270,7 @@ fn multistage_gemm[
                 "Executing: split-K with parallel reduction (workspace-based)"
             )
             alias work_space_type = config.split_k_reduction_type
-            var work_space_data = ctx.enqueue_create_buffer[work_space_type](
+            var work_space_data = ctx.create_buffer[work_space_type](
                 runtime_config.num_k_partitions * M * N
             )
             var work_space = NDBuffer[work_space_type, 3](

@@ -436,7 +436,7 @@ fn mha_sm90_dispatch[
             max_seq_len_t=max_prompt_len_t,
             partition_t=partition_t,
         ]
-        var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
+        var schedule = ctx.enqueue_create_buffer[DType.uint32](1).fill(
             UInt32(H100.sm_count)
         )
         ctx.synchronize()

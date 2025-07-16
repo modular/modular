@@ -345,7 +345,7 @@ class InternVLProcessor:
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
-        config,
+        config,  # noqa: ANN001
         vision_overrides: dict | None = None,
     ) -> None:
         self.tokenizer = tokenizer

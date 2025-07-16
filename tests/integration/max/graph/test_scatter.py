@@ -42,7 +42,12 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
     ],
 )
 def test_scatter(
-    session: InferenceSession, input, updates, indices, axis, expected
+    session: InferenceSession,
+    input,  # noqa: ANN001
+    updates,  # noqa: ANN001
+    indices,  # noqa: ANN001
+    axis,  # noqa: ANN001
+    expected,  # noqa: ANN001
 ) -> None:
     input = np.array(input, dtype=np.float32)
     input_type = TensorType(DType.float32, input.shape, device_ref)
@@ -100,7 +105,11 @@ def test_scatter(
     ],
 )
 def test_scatter_nd(
-    session: InferenceSession, input_data, updates_data, indices_data, expected
+    session: InferenceSession,
+    input_data,  # noqa: ANN001
+    updates_data,  # noqa: ANN001
+    indices_data,  # noqa: ANN001
+    expected,  # noqa: ANN001
 ) -> None:
     """Test scatter_nd operation with various input configurations."""
     input_array = np.array(input_data, dtype=np.float32)

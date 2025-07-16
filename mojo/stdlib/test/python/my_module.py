@@ -19,7 +19,7 @@ class Person(ABC):
 
 
 class Foo:
-    def __init__(self, bar) -> None:
+    def __init__(self, bar) -> None:  # noqa: ANN001
         self.bar = bar
 
 
@@ -28,9 +28,9 @@ class AbstractPerson(ABC):
     def method(self): ...
 
 
-def my_function(name) -> str:
+def my_function(name) -> str:  # noqa: ANN001
     return f"Formatting the string from Lit with Python: {name}"
 
 
-def eat_it_all(veggie, *args, fruit, **kwargs) -> str:
+def eat_it_all(veggie, *args, fruit, **kwargs) -> str:  # noqa: ANN001
     return f"{veggie} {args} fruit={fruit} {kwargs}"

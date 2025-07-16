@@ -46,7 +46,7 @@ class JSONType(click.ParamType):
 
     name = "json"
 
-    def convert(self, value, param, ctx):
+    def convert(self, value, param, ctx):  # noqa: ANN001
         if isinstance(value, dict):
             return value
         try:
@@ -159,7 +159,7 @@ def create_click_option(
     )
 
 
-def config_to_flag(cls, prefix: Optional[str] = None):
+def config_to_flag(cls, prefix: Optional[str] = None):  # noqa: ANN001
     options = []
     if hasattr(cls, "help"):
         help_text = cls.help()
@@ -191,7 +191,7 @@ def config_to_flag(cls, prefix: Optional[str] = None):
             )
         options.append(new_option)
 
-    def apply_flags(func):
+    def apply_flags(func):  # noqa: ANN001
         for option in reversed(options):
             func = option(func)  # type: ignore
         return func
@@ -199,7 +199,7 @@ def config_to_flag(cls, prefix: Optional[str] = None):
     return apply_flags
 
 
-def pipeline_config_options(func):
+def pipeline_config_options(func):  # noqa: ANN001
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)

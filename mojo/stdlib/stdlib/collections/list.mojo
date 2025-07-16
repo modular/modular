@@ -211,8 +211,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             existing: The list to copy.
         """
         self = Self(capacity=existing.capacity)
-        for i in range(len(existing)):
-            self.append(existing[i])
+        self.append(existing)
 
     fn __del__(owned self):
         """Destroy all elements in the list and free its memory."""

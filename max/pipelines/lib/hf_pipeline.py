@@ -384,7 +384,7 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
 # Taken from the sentence piece transformer:
 # https://huggingface.co/sentence-transformers/all-mpnet-base-v2
 # Mean Pooling - Take attention mask into account for correct averaging
-def _mean_pooling(model_output, attention_mask):
+def _mean_pooling(model_output, attention_mask):  # noqa: ANN001
     token_embeddings = model_output[
         0
     ]  # First element of model_output contains all token embeddings

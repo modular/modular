@@ -56,7 +56,11 @@ from max.graph import DeviceRef, Graph, ops
     ],
 )
 def test_masked_scatter(
-    session: InferenceSession, input, mask, updates, expected
+    session: InferenceSession,
+    input,  # noqa: ANN001
+    mask,  # noqa: ANN001
+    updates,  # noqa: ANN001
+    expected,  # noqa: ANN001
 ) -> None:
     with Graph("masked_scatter", input_types=[]) as graph:
         input = ops.constant(

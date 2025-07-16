@@ -27,7 +27,7 @@ _ALLOWED_DUPLICATE_PACKAGES = {
 }
 
 
-def _should_ignore(package):
+def _should_ignore(package):  # noqa: ANN001
     # Ignores pypi torch versions because uv is too aggressive about pulling
     # those in even though a group will always be specified.
     return package["name"] == "bazel-pyproject" or (

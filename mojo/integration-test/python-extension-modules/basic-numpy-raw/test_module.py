@@ -15,7 +15,8 @@
 import mojo_module
 import numpy as np
 
-if __name__ == "__main__":
+
+def test_mojo_numpy():
     print("Hello from Basic Numpy Example!")
 
     enumerated = np.empty((5, 5), dtype=np.int32)

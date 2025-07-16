@@ -92,7 +92,7 @@ from .memory import (
     multimem_st,
     tma_store_fence,
 )
-from .semaphore import Semaphore
+from .semaphore import Semaphore, NamedBarrierSemaphore
 from .sync import (
     AMDScheduleBarrierMask,
     async_copy_arrive,

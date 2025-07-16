@@ -1,26 +1,13 @@
-diff --git a/pycross/private/bzlmod/lock_file.bzl b/pycross/private/bzlmod/lock_file.bzl
-index 9390b14..e1f0bd1 100644
---- a/pycross/private/bzlmod/lock_file.bzl
-+++ b/pycross/private/bzlmod/lock_file.bzl
-@@ -16,6 +16,8 @@ def _lock_file_impl(module_ctx):
-     for module in module_ctx.modules:
-         for tag in module.tags.instantiate:
-             path = module_ctx.path(tag.lock_file)
-+            if hasattr(module_ctx, "watch"):
-+                module_ctx.watch(tag.lock_file)
-             result = exec_internal_tool(module_ctx, tool, [path], quiet = True)
-             repos = json.decode(result.stdout)
- 
-diff --git a/pycross/private/lock_file_repo.bzl b/pycross/private/lock_file_repo.bzl
-index d2de46a..e85f325 100644
---- a/pycross/private/lock_file_repo.bzl
-+++ b/pycross/private/lock_file_repo.bzl
-@@ -2,6 +2,8 @@
- 
- def _pycross_lock_file_repo_impl(rctx):
-     lock_file_label = rctx.attr.lock_file
-+    if hasattr(rctx, "watch"):
-+        rctx.watch(lock_file_label)
- 
-     rctx.file(rctx.path("requirements.bzl"), """\
- load("{lock_file}", "PINS", "repositories")
+diff --git a/pycross/private/internal_repo.bzl b/pycross/private/internal_repo.bzl
+index c700076..15351e0 100644
+--- a/pycross/private/internal_repo.bzl
++++ b/pycross/private/internal_repo.bzl
+@@ -114,6 +114,8 @@ def _resolve_python_interpreter(rctx):
+
+     if rctx.attr.python_interpreter_target != None:
+         python_interpreter = rctx.path(rctx.attr.python_interpreter_target)
++        if hasattr(rctx, "watch"):
++            rctx.watch(python_interpreter)
+     elif "/" not in python_interpreter:
+         found_python_interpreter = rctx.which(python_interpreter)
+         if not found_python_interpreter:

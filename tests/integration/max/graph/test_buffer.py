@@ -39,24 +39,24 @@ def custom_ops_path() -> Path:
     return Path(os.environ["CUSTOM_OPS_PATH"])
 
 
-def torch_add_n(x, n):
+def torch_add_n(x, n):  # noqa: ANN001
     return torch.add(x, n)
 
 
-def torch_multiply(x):
+def torch_multiply(x):  # noqa: ANN001
     return torch.mul(x, x)
 
 
-def torch_add_relu(x):
+def torch_add_relu(x):  # noqa: ANN001
     relu = torch.nn.ReLU()
     return relu(torch.add(x, 100))
 
 
-def zeros(shape, dtype):
+def zeros(shape, dtype):  # noqa: ANN001
     return np.zeros([int(d) for d in shape]).astype(dtype.to_numpy())
 
 
-def ones(shape, dtype):
+def ones(shape, dtype):  # noqa: ANN001
     return np.ones([int(d) for d in shape]).astype(dtype.to_numpy())
 
 
@@ -67,7 +67,7 @@ def ones(shape, dtype):
         BufferType(DType.float32, [100, 40], device=DeviceRef.CPU()),
     ]
 )
-def buffer_type(request):
+def buffer_type(request):  # noqa: ANN001
     return request.param
 
 
@@ -79,18 +79,18 @@ def buffer_type(request):
         TensorType(DType.float32, [5, 5], device=DeviceRef.CPU()),
     ]
 )
-def tensor_type(request):
+def tensor_type(request):  # noqa: ANN001
     return request.param
 
 
 @pytest.fixture
-def buffer_graph(buffer_type) -> Graph:
+def buffer_graph(buffer_type) -> Graph:  # noqa: ANN001
     graph = Graph("buffer", input_types=[buffer_type])
     return graph
 
 
 @pytest.fixture
-def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
+def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:  # noqa: ANN001
     graph = Graph(
         "buffer_tensor",
         input_types=[
@@ -107,7 +107,9 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store(
-    n, buffer_graph: Graph, session: InferenceSession
+    n,  # noqa: ANN001
+    buffer_graph: Graph,
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -131,7 +133,9 @@ def test_load_mutate_store(
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store_ellipsis(
-    n, buffer_graph: Graph, session: InferenceSession
+    n,  # noqa: ANN001
+    buffer_graph: Graph,
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -153,7 +157,9 @@ def test_load_mutate_store_ellipsis(
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_store_slice_load_slice(
-    n, buffer_tensor_graph: Graph, session: InferenceSession
+    n,  # noqa: ANN001
+    buffer_tensor_graph: Graph,
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     with buffer_tensor_graph as graph:
         tensor = graph.inputs[0].tensor
@@ -188,7 +194,8 @@ def test_store_slice_load_slice(
     reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
 )
 def test_inplace_user_supplied(
-    custom_ops_path, session: InferenceSession
+    custom_ops_path,  # noqa: ANN001
+    session: InferenceSession,  # noqa: ANN001
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], device=DeviceRef.CPU())
 

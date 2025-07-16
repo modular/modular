@@ -199,10 +199,8 @@ fn get_mha_decoding_num_partitions[
 
 
 fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
-    return (
-        has_nvidia_gpu_accelerator()
-        or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
-        or (has_amd_gpu_accelerator() and qkv_type is DType.bfloat16)
+    return has_nvidia_gpu_accelerator() or (
+        has_amd_gpu_accelerator() and qkv_type is DType.bfloat16
     )
 
 
@@ -1295,13 +1293,14 @@ fn mha_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
+    ].stack_allocation[alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -1310,7 +1309,7 @@ fn mha_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation()
+        .stack_allocation[alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -1971,13 +1970,14 @@ fn mha_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
+    ].stack_allocation[alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -1986,7 +1986,7 @@ fn mha_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation()
+        .stack_allocation[alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -3163,13 +3163,14 @@ fn mha_decoding_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
+    ].stack_allocation[alignment=p_frag_align]()
 
     # Note that
     # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
@@ -3184,13 +3185,14 @@ fn mha_decoding_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation()
+        .stack_allocation[alignment=p_frag_align]()
         .fill(0.0)
     )
 
     # Rowwise max and sum for online softmax
-    var rowmax = stack_allocation[WM, accum_type]()
-    var rowsum = stack_allocation[WM, accum_type]()
+    alias row_align = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
+    var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
 
     @parameter
     for i in range(WM):
@@ -3804,13 +3806,14 @@ fn mha_decoding_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2 if is_nvidia_gpu() else p_frag_size
+    alias p_frag_align = alignof[SIMD[accum_type, p_frag_simdwidth]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
+    ].stack_allocation[alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -3819,13 +3822,14 @@ fn mha_decoding_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation()
+        .stack_allocation[alignment=p_frag_align]()
         .fill(0.0)
     )
 
     # Rowwise max and sum for online softmax
-    var rowmax = stack_allocation[WM, accum_type]()
-    var rowsum = stack_allocation[WM, accum_type]()
+    alias row_align = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
+    var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
 
     @parameter
     for i in range(WM):

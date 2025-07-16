@@ -18,7 +18,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import PytorchWeights
 
 
-def test_load_pytorch(testdata_directory) -> None:
+def test_load_pytorch(testdata_directory) -> None:  # noqa: ANN001
     # Loads the values saved in gen_external_checkpoints.py.
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch") as graph:
@@ -44,7 +44,7 @@ def test_load_pytorch(testdata_directory) -> None:
         )
 
 
-def test_load_using_prefix(testdata_directory) -> None:
+def test_load_using_prefix(testdata_directory) -> None:  # noqa: ANN001
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch_by_prefix") as graph:
         a = graph.add_weight(weights.a.allocate())
@@ -55,7 +55,7 @@ def test_load_using_prefix(testdata_directory) -> None:
         )
 
 
-def test_load_same_weight(testdata_directory) -> None:
+def test_load_same_weight(testdata_directory) -> None:  # noqa: ANN001
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch_same_weight") as graph:
         graph.add_weight(weights.a.allocate())

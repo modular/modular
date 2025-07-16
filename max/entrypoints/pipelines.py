@@ -57,29 +57,29 @@ class WithLazyPipelineOptions(click.Command):
             for param in getattr(self.callback, "__click_params__", []):
                 self.params.append(param)
 
-    def get_help(self, ctx):
+    def get_help(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_help(ctx)
 
-    def invoke(self, ctx):
+    def invoke(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().invoke(ctx)
 
-    def parse_args(self, ctx, args):
+    def parse_args(self, ctx, args):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().parse_args(ctx, args)
 
-    def get_params(self, ctx):
+    def get_params(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_params(ctx)
 
-    def shell_complete(self, ctx, incomplete):
+    def shell_complete(self, ctx, incomplete):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
             return rv
@@ -112,7 +112,7 @@ def configure_telemetry(color: str | None = None) -> None:
     configure_metrics(settings)
 
 
-def common_server_options(func):
+def common_server_options(func):  # noqa: ANN001
     @click.option(
         "--profile-serve",
         is_flag=True,

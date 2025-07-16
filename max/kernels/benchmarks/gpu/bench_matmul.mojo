@@ -119,9 +119,9 @@ fn bench_matmul[
         // sizeof[DType.bfloat16]()
     )
 
-    var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
-    var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
+    var buffer_a = ctx.create_buffer[dtype](cache_a)
+    var buffer_b = ctx.create_buffer[dtype](cache_b)
+    var buffer_c = ctx.create_buffer[DType.bfloat16](cache_c)
 
     # TODO: remove init_on_gpu flag and the loading on CPU
     alias init_on_gpu = True

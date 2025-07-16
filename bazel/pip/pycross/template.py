@@ -19,7 +19,7 @@ TEMPLATE = """\
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
-load("@module_versions//:config.bzl", "PYTHON_VERSIONS", "TORCH_DEFAULT_VERSION")
+load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
@@ -37,26 +37,24 @@ def targets():
             actual = ":" + pin_target,
         )
 
-    torch_version = TORCH_DEFAULT_VERSION.replace("_", ".")
-
     native.alias(
         name = "torch@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torch@{{}}+rocm6.3".format(torch_version),
-            "@@//:nvidia_gpu": ":torch@{{}}+cu128".format(torch_version),
-            "@platforms//os:macos": ":torch@{{}}".format(torch_version),
-            "//conditions:default": ":torch@{{}}+cpu".format(torch_version),
+            "@@//:amd_gpu": ":torch@2.7.0+rocm6.3",
+            "@@//:nvidia_gpu": ":torch@2.7.0+cu128",
+            "@platforms//os:macos": ":torch@2.7.0",
+            "//conditions:default": ":torch@2.7.0+cpu",
         }}),
     )
 
     native.alias(
         name = "torchaudio@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torchaudio@{{}}+rocm6.3".format(torch_version),
-            "@@//:nvidia_gpu": ":torchaudio@{{}}+cu128".format(torch_version),
-            "@platforms//os:macos": ":torchaudio@{{}}".format(torch_version),
-            "@@//:linux_aarch64": ":torchaudio@{{}}".format(torch_version),
-            "//conditions:default": ":torchaudio@{{}}+cpu".format(torch_version),
+            "@@//:amd_gpu": ":torchaudio@2.7.0+rocm6.3",
+            "@@//:nvidia_gpu": ":torchaudio@2.7.0+cu128",
+            "@platforms//os:macos": ":torchaudio@2.7.0",
+            "@@//:linux_aarch64": ":torchaudio@2.7.0",
+            "//conditions:default": ":torchaudio@2.7.0+cpu",
         }}),
     )
 
@@ -85,8 +83,7 @@ def targets():
     }}
 
     build_targets = {{}}
-    for version in PYTHON_VERSIONS:
-        version = version.replace("_", ".")
+    for version in PYTHON_VERSIONS_DOTTED:
         for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
             alias_name = "_env_python_{{}}_{{}}".format(version, platform)
             build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}.json".format(version, platform)

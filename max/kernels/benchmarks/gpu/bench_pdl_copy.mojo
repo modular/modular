@@ -113,10 +113,10 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     for i in range(length):
         c_host[i] = 0
 
-    var a_device = context.enqueue_create_buffer[dtype](length)
-    var b_device = context.enqueue_create_buffer[dtype](length)
-    var c_device = context.enqueue_create_buffer[dtype](length)
-    var d_device = context.enqueue_create_buffer[dtype](length)
+    var a_device = context.create_buffer[dtype](length)
+    var b_device = context.create_buffer[dtype](length)
+    var c_device = context.create_buffer[dtype](length)
+    var d_device = context.create_buffer[dtype](length)
 
     context.enqueue_copy(a_device, a_host)
     context.enqueue_copy(b_device, b_host)
@@ -188,10 +188,10 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     for i in range(length):
         c_host[i] = 0
 
-    var a_device = context.enqueue_create_buffer[dtype](length)
-    var b_device = context.enqueue_create_buffer[dtype](length)
-    var c_device = context.enqueue_create_buffer[dtype](length)
-    var d_device = context.enqueue_create_buffer[dtype](length)
+    var a_device = context.create_buffer[dtype](length)
+    var b_device = context.create_buffer[dtype](length)
+    var c_device = context.create_buffer[dtype](length)
+    var d_device = context.create_buffer[dtype](length)
 
     context.enqueue_copy(a_device, a_host)
     context.enqueue_copy(b_device, b_host)

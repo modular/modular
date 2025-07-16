@@ -37,9 +37,9 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     alias length = 1024
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](length).enqueue_fill(2)
-    var out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.create_buffer[DType.float32](length)
+    var in1 = ctx.create_buffer[DType.float32](length).fill(2)
+    var out = ctx.create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
@@ -54,6 +54,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     var block_dim = 32
 
     alias kernel = vec_func[add_with_captured]
+    # TODO(MAXPLAT-335): Make compile_function_experimental support this case.
     var kernel_func = ctx.compile_function_checked[kernel, kernel]()
     ctx.enqueue_function_checked(
         kernel_func,

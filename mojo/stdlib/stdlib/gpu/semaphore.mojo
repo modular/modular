@@ -38,7 +38,7 @@ from sys._assembly import inlined_assembly
 
 
 from .intrinsics import Scope, load_acquire, store_release
-from .sync import barrier
+from .sync import barrier, named_barrier, MaxHardwareBarriers
 
 
 @always_inline
@@ -47,7 +47,7 @@ fn _barrier_and(state: Int32) -> Int32:
     return llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](state)
 
 
-@register_passable
+@register_passable("trivial")
 struct Semaphore:
     """A device-wide semaphore implementation for GPUs.
 
@@ -122,5 +122,77 @@ struct Semaphore:
             status: The new state value to set (defaults to 0).
         """
         barrier()
+        if self._wait_thread:
+            store_release[scope = Scope.GPU](self._lock, status)
+
+
+@register_passable("trivial")
+struct NamedBarrierSemaphore[
+    thread_count: Int32, id_offset: Int32, max_num_barriers: Int32
+]:
+    """A device-wide semaphore implementation for NVIDIA GPUs with named barriers.
+
+    It's using an acquire-release logic instead of atomic instructions for inter-CTA synchronization with a shared lock variable.
+    Please note that the memory barrier is for syncing warp groups within in a CTA.
+    (Cutlass reference implementation)[https://github.com/NVIDIA/cutlass/blob/a1aaf2300a8fc3a8106a05436e1a2abad0930443/include/cutlass/arch/barrier.h].
+
+    """
+
+    var _lock: UnsafePointer[Int32]
+    """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
+
+    var _wait_thread: Bool
+    """Flag indicating if this thread should perform atomic operations (true for thread 0)"""
+
+    var _state: Int32
+    """Current state of the semaphore, used to track synchronization status"""
+
+    @always_inline
+    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
+        """Initialize a new Semaphore instance.
+
+        Args:
+            lock: Pointer to shared lock variable in global memory.
+            thread_id: Thread ID within the CTA, used to determine if this thread
+                      should perform atomic operations.
+        """
+        constrained[is_nvidia_gpu(), "target must be cuda"]()
+        constrained[
+            id_offset + max_num_barriers < MaxHardwareBarriers,
+            "max number of barriers is " + String(MaxHardwareBarriers),
+        ]()
+        self._lock = lock
+        self._wait_thread = thread_id <= 0
+        self._state = -1
+
+    @always_inline
+    fn state(self) -> Int32:
+        """Get the current state of the semaphore.
+
+        Returns:
+            The current state value of the semaphore.
+        """
+        return self._state
+
+    @always_inline
+    fn wait_eq(mut self, id: Int32, status: Int32 = 0):
+        if self._wait_thread:
+            while self._state != status:
+                self._state = load_acquire[scope = Scope.GPU](self._lock)
+
+        named_barrier[thread_count,](id_offset + id)
+
+    @always_inline
+    fn wait_lt(mut self, id: Int32, count: Int32 = 0):
+        if self._wait_thread:
+            while self._state < count:
+                self._state = load_acquire[scope = Scope.GPU](self._lock)
+
+        named_barrier[thread_count,](id_offset + id)
+
+    @always_inline
+    fn arrive_set(self, id: Int32, status: Int32 = 0):
+        named_barrier[thread_count,](id_offset + id)
+
         if self._wait_thread:
             store_release[scope = Scope.GPU](self._lock, status)

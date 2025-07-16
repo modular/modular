@@ -81,14 +81,14 @@ def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):
     return st.builds(StaticDim, st.integers(min_value=min, max_value=max))
 
 
-def clip(v, min, max):
+def clip(v, min, max):  # noqa: ANN001
     # Like np.clip, but more stable for python int types.
     # np.clip will cast to a float for values > intmax.
     return min if v < min else max if v > max else v
 
 
 @st.composite
-def log_bucket(draw, e: float, min: int, max: int):
+def log_bucket(draw, e: float, min: int, max: int):  # noqa: ANN001
     lower = clip(int(2**e), min, max)
     upper = clip(int(2 ** (e + 1)), min, max)
     return draw(st.integers(min_value=lower, max_value=upper))
@@ -127,7 +127,7 @@ small_dims = st.one_of(static_dims(min=1, max=16), symbolic_dims)
 
 @st.composite
 def all_shapes(
-    draw,
+    draw,  # noqa: ANN001
     min_rank: int = 1,
     max_rank: int = 5,
     dims: st.SearchStrategy[Dim] = dims,
@@ -173,7 +173,7 @@ def shapes(*args, **kwargs):
     return st.one_of(small_shapes(*args, **kwargs), all_shapes(*args, **kwargs))
 
 
-def valid_broadcast_rank(shape_st, max_size: int | None = None):
+def valid_broadcast_rank(shape_st, max_size: int | None = None):  # noqa: ANN001
     """Samples valid ranks to broadcast a shape to.
 
     Valid ranks are >= len(shape).
@@ -182,7 +182,9 @@ def valid_broadcast_rank(shape_st, max_size: int | None = None):
 
 
 def tensor_types(
-    dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()
+    dtypes=dtypes,  # noqa: ANN001
+    shapes=shapes(),  # noqa: ANN001
+    device=DeviceRef.CPU(),  # noqa: ANN001
 ) -> st.Strategy[TensorType]:
     return st.builds(TensorType, dtypes, shapes, st.just(device))
 
@@ -203,13 +205,15 @@ def opaque_types():
 
 
 def buffer_types(
-    dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()
+    dtypes=dtypes,  # noqa: ANN001
+    shapes=shapes(),  # noqa: ANN001
+    device=DeviceRef.CPU(),  # noqa: ANN001
 ) -> st.Strategy[BufferType]:
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
-def axes(shapes):
-    def strategy(shape):
+def axes(shapes):  # noqa: ANN001
+    def strategy(shape):  # noqa: ANN001
         assume(shape.rank > 0)
         return st.integers(min_value=-shape.rank, max_value=shape.rank - 1)
 
@@ -240,7 +244,7 @@ def axes_of(
     return shapes.flatmap(strategy)
 
 
-def static_axes(shapes):
+def static_axes(shapes):  # noqa: ANN001
     """Samples the axes corresponding to the static dimensions of the given
     shapes.
     """
@@ -248,7 +252,7 @@ def static_axes(shapes):
     return axes_of(shapes, lambda x: isinstance(x, StaticDim))
 
 
-def symbolic_axes(shapes):
+def symbolic_axes(shapes):  # noqa: ANN001
     """Samples the axes corresponding to the symbolic dimensions of the given
     shapes.
     """
@@ -256,7 +260,7 @@ def symbolic_axes(shapes):
     return axes_of(shapes, lambda x: isinstance(x, SymbolicDim))
 
 
-def non_static_axes(shapes):
+def non_static_axes(shapes):  # noqa: ANN001
     """Samples the axes corresponding to the non-static (SymbolicDim or
     AlgebraicDim) dimensions of the given shapes.
     """
@@ -264,8 +268,8 @@ def non_static_axes(shapes):
     return axes_of(shapes, lambda x: not isinstance(x, StaticDim))
 
 
-def new_axes(shapes):
-    def strategy(shapes):
+def new_axes(shapes):  # noqa: ANN001
+    def strategy(shapes):  # noqa: ANN001
         if not shapes.rank:
             return st.sampled_from([0, -1])
         return st.integers(min_value=-shapes.rank, max_value=shapes.rank)
@@ -291,7 +295,7 @@ def broadcastable_subshape(shape: list[Dim], random: random.Random):
     return shape
 
 
-def _broadcastable_shapes(n: int, dims_strategy):
+def _broadcastable_shapes(n: int, dims_strategy):  # noqa: ANN001
     return st.lists(dims_strategy).flatmap(
         lambda shape: st.lists(
             st.builds(broadcastable_subshape, st.just(shape), st.randoms()),

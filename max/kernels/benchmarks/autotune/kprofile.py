@@ -22,7 +22,9 @@ from typing import Optional
 import click
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import yaml
+from pandas.api.types import is_numeric_dtype
 from rich.console import Console
 from rich.table import Table
 
@@ -45,7 +47,7 @@ HEADER = """
 """
 
 
-def spec_to_dict(spec):
+def spec_to_dict(spec):  # noqa: ANN001
     """Convert kbench spec to dictionary"""
     # TODO: move this method to `kbench`
     spec_split = spec.split("/")
@@ -58,13 +60,13 @@ def spec_to_dict(spec):
     return d
 
 
-def specs_to_df(specs):
+def specs_to_df(specs):  # noqa: ANN001
     ds = [spec_to_dict(x) for x in specs]
     df = pd.DataFrame(ds)
     return df
 
 
-def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):
+def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):  # noqa: ANN001
     df = specs_to_df(x_labels)
     valid_columns = []
     for c in list(df.columns):
@@ -81,12 +83,12 @@ def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):
     return pivot_columns, non_pivot_columns
 
 
-def load_pickle(path):
+def load_pickle(path):  # noqa: ANN001
     with open(path, "rb") as handle:
         return pickle.load(handle)
 
 
-def dump_yaml(obj, out_path) -> None:
+def dump_yaml(obj, out_path) -> None:  # noqa: ANN001
     with open(out_path, "w") as f:
         yaml.dump(obj, f, sort_keys=False)
 
@@ -94,13 +96,13 @@ def dump_yaml(obj, out_path) -> None:
     yaml.dump(obj, sys.stdout, sort_keys=False)
 
 
-def top_idx(x, top_percentage=0.05):
+def top_idx(x, top_percentage=0.05):  # noqa: ANN001
     # calculate the threshold to pick top_percentage of the results
     threshold = (top_percentage + (np.min(x) / np.max(x))) * np.max(x)
     return x.where(x < threshold).dropna().index
 
 
-def replace_vals_snippet(p_spec, snippet_path) -> str:
+def replace_vals_snippet(p_spec, snippet_path) -> str:  # noqa: ANN001
     # TODO: raise an error if the parameter is not successfully replaced.
     with open(snippet_path) as f:
         c_init = f.read()
@@ -112,7 +114,7 @@ def replace_vals_snippet(p_spec, snippet_path) -> str:
     return c
 
 
-def find_common_params(subset):
+def find_common_params(subset):  # noqa: ANN001
     spec_list = []
     for index, row in subset.iterrows():
         p = spec_to_dict(row["spec"])
@@ -128,16 +130,23 @@ def find_common_params(subset):
 
 
 def df_to_console_table(
-    df, col_style={}, header_style="bold blue", index=False
+    df,  # noqa: ANN001
+    col_style={},  # noqa: ANN001
+    header_style="bold blue",  # noqa: ANN001
+    index=False,  # noqa: ANN001
 ) -> None:
     console = Console()
     table = Table(show_header=True, header_style=header_style)
+
+    if index:
+        style = col_style.get("index", "bold blue")
+        table.add_column("index", justify="left", style=style)
 
     for c in df.columns:
         style = col_style.get(c, None)
         table.add_column(c, justify="left", style=style)
 
-    def wrap(x):
+    def wrap(x):  # noqa: ANN001
         return "\n".join(x.split("/"))
 
     for row in df.itertuples(index=index):
@@ -165,7 +174,7 @@ class KbenchPKL:
     pkl_data: dict
     metric: str
 
-    def __init__(self, pickle_path, metric: str) -> None:
+    def __init__(self, pickle_path, metric: str) -> None:  # noqa: ANN001
         self.pkl_data = KbenchPKL.load(pickle_path)
         self.merged_df = self.pkl_data["merged_df"].drop(
             ["name", "iters"], axis=1
@@ -181,7 +190,7 @@ class KbenchPKL:
                     break
         assert valid_metric, f"ERROR: metric [{metric}] is not valid!"
         self.metric = metric
-        assert pd.api.types.is_numeric_dtype(self.merged_df[metric]), (
+        assert is_numeric_dtype(self.merged_df[metric]), (
             f"ERROR: metric [{metric}] is not numeric!"
         )
         # Setting the sort order based on the metric
@@ -203,14 +212,14 @@ class KbenchPKL:
         self.tune_df = tune_df
 
     @staticmethod
-    def load(path) -> dict:
+    def load(path) -> dict:  # noqa: ANN001
         f = load_pickle(path)
         for k in ["merged_df", "build_df"]:
             assert k in f.keys()
         return f
 
 
-def df_round_floats(df, prec=3):
+def df_round_floats(df, prec=3):  # noqa: ANN001
     "Round values in dataframe to specified precision"
     for c in df.columns:
         if df.dtypes[c] in (np.float64, np.float32):
@@ -219,14 +228,14 @@ def df_round_floats(df, prec=3):
 
 
 def profile_results(
-    pickle_path,
-    top_percentage=0.0,
-    ratio=False,
-    head=-1,
-    tail=-1,
+    pickle_path,  # noqa: ANN001
+    top_percentage=0.0,  # noqa: ANN001
+    ratio=False,  # noqa: ANN001
+    head=-1,  # noqa: ANN001
+    tail=-1,  # noqa: ANN001
     metric: str = "met (ms)",
     pivots: list[str] = [],
-    verbose=False,
+    verbose=False,  # noqa: ANN001
 ) -> Optional[TuningSpec]:
     try:
         pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
@@ -303,7 +312,7 @@ def profile_results(
     return spec
 
 
-def identical_pivot_values(x, y, pivots) -> bool:
+def identical_pivot_values(x, y, pivots) -> bool:  # noqa: ANN001
     for p in pivots:
         if (
             (p not in x.keys())
@@ -316,7 +325,11 @@ def identical_pivot_values(x, y, pivots) -> bool:
 
 
 def diff_baseline(
-    files, metric: str, pivots: list = [], head: int = -1, verbose: bool = False
+    files,  # noqa: ANN001
+    metric: str,
+    pivots: list = [],
+    head: int = -1,
+    verbose: bool = False,  # noqa: ANN001
 ) -> None:
     base_pkl = KbenchPKL(files[0], metric=metric)
     metric = base_pkl.metric
@@ -421,7 +434,7 @@ class ComplexParamList(click.Option):
         --pivot=[M] --pivot=[N] --pivot=[K] is equivalent to --pivot=[M,N,K] and vice versa.
     """
 
-    def type_cast_value(self, ctx, value_in):
+    def type_cast_value(self, ctx, value_in):  # noqa: ANN001
         """DO NOT REMOVE this function, it is called from ctx in click."""
         p = []
         assert isinstance(value_in, list)
@@ -430,7 +443,7 @@ class ComplexParamList(click.Option):
         return p
 
     @staticmethod
-    def parse(value) -> list:
+    def parse(value) -> list:  # noqa: ANN001
         try:
             return ast.literal_eval(value)
         except:
@@ -446,6 +459,78 @@ class ComplexParamList(click.Option):
                 return [value]
             else:
                 raise click.BadParameter(value)
+
+
+def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png"):
+    column_names = df.columns
+    width_px = 1600
+    height_px = 1200
+    layout = go.Layout(autosize=True, width=width_px, height=height_px)
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=df,
+            x=column_names,
+            y=column_names,
+            text=df.values,
+            texttemplate="%{text:.2f}",
+            textfont={"size": 20},
+            hoverongaps=False,
+            colorscale="Blues",
+        ),
+        layout=layout,
+    )
+    font_size_pt = 20
+    fig.update_layout(
+        #         font_family=cfg.font_family,
+        #         title_font_family=cfg.title_font_family,
+        font_size=font_size_pt,
+    )
+    fig.write_image(img)
+
+
+def correlation_analysis(
+    files,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    metric: str = "met (ms)",
+    verbose: bool = False,  # noqa: ANN001
+):
+    pkl_list = []
+    for pkl in files:
+        try:
+            pkl_list.append(KbenchPKL(pickle_path=pkl, metric=metric))
+        except:
+            if verbose:
+                print(f"invalid pkl: [{pkl}]")
+    print(LINE)
+
+    # Note: it is crucial to ignore index for later merging the two sets.
+    merged_df = pd.concat([p.merged_df for p in pkl_list], ignore_index=True)
+    specs_df = specs_to_df(merged_df["spec"])
+    agg_df = pd.merge(merged_df, specs_df, left_index=True, right_index=True)
+
+    rm_list = ["mesh_idx", "spec", "name"]
+    metric_col = "met (ms)"
+    cols = []
+    agg_df[metric_col] = agg_df[metric_col].astype(float)
+    for c in list(agg_df.columns):
+        if c not in rm_list:
+            try:
+                agg_df[c] = agg_df[c].astype(float)
+                cols.append(c)
+            except:
+                pass
+
+    corr_method = "kendall"
+    c = pd.DataFrame(agg_df[cols].corr(corr_method))
+
+    c_abs = c[metric_col].fillna(0).abs().sort_values(ascending=False).round(2)
+    c_abs = c_abs.to_frame(name=f"Sorted Absolute Correlation: {metric_col}")
+
+    df_to_console_table(c_abs, index=True)
+    df_to_console_table(round(c, 2), index=True)
+
+    draw_heatmap(c, "correlation.png")
+    return
 
 
 help_str = "Profile kbench output pickle"
@@ -517,6 +602,13 @@ help_str = "Profile kbench output pickle"
     multiple=True,
 )
 @click.option(
+    "--correlation",
+    "-c",
+    is_flag=True,
+    default=False,
+    help="Correlation analysis.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -525,17 +617,18 @@ help_str = "Profile kbench output pickle"
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,
-    output_path,
-    top,
-    snippet_path,
-    ratio,
-    head,
-    tail,
-    diff,
-    metric,
-    pivots,
-    verbose,
+    files,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    top,  # noqa: ANN001
+    snippet_path,  # noqa: ANN001
+    ratio,  # noqa: ANN001
+    head,  # noqa: ANN001
+    tail,  # noqa: ANN001
+    diff,  # noqa: ANN001
+    metric,  # noqa: ANN001
+    pivots,  # noqa: ANN001
+    correlation,  # noqa: ANN001
+    verbose,  # noqa: ANN001
 ) -> bool:
     assert files
 
@@ -586,6 +679,10 @@ def cli(
             print(f"invalid pkl [{i}]: [{pkl}]")
 
         print(LINE)
+
+    if correlation:
+        correlation_analysis(files, output_path, verbose=verbose)
+
     return True
 
 

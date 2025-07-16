@@ -94,29 +94,6 @@ def test_PyImport(python: Python):
     assert_true(cpy.PyImport_AddModule("test"))
 
 
-def test_PyModule(python: Python):
-    var cpy = python.cpython()
-
-    var mod = cpy.PyModule_Create("module")
-    assert_true(mod)
-
-    assert_true(cpy.PyModule_GetDict(mod))
-
-    var funcs = InlineArray[PyMethodDef, 1](fill={})
-    # returns 0 on success, -1 on failure
-    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
-    _ = funcs
-
-    if cpy.version.minor >= 10:
-        var n = cpy.PyLong_FromSsize_t(0)
-        var name = "n"
-        # returns 0 on success, -1 on failure
-        assert_equal(
-            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
-        )
-        _ = name
-
-
 def test_object_protocol_api(python: Python):
     var cpy = python.cpython()
 
@@ -148,12 +125,42 @@ def test_object_protocol_api(python: Python):
 def test_call_protocol_api(python: Python):
     var cpy = python.cpython()
 
-    var dict_func = rebind[PyObjectPtr](cpy.PyDict_Type())
+    var dict_func = PyObjectPtr(upcast_from=cpy.PyDict_Type())
     var t = cpy.PyTuple_New(0)
     var d = cpy.PyDict_New()
 
     assert_true(cpy.PyObject_CallObject(dict_func, t))
     assert_true(cpy.PyObject_Call(dict_func, t, d))
+
+
+def test_type_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var dict_type = cpy.PyDict_Type()
+    assert_true(cpy.PyType_GetName(dict_type))
+
+
+def test_module_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var mod = cpy.PyModule_Create("module")
+
+    assert_true(mod)
+    assert_true(cpy.PyModule_GetDict(mod))
+
+    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    _ = funcs
+
+    if cpy.version.minor >= 10:
+        var n = cpy.PyLong_FromSsize_t(0)
+        var name = "n"
+        # returns 0 on success, -1 on failure
+        assert_equal(
+            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
+        )
+        _ = name
 
 
 def test_PyDict(mut python: Python):
@@ -223,6 +230,22 @@ def test_PyCapsule(mut python: Python):
         )
 
 
+def test_common_object_structure_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    assert_true(cpy.Py_Is(n, n))
+
+    var dict_type = cpy.PyDict_Type()
+    var d = cpy.PyDict_New()
+
+    var d_type = cpy.Py_TYPE(d)
+    assert_equal(
+        PyObjectPtr(upcast_from=d_type),
+        PyObjectPtr(upcast_from=dict_type),
+    )
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -242,9 +265,6 @@ def main():
     # Importing Modules
     test_PyImport(python)
 
-    # Module Objects
-    test_PyModule(python)
-
     # Abstract Objects Layer
 
     # Object Protocol
@@ -253,5 +273,18 @@ def main():
     # Call Protocol
     test_call_protocol_api(python)
 
+    # Concrete Objects Layer
+
+    # Type Objects
+    test_type_object_api(python)
+
+    # Module Objects
+    test_module_object_api(python)
+
     test_PyDict(python)
     test_PyCapsule(python)
+
+    # Object Implementation Support
+
+    # Common Object Structures
+    test_common_object_structure_api(python)

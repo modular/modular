@@ -18,7 +18,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import GGUFWeights
 
 
-def test_load_gguf(testdata_directory) -> None:
+def test_load_gguf(testdata_directory) -> None:  # noqa: ANN001
     weights = GGUFWeights(testdata_directory / "example_data.gguf")
     with Graph("test_load_gguf") as graph:
         data = {
@@ -46,7 +46,7 @@ def test_load_gguf(testdata_directory) -> None:
         )
 
 
-def test_load_using_prefix(testdata_directory) -> None:
+def test_load_using_prefix(testdata_directory) -> None:  # noqa: ANN001
     weights = GGUFWeights(testdata_directory / "example_data.gguf")
     with Graph("test_load_gguf_by_prefix") as graph:
         a = graph.add_weight(weights.a.allocate())
@@ -57,7 +57,7 @@ def test_load_using_prefix(testdata_directory) -> None:
         )
 
 
-def test_load_same_weight(testdata_directory) -> None:
+def test_load_same_weight(testdata_directory) -> None:  # noqa: ANN001
     weights = GGUFWeights(testdata_directory / "example_data.gguf")
     with Graph("test_load_gguf_same_weight") as graph:
         graph.add_weight(weights.a.allocate())

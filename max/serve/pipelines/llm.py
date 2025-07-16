@@ -89,7 +89,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):
+    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):  # noqa: ANN001
         token_log_probabilities = log_prob.token_log_probabilities
         top_log_probabilities = []
         for top_log_probs in log_prob.top_log_probabilities:
@@ -136,70 +136,68 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 # use in the response stream
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
 
-                n_tokens = 0
                 async for response in self.engine_queue.stream(
                     request.id, context
                 ):
-                    n_tokens += 1
-
-                    # We intentionally do not use `with Trace(...)` to minimize
-                    # nesting in code.
-                    # Additionally, using a parent span and pushing/popping causes
-                    # the nsys trace to be overly noisy since this is an async loop.
-                    tracer = Tracer("tokenizer.decode")
-                    decoded_token = await self.tokenizer.decode(
-                        context,
-                        response.next_token,
-                        skip_special_tokens=skip_special_tokens,
-                    )
-                    del tracer  # tokenizer.decode
-
-                    # Detect custom stop phrases
-                    stop_sequence_match = None
-                    if len(stop_detector.stop) > 0:
-                        tracer = Tracer("stop_detector.step")
-                        if stop_sequence_match := stop_detector.step(
-                            decoded_token
-                        ):
-                            # Tell the scheduler to stop generating this request
-                            self.engine_queue.cancel_push_socket.put(
-                                [request.id]
-                            )
-
-                            logger.debug(
-                                f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
-                            )
-                        del tracer  # stop_detector.step
-
-                    token_log_probabilities = None
-                    top_log_probabilities = None
-                    if log_prob := response.log_probabilities:
-                        tracer = Tracer("collect_log_probs")
-                        (
-                            token_log_probabilities,
-                            top_log_probabilities,
-                        ) = await self._collect_log_probs(
-                            log_prob, context, skip_special_tokens
+                    for i, token in enumerate(response.tokens):
+                        # We intentionally do not use `with Trace(...)` to minimize
+                        # nesting in code.
+                        # Additionally, using a parent span and pushing/popping causes
+                        # the nsys trace to be overly noisy since this is an async loop.
+                        tracer = Tracer("tokenizer.decode")
+                        decoded_token = await self.tokenizer.decode(
+                            context,
+                            token.next_token,
+                            skip_special_tokens=skip_special_tokens,
                         )
-                        del tracer  # collect_log_probs
+                        del tracer  # tokenizer.decode
 
-                    output = TokenGeneratorOutput(
-                        decoded_token=decoded_token,
-                        token_log_probabilities=token_log_probabilities,
-                        top_log_probabilities=top_log_probabilities,
-                        prompt_token_count=context.current_length,
-                        stop_sequence=stop_sequence_match,
-                    )
+                        # Detect custom stop phrases
+                        stop_sequence_match = None
+                        if len(stop_detector.stop) > 0:
+                            tracer = Tracer("stop_detector.step")
+                            if stop_sequence_match := stop_detector.step(
+                                decoded_token
+                            ):
+                                # Tell the scheduler to stop generating this request
+                                self.engine_queue.cancel_push_socket.put(
+                                    [request.id]
+                                )
 
-                    tracer = Tracer("metrics_report_ttft_or_itl")
-                    if n_tokens == 1:
-                        METRICS.ttft(itl.elapsed_ms)
-                    else:
-                        METRICS.itl(itl.elapsed_ms)
-                    itl.reset()
-                    del tracer  # metrics_report_ttft_or_itl
+                                logger.debug(
+                                    f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
+                                )
+                            del tracer  # stop_detector.step
 
-                    yield output
+                        token_log_probabilities = None
+                        top_log_probabilities = None
+                        if log_prob := token.log_probabilities:
+                            tracer = Tracer("collect_log_probs")
+                            (
+                                token_log_probabilities,
+                                top_log_probabilities,
+                            ) = await self._collect_log_probs(
+                                log_prob, context, skip_special_tokens
+                            )
+                            del tracer  # collect_log_probs
+
+                        output = TokenGeneratorOutput(
+                            decoded_token=decoded_token,
+                            token_log_probabilities=token_log_probabilities,
+                            top_log_probabilities=top_log_probabilities,
+                            prompt_token_count=context.current_length,
+                            stop_sequence=stop_sequence_match,
+                        )
+
+                        tracer = Tracer("metrics_report_ttft_or_itl")
+                        if i == 0:
+                            METRICS.ttft(itl.elapsed_ms)
+                        else:
+                            METRICS.itl(itl.elapsed_ms)
+                        itl.reset()
+                        del tracer  # metrics_report_ttft_or_itl
+
+                        yield output
         finally:
             if self.debug_logging:
                 self.logger.debug(
@@ -269,7 +267,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
@@ -414,7 +412,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_audio_metadata(self, response, context):
+    async def _collect_audio_metadata(self, response, context):  # noqa: ANN001
         # Collect metadata about generated audio like duration, sample rate etc.
         audio_metadata = {}
         if hasattr(response, "sample_rate"):
@@ -519,7 +517,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()

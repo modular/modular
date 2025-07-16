@@ -49,12 +49,12 @@ class StandardInputAndIndexTensors:
     start_axis: int
     num_indexing_tensors: int
 
-    def max_input_tensor_type(self, dtype=DType.float32) -> TensorType:
+    def max_input_tensor_type(self, dtype=DType.float32) -> TensorType:  # noqa: ANN001
         return TensorType(
             dtype, self.input_tensor_shape, device=DeviceRef.CPU()
         )
 
-    def max_index_tensor_type(self, dtype=DType.int32) -> TensorType:
+    def max_index_tensor_type(self, dtype=DType.int32) -> TensorType:  # noqa: ANN001
         return TensorType(
             dtype, self.index_tensor_shape, device=DeviceRef.CPU()
         )
@@ -68,13 +68,14 @@ class StandardInputAndIndexTensors:
             ]
         )
 
-    def max_output_tensor_type(self, dtype=DType.float32) -> TensorType:
+    def max_output_tensor_type(self, dtype=DType.float32) -> TensorType:  # noqa: ANN001
         return TensorType(
             dtype, self.output_tensor_shape(), device=DeviceRef.CPU()
         )
 
     def max_output_tensor_type_unknown_shape(
-        self, dtype=DType.float32
+        self,
+        dtype=DType.float32,  # noqa: ANN001
     ) -> TensorType:
         shape = self.output_tensor_shape()
 
@@ -87,12 +88,12 @@ class StandardInputAndIndexTensors:
         erased_shape = [chr(ord("a") + i) for i in range(len(shape))]
         return TensorType(dtype, erased_shape, device=DeviceRef.CPU())
 
-    def max_update_tensor_type(self, dtype=DType.float32) -> TensorType:
+    def max_update_tensor_type(self, dtype=DType.float32) -> TensorType:  # noqa: ANN001
         return TensorType(
             dtype, self.output_tensor_shape(), device=DeviceRef.CPU()
         )
 
-    def input_tensor(self, dtype=torch.float32) -> torch.Tensor:
+    def input_tensor(self, dtype=torch.float32) -> torch.Tensor:  # noqa: ANN001
         x = (
             torch.arange(math.prod(self.input_tensor_shape))
             .reshape(self.input_tensor_shape)
@@ -100,7 +101,7 @@ class StandardInputAndIndexTensors:
         )
         return x
 
-    def index_tensors(self, dtype=torch.int32) -> list[torch.Tensor]:
+    def index_tensors(self, dtype=torch.int32) -> list[torch.Tensor]:  # noqa: ANN001
         # Make the indices slightly different for variety
         result = [
             torch.arange(np.prod(self.index_tensor_shape))
@@ -112,7 +113,7 @@ class StandardInputAndIndexTensors:
             result[i] = (result[i] + i) % INPUT_DIM_LENGTH
         return result
 
-    def update_tensor(self, dtype=torch.float32) -> torch.Tensor:
+    def update_tensor(self, dtype=torch.float32) -> torch.Tensor:  # noqa: ANN001
         x = (
             torch.arange(np.prod(self.output_tensor_shape()))
             .reshape(self.output_tensor_shape())
@@ -129,11 +130,11 @@ class StandardInputAndIndexTensors:
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
 @pytest.mark.parametrize("use_unknown_shape", [True, False])
 def test_advanced_indexing_get_item(
-    session,
-    start_axis,
-    num_indexing_tensors,
-    indexing_tensor_rank,
-    use_unknown_shape,
+    session,  # noqa: ANN001
+    start_axis,  # noqa: ANN001
+    num_indexing_tensors,  # noqa: ANN001
+    indexing_tensor_rank,  # noqa: ANN001
+    use_unknown_shape,  # noqa: ANN001
 ) -> None:
     data_generator = StandardInputAndIndexTensors(
         input_tensor_shape=[INPUT_DIM_LENGTH] * RANK,
@@ -188,7 +189,10 @@ def test_advanced_indexing_get_item(
 @pytest.mark.parametrize("num_indexing_tensors", [1, 3])
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
 def test_advanced_indexing_set_item(
-    session, start_axis, num_indexing_tensors, indexing_tensor_rank
+    session,  # noqa: ANN001
+    start_axis,  # noqa: ANN001
+    num_indexing_tensors,  # noqa: ANN001
+    indexing_tensor_rank,  # noqa: ANN001
 ) -> None:
     # NOTE: it is possible to have multiple redundant indices which map to same memory.
     # This results in undefined behavior in assignment. Make sure the index_tensors are small
@@ -249,7 +253,10 @@ def test_advanced_indexing_set_item(
 @pytest.mark.parametrize("num_indexing_tensors", [1, 3])
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
 def test_advanced_indexing_set_item_inplace(
-    session, start_axis, num_indexing_tensors, indexing_tensor_rank
+    session,  # noqa: ANN001
+    start_axis,  # noqa: ANN001
+    num_indexing_tensors,  # noqa: ANN001
+    indexing_tensor_rank,  # noqa: ANN001
 ) -> None:
     # NOTE: it is possible to have multiple redundant indices which map to same memory.
     # This results in undefined behavior in assignment. Make sure the index_tensors are small

@@ -73,7 +73,7 @@ class AsyncioTelemetryController:
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
 
-    def __init__(self, maxsize=0) -> None:
+    def __init__(self, maxsize=0) -> None:  # noqa: ANN001
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
         self.task: Optional[asyncio.Task] = None
 
@@ -130,7 +130,7 @@ class AsyncioTelemetryController:
         self.start()
         return self
 
-    async def __aexit__(self, type, value, traceback):
+    async def __aexit__(self, type, value, traceback):  # noqa: ANN001
         await self.shutdown()
 
 

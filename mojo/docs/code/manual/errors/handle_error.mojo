@@ -10,13 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+def incr(n: Int) -> Int:
+    if n == Int.MAX:
+        raise "inc: integer overflow"
+    else:
+        return n + 1
 
-# Imports from 'mojo_module.so'
-import mojo_module
 
-if __name__ == "__main__":
-    result = mojo_module.mojo_count_args(1, 2)
-
-    assert result == 2
-
-    print("Result from Mojo 🔥:", result)
+def main():
+    for value in [0, 1, Int.MAX]:
+        try:
+            print()
+            print("try     =>", value)
+            if value == 1:
+                continue
+            result = "{} incremented is {}".format(value, incr(value))
+        except e:
+            print("except  =>", e)
+        else:
+            print("else    =>", result)
+        finally:
+            print("finally => ====================")

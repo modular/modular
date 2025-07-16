@@ -20,7 +20,7 @@ from typing import Any
 class IdentitySet(MutableSet):
     """Set that uses object `id` as keys to support unhashable types."""
 
-    def __init__(self, iterable=()) -> None:
+    def __init__(self, iterable=()) -> None:  # noqa: ANN001
         self.map: dict[Any, Any] = {}  # id -> object
         self |= iterable  # add elements from iterable to the set (union)
 
@@ -30,14 +30,14 @@ class IdentitySet(MutableSet):
     def __iter__(self):
         return iter(self.map.values())
 
-    def __contains__(self, x) -> bool:
+    def __contains__(self, x) -> bool:  # noqa: ANN001
         return id(x) in self.map
 
-    def add(self, value) -> None:
+    def add(self, value) -> None:  # noqa: ANN001
         """Add an element."""
         self.map[id(value)] = value
 
-    def discard(self, value) -> None:
+    def discard(self, value) -> None:  # noqa: ANN001
         """Remove an element.  Do not raise an exception if absent."""
         self.map.pop(id(value), None)
 
@@ -54,14 +54,14 @@ class IdentityMap(MutableMapping):
         self.key_map: dict[Any, Any] = {}  # id -> object
         self.value_map: dict[Any, Any] = {}  # id -> Value
 
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # noqa: ANN001
         return self.value_map[id(key)]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key, value) -> None:  # noqa: ANN001
         self.key_map[id(key)] = key
         self.value_map[id(key)] = value
 
-    def __delitem__(self, key) -> None:
+    def __delitem__(self, key) -> None:  # noqa: ANN001
         del self.key_map[id(key)]
         del self.value_map[id(key)]
 

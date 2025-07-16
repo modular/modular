@@ -35,7 +35,7 @@ def padded_size(shape: Shape, padding: list[int]) -> int:
     return total
 
 
-def paddings_for(input_types, low=0, high=16):
+def paddings_for(input_types, low=0, high=16):  # noqa: ANN001
     return input_types.flatmap(
         lambda type: st.lists(
             st.integers(min_value=low, max_value=high),
@@ -47,7 +47,9 @@ def paddings_for(input_types, low=0, high=16):
 
 @given(input_type=input_types, paddings=paddings_for(input_types, low=-16))
 def test_negative_paddings(
-    graph_builder, input_type: TensorType, paddings: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    paddings: list[int],  # noqa: ANN001
 ) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
@@ -59,7 +61,7 @@ def test_negative_paddings(
 
 
 @given(input_type=input_types)
-def test_no_padding(graph_builder, input_type: TensorType) -> None:
+def test_no_padding(graph_builder, input_type: TensorType) -> None:  # noqa: ANN001
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
     paddings = [0] * (2 * input_type.rank)
@@ -72,7 +74,9 @@ def test_no_padding(graph_builder, input_type: TensorType) -> None:
 
 @given(input_type=input_types, paddings=paddings_for(input_types))
 def test_positive_paddings(
-    graph_builder, input_type: TensorType, paddings: list[int]
+    graph_builder,  # noqa: ANN001
+    input_type: TensorType,
+    paddings: list[int],  # noqa: ANN001
 ) -> None:
     """Test random paddings."""
 

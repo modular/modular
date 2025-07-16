@@ -46,9 +46,9 @@ fn bench_vec_add(
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = context.enqueue_create_buffer[dtype](length)
-    var in1_device = context.enqueue_create_buffer[dtype](length)
-    var out_device = context.enqueue_create_buffer[dtype](length)
+    var in0_device = context.create_buffer[dtype](length)
+    var in1_device = context.create_buffer[dtype](length)
+    var out_device = context.create_buffer[dtype](length)
 
     context.enqueue_copy(in0_device, in0_host)
     context.enqueue_copy(in1_device, in1_host)

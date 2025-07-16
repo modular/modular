@@ -102,6 +102,11 @@ from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant
 from utils._select import _select_register_value as select
+from utils.write import (
+    _TotalWritableBytes,
+    _WriteBufferStack,
+    STACK_BUFFER_BYTES,
+)
 from utils.write import _WriteBufferStack
 
 
@@ -278,8 +283,15 @@ struct String(
         """
         self = value.__str__()
 
+    # ===------------------------------------------------------------------=== #
+    # Writables
+    # ===------------------------------------------------------------------=== #
+    # There is duplication here to avoid passing around variadic packs in such
+    # a common callsite, as that isn't free for both compilation speed and
+    # register pressure.
+
     fn __init__[
-        *Ts: Writable
+        *Ts: Writable,
     ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
         """
         Construct a string by concatenating a sequence of Writable arguments.
@@ -290,8 +302,7 @@ struct String(
             end: The String to write after printing the elements.
 
         Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
+            Ts: Types of the provided argument sequence.
 
         Examples:
 
@@ -302,25 +313,46 @@ struct String(
         print(string) # "1, 2.0, three"
         ```
         """
-        self = String()
-        var buffer = _WriteBufferStack(self)
         alias length = args.__len__()
+        var total_bytes = _TotalWritableBytes()
 
         @parameter
         for i in range(length):
-            args[i].write_to(buffer)
+            args[i].write_to(total_bytes)
 
+            @parameter
             if i < length - 1:
-                sep.write_to(buffer)
+                sep.write_to(total_bytes)
+        end.write_to(total_bytes)
 
-        end.write_to(buffer)
-        buffer.flush()
+        if total_bytes.size == 0:
+            return String()
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(args.__len__()):
+                args[i].write_to(writer)
+
+                @parameter
+                if i < length - 1:
+                    sep.write_to(writer)
+            end.write_to(writer)
+
+        if total_bytes.size <= Self.INLINE_CAPACITY:
+            self = String()
+            _write(self)
+        else:
+            self = String(capacity=total_bytes.size)
+            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            _write(buffer)
+            buffer.flush()
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
     @staticmethod
     fn __init__[
-        *Ts: Writable
+        *Ts: Writable,
     ](
         out self,
         args: VariadicPack[_, _, Writable, *Ts],
@@ -336,8 +368,7 @@ struct String(
             end: The String to write after printing the elements.
 
         Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
+            Ts: Types of the provided argument sequence.
 
         Examples:
 
@@ -353,19 +384,144 @@ struct String(
         ```
         .
         """
-        self = String()
-        var buffer = _WriteBufferStack(self)
         alias length = args.__len__()
+        var total_bytes = _TotalWritableBytes()
 
         @parameter
         for i in range(length):
-            args[i].write_to(buffer)
+            args[i].write_to(total_bytes)
 
+            @parameter
             if i < length - 1:
-                sep.write_to(buffer)
+                sep.write_to(total_bytes)
+        end.write_to(total_bytes)
 
-        end.write_to(buffer)
-        buffer.flush()
+        if total_bytes.size == 0:
+            return String()
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(length):
+                args[i].write_to(writer)
+
+                @parameter
+                if i < length - 1:
+                    sep.write_to(writer)
+            end.write_to(writer)
+
+        if total_bytes.size <= Self.INLINE_CAPACITY:
+            self = String()
+            _write(self)
+        else:
+            self = String(capacity=total_bytes.size)
+            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            _write(buffer)
+            buffer.flush()
+
+    @staticmethod
+    fn write[
+        *Ts: Writable,
+    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
+        """Construct a string by concatenating a sequence of Writable arguments.
+
+        Args:
+            args: A sequence of Writable arguments.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Parameters:
+            Ts: Types of the provided argument sequence.
+
+        Returns:
+            A string formed by formatting the argument sequence.
+        """
+        alias length = args.__len__()
+        var total_bytes = _TotalWritableBytes()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(total_bytes)
+
+            @parameter
+            if i < length - 1:
+                sep.write_to(total_bytes)
+        end.write_to(total_bytes)
+
+        if total_bytes.size == 0:
+            return String()
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(length):
+                args[i].write_to(writer)
+
+                @parameter
+                if i < length - 1:
+                    sep.write_to(writer)
+            end.write_to(writer)
+
+        if total_bytes.size <= Self.INLINE_CAPACITY:
+            var result = String()
+            _write(result)
+            return result^
+        else:
+            var result = String(capacity=total_bytes.size)
+            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
+            _write(buffer)
+            buffer.flush()
+            return result^
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        """Write a sequence of Writable arguments to the provided Writer.
+
+        Parameters:
+            Ts: Types of the provided argument sequence.
+
+        Args:
+            args: Sequence of arguments to write to this Writer.
+        """
+        alias length = args.__len__()
+        var total_bytes = _TotalWritableBytes()
+        total_bytes.size += self.byte_length()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(total_bytes)
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(length):
+                args[i].write_to(writer)
+
+        if total_bytes.size <= Self.INLINE_CAPACITY:
+            _write(self)
+        else:
+            self.reserve(total_bytes.size)
+            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            _write(buffer)
+            buffer.flush()
+
+    fn write[T: Writable](mut self, value: T):
+        """Write a single Writable argument to the provided Writer.
+
+        Args:
+            value: The Writable argument to write.
+        """
+        value.write_to(self)
+
+    @staticmethod
+    fn write[T: Writable](value: T) -> Self:
+        """Write a single Writable argument to the provided Writer.
+
+        Args:
+            value: The Writable argument to write.
+        """
+        var result = String()
+        value.write_to(result)
+        return result^
 
     @always_inline("nodebug")
     fn copy(self) -> Self:
@@ -549,57 +705,6 @@ struct String(
                 null terminated.
         """
         self._iadd(bytes)
-
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        """Write a sequence of Writable arguments to the provided Writer.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Args:
-            args: Sequence of arguments to write to this Writer.
-        """
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
-    @staticmethod
-    fn write[
-        *Ts: Writable
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
-        """Construct a string by concatenating a sequence of Writable arguments.
-
-        Args:
-            args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
-
-        Returns:
-            A string formed by formatting the argument sequence.
-
-        This is used only when reusing the `write_to` method for
-        `__str__` in order to avoid an endless loop recalling
-        the constructor.
-        """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        alias length = args.__len__()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(buffer)
-
-            if i < length - 1:
-                sep.write_to(buffer)
-
-        end.write_to(buffer)
-        buffer.flush()
-        return string^
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

@@ -1,5 +1,6 @@
 """Define bazel dependencies common to the internal and external repos."""
 
+bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "abseil-cpp", version = "20250127.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.8")
@@ -15,7 +16,7 @@ bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.4.0-rc4")
+bazel_dep(name = "rules_python", version = "1.5.1")
 bazel_dep(name = "rules_shell", version = "0.4.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
@@ -33,18 +34,17 @@ single_version_override(
 
 bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
 
-single_version_override(
+archive_override(
     module_name = "rules_pycross",
+    integrity = "sha256-DnwyjQfpS9MRtk5Uh8UbPHvbXnbs38ciht55/pJRFZE=",
     patch_strip = 1,
     patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/168
-        "//bazel/public-patches:rules_pycross_lockfile.patch",
-        # https://github.com/jvolkman/rules_pycross/pull/169
-        "//bazel/public-patches:rules_pycross_deprecations.patch",
-        # https://github.com/jvolkman/rules_pycross/pull/170
-        "//bazel/public-patches:rules_pycross_linker.patch",
-        # https://github.com/jvolkman/rules_pycross/pull/171
+        # https://github.com/jvolkman/rules_pycross/pull/176
         "//bazel/public-patches:rules_pycross_watch.patch",
+    ],
+    strip_prefix = "rules_pycross-b4707803848b06ae264247bcba15ddf3ef4008e2",
+    urls = [
+        "https://github.com/jvolkman/rules_pycross/archive/b4707803848b06ae264247bcba15ddf3ef4008e2.tar.gz",
     ],
 )
 
@@ -54,6 +54,15 @@ single_version_override(
     patches = [
         # https://github.com/aspect-build/rules_py/pull/463
         "//bazel/public-patches:rules_py_main.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "aspect_rules_js",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/aspect-build/rules_js/pull/2277
+        "//bazel/public-patches:rules_js_env_inherit.patch",
     ],
 )
 
@@ -90,19 +99,6 @@ single_version_override(
 )
 
 single_version_override(
-    module_name = "rules_python",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/rules_python/issues/2622
-        "//bazel/public-patches:rules_python_skip.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/2807
-        "//bazel/public-patches:rules_python_py_wheel_requires_file.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/2813
-        "//bazel/public-patches:rules_python_override_hub.patch",
-    ],
-)
-
-single_version_override(
     module_name = "grpc",
     patch_strip = 1,
     patches = [
@@ -134,16 +130,11 @@ PYTHON_VERSIONS = [
     "3_13",
 ]
 
-DEFAULT_TORCH_VERSION = "2_7_0"
-
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = DEFAULT_PYTHON_VERSION)
 
 [
-    python.toolchain(
-        ignore_root_user_error = True,
-        is_default = version.replace("_", ".") == DEFAULT_PYTHON_VERSION,
-        python_version = version.replace("_", "."),
-    )
+    python.toolchain(python_version = version.replace("_", "."))
     for version in PYTHON_VERSIONS
 ]
 
@@ -176,7 +167,6 @@ module_versions = use_repo_rule("//bazel/pip:module_versions.bzl", "module_versi
 module_versions(
     name = "module_versions",
     default_python_version = DEFAULT_PYTHON_VERSION,
-    default_torch_version = DEFAULT_TORCH_VERSION,
     python_versions = PYTHON_VERSIONS,
 )
 

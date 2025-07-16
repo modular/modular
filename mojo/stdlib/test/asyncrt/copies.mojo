@@ -19,10 +19,10 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in_host = ctx.create_host_buffer[DType.float32](length)
+    var out_host = ctx.create_host_buffer[DType.float32](length)
+    var in_dev = ctx.create_buffer[DType.float32](length)
+    var out_dev = ctx.create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -30,12 +30,12 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    in_dev.enqueue_copy_from(in_host)
+    in_dev.copy_from(in_host)
     if use_context:
         ctx.enqueue_copy(out_dev, in_dev)
     else:
-        in_dev.enqueue_copy_to(out_dev)
-    out_dev.enqueue_copy_to(out_host)
+        in_dev.copy_to(out_dev)
+    out_dev.copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -53,10 +53,10 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
 
     var half_length = length // 2
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
+    var in_host = ctx.create_host_buffer[DType.int64](length)
+    var out_host = ctx.create_host_buffer[DType.int64](length)
+    var in_dev = ctx.create_buffer[DType.int64](length)
+    var out_dev = ctx.create_buffer[DType.int64](length)
     var first_out_dev = out_dev.create_sub_buffer[DType.int64](0, half_length)
     var second_out_dev = out_dev.create_sub_buffer[DType.int64](
         half_length, half_length
@@ -68,16 +68,16 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    in_host.enqueue_copy_to(in_dev)
-    in_dev.enqueue_copy_to(out_dev)
+    in_host.copy_to(in_dev)
+    in_dev.copy_to(out_dev)
 
     # Swap halves on copy back.
     # Using sub buffer
-    second_out_dev.enqueue_copy_to(
+    second_out_dev.copy_to(
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.copy_to(out_host.unsafe_ptr().offset(half_length))
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -101,10 +101,10 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     var half_length = length // 2
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
+    var in_host = ctx.create_host_buffer[DType.int64](length)
+    var out_host = ctx.create_host_buffer[DType.int64](length)
+    var in_dev = ctx.create_buffer[DType.int64](length)
+    var out_dev = ctx.create_buffer[DType.int64](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -112,8 +112,8 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    in_host.enqueue_copy_to(in_dev)
-    in_dev.enqueue_copy_to(out_dev)
+    in_host.copy_to(in_dev)
+    in_dev.copy_to(out_dev)
 
     var out_ptr: UnsafePointer[Int64]
     if use_take_ptr:
@@ -131,11 +131,11 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     # Swap halves on copy back.
     # Using sub buffer
-    second_out_dev.enqueue_copy_to(
+    second_out_dev.copy_to(
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.copy_to(out_host.unsafe_ptr().offset(half_length))
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -159,10 +159,8 @@ fn _run_cpu_ctx_memcpy_async(
     print("-")
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
-    var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).enqueue_fill(
-        13
-    )
+    var host_buf = cpu_ctx.create_host_buffer[DType.int64](length)
+    var dev_buf = ctx.create_buffer[DType.int64](length).fill(13)
 
     for i in range(length):
         host_buf[i] = 2 * i
@@ -173,7 +171,7 @@ fn _run_cpu_ctx_memcpy_async(
         for i in range(length):
             expect_eq(dev_buf[i], 2 * i)
 
-    host_buf = host_buf.enqueue_fill(12)
+    host_buf = host_buf.fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
 
     for i in range(length):

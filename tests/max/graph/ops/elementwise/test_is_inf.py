@@ -25,7 +25,7 @@ from max.graph.ops import is_inf
         dtypes=st.sampled_from([DType.float32, DType.bfloat16, DType.float16])
     ),
 )
-def test_is_inf_returns_bool(graph_builder, tensor_type: TensorType) -> None:
+def test_is_inf_returns_bool(graph_builder, tensor_type: TensorType) -> None:  # noqa: ANN001
     with graph_builder(input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         op = is_inf(x)

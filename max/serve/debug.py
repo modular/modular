@@ -58,7 +58,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
         return {member.label: member for member in ProfileFormat}
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value):  # noqa: ANN001
         members = cls.members()
         if isinstance(value, str) and value in members:
             return members[value]

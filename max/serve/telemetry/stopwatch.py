@@ -53,7 +53,7 @@ class StopWatch:
         self.exit_ns = 0
         return self
 
-    def __exit__(self, _exc_type, _exc_value, _exc_tb):
+    def __exit__(self, _exc_type, _exc_value, _exc_tb):  # noqa: ANN001
         self.exit_ns = self.time_ns()
 
     @property

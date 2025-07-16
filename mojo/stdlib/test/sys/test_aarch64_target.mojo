@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_avx512f, simdbitwidth
+from sys import simdbitwidth
 from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_false, assert_true
@@ -22,7 +22,7 @@ def test_arch_query():
 
     assert_equal(simdbitwidth(), 128)
 
-    assert_false(has_avx512f())
+    assert_false(CompilationTarget.has_avx512f())
 
 
 def main():

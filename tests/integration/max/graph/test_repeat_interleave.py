@@ -28,7 +28,7 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
     "input,repeats", [([1, 2, 3], 2), ([[1, 2], [3, 4]], 3)]
 )
 def test_repeat_interleave(
-    session,
+    session,  # noqa: ANN001
     input: TensorType,
     repeats: int,
 ) -> None:
@@ -67,7 +67,7 @@ def test_repeat_interleave(
     ],
 )
 def test_repeat_interleave_vector(
-    session,
+    session,  # noqa: ANN001
     input: TensorType,
     repeats: list[int],
     axis: int,

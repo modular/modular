@@ -62,6 +62,11 @@ params:
   K: 4096
   output_type: "float32"
 
+- $M: 5120
+  N: 1
+  K: 13824
+  $mode: "transpose"
+
 - $M: 1
   N: 4096
   K: 4095

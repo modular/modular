@@ -26,7 +26,7 @@ _EXTERNAL_PATH_REGEX = re.compile(r"(^| |=)/[^ ]+/external/", flags=re.M)
 
 
 class ModularShTest(ShTest):
-    def execute(self, test, litConfig):
+    def execute(self, test, litConfig):  # noqa: ANN001
         result = lit.TestRunner.executeShTest(
             test,
             litConfig,

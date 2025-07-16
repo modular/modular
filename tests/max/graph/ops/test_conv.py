@@ -48,7 +48,11 @@ stride_type = st.tuples(pos_int, pos_int)
     padding=padding_type,
 )
 def test_conv_valid(
-    graph_builder, x_type: TensorType, filter_type: TensorType, stride, padding
+    graph_builder,  # noqa: ANN001
+    x_type: TensorType,
+    filter_type: TensorType,
+    stride,  # noqa: ANN001
+    padding,  # noqa: ANN001
 ) -> None:
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
@@ -87,7 +91,7 @@ def test_conv_valid(
         graph.output(out)
 
 
-def test_conv_dtype_promote_np(graph_builder) -> None:
+def test_conv_dtype_promote_np(graph_builder) -> None:  # noqa: ANN001
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -103,7 +107,7 @@ def test_conv_dtype_promote_np(graph_builder) -> None:
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight(graph_builder) -> None:
+def test_conv_dtype_promote_weight(graph_builder) -> None:  # noqa: ANN001
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -124,7 +128,7 @@ def test_conv_dtype_promote_weight(graph_builder) -> None:
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_success(graph_builder) -> None:
+def test_conv_dtype_promote_weight_success(graph_builder) -> None:  # noqa: ANN001
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -144,7 +148,7 @@ def test_conv_dtype_promote_weight_success(graph_builder) -> None:
         assert out.dtype == DType.float32
 
 
-def test_conv_dtype_promote_weight_failed(graph_builder) -> None:
+def test_conv_dtype_promote_weight_failed(graph_builder) -> None:  # noqa: ANN001
     x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
@@ -168,7 +172,7 @@ def test_conv_dtype_promote_weight_failed(graph_builder) -> None:
             )
 
 
-def test_conv_symbolic_shapes(graph_builder) -> None:
+def test_conv_symbolic_shapes(graph_builder) -> None:  # noqa: ANN001
     input_type = TensorType(
         DType.bfloat16,
         [1, "height", "width", "channels"],

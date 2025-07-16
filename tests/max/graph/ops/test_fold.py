@@ -35,7 +35,7 @@ valid_dim = st.integers(min_value=1, max_value=1024)
     padding=st.tuples(valid_dim, valid_dim),
 )
 def test_fold(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     dtype: DType,
     batch: int,
     channel: int,
@@ -89,7 +89,7 @@ def test_fold(
     padding=st.tuples(valid_dim, valid_dim),
 )
 def test_fold_invalid_inputs(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     dtype: DType,
     batch: int,
     channel: int,

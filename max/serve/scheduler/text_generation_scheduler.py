@@ -22,7 +22,6 @@ import zmq
 from max.interfaces import (
     EngineResult,
     TextGenerationResponse,
-    TextResponse,
     TokenGenerator,
 )
 from max.nn.kv_cache import PagedKVCacheManager
@@ -175,7 +174,7 @@ class TokenGenerationScheduler(Scheduler):
             ),
         )
         self.response_q = ZmqPushSocket[
-            list[dict[str, EngineResult[TextResponse]]]
+            dict[str, EngineResult[TextGenerationResponse]]
         ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
@@ -723,7 +722,7 @@ class TokenGenerationScheduler(Scheduler):
                         del self.active_batch[req_id]
 
                         self.response_q.put_nowait(
-                            [{req_id: EngineResult.cancelled()}]
+                            {req_id: EngineResult.cancelled()}
                         )
                 except queue.Empty:
                     break
@@ -740,24 +739,12 @@ class TokenGenerationScheduler(Scheduler):
             return
 
         # Convert this to list[dict[str, Any]]
-        responses: list[dict[str, EngineResult[TextResponse]]] = [{}]
+        responses: dict[str, EngineResult[TextGenerationResponse]] = {}
         for request_id, response in batch_responses.items():
-            # This will just ensure that there is always a response for each token
-            # We add one here, as we need to send a stop sentinel
-            while (len(response.tokens) + (1 if response.is_done else 0)) > len(
-                responses
-            ):
-                responses.append({})
-
-            for token_idx, text_response in enumerate(response.tokens):
-                responses[token_idx][request_id] = EngineResult.successful(
-                    text_response
-                )
-
             if response.is_done:
-                responses[len(response.tokens)][request_id] = (
-                    EngineResult.complete()
-                )
+                responses[request_id] = EngineResult.complete(response)
+            else:
+                responses[request_id] = EngineResult.active(response)
 
         self.response_q.put_nowait(responses)
 

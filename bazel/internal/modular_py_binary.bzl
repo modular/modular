@@ -69,10 +69,9 @@ def modular_py_binary(
     py_binary(
         name = name,
         data = extra_data + data,
-        deps = deps + extra_deps + select({
-            "@//:production_build": [],
-            "//conditions:default": ["@//bazel/internal:bazel_sitecustomize"],  # py_repl adds this automatically
-        }),
+        deps = deps + extra_deps + [
+            "@//bazel/internal:bazel_sitecustomize",  # py_repl adds this automatically
+        ],
         srcs = srcs,
         main = main,
         env = env_for_available_tools() | extra_env | env | {"MODULAR_CANNOT_DEBUG": "1"},

@@ -22,7 +22,7 @@ from max.graph.ops import logical_not
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_logical_not__same_type(graph_builder, tensor_type: TensorType) -> None:
+def test_logical_not__same_type(graph_builder, tensor_type: TensorType) -> None:  # noqa: ANN001
     with graph_builder(input_types=[tensor_type]) as graph:
         x = graph.inputs[0]
         op = logical_not(x)
@@ -36,7 +36,8 @@ def test_logical_not__same_type(graph_builder, tensor_type: TensorType) -> None:
 
 @given(tensor_type=...)
 def test_logical_not__invalid_dtype(
-    graph_builder, tensor_type: TensorType
+    graph_builder,  # noqa: ANN001
+    tensor_type: TensorType,  # noqa: ANN001
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type]) as graph:
