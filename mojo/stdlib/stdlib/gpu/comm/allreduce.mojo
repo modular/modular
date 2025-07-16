@@ -338,14 +338,14 @@ fn _allreduce_naive[
         var curr_ctx = ctxs[device_idx]
 
         # Create temporary accumulation buffer.
-        var accum_buffer = curr_ctx.enqueue_create_buffer[dtype](num_elements)
+        var accum_buffer = curr_ctx.create_buffer[dtype](num_elements)
         curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
 
         # Create temporary buffers for remote data.
         var tmp_buffers = List[DeviceBuffer[dtype]]()
         for i in range(ngpus):
             if i != device_idx:
-                var tmp = curr_ctx.enqueue_create_buffer[dtype](num_elements)
+                var tmp = curr_ctx.create_buffer[dtype](num_elements)
                 curr_ctx.enqueue_copy(tmp, device_buffers[i])
                 tmp_buffers.append(tmp)
 

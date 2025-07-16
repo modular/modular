@@ -55,7 +55,7 @@ def test_constant_mem(ctx: DeviceContext):
         alias val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.create_buffer[DType.float32](16)
     _ = res_device.fill(0)
 
     ctx.enqueue_function[static_constant_kernel[16]](
@@ -90,7 +90,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         alias val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.create_buffer[DType.float32](16)
     _ = res_device.fill(0)
 
     ctx.enqueue_function[static_constant_kernel[_fill_impl[20]]](
@@ -119,7 +119,7 @@ def test_external_constant_mem(ctx: DeviceContext):
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
     )
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.create_buffer[DType.float32](16)
     _ = res_device.fill(0)
 
     ctx.enqueue_function[static_constant_kernel](

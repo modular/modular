@@ -50,9 +50,9 @@ fn test_basic(ctx: DeviceContext) raises:
         in1_host[i] = 2
 
     # Device memory buffers for the kernel input and output
-    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0_device = ctx.create_buffer[DType.float32](length)
+    var in1_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
     # Copy the input data from the Host to the Device memory
     ctx.enqueue_copy(in0_device, in0_host)
@@ -125,7 +125,7 @@ def test_print(ctx: DeviceContext):
     )
     assert_equal(String(host_buffer), expected_host)
 
-    var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
+    var dev_buffer = ctx.create_buffer[DType.uint16](size)
     host_buffer.copy_to(dev_buffer)
     ctx.synchronize()
 

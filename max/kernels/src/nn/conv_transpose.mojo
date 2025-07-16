@@ -1609,9 +1609,7 @@ fn conv_transposed_gpu[
     if elementwise_epilogue:
         alias epilogue = elementwise_epilogue.value()
 
-        var output_tmp_data = ctx.enqueue_create_buffer[output_type](
-            output.size()
-        )
+        var output_tmp_data = ctx.create_buffer[output_type](output.size())
 
         var output_tmp = output
         output_tmp.ptr = output_tmp_data.unsafe_ptr()

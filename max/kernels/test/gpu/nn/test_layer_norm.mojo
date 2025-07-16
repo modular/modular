@@ -45,9 +45,9 @@ fn run_layer_norm_block[
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
         beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
-    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
+    var beta_d = ctx.create_buffer[dtype](cols)
 
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
@@ -151,9 +151,9 @@ fn run_layer_norm_gpu[
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
         beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
-    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
+    var beta_d = ctx.create_buffer[dtype](cols)
 
     var param_shape = Index(cols)
 
@@ -238,9 +238,9 @@ fn run_layer_norm_warp_tiling[
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
         beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
-    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
+    var beta_d = ctx.create_buffer[dtype](cols)
 
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)

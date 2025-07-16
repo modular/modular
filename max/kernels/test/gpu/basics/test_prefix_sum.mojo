@@ -50,8 +50,8 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.enqueue_create_buffer[dtype](size)
-    var out_device = ctx.enqueue_create_buffer[dtype](size)
+    var in_device = ctx.create_buffer[dtype](size)
+    var out_device = ctx.create_buffer[dtype](size)
     ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel
@@ -124,8 +124,8 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.enqueue_create_buffer[dtype](size)
-    var out_device = ctx.enqueue_create_buffer[dtype](size)
+    var in_device = ctx.create_buffer[dtype](size)
+    var out_device = ctx.create_buffer[dtype](size)
     ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel

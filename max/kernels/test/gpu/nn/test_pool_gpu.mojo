@@ -171,12 +171,8 @@ fn pool[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        out_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](out_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
@@ -308,12 +304,8 @@ fn pool_ceil_test[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
@@ -451,12 +443,8 @@ fn test_avg_pool_2d_with_padding_gpu[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
@@ -570,12 +558,8 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 

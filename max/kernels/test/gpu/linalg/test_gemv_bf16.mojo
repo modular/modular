@@ -50,12 +50,12 @@ fn run_matvec[
     for i in range(M * N):
         c_host_n[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_n = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.create_buffer[DType.bfloat16](M * K)
+    var b_device = ctx.create_buffer[DType.bfloat16](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device_n = ctx.create_buffer[DType.float32](M * K)
+    var b_device_n = ctx.create_buffer[DType.float32](K * N)
+    var c_device_n = ctx.create_buffer[DType.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

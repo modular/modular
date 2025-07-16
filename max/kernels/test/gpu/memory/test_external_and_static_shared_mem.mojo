@@ -39,7 +39,7 @@ def test_external_shared_mem(ctx: DeviceContext):
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.create_buffer[DType.float32](16)
 
     for i in range(16):
         res_host_ptr[i] = 0

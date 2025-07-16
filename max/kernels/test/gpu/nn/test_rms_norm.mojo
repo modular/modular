@@ -49,8 +49,8 @@ fn run_rms_norm_gpu[
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var data_d = ctx.create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.create_buffer[dtype](cols)
 
     var param_shape = Index(cols)
 

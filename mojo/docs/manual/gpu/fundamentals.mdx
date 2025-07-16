@@ -167,7 +167,7 @@ def main():
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        device_buffer = ctx.enqueue_create_buffer[DType.float32](num_elements)
+        device_buffer = ctx.create_buffer[DType.float32](num_elements)
 
         # Copy data from host memory to device memory for GPU processing.
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)

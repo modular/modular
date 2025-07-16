@@ -96,10 +96,10 @@ fn overlap_matmul_allreduce_test[
     @parameter
     for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
-        A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
-        B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
-        C_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
-        C_reduced_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
+        A_list.append(list_of_ctx[i].create_buffer[dtype](mk))
+        B_list.append(list_of_ctx[i].create_buffer[dtype](nk))
+        C_list.append(list_of_ctx[i].create_buffer[dtype](mn))
+        C_reduced_list.append(list_of_ctx[i].create_buffer[dtype](mn))
 
         # Allocate matmul inputs A B and final output C_reduced on host
         A_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mk))

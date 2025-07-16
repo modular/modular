@@ -45,7 +45,7 @@ fn _kernel_launch_helper[
     block_size: Int,
     ctx: DeviceContext,
 ) raises:
-    var device_ptr = ctx.enqueue_create_buffer[dtype](buffer_size)
+    var device_ptr = ctx.create_buffer[dtype](buffer_size)
     ctx.enqueue_copy(device_ptr, host_ptr)
 
     ctx.enqueue_function[kernel_wrapper[dtype, simd_width, kernel_fn]](

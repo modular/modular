@@ -158,11 +158,11 @@ fn test[
         )
 
     # Device pointers
-    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
+    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
+    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
@@ -255,7 +255,7 @@ fn test[
 
     @parameter
     if against_gpu_naive:
-        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+        var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
         var output_ref_device = NDBuffer[
             qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
         ](

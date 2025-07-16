@@ -68,9 +68,9 @@ fn run_vector_reduction[
     memset_zero(c_host, N)
     memset_zero(c_host_ref, N)
 
-    var a_device = ctx.enqueue_create_buffer[dtype](PN)
-    var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var a_device = ctx.create_buffer[dtype](PN)
+    var c_device = ctx.create_buffer[dtype](N)
+    var lock_dev = ctx.create_buffer[dtype](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -155,9 +155,9 @@ fn run_matrix_reduction[
     memset_zero(c_host, M * N)
     memset_zero(c_host_ref, M * N)
 
-    var a_device = ctx.enqueue_create_buffer[dtype](PX)
-    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var a_device = ctx.create_buffer[dtype](PX)
+    var c_device = ctx.create_buffer[dtype](M * N)
+    var lock_dev = ctx.create_buffer[dtype](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)

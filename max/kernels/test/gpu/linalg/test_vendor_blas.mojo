@@ -38,10 +38,10 @@ def test_vendor_blas[
         for n in range(N):
             b_host[k * N + n] = random_float64(-0.1, 0.1).cast[dtype]()
 
-    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
-    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
-    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_device = ctx.create_buffer[dtype](M * K)
+    var b_device = ctx.create_buffer[dtype](K * N)
+    var c_device = ctx.create_buffer[dtype](M * N)
+    var c_device_ref = ctx.create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

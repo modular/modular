@@ -79,7 +79,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     """
 
     alias size = 4
-    var device_buf = ctx.enqueue_create_buffer[dst_type](size)
+    var device_buf = ctx.create_buffer[dst_type](size)
     _ = device_buf.fill(0)
 
     ctx.enqueue_function[convert_kernel[src_type, dst_type, size]](

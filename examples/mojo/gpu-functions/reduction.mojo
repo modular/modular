@@ -113,8 +113,8 @@ def main():
 
     with DeviceContext() as ctx:
         # Allocate memory on the device
-        out = ctx.enqueue_create_buffer[dtype](1).fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).fill(0)
+        out = ctx.create_buffer[dtype](1).fill(0)
+        a = ctx.create_buffer[dtype](SIZE).fill(0)
 
         # Initialise a with random integers between 0 and 10
         with a.map_to_host() as a_host:

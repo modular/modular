@@ -94,9 +94,9 @@ fn test_conv3d_gpu[
         1,  # num_groups
     )
     # allocate device memory
-    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
-    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
-    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var input_dev = ctx.create_buffer[dtype](input_size)
+    var filter_dev = ctx.create_buffer[dtype](filter_size)
+    var output_dev = ctx.create_buffer[dtype](output_size)
 
     # copy input and filter to device, shipping data to gpu land
     ctx.enqueue_copy(input_dev, input_host)

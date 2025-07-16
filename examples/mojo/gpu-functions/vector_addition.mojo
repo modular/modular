@@ -34,9 +34,9 @@ def main():
     var ctx = DeviceContext()
 
     # Allocate data on the GPU address space
-    var lhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
-    var rhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
-    var out_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    var lhs_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
+    var rhs_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
+    var out_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
 
     # Fill in values across the entire width
     _ = lhs_buffer.fill(1.25)

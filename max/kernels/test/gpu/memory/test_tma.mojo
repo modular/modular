@@ -81,7 +81,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
     for i in range(64):
         gmem_host[i] = i
 
-    var gmem_dev = ctx.enqueue_create_buffer[DType.float32](8 * 8)
+    var gmem_dev = ctx.create_buffer[DType.float32](8 * 8)
 
     ctx.enqueue_copy(gmem_dev, gmem_host)
 

@@ -517,7 +517,7 @@ fn mgp_buffer_alloc(
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
-    var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
+    var buf = dev_context[].create_buffer[DType.int8](byte_size)
     return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
 
 
