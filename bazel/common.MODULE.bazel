@@ -138,10 +138,8 @@ python.defaults(python_version = DEFAULT_PYTHON_VERSION)
     for version in PYTHON_VERSIONS
 ]
 
-[
-    use_repo(python, "python_{}".format(version))
-    for version in PYTHON_VERSIONS
-]
+# Only the lowest version is used explicitly, everything else is indirect
+use_repo(python, "python_3_9")
 
 environments = use_extension("@rules_pycross//pycross/extensions:environments.bzl", "environments")
 environments.create_for_python_toolchains(
