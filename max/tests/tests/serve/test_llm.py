@@ -16,14 +16,18 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient
 from max.interfaces import TokenGenerator
 from max.pipelines.core import TokenGeneratorRequest
-from max.pipelines.lib import IdentityPipelineTokenizer
+from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorSchedulerConfig
 
 logger = logging.getLogger(__name__)
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self.max_batch_size = 1
 
 
 @dataclass(frozen=True)
@@ -70,13 +74,10 @@ def token_generator(request):  # noqa: ANN001
 def app(token_generator):  # noqa: ANN001
     """Fixture for a FastAPI app using a given pipeline."""
     model_name, model_factory = token_generator
-    config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
-        tg_batch_size=1, ce_batch_size=1
-    )
     serving_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=model_factory,
-        pipeline_config=config,
+        pipeline_config=MockPipelineConfig(),
         tokenizer=MockTokenizer(),
     )
     app = fastapi_app(

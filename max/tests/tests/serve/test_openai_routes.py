@@ -12,6 +12,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
+from max.pipelines.lib import PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -19,7 +20,6 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
 )
@@ -27,21 +27,24 @@ from max.serve.schemas.openai import (  # type: ignore
 logger = logging.getLogger(__name__)
 
 
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self.max_batch_size = 1
+
+
 @pytest_asyncio.fixture(scope="function")
 def app(fixture_tokenizer):  # noqa: ANN001
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
-    pipeline_config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
-        tg_batch_size=1, ce_batch_size=1
-    )
+
     model_factory = EchoTokenGenerator
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=model_factory,
-        pipeline_config=pipeline_config,
+        pipeline_config=MockPipelineConfig(),
         tokenizer=tokenizer,
     )
     return fastapi_app(settings, serving_settings)

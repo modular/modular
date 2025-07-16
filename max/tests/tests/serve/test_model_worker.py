@@ -9,15 +9,18 @@ import time
 
 import pytest
 from max.interfaces import PipelineTask, TokenGenerator
+from max.pipelines.lib import PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.scheduler import (
-    TokenGeneratorSchedulerConfig,
-)
 from max.serve.telemetry.metrics import NoopClient
+
+
+class MockPipelineConfig(PipelineConfig):
+    def __init__(self):
+        self.max_batch_size = 1
 
 
 @pytest.mark.asyncio
@@ -31,9 +34,7 @@ async def test_model_worker_propagates_exception() -> None:
     with pytest.raises(AssertionError):
         async with start_model_worker(
             EchoTokenGenerator,
-            TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1
-            ),
+            MockPipelineConfig(),
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
@@ -69,9 +70,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
     ):
         async with start_model_worker(
             MockInvalidTokenGenerator,
-            TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1
-            ),
+            MockPipelineConfig(),
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
@@ -102,9 +101,7 @@ async def test_model_worker_start_timeout() -> None:
     with pytest.raises(TimeoutError):
         async with start_model_worker(
             MockSlowTokenGenerator,
-            TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1
-            ),
+            MockPipelineConfig(),
             settings=settings,
             metric_client=NoopClient(),
             dispatcher_factory=dispatcher_factory,
