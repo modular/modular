@@ -476,13 +476,11 @@ struct PythonObject(
 
         This decrements the underlying refcount of the pointed-to object.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
-        with GILAcquired(cpython):
-            if self._obj_ptr:
-                cpython.Py_DecRef(self._obj_ptr)
-            self._obj_ptr = PyObjectPtr()
+        with GILAcquired(cpy):
+            cpy.Py_DecRef(self._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

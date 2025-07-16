@@ -1552,10 +1552,12 @@ struct CPython(Copyable, Defaultable, Movable):
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
 
+        A function version of `Py_XINCREF()`, which is no-op if `ptr` is `NULL`.
+
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XINCREF
         """
-
         self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_IncRef(ptr)
         self._inc_total_rc()
@@ -1563,10 +1565,12 @@ struct CPython(Copyable, Defaultable, Movable):
     fn Py_DecRef(self, ptr: PyObjectPtr):
         """Release a strong reference to the object `ptr` points to.
 
+        A function version of `Py_XDECREF()`, which is no-op if `ptr` is `NULL`.
+
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XDECREF
         """
-
         self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_DecRef(ptr)
         self._dec_total_rc()
