@@ -1067,8 +1067,13 @@ struct _ThreadIdx(Defaultable):
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
-        else:
+        elif is_amd_gpu():
             return "llvm.amdgcn.workitem.id." + dim
+        else:
+            return CompilationTarget.unsupported_target_error[
+                StaticString,
+                operation="thread_idx field access",
+            ]()
 
     @always_inline("nodebug")
     fn __getattr__[dim: StringLiteral](self) -> UInt:

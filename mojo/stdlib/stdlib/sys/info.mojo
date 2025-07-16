@@ -47,6 +47,40 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
     @always_inline("nodebug")
     @staticmethod
+    fn unsupported_target_error[
+        result: AnyType = NoneType._mlir_type,
+        *,
+        operation: Optional[String] = None,
+    ]() -> result:
+        """Produces a constraint failure when called indicating that some
+        operation is not supported by the current compilation target.
+
+        Parameters:
+            result: The never-returned result type of this function.
+            operation: Optional name of the operation that is not supported.
+
+        Returns:
+            This function does not return normally, however a return type
+            can be specified to satisfy Mojo type checking.
+        """
+
+        @parameter
+        if operation:
+            constrained[
+                False,
+                "Current compilation target does not support operation: "
+                + operation.value(),
+            ]()
+        else:
+            constrained[
+                False,
+                "Current compilation target does not support this operation.",
+            ]()
+
+        return os.abort[result]()
+
+    @always_inline("nodebug")
+    @staticmethod
     fn _has_feature[name: StaticString]() -> Bool:
         """Checks if the target has a specific feature.
 
