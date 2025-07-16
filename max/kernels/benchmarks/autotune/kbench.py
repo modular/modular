@@ -413,6 +413,7 @@ class Spec:
     params: list[list[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
     mesh: list[SpecInstance] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> Spec:
@@ -563,10 +564,10 @@ class Spec:
             name=obj.get("name", ""),
             file=obj.get("file", ""),
             params=params,
+            rules=obj.get("rules", []),
         )
 
     def __len__(self) -> int:
-        assert self.mesh
         return len(self.mesh)
 
     def __post_init__(self):
@@ -606,7 +607,8 @@ class Spec:
 
         Return the total size of mesh.
         """
-        self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        grid_mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        self.mesh = self.apply_rules(grid_mesh, self.rules)
         return len(self.mesh)
 
     def join(self, other: Spec) -> None:
@@ -617,6 +619,38 @@ class Spec:
         self.mesh_idx = 0
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
+
+    @staticmethod
+    def apply_rules(
+        mesh: list[SpecInstance], rules: list[str]
+    ) -> list[SpecInstance]:
+        new_mesh: list[SpecInstance] = []
+
+        if not rules:
+            return mesh
+
+        def remove_dlr(s: str) -> str:
+            return s.replace("$", "")
+
+        for s in mesh:
+            valid = True
+            for r in rules:
+                # TODO: revise handling of $ in string.
+                locals = {remove_dlr(p.name): p.value for p in s.params}
+                r = remove_dlr(r)
+
+                try:
+                    e = eval(r, {}, locals)
+                # the following exception is required in case a parameter
+                # is present in rule and missing from spec-instance combination.
+                except NameError:
+                    e = True
+                valid = valid & e
+                if not valid:
+                    break
+            if valid:
+                new_mesh.append(s)
+        return new_mesh
 
     def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
