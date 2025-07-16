@@ -19,6 +19,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAManager,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -79,6 +80,16 @@ class MockPipelineModel(PipelineModel):
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
         self.max_seq_len = self.calculate_max_seq_len(
             pipeline_config, huggingface_config
+        )
+        self._lora_manager = (
+            LoRAManager(
+                weights,
+                self.pipeline_config.lora_config.max_num_loras,
+                self.pipeline_config.lora_config.max_lora_rank,
+                self.pipeline_config.lora_config.lora_paths,
+            )
+            if self.pipeline_config.lora_config
+            else None
         )
 
     @classmethod
