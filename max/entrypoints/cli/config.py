@@ -223,12 +223,30 @@ def pipeline_config_options(func):  # noqa: ANN001
             " or CPU if no GPUs are available (--devices=cpu)."
         ),
     )
+    @click.option(
+        "--draft-devices",
+        is_flag=False,
+        type=DevicesOptionType(),
+        show_default=False,
+        default="default",
+        help=(
+            "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
+            " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"
+            " provided optionally to indicate the device ID to target. If not"
+            " provided, the model will run on the first available GPU (--devices=gpu),"
+            " or CPU if no GPUs are available (--devices=cpu)."
+        ),
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Remove the options from kwargs and replace with unified device_specs.
         devices: str | list[int] = kwargs.pop("devices")
+        draft_devices: str | list[int] = kwargs.pop("draft_devices")
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
+        kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
+            draft_devices
+        )
 
         return func(*args, **kwargs)
 
