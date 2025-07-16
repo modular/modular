@@ -78,8 +78,7 @@ modular_cc_test(
     name = "ContextTest",
     srcs = ["ContextTest.cpp"],
     deps = [
-        "//Support:ADT",
-        "//Support:Base",
+        "//Support:Context",
         "//Support:Globals",
     ],
 )

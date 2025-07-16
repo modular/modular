@@ -43,7 +43,6 @@ modular_cc_library(
         "include/Support/Binary.h",
         "include/Support/CommandLine.h",
         "include/Support/Config.h",
-        "include/Support/Context.h",
         "include/Support/Debugger.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
@@ -182,6 +181,15 @@ modular_cc_library(
         ":Base",
         ":Filesystem",
         "@llvm-project//mlir:Support",
+    ],
+)
+
+modular_cc_library(
+    name = "Context",
+    hdrs = ["include/Support/Context.h"],
+    deps = [
+        ":ADT",
+        ":Base",
     ],
 )
 
@@ -562,6 +570,7 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Buffer",
+        ":Context",
         ":DeviceSpecs",
         ":MAttrInterfaces",
         ":MAttrs",

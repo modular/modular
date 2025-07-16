@@ -68,6 +68,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Runtime",
+        "//Support:Context",
     ],
 )
 
@@ -143,6 +144,7 @@ modular_cc_library(
         ":Runtime.headers",
         ":Support",
         "//Support:ADT",
+        "//Support:Context",
         "//Support:Profiling",
     ],
 )

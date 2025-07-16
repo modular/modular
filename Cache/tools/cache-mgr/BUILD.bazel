@@ -8,6 +8,7 @@ modular_cc_binary(
         "//Cache",
         "//Init",
         "//Support:CommonCLOptions",
+        "//Support:Context",
         "//Support:Globals",
         "@llvm-project//mlir:Support",
     ],
