@@ -1,15 +1,13 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "modular_python_binding_py_library", "requirement")
+load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "requirement")
 
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["_core.cpp"],
     module_name = "_core",
-    nanobind_deps = [
-        "//SDK/lib/API/python/max/_core/src:modules",
-    ],
     new_link_root = "lib",
     deps = [
+        "//SDK/lib/API/python/max/_core/src:modules",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -90,13 +88,13 @@ modular_genrule(
     ],
 )
 
-modular_python_binding_py_library(
+modular_py_library(
     name = "_core",
     srcs = glob([
         "_core/**/*.pyi",
         "_core_types/*.py",
     ]),
-    bindings_data = [":_core.bindings"],
+    data = [":_core.bindings"],
     imports = [".."],
     deps = [
         "//SDK/lib/API/python/max/mlir",
