@@ -139,6 +139,12 @@ class ModelInputs:
 
     kv_cache_inputs: KVCacheInputs | None = None
 
+    lora_ids: Tensor | None = None
+    """Tensor containing the LoRA ids."""
+
+    lora_ranks: Tensor | None = None
+    """Tensor containing the LoRA ranks"""
+
 
 @dataclass(frozen=True)
 class FrequencyData:
@@ -208,6 +214,15 @@ class PipelineModel(ABC, Generic[T]):
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
                 session, self.kv_cache_config._available_cache_memory
+            )
+
+        self._lora_manager: LoRAManager | None = None
+        if self.pipeline_config.lora_config is not None:
+            self._lora_manager = LoRAManager(
+                weights,
+                self.pipeline_config.lora_config.max_num_loras,
+                self.pipeline_config.lora_config.max_lora_rank,
+                self.pipeline_config.lora_config.lora_paths,
             )
 
     @property
@@ -587,16 +602,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 for x in self._pipeline_config.model_config.weight_path
             ]
 
-        weights = load_weights(weight_paths)
-
-        if self._pipeline_config.lora_config is not None:
-            self._lora_manager = LoRAManager(
-                weights,
-                self._pipeline_config.lora_config.max_num_loras,
-                self._pipeline_config.lora_config.lora_paths,
-            )
-            self._pipeline_config._lora_manager = self._lora_manager
-
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -604,7 +609,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
-            weights=weights,
+            weights=load_weights(weight_paths),
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None
             ),

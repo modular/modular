@@ -81,6 +81,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         default_factory=SamplingParams
     )
     streaming: bool = msgspec.field(default=False)
+    model_name: str = msgspec.field(default="")
     _matcher: Any | None = msgspec.field(default=None)
     _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
     _cache_seq_id: int | None = msgspec.field(default=None)

@@ -179,6 +179,10 @@ class LoRAConfig(MAXConfig):
             raise ValueError(
                 "Number of statically defined LoRAs exceeds the number of maximum loadable LoRAs."
             )
+        # TODO: Remove hack when we have proper LoRA kernel support.
+        #  We add one to the end of max_num_loras so it is a zero
+        #  tensor for requests without LoRA.
+        self.max_num_loras += 1
 
     @staticmethod
     def help() -> dict[str, str]:

@@ -82,6 +82,8 @@ class Llama3Inputs(ModelInputs):
         signal_buffers: list[Tensor],
         return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
+        lora_ids: Tensor | None = None,
+        lora_ranks: Tensor | None = None,
     ) -> None:
         """
         Args:
@@ -95,6 +97,8 @@ class Llama3Inputs(ModelInputs):
         self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
         self.return_n_logits = return_n_logits
+        self.lora_ids = lora_ids
+        self.lora_ranks = lora_ranks
 
 
 class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
@@ -220,23 +224,48 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                 *flattened_kv_types,
             )
         else:
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *kv_inputs[0],
-            )
+            if self._lora_manager:
+                lora_ids, lora_ranks = self._lora_manager.input_symbols(
+                    device_ref
+                )
+                return (
+                    tokens_type,
+                    input_row_offsets_type,
+                    return_n_logits_type,
+                    lora_ids,
+                    lora_ranks,
+                    *kv_inputs[0],
+                )
+            else:
+                return (
+                    tokens_type,
+                    input_row_offsets_type,
+                    return_n_logits_type,
+                    *kv_inputs[0],
+                )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.return_n_logits,
-            *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
-        )
+
+        if self._lora_manager:
+            model_outputs = self.model.execute(
+                model_inputs.tokens,
+                model_inputs.input_row_offsets,
+                model_inputs.return_n_logits,
+                model_inputs.lora_ids,  # type: ignore
+                model_inputs.lora_ranks,  # type: ignore
+                *model_inputs.signal_buffers,
+                *curr_kv_cache_inputs,
+            )
+        else:
+            model_outputs = self.model.execute(
+                model_inputs.tokens,
+                model_inputs.input_row_offsets,
+                model_inputs.return_n_logits,
+                *model_inputs.signal_buffers,
+                *curr_kv_cache_inputs,
+            )
 
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Tensor)
@@ -263,14 +292,17 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
+            [0] + [ctx.active_length for ctx in context_batch],
+            dtype=np.uint32,
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+        tokens = Tensor.from_numpy(
+            np.concatenate([ctx.next_tokens for ctx in context_batch])
+        ).to(self.devices[0])
 
-        return Llama3Inputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+        inputs = Llama3Inputs(
+            tokens=tokens,
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
@@ -280,6 +312,17 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                 np.array([return_n_logits], dtype=np.int64)
             ),
         )
+
+        # Map model names to LoRA graph inputs
+        if self._lora_manager:
+            model_names: list[str] = [ctx.model_name for ctx in context_batch]
+            lora_ids, lora_ranks = self._lora_manager.get_lora_graph_inputs(
+                model_names, self.devices[0]
+            )
+            inputs.lora_ids = lora_ids
+            inputs.lora_ranks = lora_ranks
+
+        return inputs
 
     def prepare_next_token_inputs(
         self,
@@ -299,6 +342,8 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
+            lora_ids=prev_model_inputs.lora_ids,
+            lora_ranks=prev_model_inputs.lora_ranks,
         )
 
     @classmethod
@@ -507,6 +552,9 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
         else:
             nn_model = Llama3(model_config)
 
+            if self._lora_manager:
+                self._lora_manager.init_weights(nn_model, state_dict)
+
             # Load weights.
             nn_model.load_state_dict(
                 state_dict,
@@ -518,9 +566,26 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
             self.state_dict = nn_model.state_dict()
 
             with Graph("llama3", input_types=graph_inputs) as graph:
-                tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                    graph.inputs
-                )
+                if self._lora_manager:
+                    (
+                        tokens,
+                        input_row_offsets,
+                        return_n_logits,
+                        lora_ids,
+                        lora_ranks,
+                        *kv_cache_inputs,
+                    ) = graph.inputs
+                    self._lora_manager.set_graph_info(
+                        lora_ids.tensor,
+                        lora_ranks.tensor,
+                    )
+                else:
+                    (
+                        tokens,
+                        input_row_offsets,
+                        return_n_logits,
+                        *kv_cache_inputs,
+                    ) = graph.inputs
                 outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],

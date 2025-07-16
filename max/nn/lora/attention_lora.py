@@ -15,11 +15,7 @@ from __future__ import annotations
 from typing import Callable, Union, cast
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, ops
 
 from ..attention.attention_with_rope import AttentionWithRope
 from ..attention.mask_config import MHAMaskVariant
@@ -141,9 +137,9 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         )
 
         xq += self.fused_qkv_lora(
-            xq,  # should be X but graph comp crashes due to stubbing kernel
-            input_row_offsets,
+            xq,  # should be X but graph comp crashes because of stubbed kernel
             kv_collection,
+            input_row_offsets,
             layer_idx,
         )
 
@@ -186,9 +182,9 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
     def fused_qkv_lora(
         self,
         x: TensorValue,
+        kv_collection: PagedKVCacheCollection
+        | ContinuousBatchingKVCacheCollection,
         input_row_offsets: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
         layer_idx: TensorValue,
     ):
         """
@@ -239,4 +235,3 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             n_heads=self.n_heads,
             bias=lora_bias,
         )
-        return y

@@ -374,6 +374,7 @@ class TextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            model_name=request.model_name,
         )
         context.assign_to_cache(request.index)
         return context
