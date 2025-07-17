@@ -32,6 +32,7 @@ _EXTRA_CONSTRAINTS = {
     "test_warp_specialization_hilbert_gemm.mojo": ["//:h100_gpu"],
     "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
     "test_deepseek_scheduler.mojo": ["//:h100_gpu"],
+    "test_sm90_splitk.mojo": ["//:h100_gpu"],
 }
 
 _FILECHECK_TESTS = [

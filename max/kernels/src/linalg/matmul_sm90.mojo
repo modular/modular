@@ -1095,6 +1095,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 b_smem_iter,
                 m_coord,
                 n_coord,
+                0,
                 rank_n,
                 rank_m,
                 write_pipeline_states,
@@ -1401,6 +1402,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     b_smem_iter,
                     UInt(m_coord),
                     UInt(n_coord),
+                    0,
                     rank_n,
                     rank_m,
                     write_pipeline_states,
@@ -2233,7 +2235,7 @@ fn warp_specialize_gemm_with_multicasting[
 
     var logger = Logger()
 
-    logger.info("Executing Warp Specialize Gemm with Multicasting")
+    logger.info("Executing Warp Specialized Gemm with Multicasting")
     logger.info("block_tile_shape: ", config.block_tile_shape)
     logger.info("cluster_shape: ", config.cluster_shape)
     logger.info("mma_shape: ", wgmma_shape)

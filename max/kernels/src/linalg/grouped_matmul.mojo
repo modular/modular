@@ -562,6 +562,7 @@ fn grouped_matmul_kernel[
                 b_smem_iter,
                 m_coord,
                 n_coord,
+                0,
                 rank_n,
                 rank_m,
                 write_pipeline_states,

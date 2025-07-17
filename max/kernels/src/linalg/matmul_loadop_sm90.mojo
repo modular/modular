@@ -70,6 +70,7 @@ fn async_load_AB[
     ],
     m_coord: UInt,
     n_coord: UInt,
+    k_coord: UInt,
     rank_n: UInt,
     rank_m: UInt,
     mut write_pipeline_states: PipelineState[pipeline_stages],
@@ -139,7 +140,7 @@ fn async_load_AB[
                         a_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_iter * pipeline_stages + j) * BK,
+                            UInt(k_coord + k_iter * pipeline_stages + j) * BK,
                             a_gmem_slice_coord,
                         ),
                         UInt16(multicast_row_mask),
@@ -150,7 +151,11 @@ fn async_load_AB[
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
                             full_mbar[write_idx],
-                            (UInt(k_iter * pipeline_stages + j) * BK, m_coord),
+                            (
+                                UInt(k_coord + k_iter * pipeline_stages + j)
+                                * BK,
+                                m_coord,
+                            ),
                             UInt16(multicast_row_mask),
                         )
 
@@ -158,7 +163,10 @@ fn async_load_AB[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     full_mbar[write_idx],
-                    (UInt(k_iter * pipeline_stages + j) * BK, m_coord),
+                    (
+                        UInt(k_coord + k_iter * pipeline_stages + j) * BK,
+                        m_coord,
+                    ),
                 )
 
             @parameter
@@ -175,7 +183,7 @@ fn async_load_AB[
                         b_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_iter * pipeline_stages + j) * BK,
+                            UInt(k_coord + k_iter * pipeline_stages + j) * BK,
                             b_gmem_slice_coord,
                         ),
                         UInt16(multicast_column_mask << rank_n),
@@ -186,7 +194,11 @@ fn async_load_AB[
                         b_tma_op.async_multicast_load(
                             b_smem_tile,
                             full_mbar[write_idx],
-                            (UInt(k_iter * pipeline_stages + j) * BK, n_coord),
+                            (
+                                UInt(k_coord + k_iter * pipeline_stages + j)
+                                * BK,
+                                n_coord,
+                            ),
                             UInt16(multicast_column_mask << rank_n),
                         )
 
@@ -194,7 +206,10 @@ fn async_load_AB[
                 b_tma_op.async_copy(
                     b_smem_tile,
                     full_mbar[write_idx],
-                    (UInt(k_iter * pipeline_stages + j) * BK, n_coord),
+                    (
+                        UInt(k_coord + k_iter * pipeline_stages + j) * BK,
+                        n_coord,
+                    ),
                 )
 
             write_pipeline_states.step()

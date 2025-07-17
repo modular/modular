@@ -78,7 +78,11 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
+from linalg.matmul_tile_scheduler import (
+    MatmulSchedule,
+    TileScheduler,
+    RasterOrder,
+)
 from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
@@ -90,6 +94,7 @@ from logger import Logger
 from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .matmul_sm90 import warp_specialize_gemm_with_multicasting
+from .matmul_sm90_splitk import warp_specialize_gemm_with_multicasting_splitk
 
 # TODO: Move to a general location and use for all dispatch
 alias DISPATCH_MISS = 0
@@ -1155,7 +1160,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # GTC matmul configs
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
-        if m <= 32:
+        if m <= 16:
             alias config = MatmulConfig[
                 a_type,
                 b_type,
@@ -1194,18 +1199,18 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=12,
+                num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
                 pdl_level=pdl_level,
             )
-            warp_specialize_gemm_with_multicasting[
+            warp_specialize_gemm_with_multicasting_splitk[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                # schedule = MatmulSchedule.DS_SCHEDULER,
-                # grid_shape = Index(128, 1),
+                splits=2,
+                raster_order = RasterOrder.AlongM,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
