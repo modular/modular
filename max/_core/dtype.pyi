@@ -80,9 +80,6 @@ class DType(enum.Enum):
     8-bit floating-point with 5 exponent bits and 2 mantissa bits, finite values only, no negative zero.
     """
 
-    _unknown = 0
-    """Internal unknown data type (deprecated)."""
-
     @property
     def align(self) -> int:
         """
