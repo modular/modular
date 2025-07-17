@@ -15,10 +15,12 @@
 from collections import OptionalReg
 from math import align_up, ceildiv
 from sys import (
+    CompilationTarget,
     alignof,
     env_get_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
+    is_amd_gpu,
     is_nvidia_gpu,
     simdwidthof,
     sizeof,
@@ -554,10 +556,14 @@ fn _copy_frag_to_smem[
         _copy_frag_to_smem_nvidia[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
-    else:
+    elif is_amd_gpu():
         _copy_frag_to_smem_amd[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="_copy_frag_to_smem",
+        ]()
 
 
 @always_inline

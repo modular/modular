@@ -33,6 +33,7 @@ from sys.intrinsics import global_idx as _global_idx
 from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
+from sys.info import CompilationTarget
 
 from .globals import WARP_SIZE
 from .warp import broadcast
@@ -149,5 +150,8 @@ fn sm_id() -> UInt:
             )
         )
     else:
-        constrained[False, "The sm_id function is not supported by AMD GPUs."]()
-        return abort[Int]("function not available")
+        return CompilationTarget.unsupported_target_error[
+            Int,
+            operation="sm_id",
+            note="sm_id() is only supported when targeting NVIDIA GPUs.",
+        ]()

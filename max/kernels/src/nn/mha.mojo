@@ -15,6 +15,7 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import (
+    CompilationTarget,
     alignof,
     bitwidthof,
     env_get_bool,
@@ -1115,7 +1116,7 @@ fn mha[
                 score_mod,
                 batch_idx,
             )
-    else:
+    elif is_amd_gpu():
         constrained[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
@@ -1132,6 +1133,8 @@ fn mha[
             Int(start_pos),
             mask,
         )
+    else:
+        return CompilationTarget.unsupported_target_error[operation="mha"]()
 
 
 @__llvm_metadata(
@@ -2716,7 +2719,7 @@ fn mha_decoding[
                 score_mod,
                 batch_idx,
             )
-    else:
+    elif is_amd_gpu():
         alias config = MHAConfig(
             q_type,
             num_heads,
@@ -2748,6 +2751,11 @@ fn mha_decoding[
             Int(0),
             mask,
         )
+
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mha_decoding",
+        ]()
 
 
 @always_inline
@@ -3010,7 +3018,7 @@ fn scale_and_mask_helper[
             mask_stride,
             max_seq_len,
         )
-    else:
+    elif is_amd_gpu():
         _scale_and_mask_helper_amd[
             p_type,
             p_layout,
@@ -3035,6 +3043,10 @@ fn scale_and_mask_helper[
             mask_stride,
             max_seq_len,
         )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="scale_and_mask_helper",
+        ]()
 
 
 fn mha_decoding_single_batch[

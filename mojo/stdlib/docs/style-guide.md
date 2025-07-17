@@ -410,6 +410,19 @@ else:
     return CompilationTarget.unsupported_target_error[Foo]()
 ```
 
+In cases where a generic, cross-platform compatible fallback implementation
+is available, it is okay to use an unguarded `else` condition:
+
+```mojo
+@always_inline("nodebug")
+fn prefetch[...](...):
+    @parameter
+    if is_nvidia_gpu():
+        inlined_assembly["prefetch.global.L2 [$0];", ...](...)
+    else:
+        llvm_intrinsic["llvm.prefetch", NoneType](...)
+```
+
 ### Testing
 
 #### Unit test filenames
