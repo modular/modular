@@ -19,10 +19,10 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
-    var in_host = ctx.create_host_buffer[DType.float32](length)
-    var out_host = ctx.create_host_buffer[DType.float32](length)
-    var in_dev = ctx.create_buffer[DType.float32](length)
-    var out_dev = ctx.create_buffer[DType.float32](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -53,10 +53,10 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
 
     var half_length = length // 2
 
-    var in_host = ctx.create_host_buffer[DType.int64](length)
-    var out_host = ctx.create_host_buffer[DType.int64](length)
-    var in_dev = ctx.create_buffer[DType.int64](length)
-    var out_dev = ctx.create_buffer[DType.int64](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
     var first_out_dev = out_dev.create_sub_buffer[DType.int64](0, half_length)
     var second_out_dev = out_dev.create_sub_buffer[DType.int64](
         half_length, half_length
@@ -101,10 +101,10 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     var half_length = length // 2
 
-    var in_host = ctx.create_host_buffer[DType.int64](length)
-    var out_host = ctx.create_host_buffer[DType.int64](length)
-    var in_dev = ctx.create_buffer[DType.int64](length)
-    var out_dev = ctx.create_buffer[DType.int64](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
+    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -159,8 +159,8 @@ fn _run_cpu_ctx_memcpy_async(
     print("-")
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
-    var host_buf = cpu_ctx.create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.create_buffer[DType.int64](length).fill(13)
+    var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
+    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).fill(13)
 
     for i in range(length):
         host_buf[i] = 2 * i
