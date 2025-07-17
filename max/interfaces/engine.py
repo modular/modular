@@ -37,16 +37,12 @@ T = TypeVar("T")
 
 
 class EngineResult(msgspec.Struct, Generic[T], tag=True, omit_defaults=True):
-    """
-    Structure representing the result of an engine operation.
-
-    Configuration:
-        status: The status of the operation.
-        result: The result data of the operation.
-    """
+    """Structure representing the result of an engine operation."""
 
     status: EngineStatus
+    """The status of the operation."""
     result: Optional[T]
+    """The result data of the operation."""
 
     @classmethod
     def cancelled(cls) -> "EngineResult":
@@ -61,23 +57,23 @@ class EngineResult(msgspec.Struct, Generic[T], tag=True, omit_defaults=True):
     @classmethod
     def complete(cls, result: T) -> "EngineResult":
         """
-        Create an EngineResult representing a completed operation.
+        Create an ``EngineResult`` representing a completed operation.
 
         Returns:
-            EngineResult: An EngineResult with COMPLETE status and no result.
+            EngineResult: An ``EngineResult`` with ``COMPLETE`` status and no result.
         """
         return EngineResult(status=EngineStatus.COMPLETE, result=result)
 
     @classmethod
     def active(cls, result: T) -> "EngineResult":
         """
-        Create an EngineResult representing an active operation.
+        Create an ``EngineResult`` representing an active operation.
 
         Args:
             result: The result data of the operation.
 
         Returns:
-            EngineResult: An EngineResult with ACTIVE status and the provided result.
+            EngineResult: An ``EngineResult`` with ``ACTIVE`` status and the provided result.
         """
         return EngineResult(status=EngineStatus.ACTIVE, result=result)
 
