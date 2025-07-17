@@ -24,7 +24,7 @@ from sys import (
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
-    stdin,
+    STDIN,
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
@@ -155,7 +155,9 @@ struct _fdopen[mode: StaticString = "a"]:
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
+            StringSlice[buffer.origin](ptr=buffer, length=bytes_read).rstrip(
+                delimiter
+            )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())
@@ -476,7 +478,7 @@ fn input(prompt: String = "") raises -> String:
     """
     if prompt != "":
         print(prompt, end="")
-    return _fdopen["r"](stdin).readline()
+    return STDIN.get_or_create_ptr()[].readline()
 
 
 fn _get_stdout_stream() -> OpaquePointer:

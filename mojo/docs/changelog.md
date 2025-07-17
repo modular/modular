@@ -205,3 +205,7 @@ mutation.
 
 - [#4954](https://github.com/modular/modular/issues/4954) - `InlineArray`
   now does not call the copy constructor when being moved.
+
+- [#3961](https://github.com/modular/modular/issues/3961) - the second input()
+  when using standard input redirection causes
+  `Unhandled exception caught during execution: EOF`
