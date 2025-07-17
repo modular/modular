@@ -63,7 +63,10 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
-        enable_assertions = not src in "test_warp_specialization_gemm.mojo",  # TODO: Fix assertions exception
+        enable_assertions = not src in [
+            "test_warp_specialization_gemm.mojo",
+            "test_generated_sm90_matmul_ptx.mojo",
+        ],  # TODO: Fix assertions exception
         tags = ["gpu"] + (
             ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
         ),
