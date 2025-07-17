@@ -8,8 +8,6 @@ from os import abort
 
 import compiler_internal as compiler
 from buffer.dimlist import DimList
-from python import Python, PythonObject
-from python.python import GILAcquired
 from register import register_internal
 from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
@@ -79,19 +77,3 @@ struct ReadCounter:
     ](output: OutputTensor[dtype = DType.int32, rank=1], c: Counter[stride]):
         output[0] = c.a
         output[1] = c.b
-
-
-@compiler.register("bump_python_counter")
-struct BumpPythonCounter:
-    @staticmethod
-    fn execute(counter: PythonObject) -> PythonObject:
-        var cpython = Python().cpython()
-        with GILAcquired(cpython):
-            try:
-                cpython.check_init_error()
-                new_counter = counter.copy()
-                new_counter.bump()
-                return new_counter
-            except e:
-                abort(String(e))
-        return None
