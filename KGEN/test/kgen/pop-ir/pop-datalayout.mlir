@@ -67,9 +67,9 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   // CHECK-NEXT: <16>
   kgen.param.constant: index = <get_sizeof(!kgen.pack<[i32, i8]>, #i32_align8)>
 
-  // CHECK-NEXT: <16>
-  kgen.param.constant: index = <get_sizeof(variant<i32, i16>, #target)>
   // CHECK-NEXT: <8>
+  kgen.param.constant: index = <get_sizeof(variant<i32, i16>, #target)>
+  // CHECK-NEXT: <1>
   kgen.param.constant: index = <get_alignof(variant<i1, i2, i3, i4>, #target)>
 
   // CHECK-NEXT: <16>

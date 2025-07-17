@@ -69,25 +69,32 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   llvm::report_fatal_error("unsupported LLVM dialect type");
 }
 
-int64_t LLVMDataLayout::getTypeABIAlign(Type type) const {
+std::pair<int64_t, Type>
+LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
   if (auto intType = dyn_cast<IntegerType>(type))
-    return target.getDataLayout().getIntegerABIAlign(intType.getWidth());
+    return {target.getDataLayout().getIntegerABIAlign(intType.getWidth()),
+            intType};
   if (auto fpType = dyn_cast<FloatType>(type))
-    return target.getDataLayout().getFloatABIAlign(fpType.getWidth());
+    return {target.getDataLayout().getFloatABIAlign(fpType.getWidth()), fpType};
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
-    return target.getDataLayout().getPointerABIAlign();
+    return {target.getDataLayout().getPointerABIAlign(), ptrType};
   if (auto vecType = dyn_cast<VectorType>(type)) {
-    return target.getDataLayout().getVectorABIAlign(
-        vecType.getNumElements(), getTypeSizeInBits(vecType.getElementType()));
+    return {target.getDataLayout().getVectorABIAlign(
+                vecType.getNumElements(),
+                getTypeSizeInBits(vecType.getElementType())),
+            vecType};
   }
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
-    return getTypeABIAlign(arrayType.getElementType());
+    return getTypeABIAlignAndType(arrayType.getElementType());
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
-    int64_t strictest = 1;
-    for (Type type : structType.getBody())
-      strictest = std::max(strictest, getTypeABIAlign(type));
-    return strictest;
+    std::pair<int64_t, Type> strictestPair(1, nullptr);
+    for (Type type : structType.getBody()) {
+      auto cur = getTypeABIAlignAndType(type);
+      if (cur.first >= strictestPair.first)
+        strictestPair = cur;
+    }
+    return strictestPair;
   }
   llvm::report_fatal_error("unsupported LLVM dialect type");
 }
@@ -267,18 +274,39 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // union type. This needs to be optimized. For now, use an array of
     // word-size integers.
     int64_t maxSize = 0;
+    std::pair<int64_t, Type> maxAlignAndType(1, nullptr);
     for (Type unionType : unionType.getTypes()) {
       Type type = convertType(unionType);
       if (!type)
         return {};
       maxSize = std::max(maxSize, getTypeAllocSize(type));
+
+      // Record the max aligned member field.
+      auto curAlignAndMember = getTypeABIAlignAndType(type);
+      if (curAlignAndMember.first >= maxAlignAndType.first)
+        maxAlignAndType = curAlignAndMember;
     }
-    // FIXME: The alignment of the generated type must equal or exceed the
-    // greatest alignment requirement of any subtype. Right now it's just the
-    // pointer width.
-    return LLVM::LLVMArrayType::get(
-        getIndexType(),
-        llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
+    if (maxSize == 0)
+      return LLVM::LLVMStructType::getLiteral(&getContext(), {});
+
+    // Lower union to {max_align_t, [(max_size - sizeof(max_align_t)) x i8]}.
+    // `max_align_t` ensure whole structure alignment, the tailing array ensures
+    // that we allocate enough memory to hold the maximum variant of the union.
+    Type maxAlignTp = maxAlignAndType.second;
+    SmallVector<Type, 2> structElemTp;
+    structElemTp.push_back(maxAlignTp);
+
+    int64_t remLen = maxSize - getTypeStoreSize(maxAlignTp);
+    if (remLen != 0) {
+      structElemTp.push_back(
+          LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8), remLen));
+    }
+
+    auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);
+    assert(maxSize == getTypeAllocSize(ret) &&
+           "expect lowered UnionType to have the same size as the biggest "
+           "union variant.");
+    return ret;
   });
 
   // Coroutine handles are always lowered to opaque pointers.
@@ -427,14 +455,17 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
       // Drop the parts of the storage that have already been read.
       Value valueToLoad = b.create<LLVM::LShrOp>(
           *valueIt, b.create<LLVM::ConstantOp>(storageType, storageOffset));
-      // Shift the data to load into position.
-      valueToLoad = b.create<LLVM::ShlOp>(
-          valueToLoad, b.create<LLVM::ConstantOp>(storageType, curValueOffset));
+
       // Match the type to the value type.
       if (normalizedType.getWidth() <= storageType.getWidth())
         valueToLoad = b.create<LLVM::TruncOp>(normalizedType, valueToLoad);
       else
         valueToLoad = b.create<LLVM::ZExtOp>(normalizedType, valueToLoad);
+
+      // Shift the data to load into position.
+      valueToLoad = b.create<LLVM::ShlOp>(
+          valueToLoad,
+          b.create<LLVM::ConstantOp>(normalizedType, curValueOffset));
 
       curValue = b.create<LLVM::OrOp>(curValue, valueToLoad);
 
@@ -486,21 +517,77 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
   return result;
 }
 
-Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
-                                          Value value) {
+Value VariantHelper::materializeLLVMUnion(
+    mlir::LLVM::LLVMStructType unionStructTp, Value value) {
+  if (unionStructTp.getBody().empty())
+    return b.create<LLVM::UndefOp>(unionStructTp);
+
   SmallVector<Value> storageValues;
-  for (unsigned i = 0, e = type.getNumElements(); i < e; ++i)
-    storageValues.push_back(
-        b.create<LLVM::ConstantOp>(type.getElementType(), 0));
+  auto maxAlignTp = unionStructTp.getBody().front();
+
+  // Normalize the max_align_t to an (potentially array of) integers.
+  if (auto t = dyn_cast<VectorType>(maxAlignTp)) {
+    // Flatten the vector.
+    for (int i = 0, e = t.getNumElements(); i < e; i++) {
+      storageValues.push_back(b.create<LLVM::ConstantOp>(
+          b.getIntegerType(dl.getTypeSizeInBits(t.getElementType())), 0));
+    }
+  } else if (maxAlignTp.isIntOrFloat() ||
+             isa<LLVM::LLVMPointerType>(maxAlignTp)) {
+    storageValues.push_back(b.create<LLVM::ConstantOp>(
+        b.getIntegerType(dl.getTypeSizeInBits(maxAlignTp)), 0));
+  } else {
+    llvm_unreachable(
+        "The first type in lowered union type must be non-aggregated.");
+  }
+
+  LLVM::LLVMArrayType tailingMem = nullptr;
+  if (unionStructTp.getBody().size() == 2) {
+    tailingMem = cast<LLVM::LLVMArrayType>(unionStructTp.getBody().back());
+    for (unsigned i = 0, e = tailingMem.getNumElements(); i < e; ++i)
+      storageValues.push_back(
+          b.create<LLVM::ConstantOp>(tailingMem.getElementType(), 0));
+  }
 
   MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
   unsigned storageOffset = 0;
   unsigned offset = 0;
   walkAndCreateVariant(valueIt, storageOffset, offset, value);
 
-  Value content = b.create<LLVM::UndefOp>(type);
-  for (auto [idx, value] : llvm::enumerate(storageValues))
-    content = b.create<LLVM::InsertValueOp>(content, value, idx);
+  ArrayRef<Value> toPack = storageValues;
+  Value content = b.create<LLVM::UndefOp>(unionStructTp);
+
+  Value maxAlignV;
+  if (auto vecTp = dyn_cast<VectorType>(maxAlignTp)) {
+    // Aggregate the vector.
+    maxAlignV = b.create<LLVM::UndefOp>(vecTp);
+    for (int i = 0, e = vecTp.getNumElements(); i < e; i++) {
+      auto element = toPack.front();
+      maxAlignV = b.create<LLVM::InsertElementOp>(
+          maxAlignV, b.create<LLVM::BitcastOp>(vecTp.getElementType(), element),
+          b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+
+      toPack = toPack.drop_front();
+    }
+  } else if (isa<LLVM::LLVMPointerType>(maxAlignTp)) {
+    maxAlignV = b.create<LLVM::IntToPtrOp>(maxAlignTp, toPack.front());
+    toPack = toPack.drop_front();
+  } else if (maxAlignTp.isIntOrFloat()) {
+    maxAlignV = b.create<LLVM::BitcastOp>(maxAlignTp, toPack.front());
+    toPack = toPack.drop_front();
+  } else {
+    llvm_unreachable(
+        "The first type in lowered union type must be non-aggregated.");
+  }
+  content = b.create<LLVM::InsertValueOp>(content, maxAlignV, 0);
+
+  if (tailingMem) {
+    Value arrayV = b.create<LLVM::UndefOp>(tailingMem);
+    for (auto [idx, value] : llvm::enumerate(toPack))
+      arrayV = b.create<LLVM::InsertValueOp>(arrayV, value, idx);
+    content = b.create<LLVM::InsertValueOp>(content, arrayV, 1);
+  }
+
   return content;
 }
 
@@ -1070,7 +1157,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     auto value = loweredValue.get();
 
     auto contentType =
-        cast_or_null<LLVM::LLVMArrayType>(tc.convertType(unionAttr.getType()));
+        cast_or_null<LLVM::LLVMStructType>(tc.convertType(unionAttr.getType()));
     if (!contentType)
       return Error("cannot lower union constant with unknown type");
     VariantHelper helper(b, b.getLoc(), tc);

@@ -248,6 +248,12 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
 }
 
 std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: this is inconsistent with the alignment after lowering to LLVM.
+  // e.g., Scalar<Int256> will have 32 byte alignment, but i256 in llvm has 16
+  // bytes alignment, this seems fine as the KGEN alignment is larger, but we
+  // could end up allocating a larger-than-necessary heap memory. Besides, it
+  // also cause value mismatch between `sizeof[T]()` and
+  // `unsafe_pointer[T] + 1 - unsafe_pointer[T]`.
   if (std::optional<int64_t> size = getTypeSize(target))
     return std::max((int64_t)llvm::PowerOf2Ceil(*size), (int64_t)1);
   return {};
