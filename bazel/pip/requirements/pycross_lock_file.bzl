@@ -132,7 +132,7 @@ PINS = {
     "uvicorn": "uvicorn@0.30.6",
     "uvloop": "uvloop@0.21.0",
     "wheel": "wheel@0.45.1",
-    "xgrammar": "xgrammar@0.1.21",
+    "xgrammar": "xgrammar@0.1.20",
 }
 
 # buildifier: disable=unnamed-macro
@@ -7417,7 +7417,7 @@ def targets():
         wheel = ":_wheel_wrapt@1.16.0",
     )
 
-    _xgrammar_0_1_21_deps = [
+    _xgrammar_0_1_20_deps = [
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
@@ -7448,49 +7448,49 @@ def targets():
         "//conditions:default": [],
     })
 
-    _xgrammar_0_1_21_build_deps = [
+    _xgrammar_0_1_20_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_xgrammar@0.1.21",
-        actual = "@pycross_lock_file_sdist_xgrammar_0.1.21//file",
+        name = "_sdist_xgrammar@0.1.20",
+        actual = "@pycross_lock_file_sdist_xgrammar_0.1.20//file",
     )
 
     pycross_wheel_build(
-        name = "_build_xgrammar@0.1.21",
-        sdist = ":_sdist_xgrammar@0.1.21",
+        name = "_build_xgrammar@0.1.20",
+        sdist = ":_sdist_xgrammar@0.1.20",
         target_environment = _target,
-        deps = _xgrammar_0_1_21_deps + _xgrammar_0_1_21_build_deps,
+        deps = _xgrammar_0_1_20_deps + _xgrammar_0_1_20_build_deps,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_xgrammar@0.1.21",
+        name = "_wheel_xgrammar@0.1.20",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_xgrammar@0.1.21",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_macosx_11_0_arm64//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_xgrammar@0.1.20",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_macosx_11_0_arm64//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "xgrammar@0.1.21",
-        deps = _xgrammar_0_1_21_deps,
-        wheel = ":_wheel_xgrammar@0.1.21",
+        name = "xgrammar@0.1.20",
+        deps = _xgrammar_0_1_20_deps,
+        wheel = ":_wheel_xgrammar@0.1.20",
     )
 
     native.alias(
@@ -7817,12 +7817,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_xgrammar_0.1.21",
+        name = "pycross_lock_file_sdist_xgrammar_0.1.20",
         urls = [
-            "https://files.pythonhosted.org/packages/e3/52/ea664a56674f21c401b45f124c207a16ca4b2318364687172edbcf255375/xgrammar-0.1.21.tar.gz",
+            "https://files.pythonhosted.org/packages/be/0e/41345a089ed3547c2c556414e8da5fcd3f421f38f34d2ab06bb33f2ca3fa/xgrammar-0.1.20.tar.gz",
         ],
-        sha256 = "2ce1e81417ff46aa7ef26d8c0627275cb20dd1f2e8ead5bb261aecde1cc8ba57",
-        downloaded_file_path = "xgrammar-0.1.21.tar.gz",
+        sha256 = "f761cf1da5c0d67f8b3c0a314304b86465d8568d8278de554ef60d33cbafe387",
+        downloaded_file_path = "xgrammar-0.1.20.tar.gz",
     )
 
     maybe(
@@ -18727,142 +18727,142 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/ef/42/209977e5c868f269bb587a41b21c80a07c989b40c981482498c53bd15b37/xgrammar-0.1.21-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/ff/40/002a6503c50a88ca087bf3af1155e63504b0605684f29cad912b59fb1853/xgrammar-0.1.20-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "ae38de964a1d56437bc84c0aedf1b0a5a48ff2e805a0ec454b0caaa25b3c7f84",
-        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "813ab7d2132f359ec8d78f48c9fbcc897a105fcc8ad4a90ed00452ad1cc7533f",
+        downloaded_file_path = "xgrammar-0.1.20-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/e8/63/25e04927a3f947b31f577744774aa6e67c2ba63a0675795ed85397f597ac/xgrammar-0.1.21-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/e6/8a/9fb9ab505f9e142dc803fe75ee3001c8d272df027997550a92b333ecbfa1/xgrammar-0.1.20-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "ce25b17690d6abebf79d287330578203a361819058f6e893aefa69049f173ad8",
-        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "48ed7ac672740a03efc2ff259e5c9658fd396312f75e796caff2749115f0a694",
+        downloaded_file_path = "xgrammar-0.1.20-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/d0/d7/2d15637d1bdded7dbde4742eb8be856370e6b9cf73c7bbdb1ce87f77db79/xgrammar-0.1.21-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/30/2d/b6e9ae649cc2931d1c3cf99de09734c6661f49cef40d22b586b51eb58a3c/xgrammar-0.1.20-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "b181f45bbba8563fcaf20a6338ebcbb663d804ab22d160b446c810c6fc397477",
-        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "cb00c8c5b7dbbb6bf4dec17b71a138740c13605d86b69f1f526118c534eadacc",
+        downloaded_file_path = "xgrammar-0.1.20-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/2c/6c/365d1564de1bf9f01c95ab54c67895052aef3501fe063582a762ece820c9/xgrammar-0.1.21-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/b0/f3/0366cf96d8cc422fa51fdf9389184dc400324694e3a370dd97914c58c4c2/xgrammar-0.1.20-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "b43c1c8b2e7b0f78067b30a0661ae3b2dfa260a45b0341749d829a27df94faf4",
-        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "362fd4a87b0d1d29d66c02951db6655449502e1be35be9653cf70b21077ce132",
+        downloaded_file_path = "xgrammar-0.1.20-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/83/28/628240866aa2987e79a803324b318e81006c1fff0aa86af6580efe17afe2/xgrammar-0.1.21-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/2b/25/d62cb5f6a3ed08cde89317ff09e29cd89bcb1e808a5c8616d99bd985604e/xgrammar-0.1.20-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "e6e5a171ed0b79712e82f1e2726f4deb0bc1db4476b70187fa7aea04afea3350",
-        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "b55e07be6327916b2abac21d254a1f00754db61c7dfcbe2bfc3c4a173975a537",
+        downloaded_file_path = "xgrammar-0.1.20-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/07/67/e60c49fa74f5a5d86601a26d9938341d5903595fd98cd470d24ac86db2f0/xgrammar-0.1.21-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/b2/bf/98c0ef0639ce6c73c0f5fc39b16bb5abe859e2f16922e4725a690db841dc/xgrammar-0.1.20-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "f43ee3b944da5114f564a1ca734c2e0c5baf849ae824646d3e689c5c78bc6aae",
-        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "655ace98c331d3857c2af2dcc94b74ad4199c22cbf219d57e0d3d471e307a230",
+        downloaded_file_path = "xgrammar-0.1.20-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/e7/e3/0020a3530797de0f0e191399bd9654d2bc668e6018a8d9116bda7c86993e/xgrammar-0.1.21-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/3a/4d/e09276628c79c7c4198056ea345e6791bd8be7b3c2957a98f7ba1e725690/xgrammar-0.1.20-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "6edc396727d12a36a84f09ad4a688eeeb73fe23620fc4fed5b97e9a0f03107b2",
-        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "952a2bd0ba03481d3c79b818f24131d20467105fb8a26a78777f0b50a6593c01",
+        downloaded_file_path = "xgrammar-0.1.20-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/fd/d9/b502f890ad74a5cba43137a6f9bd6516cceac03a6af80af8c8942c440f01/xgrammar-0.1.21-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/b6/f5/ef298fbcf6bc1344e24bc78b77dadad7dd098edf0a806b7579d82a1c7c88/xgrammar-0.1.20-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "140628376fc701a535600dc64752603ddaed619461dc50669e90626e9f61b8aa",
-        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "ed3f28262611a60e2249a2b55aa117e5e69bd3493248371c4f6d4bf2b7930c92",
+        downloaded_file_path = "xgrammar-0.1.20-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/45/3c/d79e31a43a6de965dbee7e104de42092170814301d8a044b90daed5accf0/xgrammar-0.1.21-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/a0/86/0b0ff3554a3d415a11a5bed4c79e991c2d9aca46579032d015ba199d1fde/xgrammar-0.1.20-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "f9247641c73eec6e972cec15156a8844957334204ba79ad1abdb0d7b03def8a1",
-        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "5dd5ad19c67a327d02aeabf018a56a63f6dc563c82c65bb33ed3a7082c055b0a",
+        downloaded_file_path = "xgrammar-0.1.20-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/e7/ce/4d2892701f1e009c40e30f75dbaed85cd1a476797e241310c5e586d1061f/xgrammar-0.1.21-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/78/03/07dc8272a81a98175288b87aac25a8e984a1eefffe3ce7fb13d6a5db3f85/xgrammar-0.1.20-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "a1f128511bf354f6e3a027fedb3eb38e8749e2eefbb3874a7edefd054e2b677a",
-        downloaded_file_path = "xgrammar-0.1.21-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "14824c6d1c1e0c11155067f31a0bd278ca67e58ed813d0029ca0dbaf5d684abd",
+        downloaded_file_path = "xgrammar-0.1.20-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/af/fb/429e9c32d6dbd4d1199d218a5d7d1e63f658c280ad915747d344b53d3e9f/xgrammar-0.1.21-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/4f/ed/4b5e4156969b9cc082a2f0c2a0f74cdb7a572ba18f97f28dae8f8e8e5f96/xgrammar-0.1.20-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "6f5936ea42b8005a963f0f51e713fb94f6766159f4380f339f504f3f1bd6b489",
-        downloaded_file_path = "xgrammar-0.1.21-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "968931575f5e4cb6523c8fd84df132edbaab53d1e4fc144ab3e9e77431f3496f",
+        downloaded_file_path = "xgrammar-0.1.20-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/20/1e/39ae32f3c9aa59bed8d90c11b4af2b32d78c260aac0faf79120cdef46e09/xgrammar-0.1.21-cp39-cp39-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/56/44/684fbb06cf13131b2e32f5893448b5668a26f24dcde0b3cd42522d3556b9/xgrammar-0.1.20-cp39-cp39-macosx_11_0_arm64.whl",
         ],
-        sha256 = "da3c43058a86b7a34427bea5d15f7e5521894ed67417cb3d92d9c078927c4225",
-        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-macosx_11_0_arm64.whl",
+        sha256 = "bdb20ba55073abe6bc818c3313dba645863c4420a543c9aa2653e08691e6efc2",
+        downloaded_file_path = "xgrammar-0.1.20-cp39-cp39-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/1e/6f/28e3d640708acfdb0cfd2d81e3d1812e4c6e1773e14544d9d74e9a987ac5/xgrammar-0.1.21-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/b1/04/c084e8c29432268bcb7353f4a034ef9ee5bb49124c0003d797a6a4cdcb34/xgrammar-0.1.20-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "6e91cc28cb5ca8dc23641b9fc4f358fb0d3bc6be231a39b175206f95c88bc11d",
-        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "43107ad01ca1c35feaa440d65700194c9e0335543ca52ffff4a900fa88f61b60",
+        downloaded_file_path = "xgrammar-0.1.20-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.20_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/b3/22/05575213ed1360f2ef4141edcdbbe4cfd17bb14de4e29c0a0375309fb2f6/xgrammar-0.1.21-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/f8/25/9d7de3f37f984f2303d6534bab687ac7bbd4e7a25c7065946f1c51f86d7b/xgrammar-0.1.20-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "b07199744b736bf81edae5b68c894d09a1ca8494fc1a80d8f064aa36252ace5a",
-        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "06ff50de0d4b921b36cc08761f927e48efd33733f7069adce006f8d5053b216d",
+        downloaded_file_path = "xgrammar-0.1.20-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
