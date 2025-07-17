@@ -114,7 +114,6 @@ _DTYPE_TO_MLIR = {
     DType.float32: "f32",
     DType.float64: "f64",
     DType.bfloat16: "bf16",
-    DType._unknown: "invalid",
 }
 
 _MLIR_TO_DTYPE = {v: k for k, v in _DTYPE_TO_MLIR.items()}

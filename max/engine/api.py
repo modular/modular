@@ -23,7 +23,6 @@ from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max._core_types.driver import DLPackArray
 from max.driver import CPU, Device, Tensor
-from max.dtype import DType
 from max.profiler import Tracer, traced
 from max.support.paths import (
     _build_mojo_source_package,
@@ -80,27 +79,6 @@ def _raise_if_not_contiguous(x: InputType) -> None:
 @traced
 def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
     tracer = Tracer()
-
-    # Check if any inputs expect opaque types (DType._unknown)
-    has_opaque_inputs = any(
-        spec.dtype == DType._unknown for spec in self.input_metadata
-    )
-
-    if has_opaque_inputs:
-        # Use the kwargs-based execution path which can handle opaque types
-        kwargs = {
-            spec.name: arg for spec, arg in zip(self.input_metadata, args)
-        }
-        results_dict = self._execute(**kwargs)
-        # Convert dict results to list in the order of output metadata
-        opaque_results: list[Tensor | MojoValue] = []
-        for spec in self.output_metadata:
-            result = results_dict[spec.name]
-            # Ensure tensor results are wrapped as Tensor objects
-            if isinstance(result, np.ndarray):
-                result = Tensor.from_numpy(result)
-            opaque_results.append(result)
-        return opaque_results
 
     # Original tensor-only execution path
     input_impls: list[Union[Tensor, MojoValue]] = []
