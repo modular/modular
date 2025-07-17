@@ -16,6 +16,7 @@ alias(
 alias(
     name = "has_4_gpus",
     actual = "@mojo_gpu_toolchains//:has_4_gpus",
+    tags = [ALLOW_UNUSED_TAG],
 )
 
 alias(
