@@ -3130,7 +3130,7 @@ def targets():
         ":numpy@2.0.2",
         ":polars@1.20.0",
         ":pydantic@2.10.4",
-        ":pytrec-eval-terrier@0.5.6",
+        ":pytrec-eval-terrier@0.5.7",
         ":requests@2.32.3",
         ":rich@13.7.1",
         ":scikit-learn@1.5.2",
@@ -5039,48 +5039,48 @@ def targets():
         wheel = ":_wheel_pytorch-triton-rocm@3.3.0",
     )
 
-    _pytrec_eval_terrier_0_5_6_build_deps = [
+    _pytrec_eval_terrier_0_5_7_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_pytrec-eval-terrier@0.5.6",
-        actual = "@pycross_lock_file_sdist_pytrec_eval_terrier_0.5.6//file",
+        name = "_sdist_pytrec-eval-terrier@0.5.7",
+        actual = "@pycross_lock_file_sdist_pytrec_eval_terrier_0.5.7//file",
     )
 
     pycross_wheel_build(
-        name = "_build_pytrec-eval-terrier@0.5.6",
-        sdist = ":_sdist_pytrec-eval-terrier@0.5.6",
+        name = "_build_pytrec-eval-terrier@0.5.7",
+        sdist = ":_sdist_pytrec-eval-terrier@0.5.7",
         target_environment = _target,
-        deps = _pytrec_eval_terrier_0_5_6_build_deps,
+        deps = _pytrec_eval_terrier_0_5_7_build_deps,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_pytrec-eval-terrier@0.5.6",
+        name = "_wheel_pytrec-eval-terrier@0.5.7",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp311_cp311_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp312_cp312_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.9_aarch64-apple-darwin": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.6",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp310_cp310_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp311_cp311_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp312_cp312_macosx_10_13_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp39_cp39_macosx_10_9_universal2//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": ":_build_pytrec-eval-terrier@0.5.7",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "pytrec-eval-terrier@0.5.6",
-        wheel = ":_wheel_pytrec-eval-terrier@0.5.6",
+        name = "pytrec-eval-terrier@0.5.7",
+        wheel = ":_wheel_pytrec-eval-terrier@0.5.7",
     )
 
     native.alias(
@@ -7719,12 +7719,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_pytrec_eval_terrier_0.5.6",
+        name = "pycross_lock_file_sdist_pytrec_eval_terrier_0.5.7",
         urls = [
-            "https://files.pythonhosted.org/packages/9d/13/b75f85c76d781005916406fa97e500c8675e990251f542e3fa45874c7092/pytrec_eval-terrier-0.5.6.tar.gz",
+            "https://files.pythonhosted.org/packages/dc/61/9003ffdb64f74a91208d69235dbcd380ae1a8d267089348eb8f7aab9819a/pytrec_eval_terrier-0.5.7.tar.gz",
         ],
-        sha256 = "b7259691bb5639bc22fb38d9e1ae04abde456951e5a38bec65251880e550a550",
-        downloaded_file_path = "pytrec_eval-terrier-0.5.6.tar.gz",
+        sha256 = "47e01ef52bfbe2f1df27c43842aa2faae542044e550983cd1a3100a4d9f62b48",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7.tar.gz",
     )
 
     maybe(
@@ -15209,62 +15209,92 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp310_cp310_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/de/72/b7a1d3d2c1dc6e36f53be9849d24da1cdb384d6ef25be31ca3a712b27239/pytrec_eval_terrier-0.5.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/13/b2/dae5de21544ee77fed7c83dfd9d03dfef22b873f8689daf084fa930f637b/pytrec_eval_terrier-0.5.7-cp310-cp310-macosx_10_9_universal2.whl",
         ],
-        sha256 = "73c51d6961ff1eb684f3c181ca620f95f88ad9d302f24be17f5bfed8e63f0c51",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "ec6242a3123e0115531ec76b183f406a5b1c21bc815e70937d771131d94f89ac",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp310-cp310-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp311_cp311_macosx_10_9_universal2",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/7e/eb/edde6136f109864b53e577f8c84bba57c7c1632d577efe609d6a1cf7d02b/pytrec_eval_terrier-0.5.6-cp311-cp311-macosx_10_9_universal2.whl",
+            "https://files.pythonhosted.org/packages/f6/dd/201a9537ddc64afba24179ab39b573718458d3d2e17f77f68a3a2d8d4eb1/pytrec_eval_terrier-0.5.7-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "4bad8adda45a78020fb1830e408a9fb3eed66e9c278c5663b4551d1706bc86fe",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp311-cp311-macosx_10_9_universal2.whl",
+        sha256 = "652bc987f51ae9de44751a3f4789591132e15f98b606ce9b12db9af417daf54d",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp311_cp311_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/ce/be/a50baa537bbcd4e437a0a064bfd083d858e74eee7b91ecc17514576dd240/pytrec_eval_terrier-0.5.6-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/4d/c0/8b9209bb5073c2071de0ce0bacfe82e0d192eec9a96007fc5338579f7ec6/pytrec_eval_terrier-0.5.7-cp311-cp311-macosx_10_9_universal2.whl",
         ],
-        sha256 = "188698ee56f5c8d4bb9c145df6cc7683e9e9a2fcd59f1566cd55a0af919f9168",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "45e2a234e0061cd80adfa14de239393052339e0227bb4b7f13bf7a9dca7cdd33",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp311-cp311-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp312_cp312_macosx_10_9_universal2",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/dd/91/3b9a222a24138c024bcfb7c09cdb45400e5f075f571d68a9ca1e13618012/pytrec_eval_terrier-0.5.6-cp312-cp312-macosx_10_9_universal2.whl",
+            "https://files.pythonhosted.org/packages/14/81/7a6b5b4063dc0133bccdc83afdc3a407db801361e1bf044900de651d2e68/pytrec_eval_terrier-0.5.7-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "1af6f4e5de018ca8c50ead65ebcbf33dc86c22cbc7caad502f0b94e177dd0023",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp312-cp312-macosx_10_9_universal2.whl",
+        sha256 = "707cbdde6be31fb68cc3323bb0523ece23a72a91d1eb2d2d61db27a16872daad",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp312_cp312_macosx_10_13_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/54/67/e970bc5d4912e723d390f44055280901e1f0ac94e7e9b9c3472cdeaf1d25/pytrec_eval_terrier-0.5.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/1a/41/d56116972d308ceefff769dc025580e6e43dd088f87ea82bffac66bcdfa6/pytrec_eval_terrier-0.5.7-cp312-cp312-macosx_10_13_universal2.whl",
         ],
-        sha256 = "2d3b42d27050a45648c52d48dc4ea5b5f536f23e8027e8d9a2c5eafaabebe418",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "0d5fcabd7c1ddcc6b1d0d191f50b1ea6e6817f9a674c31a06ce530878d21de0f",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp312-cp312-macosx_10_13_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.6_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/90/b2/faa4fdd5801522df280a3677e84fc78bd9070611650f83d4b943980bbece/pytrec_eval_terrier-0.5.6-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/e4/3d/ec04c49dd2cfd684d046acdf338f5aeaaa4c31b4c6a4648d3f60eef0d56a/pytrec_eval_terrier-0.5.7-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "2090c204b47d2e4c713daaa79031b36a880a950222a6e79b4ac2b78d7d72d015",
-        downloaded_file_path = "pytrec_eval_terrier-0.5.6-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "b3f9b5765068f6e98edd560c76d76076a6a61a8a6265c1ef48d48d982d8a733e",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/f4/08/f83120cb75a263ea350e1ee9ce033236227991593d4c4aa348653dcba120/pytrec_eval_terrier-0.5.7-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "31dbeb8710b31850efd67cc0722aee27586be05b7de50b5d2ae2debd02f65031",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp39_cp39_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/cf/18/3add635dce5d838832d4c52c11493b9c109730aed80a3a2d67b80390e722/pytrec_eval_terrier-0.5.7-cp39-cp39-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "2d0f46b712f0ded6575ca68ebaff82253a939d6a703918f6fbb4789fcf6b8fcb",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp39-cp39-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pytrec_eval_terrier_0.5.7_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d0/32/8cb743f565092f70b9513e71609bead8fdab1fa9cbc3293f582937cffb84/pytrec_eval_terrier-0.5.7-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "0d3d61db44c9d12e01abe5048480862e49694b4014cc6398c9deabed0d3fa196",
+        downloaded_file_path = "pytrec_eval_terrier-0.5.7-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
