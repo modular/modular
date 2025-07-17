@@ -665,7 +665,7 @@ fn mgp_buffer_device_to_host[
 ) raises:
     @parameter
     if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
-        dev_ctx[].memcopy[DType.uint8](
+        dev_ctx[].enqueue_copy[DType.uint8](
             host_buf.data,
             DeviceBuffer[DType.uint8](
                 dev_ctx[],
@@ -691,7 +691,7 @@ fn mgp_buffer_device_to_device[
 ) raises:
     @parameter
     if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx[].memcopy[DType.uint8](
+        dst_dev_ctx[].enqueue_copy[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dst_dev_ctx[],
                 dst_buf.data,
@@ -726,7 +726,7 @@ fn mgp_buffer_host_to_device[
 ) raises:
     @parameter
     if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
-        dev_ctx[].memcopy[DType.uint8](
+        dev_ctx[].enqueue_copy[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dev_ctx[],
                 dev_buf.data,

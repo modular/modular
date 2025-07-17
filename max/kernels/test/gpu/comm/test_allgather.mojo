@@ -69,7 +69,7 @@ def all_gather_test[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy to device.
@@ -122,7 +122,7 @@ def all_gather_test[
     # Reset output buffers for second test.
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
-            list_of_ctx[device_idx].memset[dtype](
+            list_of_ctx[device_idx].enqueue_memset[dtype](
                 out_bufs_list[device_idx][input_idx], val=0
             )
 
