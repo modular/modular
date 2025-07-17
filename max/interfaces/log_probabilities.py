@@ -13,16 +13,14 @@ class LogProbabilities(msgspec.Struct, tag=True, omit_defaults=True):
     transferring log probability information. It does not provide any functionality
     for calculating or manipulating log probabilities - it is purely for data storage
     and serialization purposes.
-
-    Configuration:
-        token_log_probabilities: Probabilities of each token.
-        top_log_probabilities: Top tokens and their corresponding probabilities.
     """
 
     token_log_probabilities: list[float] = msgspec.field(default_factory=list)
+    """Probabilities of each token."""
     top_log_probabilities: list[dict[int, float]] = msgspec.field(
         default_factory=list
     )
+    """Top tokens and their corresponding probabilities."""
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, LogProbabilities):

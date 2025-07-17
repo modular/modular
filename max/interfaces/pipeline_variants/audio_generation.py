@@ -17,49 +17,46 @@ from max.interfaces.status import GenerationStatus
 
 
 class AudioGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """
-    Represents a response from the audio generation API.
+    """Represents a response from the audio generation API.
 
-    Configuration:
-        final_status: The final status of the generation process.
-        audio: The generated audio data, if available.
-        buffer_speech_tokens: Buffered speech tokens, if available.
+    This class encapsulates the result of an audio generation request, including
+    the final status, generated audio data, and optional buffered speech tokens.
     """
 
     final_status: GenerationStatus
+    """The final status of the generation process."""
     audio: Optional[np.ndarray] = msgspec.field(default=None)
+    """The generated audio data, if available."""
     buffer_speech_tokens: Optional[np.ndarray] = msgspec.field(default=None)
+    """Buffered speech tokens, if available."""
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the audio generation process is complete.
+        """Indicates whether the audio generation process is complete.
 
         Returns:
-            bool: True if generation is done, False otherwise.
+            :class:`bool`: ``True`` if generation is done, ``False`` otherwise.
         """
         return self.final_status.is_done
 
     @property
     def has_audio_data(self) -> bool:
-        """
-        Checks if audio data is present in the response.
+        """Checks if audio data is present in the response.
 
         Returns:
-            bool: True if audio data is available, False otherwise.
+            :class:`bool`: ``True`` if audio data is available, ``False`` otherwise.
         """
         return self.audio is not None
 
     @property
     def audio_data(self) -> np.ndarray:
-        """
-        Returns the audio data if available.
+        """Returns the audio data if available.
 
         Returns:
-            np.ndarray: The generated audio data.
+            :class:`np.ndarray`: The generated audio data.
 
         Raises:
-            AssertionError: If audio data is not available.
+            :class:`AssertionError`: If audio data is not available.
         """
         assert self.audio is not None
         return self.audio
