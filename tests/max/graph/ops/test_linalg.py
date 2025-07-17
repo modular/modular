@@ -66,7 +66,6 @@ def assert_matmul_properties(
         for d in DType
         if d
         not in [
-            DType._unknown,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
             DType.float8_e5m2,

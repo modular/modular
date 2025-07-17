@@ -21,7 +21,7 @@ SDK/integration-test/API/python/graph/test_custom_op_*.py
 
 import pytest
 from conftest import buffer_types, dtypes, shapes, tensor_types
-from hypothesis import assume, given
+from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, ops
@@ -519,7 +519,7 @@ valid_parameter_values = st.one_of(
     st.booleans(),
     st.integers(min_value=-1000, max_value=1000),
     st.text(min_size=0, max_size=50),
-    st.sampled_from([dtype for dtype in DType if dtype != DType._unknown]),
+    st.sampled_from(list(DType)),
 )
 
 # Strategy for generating parameter dictionaries
@@ -663,7 +663,6 @@ class TestCustomPropertyBased:
         target_dtype: DType,  # noqa: ANN001
     ) -> None:
         """Property test: custom operations should handle different dtype combinations."""
-        assume(target_dtype != DType._unknown)
 
         # Create output type with different dtype
         output_type = TensorType(
@@ -956,7 +955,6 @@ class TestCustomShapePropertyBased:
         dtype: DType,  # noqa: ANN001
     ) -> None:
         """Property test: custom operations should handle arbitrary shape transformations."""
-        assume(dtype != DType._unknown)
 
         input_type = TensorType(dtype, input_shape, DeviceRef.CPU())
         output_type = TensorType(dtype, output_shape, DeviceRef.CPU())
@@ -989,7 +987,6 @@ class TestCustomShapePropertyBased:
         dtype: DType,  # noqa: ANN001
     ) -> None:
         """Property test: custom operations should handle rank-preserving transformations."""
-        assume(dtype != DType._unknown)
 
         input_type = TensorType(dtype, base_shape, DeviceRef.CPU())
         output_type = TensorType(

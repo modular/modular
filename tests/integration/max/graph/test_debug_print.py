@@ -276,10 +276,7 @@ def test_debug_print_binary_max_bf16_shapes(
         assert loaded.item() == input[()].item()
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [dt for dt in DType.__members__.values() if dt is not DType._unknown],
-)
+@pytest.mark.parametrize("dtype", list(DType))
 def test_save_load_all_dtypes(session, tmp_path, dtype) -> None:  # noqa: ANN001
     """Verify round-trip save/load works for all supported DType values."""
     # Skip unsupported configurations.
