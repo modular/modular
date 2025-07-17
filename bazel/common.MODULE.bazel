@@ -266,3 +266,21 @@ http_archive(
     strip_prefix = "uv-aarch64-apple-darwin",
     url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
 )
+
+bazel_dep(name = "sysroot-jammy-aarch64")
+archive_override(
+    module_name = "sysroot-jammy-aarch64",
+    integrity = "sha256-v5qAjOEKEE/JknXfG/cmYOPcJY20dCjSqVqI0ZaAE5g=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/2/bf9a808ce10a104fc99275df1bf72660e3dc258db47428d2a95a88d196801398/sysroot-jammy-aarch64.tar.xz",
+    ],
+)
+
+bazel_dep(name = "sysroot-jammy-x86_64")
+archive_override(
+    module_name = "sysroot-jammy-x86_64",
+    integrity = "sha256-wqmIjd+G/q4gbakYTVLokn0TwCaw59kROGXgPcA47jA=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/2/c2a9888ddf86feae206da9184d52e8927d13c026b0e7d9113865e03dc038ee30/sysroot-jammy-x86_64.tar.xz",
+    ],
+)
