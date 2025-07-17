@@ -1887,7 +1887,7 @@ struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
   LogicalResult matchAndRewrite(UnionWrapOp op, UnionWrapOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
     auto variantType =
-        dyn_cast_or_null<LLVM::LLVMArrayType>(convertType(op.getType()));
+        dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
     if (!variantType)
       return failure();
 
@@ -1912,15 +1912,54 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
     Type valueType = convertType(op.getType());
     if (!valueType)
       return failure();
-    auto contentType = cast<LLVM::LLVMArrayType>(adaptor.getValue().getType());
+
+    Location loc = op->getLoc();
+    const POPToLLVMTypeConverter &tc = *getTypeConverter();
+    auto contentType = cast<LLVM::LLVMStructType>(adaptor.getValue().getType());
+    if (contentType.getBody().empty()) {
+      b.replaceOpWithNewOp<LLVM::UndefOp>(op, contentType);
+      return success();
+    }
+    assert((contentType.getBody().size() == 1 ||
+            contentType.getBody().size() == 2) &&
+           "must have 1 or 2 fields for union struct.");
+
+    // Extract values and turns {max_align_t, [n x i8]} into an array of
+    // integers.
+    Value alignV = b.create<LLVM::ExtractValueOp>(loc, adaptor.getValue(), 0);
+    Value arrayV = nullptr;
+    if (contentType.getBody().size() > 1)
+      arrayV = b.create<LLVM::ExtractValueOp>(loc, adaptor.getValue(), 1);
 
     SmallVector<Value> storageValues;
-    for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i) {
-      storageValues.push_back(
-          b.create<LLVM::ExtractValueOp>(op.getLoc(), adaptor.getValue(), i));
+    if (auto vecTp = dyn_cast<VectorType>(alignV.getType())) {
+      for (int i = 0, e = vecTp.getNumElements(); i < e; i++) {
+        Value vecElem = b.create<LLVM::ExtractElementOp>(
+            loc, vecTp.getElementType(), alignV,
+            b.create<LLVM::ConstantOp>(loc, b.getI32Type(), i));
+        storageValues.push_back(b.create<LLVM::BitcastOp>(
+            loc, b.getIntegerType(vecTp.getElementTypeBitWidth()), vecElem));
+      }
+    } else if (alignV.getType().isIntOrFloat() ||
+               isa<LLVM::LLVMPointerType>(alignV.getType())) {
+      int64_t bitSz = tc.getTypeSizeInBits(alignV.getType());
+      auto intTp = b.getIntegerType(bitSz);
+      Value v = alignV.getType().isIntOrFloat()
+                    ? b.create<LLVM::BitcastOp>(loc, intTp, alignV).getRes()
+                    : b.create<LLVM::PtrToIntOp>(loc, intTp, alignV).getRes();
+      storageValues.push_back(v);
+    } else {
+      llvm_unreachable(
+          "The first type in lowered union type must be non-aggregated.");
     }
 
-    VariantHelper helper(b, op.getLoc(), *getTypeConverter());
+    if (arrayV) {
+      auto arrayTp = cast<LLVM::LLVMArrayType>(arrayV.getType());
+      for (int i = 0, e = arrayTp.getNumElements(); i < e; i++)
+        storageValues.push_back(b.create<LLVM::ExtractValueOp>(loc, arrayV, i));
+    }
+
+    VariantHelper helper(b, op.getLoc(), tc);
     ArrayRef<Value>::iterator valueIt = storageValues.begin();
     unsigned storageOffset = 0;
     unsigned offset = 0;

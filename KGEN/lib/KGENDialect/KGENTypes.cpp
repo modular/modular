@@ -996,8 +996,8 @@ std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   return getPackedElementsTypeSize(getElementTypes(), target);
 }
 
-static std::optional<int64_t>
-getPackedElementsTypeAlign(ArrayRef<Type> types, TargetInfoAttr target) {
+static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
+                                                        TargetInfoAttr target) {
   int64_t strictest = 1;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
@@ -1010,7 +1010,7 @@ getPackedElementsTypeAlign(ArrayRef<Type> types, TargetInfoAttr target) {
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
-  return getPackedElementsTypeAlign(getElementTypes(), target);
+  return getMaxAlignmentAmongTypes(getElementTypes(), target);
 }
 
 ErrorOrSuccess StructType::writeTo(TypedAttr structValue, int64_t addr,
@@ -1160,7 +1160,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
     SmallVector<Type> types;
     if (failed(resolveTypes(attr.getValues(), types)))
       return {};
-    return getPackedElementsTypeAlign(types, target);
+    return getMaxAlignmentAmongTypes(types, target);
   }
 
   // A pack backed by an expression has alignment equivalent to the variadic
@@ -1341,13 +1341,17 @@ VariantType::getContentSize(TargetInfoAttr target) const {
   int64_t maxSize = 0;
   for (TypedAttr value : variadic.getValues()) {
     Type elType = ParamType::get(value);
+    // FIXME: Here and above: This seems to be a misuse of API, we should
+    // probably use DataLayoutInterface::getTypeStoreSize
     std::optional<int64_t> typeSize =
         DataLayoutInterface::getTypeAllocSize(target, elType);
     if (!typeSize)
       return {};
     maxSize = std::max(maxSize, *typeSize);
   }
-  return llvm::alignTo(maxSize, *getTypeAlign(target));
+  // We could not properly determine the alignment here without taking
+  // discriminator into account.
+  return maxSize;
 }
 
 /// Get bitwidth of the integer used to represent the discriminator. The
@@ -1380,16 +1384,28 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
     return {};
   // Align to the content array element alignment. We don't expect the
   // discriminator to exceed it in size (at least a 32-bit integer).
-  return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
+  std::optional<int64_t> discrAlign = DataLayoutInterface::getTypeABIAlign(
+      target, IntegerType::get(getContext(), getDiscrSizeInBits()));
+  if (!discrAlign)
+    return {};
+
+  return llvm::alignTo(llvm::alignTo(*contentSize, *discrAlign) +
+                           getVariantDiscrSize(*this),
                        *getTypeAlign(target));
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
-  // The alignment of the variant type is the alignment of the integer type
-  // equal to the pointer width.
-  // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
-  return target.getDataLayout().getIntegerABIAlign(
-      target.getDataLayout().getPointerBitWidth());
+  auto variadic = ::dyn_cast<VariadicAttr>(getVariadic());
+  if (!variadic)
+    return {};
+
+  SmallVector<Type> types =
+      llvm::map_to_vector(variadic.getValues(), [](TypedAttr value) {
+        return ParamType::get(value);
+      });
+  types.push_back(IntegerType::get(getContext(), getDiscrSizeInBits()));
+
+  return getMaxAlignmentAmongTypes(types, target);
 }
 
 ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,

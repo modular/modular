@@ -67,8 +67,14 @@ public:
   int64_t getTypeAllocSize(Type type) const {
     return llvm::alignTo(getTypeStoreSize(type), getTypeABIAlign(type));
   }
+  /// Get the ABI alignment of the LLVM type and the element type that imposes
+  /// the alignment requirement, it is typically the element type with maximum
+  /// bitwidth.
+  std::pair<int64_t, Type> getTypeABIAlignAndType(Type type) const;
   /// Get the ABI alignment of the LLVM type.
-  int64_t getTypeABIAlign(Type type) const;
+  int64_t getTypeABIAlign(Type type) const {
+    return getTypeABIAlignAndType(type).first;
+  }
 
   /// Get the target info.
   TargetInfoAttr getTarget() const { return target; }
@@ -180,7 +186,7 @@ public:
 
   /// Generate the code required to materialize the provided value as a union
   /// of the given LLVM type.
-  Value materializeLLVMUnion(mlir::LLVM::LLVMArrayType type, Value value);
+  Value materializeLLVMUnion(mlir::LLVM::LLVMStructType type, Value value);
 
   /// Walk a simple or aggregate LLVM type and generate the code to insert its
   /// elements into a variant's content type. This tightly packs the element
