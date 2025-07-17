@@ -140,6 +140,38 @@ def test_type_object_api(python: Python):
     assert_true(cpy.PyType_GetName(dict_type))
 
 
+def test_integer_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(-42)
+    assert_true(n)
+    assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+
+    var z = cpy.PyLong_FromSize_t(57)
+    assert_true(z)
+    assert_equal(cpy.PyLong_AsSsize_t(z), 57)
+
+
+def test_boolean_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var t = cpy.PyBool_FromLong(1)
+    assert_true(t)
+    assert_equal(cpy.PyObject_IsTrue(t), 1)
+
+    var f = cpy.PyBool_FromLong(0)
+    assert_true(f)
+    assert_equal(cpy.PyObject_IsTrue(f), 0)
+
+
+def test_floating_point_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var f = cpy.PyFloat_FromDouble(3.14)
+    assert_true(f)
+    assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+
+
 def test_module_object_api(python: Python):
     var cpy = python.cpython()
 
@@ -277,6 +309,15 @@ def main():
 
     # Type Objects
     test_type_object_api(python)
+
+    # Integer Objects
+    test_integer_object_api(python)
+
+    # Boolean Objects
+    test_boolean_object_api(python)
+
+    # Floating-Point Objects
+    test_floating_point_object_api(python)
 
     # Module Objects
     test_module_object_api(python)
