@@ -198,12 +198,12 @@ struct ManagedLayoutTensor[
 
     fn _update_device(self) raises:
         if self.ctx.api() != "cpu":
-            self.ctx.memcopy(self.device_data.value(), self.host_data)
+            self.ctx.enqueue_copy(self.device_data.value(), self.host_data)
             self.ctx.synchronize()
 
     fn _update_host(self) raises:
         if self.ctx.api() != "cpu":
-            self.ctx.memcopy(self.host_data, self.device_data.value())
+            self.ctx.enqueue_copy(self.host_data, self.device_data.value())
             self.ctx.synchronize()
 
     @always_inline

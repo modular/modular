@@ -94,7 +94,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     var device_tensor = ctx.create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
-    ctx.memcopy(device_tensor, input_tensor.ptr)
+    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     ctx.enqueue_function[
         copy_dram_to_sram_buffer_load_kernel[
             DType.bfloat16, 4, 16, 8, thread_layout
@@ -189,7 +189,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     var device_tensor = ctx.create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
-    ctx.memcopy(device_tensor, input_tensor.ptr)
+    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     ctx.enqueue_function[
         copy_dram_to_local_buffer_load_kernel[
             DType.bfloat16, 4, 16, 8, thread_layout

@@ -462,8 +462,8 @@ fn run_matmul_stream_k[
     var b_device_n = ctx.create_buffer[type](K * N)
     var c_device_n = ctx.create_buffer[type](M * N)
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias sm_count = ctx.device_info.sm_count
 
@@ -477,11 +477,11 @@ fn run_matmul_stream_k[
         ctx,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
-    ctx.memcopy(a_device_n, a_host)
-    ctx.memcopy(b_device_n, b_host)
+    ctx.enqueue_copy(a_device_n, a_host)
+    ctx.enqueue_copy(b_device_n, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -496,7 +496,7 @@ fn run_matmul_stream_k[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    ctx.memcopy(c_host_n, c_device_n)
+    ctx.enqueue_copy(c_host_n, c_device_n)
     ctx.synchronize()
 
     var rtol = 0.01

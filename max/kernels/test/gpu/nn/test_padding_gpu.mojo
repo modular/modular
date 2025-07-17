@@ -65,8 +65,8 @@ fn test_pad_constant_gpu[
     var out_device = ctx.create_buffer[dtype](output_shape.flattened_length())
 
     # copy from host to device
-    ctx.memcopy(in_device, input.ptr)
-    ctx.memcopy(out_device, output.ptr)
+    ctx.enqueue_copy(in_device, input.ptr)
+    ctx.enqueue_copy(out_device, output.ptr)
 
     # pad with constant = 5
     var constant = Scalar[dtype](5)
@@ -81,7 +81,7 @@ fn test_pad_constant_gpu[
         ctx,
     )
 
-    ctx.memcopy(output.ptr, out_device)
+    ctx.enqueue_copy(output.ptr, out_device)
     ctx.synchronize()
 
     if verbose:

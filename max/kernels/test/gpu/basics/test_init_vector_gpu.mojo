@@ -45,7 +45,7 @@ fn test_vec_init[
 
     timer.measure("vector_init_launch")
     context.synchronize()
-    context.memcopy(out_host, out_device)
+    context.enqueue_copy(out_host, out_device)
     timer.measure("copy+sync")
 
     # verification for uniform_distribution is not supported!

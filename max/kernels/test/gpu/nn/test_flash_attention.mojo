@@ -189,10 +189,10 @@ fn test[
     var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
-    ctx.memcopy(q_device_ptr, q_ptr)
-    ctx.memcopy(k_device_ptr, k_ptr)
-    ctx.memcopy(v_device_ptr, v_ptr)
-    ctx.memcopy(mask_device_ptr, mask_ptr)
+    ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
+    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
     var q_device = NDBuffer[
@@ -275,7 +275,7 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.memcopy(flash_output_ptr, output_device_ptr)
+    ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     @parameter
     if against_gpu_naive:
@@ -286,7 +286,7 @@ fn test[
             output_ref_device_ptr.unsafe_ptr(),
             Index(batch_size, seq_len, num_heads, depth),
         )
-        ctx.memcopy(output_ref_device_ptr, output_ptr)
+        ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
         @parameter
         if mask_rank == 3:
@@ -323,7 +323,7 @@ fn test[
             )
 
         ctx.synchronize()
-        ctx.memcopy(output_ptr, output_ref_device_ptr)
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
     @parameter

@@ -76,14 +76,14 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     for i in range(size):
         a_host_buf[i] = i + 1
 
-    ctx.memcopy(a_device_buf, a_host_buf)
+    ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     ctx.enqueue_function[kernel[dtype, width], dump_asm=False](
         a_device_buf,
         grid_dim=(1, 1),
         block_dim=(64),
     )
-    ctx.memcopy(a_host_buf, a_device_buf)
+    ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()
     for i in range(size_clip):
@@ -100,14 +100,14 @@ def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
     for i in range(size):
         a_host_buf[i] = i + 1
 
-    ctx.memcopy(a_device_buf, a_host_buf)
+    ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     ctx.enqueue_function[kernel_lds[dtype, nowait], dump_asm=False](
         a_device_buf,
         grid_dim=ceildiv(size, 256),
         block_dim=256,
     )
-    ctx.memcopy(a_host_buf, a_device_buf)
+    ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()
     for i in range(size_clip):

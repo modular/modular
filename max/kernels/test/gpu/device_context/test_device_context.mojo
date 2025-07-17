@@ -55,8 +55,8 @@ fn test_basic(ctx: DeviceContext) raises:
     var out_device = ctx.create_buffer[DType.float32](length)
 
     # Copy the input data from the Host to the Device memory
-    ctx.memcopy(in0_device, in0_host)
-    ctx.memcopy(in1_device, in1_host)
+    ctx.enqueue_copy(in0_device, in0_host)
+    ctx.enqueue_copy(in1_device, in1_host)
 
     var block_dim = 32
     var supplement = 5
@@ -74,7 +74,7 @@ fn test_basic(ctx: DeviceContext) raises:
     )
 
     # Copy the results back from the device to the host
-    ctx.memcopy(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
 
     # Wait for the computation to be completed
     ctx.synchronize()

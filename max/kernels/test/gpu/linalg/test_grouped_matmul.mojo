@@ -119,10 +119,10 @@ fn test[
     )
 
     # Move inputs to device
-    ctx.memcopy(a_dev.buffer, a_host.tensor.data)
-    ctx.memcopy(b_dev.buffer, b_host.tensor.data)
-    ctx.memcopy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
-    ctx.memcopy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
+    ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
+    ctx.enqueue_copy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
 
     naive_grouped_matmul(
         c_ref_dev.tensor,
@@ -164,8 +164,8 @@ fn test[
         ctx,
     )
 
-    ctx.memcopy(c_ref_host.tensor.data, c_ref_dev.buffer)
-    ctx.memcopy(c_host.tensor.data, c_dev.buffer)
+    ctx.enqueue_copy(c_ref_host.tensor.data, c_ref_dev.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_dev.buffer)
     ctx.synchronize()
 
     rtol = 1e-2

@@ -672,11 +672,11 @@ def test_blackwell_matmul_tma_pair_mma[
     zero(c_host_ref.tensor)
 
     # Move operands to the Device
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.memcopy(c_device.buffer, c_host.tensor.data)
-    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     blackwell_matmul_tma_pair_mma[
         transpose_b=transpose_b,
@@ -747,8 +747,8 @@ def test_blackwell_matmul_tma_pair_mma[
 
         ctx.synchronize()
 
-        ctx.memcopy(c_host.tensor.data, c_device.buffer)
-        ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
 
         alias rtol = 1e-2

@@ -790,7 +790,7 @@ fn _topp_minp_sampling_gpu[
     if _test_sort:
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
-        ctx.memcopy(
+        ctx.enqueue_copy(
             input_logits.ptr,
             probs_buf.unsafe_ptr(),
             input_size,

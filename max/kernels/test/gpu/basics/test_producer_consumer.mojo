@@ -240,7 +240,7 @@ def test_cpasync_producer_consumer_pipeline[
     random(src_host.tensor)
 
     var src_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
-    ctx.memcopy(src_device.buffer, src_host.tensor.data)
+    ctx.enqueue_copy(src_device.buffer, src_host.tensor.data)
 
     dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
@@ -251,7 +251,7 @@ def test_cpasync_producer_consumer_pipeline[
         grid_dim=(1),
         block_dim=(256),
     )
-    ctx.memcopy(dst_host.tensor.data, dst_device.buffer)
+    ctx.enqueue_copy(dst_host.tensor.data, dst_device.buffer)
     ctx.synchronize()
 
     src = src_host.tensor

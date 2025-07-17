@@ -72,8 +72,8 @@ fn test_fp8_multistage_gemm[
     var c_device = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
     var c_device_ref = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
 
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
     var c_tensor = from_ndbuffer_row_major(c_device.tensor)
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
@@ -109,7 +109,7 @@ fn test_fp8_multistage_gemm[
         ),
     )
 
-    ctx.memcopy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
     if transpose_b:
         vendor_blas.matmul(
@@ -132,7 +132,9 @@ fn test_fp8_multistage_gemm[
         var b_device_col_major = DeviceNDBuffer[dtype, 2, DimList(N, K)](
             ctx=ctx
         )
-        ctx.memcopy(b_device_col_major.buffer, b_host_col_major.tensor.data)
+        ctx.enqueue_copy(
+            b_device_col_major.buffer, b_host_col_major.tensor.data
+        )
 
         vendor_blas.matmul(
             ctx,
@@ -143,7 +145,7 @@ fn test_fp8_multistage_gemm[
             c_row_major=True,
         )
 
-    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
 

@@ -659,7 +659,7 @@ struct LayoutTensor[
         # Initialize host buffer and copy to device buffer
         for i in range(16):
             host_buf[i] = i
-        ctx.memcopy(dev_buf, host_buf)
+        ctx.enqueue_copy(dev_buf, host_buf)
 
         # Create LayoutTensor to use on device
         alias layout = Layout.row_major(4, 4)

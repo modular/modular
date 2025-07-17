@@ -54,7 +54,7 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    ctx.memcopy(a_host, shared_data)
+    ctx.enqueue_copy(a_host, shared_data)
 
     for i in range(NUM_BLOCKS):
         assert_equal(a_host[i], i)
@@ -97,7 +97,7 @@ fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    ctx.memcopy(a_host, shared_data)
+    ctx.enqueue_copy(a_host, shared_data)
 
     for i in range(NUM_BLOCKS):
         assert_equal(a_host[i], i)
