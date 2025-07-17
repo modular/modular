@@ -90,7 +90,7 @@ kgen.generator @nohoist_cond() {
 kgen.generator @hlcf_if_apply(%cond: i1) {
   // COM: make sure that the apply is being lifted to the beginning
   // COM: of the generator since hlcf.if regions don't create
-  // COME: new parameter decl scopes.
+  // COM: new parameter decl scopes.
 
   kgen.param.declare p0 = <1>
   // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
@@ -107,5 +107,48 @@ kgen.generator @hlcf_if_apply(%cond: i1) {
     hlcf.yield
   }
 
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @hlcf_if_in_param_if_apply
+kgen.generator @hlcf_if_in_param_if_apply(%cond0: i1, %cond1: i1) {
+  // COM: make sure that the apply is being lifted to the beginning
+  // COM: of the paramDecl region since hlcf.if regions don't create
+  // COME: new parameter decl scopes.
+
+  kgen.param.declare p0 = <1>
+  // CHECK: kgen.param.if
+  kgen.param.if <0> {
+    // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
+    // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
+    // CHECK: hlcf.if
+    hlcf.if %cond0  {
+      // CHECK: constant = <*[[L0]]>
+      // CHECK: constant = <*[[L1]]>
+      kgen.param.constant = <apply(:(index) -> index @pass, p0)>
+      kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+      hlcf.yield
+    } else {
+      // CHECK: constant = <*[[L1]]>
+      kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+      hlcf.yield
+    }
+
+    hlcf.if %cond1  {
+      // CHECK: constant = <*[[L0]]>
+      // CHECK: constant = <*[[L1]]>
+      kgen.param.constant = <apply(:(index) -> index @pass, p0)>
+      kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+      hlcf.yield
+    } else {
+      // CHECK: constant = <*[[L1]]>
+      kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
+      hlcf.yield
+    }
+
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
   kgen.return
 }

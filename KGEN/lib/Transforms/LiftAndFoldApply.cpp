@@ -168,18 +168,34 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     func->setAttrs(attrs.getDictionary(func.getContext()));
   }
 
-  auto gen = dyn_cast<GeneratorOp>(body->getParentOp());
-  if (gen) {
-    // If the parent is a function, extract 'apply' operators and place them
-    // at the start of the body.
+  bool insertPointSet = false;
+
+  // Extract 'apply' operators and place them
+  // at the start of the parent region if parent is a GeneratorOp
+  // or DeclInterface. This essentially to place them at the beginning
+  // of its param decl region.
+  if (auto gen = dyn_cast<GeneratorOp>(body->getParentOp())) {
     b.setLoc(gen.getLoc());
     b.setInsertionPointToStart(gen.getBody());
+    insertPointSet = true;
+  } else if (auto parent = body->getParentOfType<DeclInterface>()) {
+    for (Region &region : parent->getRegions()) {
+      if (region.isAncestor(body)) {
+        // Find the parent DeclInferface's region and set the insertion point
+        // at the beginning of the region.
+        b.setLoc(parent.getLoc());
+        b.setInsertionPointToStart(&region.getBlocks().front());
+        insertPointSet = true;
+        break;
+      }
+    }
   }
 
   body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (!gen) {
+    if (!insertPointSet) {
       // Insert the apply operations as close to the original location of the
-      // 'apply' operator as possible, if the parent is not a function.
+      // 'apply' operator as possible,
+      // if the insertion point is not already set.
       b.setLoc(op->getLoc());
       b.setInsertionPoint(op);
     }
