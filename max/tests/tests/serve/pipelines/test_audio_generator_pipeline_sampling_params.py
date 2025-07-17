@@ -11,6 +11,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from unittest.mock import Mock
 
+import numpy as np
 import torch
 from max.interfaces import SamplingParams
 from max.pipelines.core import (
@@ -72,7 +73,7 @@ def test_pipeline_receives_sampling_params() -> None:
     )
 
     # Create test audio data.
-    chunk_audio = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
+    chunk_audio = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
@@ -99,7 +100,7 @@ def test_pipeline_receives_sampling_params() -> None:
 def test_pipeline_receives_default_sampling_params() -> None:
     """Test that pipeline receives default SamplingParams when none specified."""
     # Create test audio data.
-    chunk_audio = torch.tensor([[4.0, 5.0]], dtype=torch.float32)
+    chunk_audio = np.array([[4.0, 5.0]], dtype=np.float32)
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
@@ -158,7 +159,7 @@ def test_multiple_requests_different_sampling_params() -> None:
     ]
 
     # Create test audio data
-    chunk_audio = torch.tensor([[1.0]], dtype=torch.float32)
+    chunk_audio = np.array([[1.0]], dtype=np.float32)
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,

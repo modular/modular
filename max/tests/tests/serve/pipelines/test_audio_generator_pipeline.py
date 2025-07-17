@@ -9,8 +9,8 @@ import asyncio
 from collections.abc import AsyncGenerator
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
-import torch
 from max.pipelines.core import AudioGenerationRequest, AudioGeneratorOutput
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
@@ -51,9 +51,9 @@ def create_test_request() -> AudioGenerationRequest:
 def test_generate_full_audio_multiple_chunks() -> None:
     """Test generate_full_audio with multiple audio chunks."""
     # Create test audio data.
-    chunk1_audio = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
-    chunk2_audio = torch.tensor([[4.0, 5.0]], dtype=torch.float32)
-    chunk3_audio = torch.tensor([[6.0, 7.0, 8.0, 9.0]], dtype=torch.float32)
+    chunk1_audio = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+    chunk2_audio = np.array([[4.0, 5.0]], dtype=np.float32)
+    chunk3_audio = np.array([[6.0, 7.0, 8.0, 9.0]], dtype=np.float32)
 
     # Create test chunks with the last one marked as done.
     chunks = [
@@ -85,10 +85,10 @@ def test_generate_full_audio_multiple_chunks() -> None:
     assert result.is_done is True
 
     # Check that audio data is properly concatenated.
-    expected_audio = torch.tensor(
-        [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]], dtype=torch.float32
+    expected_audio = np.array(
+        [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]], dtype=np.float32
     )
-    torch.testing.assert_close(result.audio_data, expected_audio)
+    np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk.
     assert result.metadata == {
@@ -101,7 +101,7 @@ def test_generate_full_audio_multiple_chunks() -> None:
 def test_generate_full_audio_single_chunk() -> None:
     """Test generate_full_audio with a single audio chunk."""
     # Create test audio data.
-    chunk_audio = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
+    chunk_audio = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
 
     # Create test chunk marked as done.
     chunks = [
@@ -121,7 +121,7 @@ def test_generate_full_audio_single_chunk() -> None:
 
     # Verify the result
     assert result.is_done is True
-    torch.testing.assert_close(result.audio_data, chunk_audio)
+    np.testing.assert_allclose(result.audio_data, chunk_audio)
     assert result.metadata == {"sample_rate": 22050, "duration": 0.5}
 
 
@@ -136,15 +136,15 @@ def test_generate_full_audio_empty_chunks() -> None:
 
     # Verify the result.
     assert result.is_done is True
-    expected_empty_audio = torch.tensor([])
-    torch.testing.assert_close(result.audio_data, expected_empty_audio)
+    expected_empty_audio = np.array([])
+    np.testing.assert_allclose(result.audio_data, expected_empty_audio)
     assert result.metadata == {}
 
 
 def test_generate_full_audio_last_chunk_not_done() -> None:
     """Test that generate_full_audio asserts when last chunk is not done."""
     # Create test audio data.
-    chunk_audio = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+    chunk_audio = np.array([[1.0, 2.0]], dtype=np.float32)
 
     # Create test chunk NOT marked as done - this should trigger the assertion.
     chunks = [
@@ -167,11 +167,9 @@ def test_generate_full_audio_last_chunk_not_done() -> None:
 def test_generate_full_audio_different_tensor_shapes() -> None:
     """Test generate_full_audio with chunks of different shapes that can be concatenated."""
     # Create test audio data with different sequence lengths but same batch size
-    chunk1_audio = torch.tensor([[1.0, 2.0]], dtype=torch.float32)  # (1, 2)
-    chunk2_audio = torch.tensor(
-        [[3.0, 4.0, 5.0]], dtype=torch.float32
-    )  # (1, 3)
-    chunk3_audio = torch.tensor([[6.0]], dtype=torch.float32)  # (1, 1)
+    chunk1_audio = np.array([[1.0, 2.0]], dtype=np.float32)  # (1, 2)
+    chunk2_audio = np.array([[3.0, 4.0, 5.0]], dtype=np.float32)  # (1, 3)
+    chunk3_audio = np.array([[6.0]], dtype=np.float32)  # (1, 1)
 
     # Create test chunks.
     chunks = [
@@ -203,10 +201,10 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
     assert result.is_done is True
 
     # Check that audio data is properly concatenated along the last dimension (-1).
-    expected_audio = torch.tensor(
-        [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], dtype=torch.float32
+    expected_audio = np.array(
+        [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], dtype=np.float32
     )
-    torch.testing.assert_close(result.audio_data, expected_audio)
+    np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk.
     assert result.metadata == {"chunk": 3, "final": True}
@@ -215,8 +213,8 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
 def test_generate_full_audio_preserves_chunk_objects() -> None:
     """Test that generate_full_audio properly handles complete AudioGeneratorOutput objects."""
     # Create test audio data.
-    chunk1_audio = torch.tensor([[1.0]], dtype=torch.float32)
-    chunk2_audio = torch.tensor([[2.0]], dtype=torch.float32)
+    chunk1_audio = np.array([[1.0]], dtype=np.float32)
+    chunk2_audio = np.array([[2.0]], dtype=np.float32)
 
     # Create test chunks with different metadata.
     chunks = [
@@ -247,8 +245,8 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
     assert result.is_done is True
 
     # Check that audio data is properly concatenated.
-    expected_audio = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
-    torch.testing.assert_close(result.audio_data, expected_audio)
+    expected_audio = np.array([[1.0, 2.0]], dtype=np.float32)
+    np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk (not the first).
     assert result.metadata == {
