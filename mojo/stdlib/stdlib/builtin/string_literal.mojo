@@ -287,7 +287,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             self.as_string_slice()
         )
 
-    fn __getitem__[IndexerType: Indexer](self, idx: IndexerType) -> String:
+    fn __getitem__[
+        IndexerType: Indexer
+    ](self, idx: IndexerType) -> StaticString:
         """Gets the character at the specified position.
 
         Parameters:
@@ -297,9 +299,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             idx: The index value.
 
         Returns:
-            A new string containing the character at the specified position.
+            A StringSlice view containing the character at the specified position.
         """
-        return String(String(self)[idx])
+        return StaticString(ptr=self.unsafe_ptr() + idx, length=1)
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
     # non-materializable by making them merge into StaticString.  They should
