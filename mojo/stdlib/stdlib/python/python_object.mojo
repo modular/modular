@@ -63,7 +63,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Defaultable, Sized):
+struct _PyIter(Copyable):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -72,88 +72,42 @@ struct _PyIter(Defaultable, Sized):
 
     var iterator: PythonObject
     """The iterator object that stores location."""
-    var prepared_next_item: PythonObject
+    var next_item: PyObjectPtr
     """The next item to vend or zero if there are no items."""
-    var is_done: Bool
-    """Stores True if the iterator is pointing to the last item."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy another iterator.
-
-        Args:
-            existing: Initialized _PyIter instance.
-        """
-        self.iterator = existing.iterator
-        self.prepared_next_item = existing.prepared_next_item
-        self.is_done = existing.is_done
-
-    @implicit
     fn __init__(out self, iter: PythonObject):
         """Initialize an iterator.
 
         Args:
             iter: A Python iterator instance.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
         self.iterator = iter
-        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
-        if not maybe_next_item:
-            self.is_done = True
-            self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
-        else:
-            self.prepared_next_item = PythonObject(
-                from_owned_ptr=maybe_next_item
-            )
-            self.is_done = False
-
-    fn __init__(out self):
-        """Initialize an empty iterator."""
-        self.iterator = PythonObject(from_owned_ptr=PyObjectPtr())
-        self.is_done = True
-        self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
+        self.next_item = cpy.PyIter_Next(iter._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __next__(mut self: _PyIter) -> PythonObject:
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return Bool(self.next_item)
+
+    fn __next__(mut self) -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
-        if not self.iterator:
-            return self.iterator
-        var cpython = Python().cpython()
-        var current = self.prepared_next_item
-        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
-        if not maybe_next_item:
-            self.is_done = True
-        else:
-            self.prepared_next_item = PythonObject(
-                from_owned_ptr=maybe_next_item
-            )
-        return current
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        """Return zero to halt iteration.
-
-        Returns:
-            0 if the traversal is complete and 1 otherwise.
-        """
-        if self.is_done:
-            return 0
-        else:
-            return 1
+        var cpy = Python().cpython()
+        var curr_item = self.next_item
+        self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
+        return PythonObject(from_owned_ptr=curr_item)
 
 
 @register_passable
