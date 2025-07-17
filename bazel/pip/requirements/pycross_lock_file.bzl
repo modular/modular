@@ -100,6 +100,7 @@ PINS = {
     "schema": "schema@0.7.5",
     "scipy": "scipy@1.13.1",
     "sentence-transformers": "sentence-transformers@3.3.1",
+    "sentencepiece": "sentencepiece@0.2.0",
     "sentinel": "sentinel@1.0.0",
     "setuptools": "setuptools@80.9.0",
     "simpy": "simpy@4.1.1",
@@ -131,7 +132,7 @@ PINS = {
     "uvicorn": "uvicorn@0.30.6",
     "uvloop": "uvloop@0.21.0",
     "wheel": "wheel@0.45.1",
-    "xgrammar": "xgrammar@0.1.16",
+    "xgrammar": "xgrammar@0.1.21",
 }
 
 # buildifier: disable=unnamed-macro
@@ -7416,90 +7417,80 @@ def targets():
         wheel = ":_wheel_wrapt@1.16.0",
     )
 
-    _xgrammar_0_1_16_deps = [
+    _xgrammar_0_1_21_deps = [
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":ninja@1.11.1.4",
             ":pydantic@2.10.4",
-            ":sentencepiece@0.2.0",
-            ":tiktoken@0.8.0",
             ":transformers@4.52.4",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":ninja@1.11.1.4",
             ":pydantic@2.10.4",
-            ":sentencepiece@0.2.0",
-            ":tiktoken@0.8.0",
             ":transformers@4.52.4",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":ninja@1.11.1.4",
             ":pydantic@2.10.4",
-            ":sentencepiece@0.2.0",
-            ":tiktoken@0.8.0",
             ":transformers@4.52.4",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":ninja@1.11.1.4",
             ":pydantic@2.10.4",
-            ":sentencepiece@0.2.0",
-            ":tiktoken@0.8.0",
             ":transformers@4.52.4",
         ],
         ":_env_python_3.9_x86_64-unknown-linux-gnu": [
             ":ninja@1.11.1.4",
             ":pydantic@2.10.4",
-            ":sentencepiece@0.2.0",
-            ":tiktoken@0.8.0",
             ":transformers@4.52.4",
         ],
         "//conditions:default": [],
     })
 
-    _xgrammar_0_1_16_build_deps = [
+    _xgrammar_0_1_21_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_xgrammar@0.1.16",
-        actual = "@pycross_lock_file_sdist_xgrammar_0.1.16//file",
+        name = "_sdist_xgrammar@0.1.21",
+        actual = "@pycross_lock_file_sdist_xgrammar_0.1.21//file",
     )
 
     pycross_wheel_build(
-        name = "_build_xgrammar@0.1.16",
-        sdist = ":_sdist_xgrammar@0.1.16",
+        name = "_build_xgrammar@0.1.21",
+        sdist = ":_sdist_xgrammar@0.1.21",
         target_environment = _target,
-        deps = _xgrammar_0_1_16_deps + _xgrammar_0_1_16_build_deps,
+        deps = _xgrammar_0_1_21_deps + _xgrammar_0_1_21_build_deps,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_xgrammar@0.1.16",
+        name = "_wheel_xgrammar@0.1.21",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_xgrammar@0.1.16",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_macosx_11_0_arm64//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_xgrammar@0.1.21",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_macosx_11_0_arm64//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "xgrammar@0.1.16",
-        deps = _xgrammar_0_1_16_deps,
-        wheel = ":_wheel_xgrammar@0.1.16",
+        name = "xgrammar@0.1.21",
+        deps = _xgrammar_0_1_21_deps,
+        wheel = ":_wheel_xgrammar@0.1.21",
     )
 
     native.alias(
@@ -7826,12 +7817,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_xgrammar_0.1.16",
+        name = "pycross_lock_file_sdist_xgrammar_0.1.21",
         urls = [
-            "https://files.pythonhosted.org/packages/b8/68/993f4ede8a65c35c242bf70af1f1acee1e27a38649b38c6e9796280a9831/xgrammar-0.1.16.tar.gz",
+            "https://files.pythonhosted.org/packages/e3/52/ea664a56674f21c401b45f124c207a16ca4b2318364687172edbcf255375/xgrammar-0.1.21.tar.gz",
         ],
-        sha256 = "4ddd5128a82d0a9c800c03df25c610368ca630704ad20a6bb7a3629f24ced442",
-        downloaded_file_path = "xgrammar-0.1.16.tar.gz",
+        sha256 = "2ce1e81417ff46aa7ef26d8c0627275cb20dd1f2e8ead5bb261aecde1cc8ba57",
+        downloaded_file_path = "xgrammar-0.1.21.tar.gz",
     )
 
     maybe(
@@ -18736,142 +18727,142 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/5b/7e/e80e1e4c19a73dbe7e762309fd1bfd874c075f4a05336860269ddbe424fb/xgrammar-0.1.16-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/ef/42/209977e5c868f269bb587a41b21c80a07c989b40c981482498c53bd15b37/xgrammar-0.1.21-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "ae561d74bcfacfe96970e3ec847cdeeda7fe2cb3ad38ff44ad370de75cef5615",
-        downloaded_file_path = "xgrammar-0.1.16-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "ae38de964a1d56437bc84c0aedf1b0a5a48ff2e805a0ec454b0caaa25b3c7f84",
+        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/ee/f7/6d4e67d19e42f3a45323241fea030129e74da250faaf7c7efd9a09f216e9/xgrammar-0.1.16-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/e8/63/25e04927a3f947b31f577744774aa6e67c2ba63a0675795ed85397f597ac/xgrammar-0.1.21-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "46e52514479056418495d68413c2ea18798b95dcdc36d25f48b281ca7d203ce1",
-        downloaded_file_path = "xgrammar-0.1.16-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "ce25b17690d6abebf79d287330578203a361819058f6e893aefa69049f173ad8",
+        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/14/a6/8d7171595da3345768a1222e59e43def72f6d78dd2510dcd68d4aec6f185/xgrammar-0.1.16-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/d0/d7/2d15637d1bdded7dbde4742eb8be856370e6b9cf73c7bbdb1ce87f77db79/xgrammar-0.1.21-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "1d898e3dc04ea7d81a0e9cd10b632c22707fcc9ce02d7be3c0aa6c38067af97f",
-        downloaded_file_path = "xgrammar-0.1.16-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "b181f45bbba8563fcaf20a6338ebcbb663d804ab22d160b446c810c6fc397477",
+        downloaded_file_path = "xgrammar-0.1.21-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/45/55/3416e235a07a97e32fc0b678266e605e61a7f52219570ad9e78618dd47b3/xgrammar-0.1.16-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/2c/6c/365d1564de1bf9f01c95ab54c67895052aef3501fe063582a762ece820c9/xgrammar-0.1.21-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "bd151867c7007c1af27c901d3fd9dd178e41468775b782e083d0d125228a915f",
-        downloaded_file_path = "xgrammar-0.1.16-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "b43c1c8b2e7b0f78067b30a0661ae3b2dfa260a45b0341749d829a27df94faf4",
+        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/8b/69/6d6eb9ec2ec521665102881c5caaaccd0b6f44eeaeeb9397078270d9bb1d/xgrammar-0.1.16-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/83/28/628240866aa2987e79a803324b318e81006c1fff0aa86af6580efe17afe2/xgrammar-0.1.21-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "54a3d4386b538fe0a6b6399de2592dd57756e31c1def812cf9653b8f91f827d8",
-        downloaded_file_path = "xgrammar-0.1.16-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "e6e5a171ed0b79712e82f1e2726f4deb0bc1db4476b70187fa7aea04afea3350",
+        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/c6/25/4dd662eadee7200dd22a97bac8dfa48a1cc2712714785bf2e1b12d7567c7/xgrammar-0.1.16-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/07/67/e60c49fa74f5a5d86601a26d9938341d5903595fd98cd470d24ac86db2f0/xgrammar-0.1.21-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "ab1850ffb1615c1370e4ba3d4dafb2c116a03a06683b9fcf309982c49b8c2f87",
-        downloaded_file_path = "xgrammar-0.1.16-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "f43ee3b944da5114f564a1ca734c2e0c5baf849ae824646d3e689c5c78bc6aae",
+        downloaded_file_path = "xgrammar-0.1.21-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/dd/7d/0b04a7a75fe3e5a8cdff905c130d776286723f2ea7be240cd205a7916814/xgrammar-0.1.16-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/e7/e3/0020a3530797de0f0e191399bd9654d2bc668e6018a8d9116bda7c86993e/xgrammar-0.1.21-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "90fae6c9256753f9816aacddf8c37176eded8b4164024d28d6342ea4b9182ae9",
-        downloaded_file_path = "xgrammar-0.1.16-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "6edc396727d12a36a84f09ad4a688eeeb73fe23620fc4fed5b97e9a0f03107b2",
+        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/15/b1/b619f6df882f2b4b2df2072543590e0e5fbf4abe80876ff8308612bd5758/xgrammar-0.1.16-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/fd/d9/b502f890ad74a5cba43137a6f9bd6516cceac03a6af80af8c8942c440f01/xgrammar-0.1.21-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "2d75e6501f55368462b4d61ce0fb6a65c587782faa7319f48f49a8c444b4245f",
-        downloaded_file_path = "xgrammar-0.1.16-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "140628376fc701a535600dc64752603ddaed619461dc50669e90626e9f61b8aa",
+        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/f0/4b/94c5801b458d0840c906944a376c50ea3128e98e7819421e246a47d7dd2d/xgrammar-0.1.16-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/45/3c/d79e31a43a6de965dbee7e104de42092170814301d8a044b90daed5accf0/xgrammar-0.1.21-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "51565f8e6eb17fefe7ce90aa4598cf8216b4ee801a33d58d8439242d3d18cfa6",
-        downloaded_file_path = "xgrammar-0.1.16-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "f9247641c73eec6e972cec15156a8844957334204ba79ad1abdb0d7b03def8a1",
+        downloaded_file_path = "xgrammar-0.1.21-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/f8/3d/a798f138d5c60eb787cefb1f3739996fdb42dabbde6a94c2f606c8631a56/xgrammar-0.1.16-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/e7/ce/4d2892701f1e009c40e30f75dbaed85cd1a476797e241310c5e586d1061f/xgrammar-0.1.21-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "854e2b23d0099c590cbc8bb83ab7de7d7ba3acb8aab65d64fa1436af0639f80c",
-        downloaded_file_path = "xgrammar-0.1.16-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "a1f128511bf354f6e3a027fedb3eb38e8749e2eefbb3874a7edefd054e2b677a",
+        downloaded_file_path = "xgrammar-0.1.21-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/1b/c3/74710d142d716c74bdaeaa4a17d2e90e8eb58d1ed525b49d2a49448b385d/xgrammar-0.1.16-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/af/fb/429e9c32d6dbd4d1199d218a5d7d1e63f658c280ad915747d344b53d3e9f/xgrammar-0.1.21-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "d3c4fbc944bc2c0529da3efe0c5accab20df6c99aef7adfd17e3d0fecd10a80a",
-        downloaded_file_path = "xgrammar-0.1.16-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "6f5936ea42b8005a963f0f51e713fb94f6766159f4380f339f504f3f1bd6b489",
+        downloaded_file_path = "xgrammar-0.1.21-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/58/77/16ddd8a22045e3241c31bbdca01b08487c3227d0e4fc87daecb7d7377aae/xgrammar-0.1.16-cp39-cp39-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/20/1e/39ae32f3c9aa59bed8d90c11b4af2b32d78c260aac0faf79120cdef46e09/xgrammar-0.1.21-cp39-cp39-macosx_11_0_arm64.whl",
         ],
-        sha256 = "cc0a1859332167c29a30ccf65c12bc56c3e4524244ac36df04c126a6d7711959",
-        downloaded_file_path = "xgrammar-0.1.16-cp39-cp39-macosx_11_0_arm64.whl",
+        sha256 = "da3c43058a86b7a34427bea5d15f7e5521894ed67417cb3d92d9c078927c4225",
+        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/d2/c0/5052c9bab094cd8cfae5dcb750ee649d814e7e3a6c5d15e12c995d1f88cd/xgrammar-0.1.16-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/1e/6f/28e3d640708acfdb0cfd2d81e3d1812e4c6e1773e14544d9d74e9a987ac5/xgrammar-0.1.21-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "19807de8dbe3772f8b6aaa979541183fe6c6bafa3680d52d8289c7b4439eff2c",
-        downloaded_file_path = "xgrammar-0.1.16-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "6e91cc28cb5ca8dc23641b9fc4f358fb0d3bc6be231a39b175206f95c88bc11d",
+        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.1.16_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.1.21_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/2e/50/3a0786738055481b37bd64277c99ba53a72e244d8c754b1615d956af72e2/xgrammar-0.1.16-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/b3/22/05575213ed1360f2ef4141edcdbbe4cfd17bb14de4e29c0a0375309fb2f6/xgrammar-0.1.21-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "5bf4754f53c7d3fb1a5b011d8948e90c6cb022caff73b0f74cc70cb319ec728a",
-        downloaded_file_path = "xgrammar-0.1.16-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "b07199744b736bf81edae5b68c894d09a1ca8494fc1a80d8f064aa36252ace5a",
+        downloaded_file_path = "xgrammar-0.1.21-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
