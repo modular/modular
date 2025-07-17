@@ -211,8 +211,7 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 #endif // MODULAR_ENABLE_TELEMETRY
 }
 
-TelemetryContext::TelemetryContext(
-    Config &settings, const llvm::StringMap<AttributeValue> &resources) {
+TelemetryContext::TelemetryContext(Config &settings) {
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
   // -------- Resources --------
@@ -287,12 +286,6 @@ TelemetryContext::TelemetryContext(
   }
 
   attrs.SetAttribute("modular.employee", isModularEmployee());
-
-  // Set the values of any resources we've been provided.
-  for (auto &resource : resources) {
-    std::visit([&](auto v) { attrs.SetAttribute(resource.first(), v); },
-               resource.second);
-  }
 
   // Check if telemetry is enabled. Note that currently users have to opt out
   // of telemetry, so it is enabled unless the user explicitly disables.

@@ -8,26 +8,17 @@
 #define ASYNCRT_INIT_INIT_H
 
 #include "AsyncRT/Runtime/Runtime.h"
-#include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
-#include "Support/Telemetry/Telemetry.h"
 
 namespace M {
 namespace Init {
-
-using namespace M::Telemetry;
 
 class Options {
 public:
   Options() = default;
   Options &withForceDisableCrashReporting(bool v = true) {
     forceDisableCrashReporting = v;
-    return *this;
-  }
-  Options &
-  withAttributes(llvm::StringMap<TelemetryContext::AttributeValue> &v) {
-    resources = v;
     return *this;
   }
   Options &withRuntimeOptions(const AsyncRT::RuntimeOptions &v = {}) {
@@ -37,7 +28,6 @@ public:
 
 private:
   bool forceDisableCrashReporting = false;
-  llvm::StringMap<TelemetryContext::AttributeValue> resources = {};
   std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
 
   friend ErrorOr<ContextRef> createContext(StringRef, const Options &);

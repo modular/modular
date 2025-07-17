@@ -15,7 +15,6 @@
 #include "Support/Telemetry/Telemetry.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
-#include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
 
@@ -93,7 +92,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
 
   // Move everything into the context. Construct here may used the settings.
   ctx->emplace<HTTPContextRef>(std::move(httpCtx));
-  ctx->emplace<TelemetryContext>(settings, options.resources);
+  ctx->emplace<Telemetry::TelemetryContext>(settings);
 
   // Create a new runtime (if needed).
   if (options.runtimeOptions) {

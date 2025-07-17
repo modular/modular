@@ -73,8 +73,7 @@ public:
                    ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
 
   /// Set up a TelemetryContext from a Config object.
-  TelemetryContext(Config &settings,
-                   const llvm::StringMap<AttributeValue> &resources = {});
+  TelemetryContext(Config &settings);
 
   TelemetryContext(TelemetryContext &&other) = default;
 

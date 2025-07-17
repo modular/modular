@@ -462,11 +462,7 @@ TEST(Telemetry, Resources) {
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
   Config settings(logFileSetup.getConfig());
 
-  llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
-  StringRef resourceVal = "aResource value here";
-  extras["aResource"] = resourceVal;
-  extras["aNumber"] = 32;
-  TelemetryContext ctx(settings, extras);
+  TelemetryContext ctx(settings);
 
   auto logger = ctx.getLogger("basic.log");
   logger->emitL0Event("test.Resources");
@@ -492,14 +488,6 @@ TEST(Telemetry, Resources) {
             return;
 
           eventFound = true;
-
-          auto resourcePos = message.find("aResource");
-          StringRef resourceLine = getLineStartingAt(resourcePos);
-          EXPECT_EQ(resourceLine.split(':').second.trim(), resourceVal);
-
-          auto numberPos = message.find("aNumber");
-          StringRef numberLine = getLineStartingAt(numberPos);
-          EXPECT_EQ(numberLine.split(':').second.trim(), "32");
         });
 
         EXPECT_TRUE(eventFound) << "expected to find event in file";
@@ -553,7 +541,7 @@ TEST(Telemetry, ModularEmployee) {
     TempFile tmpFile = logFileSetup.getLogFile("log", "1");
     Config settings(logFileSetup.getConfig());
 
-    TelemetryContext ctx(settings, {});
+    TelemetryContext ctx(settings);
 
     auto logger = ctx.getLogger("basic.log");
     logger->emitL0Event("test.ModularEmployee");
