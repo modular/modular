@@ -24,8 +24,4 @@ PythonObjectWrapper::~PythonObjectWrapper() {
   }
 }
 
-void freePythonObjectWrapper(void *ptr) {
-  PythonObjectWrapper *wrapper = static_cast<PythonObjectWrapper *>(ptr);
-  delete wrapper;
-};
 } // namespace M::CPython

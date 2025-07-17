@@ -30,8 +30,6 @@ struct PythonObjectWrapper {
   PyObject *ptr;
 };
 
-void freePythonObjectWrapper(void *ptr);
-
 } // namespace M::CPython
 
 #endif // SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H

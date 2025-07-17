@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "cc_autolink_deps", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
+load("//bazel:api.bzl", "cc_autolink_deps", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_shared_library", "pkg_files", "td_library")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 
@@ -852,17 +852,6 @@ modular_cc_library(
     deps = [
         "@llvm-project//llvm:Support",
         "@python_3_9//:python_headers",
-    ],
-)
-
-modular_nanobind_library(
-    name = "CPythonNanobind",
-    srcs = glob(["lib/CPython/*.cpp"]),
-    hdrs = glob(["include/Support/CPython/*.h"]),
-    # NOTE: python headers are still version dependent
-    local_defines = ["Py_LIMITED_API=0x03090000"],
-    deps = [
-        "@llvm-project//llvm:Support",
     ],
 )
 
