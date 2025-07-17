@@ -4,18 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""
-This test currently passes but prints the following warnings:
-```
-    event_set.c:176  UCX  ERROR epoll_ctl(event_fd=73, DEL, fd=69) failed: Bad file descriptor
-        async.c:585  UCX  WARN  failed to remove async handler 0x12be6d00 [id=69 ref 1] ???() : Input/output error
-```
-"""
-
 import multiprocessing as mp
+import time
 
 import numpy as np
-import pytest
 from common import get_unique_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
@@ -33,10 +25,12 @@ def transfer_routine_sender(
     total_num_pages,  # noqa: ANN001
     src_idxs,  # noqa: ANN001
     dst_idxs,  # noqa: ANN001
+    total_bytes,  # noqa: ANN001
+    GB,  # noqa: ANN001
 ) -> None:
-    device = Accelerator()
+    device = Accelerator(1)
 
-    blocks_np = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18])
+    blocks_np = np.full(total_bytes, 42, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
     # Create engine
@@ -50,17 +44,24 @@ def transfer_routine_sender(
     engine.connect(remote_md)
 
     # Perform transfer
+    t0 = time.time()
     xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
     xfer_queue.put(xfer_req)
     engine.send_xfer_sync(xfer_req)
+    t1 = time.time()
+    bw = total_bytes / (t1 - t0) / GB
+    print(
+        f"Transferring {total_bytes / GB:.2f} GB took {t1 - t0:.2f} seconds ({bw:.2f} GB/s)",
+        flush=True,
+    )
 
     # Verify results
-    expected_blocks = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18])
+    expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
     assert np.array_equal(blocks.to_numpy(), expected_blocks)
 
     # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND :(
     # TODO(E2EOPT-299) Reenable cleanup
-    # engine.cleanup()
+    engine.cleanup()
 
 
 def transfer_routine_receiver(
@@ -68,10 +69,11 @@ def transfer_routine_receiver(
     receiver_md_queue,  # noqa: ANN001
     xfer_queue,  # noqa: ANN001
     total_num_pages,  # noqa: ANN001
+    total_bytes,  # noqa: ANN001
 ) -> None:
-    device = Accelerator()
+    device = Accelerator(0)
 
-    blocks_np = np.array([80, 81, 82, 83, 84, 85, 86, 87, 88])
+    blocks_np = np.full(total_bytes, 99, dtype=np.int8)
     blocks = Tensor.from_numpy(blocks_np).to(device)
 
     # Create engine
@@ -89,15 +91,14 @@ def transfer_routine_receiver(
     engine.recv_xfer_sync(xfer_req)
 
     # Verify results
-    expected_blocks = np.array([16, 17, 18, 16, 17, 18, 86, 87, 88])
+    expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
     assert np.array_equal(blocks.to_numpy(), expected_blocks)
 
     # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND
     # TODO(E2EOPT-299) Reenable cleanup
-    # engine.cleanup()
+    engine.cleanup()
 
 
-@pytest.mark.skip(reason="❄️")
 def test_send_recv_basic() -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
@@ -106,8 +107,10 @@ def test_send_recv_basic() -> None:
     xfer_queue: mp.Queue[XferReqData] = ctx.Queue()
 
     # Transfer parameters
-    total_num_pages = 3
-    src_idxs = [2, 2]
+    GB = 1024 * 1024 * 1024
+    total_bytes = int(0.5 * GB)
+    total_num_pages = 2
+    src_idxs = [0, 1]
     dst_idxs = [1, 0]
 
     sender_proc = ctx.Process(
@@ -119,6 +122,8 @@ def test_send_recv_basic() -> None:
             total_num_pages,
             src_idxs,
             dst_idxs,
+            total_bytes,
+            GB,
         ),
     )
     receiver_proc = ctx.Process(
@@ -128,6 +133,7 @@ def test_send_recv_basic() -> None:
             receiver_md_queue,
             xfer_queue,
             total_num_pages,
+            total_bytes,
         ),
     )
 

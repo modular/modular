@@ -15,6 +15,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
         },
         gpu_constraints = [
             "//:has_gpu",
+            "//:has_multi_gpu",
             "//:nvidia_gpu",
         ],
         imports = ["."],
