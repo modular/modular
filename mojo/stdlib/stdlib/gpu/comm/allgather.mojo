@@ -224,7 +224,7 @@ fn _allgather_p2p[
         )
 
         # Launch kernel.
-        curr_ctx.call_function[
+        curr_ctx.enqueue_function[
             _allgather_p2p_kernel[
                 dtype,
                 rank,

@@ -1770,7 +1770,7 @@ struct DeviceFunction[
 
     var ctx = DeviceContext()
     var kernel = ctx.compile_function[my_kernel]()
-    ctx.call_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
+    ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
     ```
     """
 
@@ -2823,7 +2823,7 @@ struct DeviceContext(Copyable, Movable):
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
-        ctx.call_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+        ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
         ctx.synchronize()
     ```
 
@@ -2838,7 +2838,7 @@ struct DeviceContext(Copyable, Movable):
         @staticmethod
         fn execute(ctx_ptr: DeviceContextPtr) raises:
             var ctx = ctx_ptr.get_device_context()
-            ctx.call_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
     """
@@ -3684,103 +3684,6 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
-    fn call_function[
-        func_type: AnyTrivialRegType, //,
-        func: func_type,
-        *Ts: AnyType,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-    ) raises:
-        """Compiles and enqueues a kernel for execution on this device.
-
-        Parameters:
-            func_type: The dtype of the function to launch.
-            func: The function to launch.
-            Ts: The dtypes of the arguments being passed to the function.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            args: Variadic arguments which are passed to the `func`.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-
-        You can pass the function directly to `call_function` without
-        compiling it first:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        fn kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-        """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
-
-        var gpu_kernel = self.compile_function[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
-
-        self._enqueue_function_unchecked(
-            gpu_kernel,
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-        )
-
-    @deprecated("Use `call_function()` instead.")
-    @parameter
-    @always_inline
     fn enqueue_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -3827,7 +3730,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -3837,7 +3740,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3848,13 +3751,13 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
 
         var gpu_kernel = self.compile_function[
             func,
@@ -3923,7 +3826,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -3933,7 +3836,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3944,8 +3847,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -3977,88 +3880,6 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
-    fn call_function[
-        *Ts: AnyType
-    ](
-        self,
-        f: DeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
-    ) raises:
-        """Enqueues a compiled function for execution on this device.
-
-        Parameters:
-            Ts: Argument dtypes.
-
-        Args:
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread
-                blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-
-        You can pass the function directly to `call_function` without
-        compiling it first:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        fn kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
-        the function first to remove the overhead:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-        """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
-
-        constrained[
-            not f.declared_arg_types,
-            (
-                "A checked DeviceFunction should be called with"
-                " `enqueue_function_checked`."
-            ),
-        ]()
-        self._enqueue_function_unchecked(
-            f,
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-        )
-
-    @deprecated("Use `call_function()` instead.")
-    @parameter
-    @always_inline
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -4089,7 +3910,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4099,7 +3920,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4112,13 +3933,13 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
 
         constrained[
             not f.declared_arg_types,
@@ -4170,7 +3991,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4180,7 +4001,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4193,8 +4014,8 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4255,7 +4076,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4265,7 +4086,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4278,8 +4099,8 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4358,7 +4179,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4368,7 +4189,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4379,8 +4200,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4459,7 +4280,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4469,7 +4290,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4480,8 +4301,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4566,7 +4387,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4576,7 +4397,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4587,8 +4408,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4668,7 +4489,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4678,7 +4499,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4689,8 +4510,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4722,7 +4543,7 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
-    # TODO: Rename to call_function once we're sure this works for every
+    # TODO: Rename to enqueue_function once we're sure this works for every
     # callsite.
     fn enqueue_function_experimental[
         func_type: AnyTrivialRegType, //,
@@ -4762,7 +4583,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `call_function` without
+        You can pass the function directly to `enqueue_function` without
         compiling it first:
 
         ```mojo
@@ -4772,7 +4593,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4785,8 +4606,8 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4865,79 +4686,6 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
-    fn call_function[
-        *Ts: AnyType
-    ](
-        self,
-        f: DeviceExternalFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
-    ) raises:
-        """Enqueues an external device function for asynchronous execution on the GPU.
-
-        This method schedules an external device function to be executed on the GPU with the
-        specified execution configuration. The function and its arguments are passed to the
-        underlying GPU runtime, which will execute them when resources are available.
-
-        Parameters:
-            Ts: The dtypes of the arguments to be passed to the device function.
-
-        Args:
-            f: The external device function to execute.
-            args: The arguments to pass to the device function.
-            grid_dim: The dimensions of the grid (number of thread blocks).
-            block_dim: The dimensions of each thread block (number of threads per block).
-            cluster_dim: Optional dimensions for thread block clusters (for newer GPU architectures).
-            shared_mem_bytes: Optional amount of dynamic shared memory to allocate per block.
-            attributes: Optional list of launch attributes for fine-grained control.
-            constant_memory: Optional list of constant memory mappings to use during execution.
-
-        Raises:
-            If there's an error enqueuing the function or if the function execution fails.
-
-        Example:
-
-        ```mojo
-        from gpu.host import DeviceContext
-        from gpu.host.device_context import DeviceExternalFunction
-
-        # Create a device context and load an external function
-        with DeviceContext() as ctx:
-            var ext_func = DeviceExternalFunction("my_kernel")
-
-            # Enqueue the external function with execution configuration
-            ctx.call_function(
-                ext_func,
-                grid_dim=Dim(16),
-                block_dim=Dim(256)
-            )
-
-            # Wait for completion
-            ctx.synchronize()
-        ```
-        """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
-
-        self._enqueue_external_function(
-            f,
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-        )
-
-    @deprecated("Use `call_function()` instead.")
-    @parameter
-    @always_inline
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -4984,7 +4732,7 @@ struct DeviceContext(Copyable, Movable):
             var ext_func = DeviceExternalFunction("my_kernel")
 
             # Enqueue the external function with execution configuration
-            ctx.call_function(
+            ctx.enqueue_function(
                 ext_func,
                 grid_dim=Dim(16),
                 block_dim=Dim(256)
@@ -4994,8 +4742,8 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
 
         self._enqueue_external_function(
             f,
@@ -5244,7 +4992,7 @@ struct DeviceContext(Copyable, Movable):
 
         fn benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
             # Run kernel with different parameters based on iteration
-            ctx.call_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
+            ctx.enqueue_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
 
         with DeviceContext() as ctx:
             # Measure execution time with iteration awareness
