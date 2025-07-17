@@ -140,6 +140,18 @@ def test_type_object_api(python: Python):
     assert_true(cpy.PyType_GetName(dict_type))
 
 
+def test_unicode_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var str = "Hello, World!"
+
+    var py_str = cpy.PyUnicode_DecodeUTF8(str)
+    assert_true(py_str)
+
+    var res = cpy.PyUnicode_AsUTF8AndSize(py_str)
+    assert_equal(res, str)
+
+
 def test_module_object_api(python: Python):
     var cpy = python.cpython()
 
@@ -161,6 +173,13 @@ def test_module_object_api(python: Python):
             cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
         )
         _ = name
+
+
+def test_slice_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    assert_true(cpy.PySlice_New(n, n, n))
 
 
 def test_PyDict(mut python: Python):
@@ -278,8 +297,14 @@ def main():
     # Type Objects
     test_type_object_api(python)
 
+    # Unicode Objects and Codecs
+    test_unicode_object_api(python)
+
     # Module Objects
     test_module_object_api(python)
+
+    # Slice Objects
+    test_slice_object_api(python)
 
     test_PyDict(python)
     test_PyCapsule(python)
