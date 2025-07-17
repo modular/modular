@@ -159,10 +159,11 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
         return;
       }
 
-      Operation *calleeOp = symtab.lookup(
-          cast<FlatSymbolRefAttr>(
-              cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
-              .getAttr());
+      auto symbol =
+          dyn_cast_if_present<FlatSymbolRefAttr>(call.getCalleeSymbol());
+      assert(symbol && "call op not using flat symbol references");
+
+      Operation *calleeOp = symtab.lookup(symbol.getAttr());
       assert(calleeOp && "invalid IR?");
       // Only add the edge if the symbol we found is of the type we expect.
       auto callee = dyn_cast<FuncOpT>(calleeOp);
