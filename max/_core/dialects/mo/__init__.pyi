@@ -2864,7 +2864,6 @@ class CustomOp(max._core.Operation):
         results: Sequence[max._core.Value[max._core.Type]],
         operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.StringAttr,
-        function: max._core.dialects.builtin.StringAttr,
         device: max._core.dialects.m.DeviceRefAttr,
         parameters: max._core.dialects.builtin.DictionaryAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -2875,12 +2874,6 @@ class CustomOp(max._core.Operation):
     def symbol(self) -> str: ...
     @symbol.setter
     def symbol(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-    @property
-    def function(self) -> str: ...
-    @function.setter
-    def function(
-        self, arg: max._core.dialects.builtin.StringAttr, /
-    ) -> None: ...
     @property
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
