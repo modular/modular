@@ -23,7 +23,7 @@ from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max._core_types.driver import DLPackArray
 from max.driver import CPU, Device, Tensor
-from max.profiler import Tracer, traced
+from max.profiler import traced
 from max.support.paths import (
     _build_mojo_source_package,
     is_mojo_source_package_path,
@@ -78,8 +78,6 @@ def _raise_if_not_contiguous(x: InputType) -> None:
 
 @traced
 def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
-    tracer = Tracer()
-
     # Original tensor-only execution path
     input_impls: list[Union[Tensor, MojoValue]] = []
 
@@ -108,19 +106,7 @@ def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
             )
 
         input_impls.append(tensor)
-    results = self._execute_device_tensors(input_impls)
-
-    processed_results: list[Tensor | MojoValue] = []
-    for idx, result in enumerate(results):
-        tracer.push(f"process_result_{idx}")
-        # If the output is a MojoValue, we return it directly.
-        if not isinstance(result, Tensor):
-            processed_results.append(result)
-            tracer.pop()
-            continue
-        processed_results.append(result)
-        tracer.pop()
-    return processed_results
+    return self._execute_device_tensors(input_impls)
 
 
 def _Model_call(
