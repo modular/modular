@@ -101,7 +101,7 @@ class InputContext(Protocol):
     -  next_tokens: The tokens that will be processed in the next iteration.
                     This may be a subset of the full prompt due to chunked prefill.
     - preallocated: The token slots that have been preallocated. The token array
-                    resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
+                    resizes to multiples of ``CHUNK_SIZE`` to accommodate the new tokens.
     """
 
     @property

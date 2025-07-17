@@ -18,16 +18,12 @@ from max.interfaces.status import GenerationStatus
 
 
 class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """A base class for model responses, specifically for text model variants.
-
-    Configuration:
-        next_token: Encoded predicted next token.
-        log_probabilities: Log probabilities of each output token.
-
-    """
+    """A base class for model responses, specifically for text model variants."""
 
     next_token: Union[int, str] = msgspec.field()
+    """Encoded predicted next token."""
     log_probabilities: Optional[LogProbabilities] = msgspec.field(default=None)
+    """Log probabilities of each output token."""
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, TextResponse):
@@ -40,24 +36,24 @@ class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
 
 
 class TextGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """Response structure for text generation.
-
-    Configuration:
-        tokens: List of generated text responses.
-        final_status: The final status of the generation process.
-    """
+    """Response structure for text generation."""
 
     tokens: list[TextResponse] = msgspec.field()
+    """List of generated text responses."""
     final_status: GenerationStatus = msgspec.field()
+    """The final status of the generation process."""
 
     @property
     def is_done(self) -> bool:
+        """Returns True if the generation process is complete."""
         return self.final_status.is_done
 
     def append_token(self, token: TextResponse) -> None:
+        """Appends a token to the list of generated text responses."""
         self.tokens.append(token)
 
     def update_status(self, status: GenerationStatus) -> None:
+        """Updates the final status of the generation process."""
         self.final_status = status
 
 
