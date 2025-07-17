@@ -220,15 +220,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             adapter=weight_adapters.get(_target_weights_format, None),
             return_logits=ReturnLogits.VARIABLE,
         )
-        # TODO: We only support Llama3 for spec decoding since we haven't worked out
-        # a general API for the prepare next token with draft inputs yet.
-        from ..architectures.llama3.model import Llama3Model
-
-        # Now check if the instantiated model is a Llama3Model
-        if not isinstance(self._target_model, Llama3Model):
-            raise ValueError(
-                "Speculative decoding only supported for Llama3 models"
-            )
 
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
@@ -248,9 +239,29 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             self.pipeline_config.draft_model_config.huggingface_config
         )
 
-        self.vocab_size = (
-            self.pipeline_config.model_config._huggingface_config.vocab_size
-        )
+        if hasattr(
+            self.pipeline_config.model_config.huggingface_config, "vocab_size"
+        ):
+            self.vocab_size = (
+                self.pipeline_config.model_config.huggingface_config.vocab_size
+            )
+        elif hasattr(
+            self.pipeline_config.model_config.huggingface_config, "text_config"
+        ):
+            if hasattr(
+                self.pipeline_config.model_config.huggingface_config.text_config,
+                "vocab_size",
+            ):
+                self.vocab_size = self.pipeline_config.model_config.huggingface_config.text_config.vocab_size
+            else:
+                raise ValueError(
+                    "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+                )
+
+        else:
+            raise ValueError(
+                "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+            )
 
         # Retrieve Encoding, and Files for Draft Model
         if self.pipeline_config.draft_model_config is None:
