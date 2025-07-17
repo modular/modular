@@ -707,7 +707,7 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 /// passing-kind parameters if `append` is set (this is used for unbound
 /// arguments), or added to the beginning of the parameter list as `Inferred`
 /// passing-kind parameters (this is used for unbound parameters).
-static ASTType addImplicitTypeParams(ASTType type,
+static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append) {
   SmallVector<ParamDeclAttr> paramDeclAttrs;
@@ -764,6 +764,18 @@ static ASTType addImplicitTypeParams(ASTType type,
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
+  // Auto-parameterize generator typed values.
+  if (auto paramType = dyn_cast<ParamType>(type)) {
+    if (auto genType =
+            dyn_cast<LITGeneratorType>(paramType.getParam().getType())) {
+      auto paramList = genType.getParamListAttrs();
+      for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
+        declareAndAddParam(type, paramList.getName(idx));
+      return shared.getEvaluationContext().getBindParamsAttr(
+          paramType.getParam(), paramValues);
+    }
+  }
+
   // Check for a struct type or a struct metatype.
   auto getBoundStructMetaType = [&](StructMetaType metatype) {
     // The unbound parameters will be on the struct type's signature.
@@ -801,7 +813,7 @@ TypeCheckedParamList::TypeCheckedParamList(
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(traitOp.getOperation())));
       }
-      type = addImplicitTypeParams(type, *this, /*append=*/false);
+      type = addImplicitTypeParams(shared, type, *this, /*append=*/false);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1210,7 +1222,8 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
       arg.variadicKind =
           VariadicKind::None; // Don't break invariants on errors.
     }
-    type = addImplicitTypeParams(type, tcSignature.paramList, /*append=*/true);
+    type = addImplicitTypeParams(shared, type, tcSignature.paramList,
+                                 /*append=*/true);
   } else if (idx == 0 && tcSignature.selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
              // been applied yet.

@@ -296,6 +296,20 @@ fn test_implicit_params_with_var_params():
 fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
+alias TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
+
+# CHECK-LABEL: lit.fn @"autoparam_param_alias
+# CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
+# CHECK-SAME: %x: {{.*}}#TwoParams <:!Int [[A0]], :!Int [[B0]]>
+# CHECK-SAME: %y: {{.*}}#TwoParams <:!Int {2}, :!Int [[B1]]>
+fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
+    return x.a + y.b
+
+# CHECK-LABEL: lit.fn @"autoparam_param_alias_params
+# CHECK-SAME: <[""][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams<:!Int [[A0]], :!Int {2}>
+fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
+    pass
+
 @register_passable("trivial")
 struct IndexParam[x: Index]:
     @implicit
