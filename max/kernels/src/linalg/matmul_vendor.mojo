@@ -87,7 +87,9 @@ fn matmul[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.create_buffer[c.type](c.num_elements())
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
+            c.num_elements()
+        )
 
         # We do not want to mark c as `mut` in the function signature, so we
         # create a new shallow copy of c as a temporary buffer.
