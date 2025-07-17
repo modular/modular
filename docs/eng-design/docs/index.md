@@ -15,6 +15,14 @@
     prompts, resulting in improved memory efficiency and faster
     time-to-first-token performance.
 
+- [Matrix Multiplication to Flash Attention](matmul-to-flash-attention)
+
+    This document explains how Flash Attention can be understood as an extension
+    of fast matrix multiplication techniques for Ampere hardware, using
+    asynchronous data transfer instructions and online softmax computation to
+    achieve memory-efficient attention processing without materializing large
+    intermediate matrices.
+
 - [Multi-Head Flash Attention](multi-head-flash-attention)
 
     This document describes the implementation of multi-head attention using
