@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.fast_div import FastDiv
+from utils.fast_div import FastDiv
 from gpu.host import get_gpu_target
 from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout, IntTuple

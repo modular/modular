@@ -14,7 +14,7 @@
 from math import ceildiv
 
 from gpu.id import block_idx, grid_dim
-from linalg.fast_div import FastDiv
+from utils.fast_div import FastDiv
 
 from utils.index import Index, IndexList
 

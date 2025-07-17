@@ -16,7 +16,7 @@ from math import ceildiv, align_up
 from layout import IntTuple, Layout, LayoutTensor
 from sys import bitwidthof
 from gpu.id import block_idx, grid_dim, thread_idx
-from linalg.fast_div import FastDiv
+from utils.fast_div import FastDiv
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from utils.index import Index, IndexList
