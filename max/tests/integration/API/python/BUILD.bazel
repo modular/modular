@@ -100,6 +100,8 @@ modular_py_test(
         requirement("click"),
         requirement("gguf"),
         requirement("hypothesis"),
+        # Not used directly, needed to load some models
+        requirement("sentencepiece"),
         requirement("torch"),
         requirement("transformers"),
         requirement("msgspec"),
