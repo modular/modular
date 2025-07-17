@@ -20,7 +20,7 @@ from testing import assert_almost_equal
 fn run_func[
     dtype: DType
 ](val: Scalar[dtype], ref_: Scalar[dtype], ctx: DeviceContext) raises:
-    var out = ctx.enqueue_create_buffer[dtype](1)
+    var out = ctx.create_buffer[dtype](1)
 
     @parameter
     fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: SIMD[dtype, 1]):

@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVTransferEngineMetadata
 from max.pipelines.core import PipelinesFactory, PipelineTokenizer
+from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
@@ -43,7 +44,6 @@ from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
 from max.serve.scheduler import (
     PrefillRequest,
     PrefillResponse,
-    TokenGeneratorSchedulerConfig,
 )
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
@@ -63,7 +63,7 @@ class ServingTokenGeneratorSettings:
     # Pipeline config
     model_name: str
     model_factory: PipelinesFactory
-    pipeline_config: TokenGeneratorSchedulerConfig
+    pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
 
@@ -123,6 +123,7 @@ async def lifespan(
                     settings,
                     metric_client,
                     dispatcher_factory,
+                    serving_settings.pipeline_task,
                 )
             )
 

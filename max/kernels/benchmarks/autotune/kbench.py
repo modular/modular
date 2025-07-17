@@ -16,6 +16,7 @@ import copy
 import csv
 import functools
 import logging
+import math
 import os
 import pickle
 import shutil
@@ -276,6 +277,7 @@ class SpecInstance:
         build_opts: list[str] = [],
         dryrun: bool = False,
         idx: int = -1,
+        enable_logging: bool = True,
     ) -> ProcessOutput:
         """Build the spec instance. Use set of compile-time
         parameters as path of the compiled binary and store
@@ -285,12 +287,13 @@ class SpecInstance:
         bin_name = self.hash(with_variables=False)
         bin_path = output_dir / Path(bin_name)
 
-        logging.info(f"building [{idx}][{bin_name}]")
-        logging.debug(
-            f"defines: {self._get_defines}"
-            + "\n"
-            + f"vars   : {self._get_vars}"
-        )
+        if enable_logging:
+            logging.info(f"building [{idx}][{bin_name}]")
+            logging.debug(
+                f"defines: {self._get_defines}"
+                + "\n"
+                + f"vars   : {self._get_vars}"
+            )
 
         # TODO: add mojo-specific functions and allow for further expansion to other executors.
         cmd = self.get_executor()
@@ -346,6 +349,8 @@ class SpecInstance:
         return "/".join(tokens)
 
     def hash(self, with_variables: bool = True) -> str:
+        MAX_FILENAME_LEN = 255
+
         tokens = [self.file_stem]
         for param in self.params:
             name = param.name
@@ -354,7 +359,14 @@ class SpecInstance:
                 continue
             name = name.replace("$", "")
             tokens.append(f"{name}-{param.value}")
-        return "_".join(tokens)
+
+        hash_str = "_".join(tokens)
+        if len(hash_str) < MAX_FILENAME_LEN:
+            return hash_str
+        else:
+            MAX_HASH_DIGITS = 8
+            hash_hex = hash(hash_str) % (10**MAX_HASH_DIGITS)
+            return f"{hash_str[: MAX_FILENAME_LEN - MAX_HASH_DIGITS]}{hash_hex}"
 
 
 class GridSearchStrategy:
@@ -410,6 +422,7 @@ class Spec:
     params: list[list[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
     mesh: list[SpecInstance] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> Spec:
@@ -560,10 +573,10 @@ class Spec:
             name=obj.get("name", ""),
             file=obj.get("file", ""),
             params=params,
+            rules=obj.get("rules", []),
         )
 
     def __len__(self) -> int:
-        assert self.mesh
         return len(self.mesh)
 
     def __post_init__(self):
@@ -603,7 +616,8 @@ class Spec:
 
         Return the total size of mesh.
         """
-        self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        grid_mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        self.mesh = self.apply_rules(grid_mesh, self.rules)
         return len(self.mesh)
 
     def join(self, other: Spec) -> None:
@@ -614,6 +628,38 @@ class Spec:
         self.mesh_idx = 0
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
+
+    @staticmethod
+    def apply_rules(
+        mesh: list[SpecInstance], rules: list[str]
+    ) -> list[SpecInstance]:
+        new_mesh: list[SpecInstance] = []
+
+        if not rules:
+            return mesh
+
+        def remove_dlr(s: str) -> str:
+            return s.replace("$", "")
+
+        for s in mesh:
+            valid = True
+            for r in rules:
+                # TODO: revise handling of $ in string.
+                locals = {remove_dlr(p.name): p.value for p in s.params}
+                r = remove_dlr(r)
+
+                try:
+                    e = eval(r, {}, locals)
+                # the following exception is required in case a parameter
+                # is present in rule and missing from spec-instance combination.
+                except NameError:
+                    e = True
+                valid = valid & e
+                if not valid:
+                    break
+            if valid:
+                new_mesh.append(s)
+        return new_mesh
 
     def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
@@ -734,6 +780,8 @@ class Scheduler:
     output_dir: Path
     num_specs: int
 
+    CHUNKSIZE: int = 4
+
     def __init__(
         self,
         num_cpu: int,
@@ -745,6 +793,7 @@ class Scheduler:
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
     ) -> None:
+        self.num_cpu = num_cpu
         self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
@@ -779,13 +828,21 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
+    def get_chunksize(self, num_elements: int) -> int:
+        elements_per_cpu = int(math.ceil(num_elements / self.num_cpu))
+        return min(elements_per_cpu, self.CHUNKSIZE)
+
     def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [b.output_dir for b in self.build_items]
-        res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
-        for r in res:
+
+        for r in self.cpu_pool.imap(
+            self.kbench_mkdir,
+            output_dir_list,
+            chunksize=self.get_chunksize(len(output_dir_list)),
+        ):
             logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
 
@@ -822,15 +879,15 @@ class Scheduler:
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
-        build_output = bi.spec_instance.build(
+        bi.build_output = bi.spec_instance.build(
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
             idx=bi.idx,
+            enable_logging=False,
         )
         build_elapsed_time = int((time() - t_start_item) * 1e3)
 
-        bi.build_output = build_output
         bi.build_elapsed_time = build_elapsed_time
         return bi
 
@@ -853,27 +910,31 @@ class Scheduler:
 
         if unique_build_items:
             obj_cache = self.obj_cache
-            build_result = self.cpu_pool.map(
-                self._pool_build_wrapper, unique_build_items
-            )
 
             build_progress = self.progress.add_task(
                 "build",
                 total=len(unique_build_items),
+                auto_refresh=False,
             )
 
-            for b in build_result:
-                i = b.idx
-                s = b.spec_instance
-
+            # TODO: revise chunk-size
+            for b in self.cpu_pool.imap(
+                self._pool_build_wrapper,
+                unique_build_items,
+                chunksize=self.CHUNKSIZE,
+            ):
                 build_output = b.build_output
                 # update the data with build_output result
-                self.build_items[i].build_output = build_output
-                self.build_items[i].build_elapsed_time = b.build_elapsed_time
+                self.build_items[b.idx].build_output = build_output
+                self.build_items[
+                    b.idx
+                ].build_elapsed_time = b.build_elapsed_time
 
-                bin_name = s.hash(with_variables=False)
+                bin_name = b.spec_instance.hash(with_variables=False)
+
                 self.progress.update(
-                    build_progress, description=f"building {str(bin_name)}"
+                    build_progress,
+                    description=f"build [ {b.idx} ][ {bin_name} ] finished",
                 )
 
                 # print build_output stdout and stderr using log function.
@@ -912,7 +973,7 @@ class Scheduler:
             bin_name = s.hash(with_variables=False)
             bin_path = unique_build_paths.get(bin_name, None)
 
-            self.progress.update(exec_progress, description=f"run {str(s)}")
+            self.progress.update(exec_progress, description=f"run [ {str(s)} ]")
 
             exec_prefix = copy.deepcopy(exec_prefix_in)
             exec_suffix = copy.deepcopy(exec_suffix_in)
@@ -1010,6 +1071,7 @@ def run(
         TimeElapsedColumn(),
         console=CONSOLE,
         expand=True,
+        transient=True,
     )
 
     # Set num_cpu to the half of maximum number of available CPUs
@@ -1039,6 +1101,7 @@ def run(
             # - could not find executable in the cache or cache is not active,
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
+            scheduler.close_pool()
             if mode == KBENCH_MODE.RUN:
                 scheduler.execute_all(
                     unique_build_paths,
@@ -1046,7 +1109,6 @@ def run(
                     exec_prefix=exec_prefix,
                     exec_suffix=exec_suffix,
                 )
-            scheduler.close_pool()
         except KeyboardInterrupt:
             scheduler.close_pool()
             obj_cache.dump()

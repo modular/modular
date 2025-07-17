@@ -651,15 +651,15 @@ struct LayoutTensor[
 
         var ctx = DeviceContext()
         # Allocate buffers
-        var dev_buf = ctx.enqueue_create_buffer[dtype](16)
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
+        var dev_buf = ctx.create_buffer[dtype](16)
+        var host_buf = ctx.create_host_buffer[dtype](16)
         # Ensure buffers have been created
         ctx.synchronize()
 
         # Initialize host buffer and copy to device buffer
         for i in range(16):
             host_buf[i] = i
-        ctx.enqueue_copy(dev_buf, host_buf)
+        ctx.memcopy(dev_buf, host_buf)
 
         # Create LayoutTensor to use on device
         alias layout = Layout.row_major(4, 4)
@@ -693,7 +693,7 @@ struct LayoutTensor[
         alias dtype = DType.float32
 
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_host_buffer[dtype](8)
+        var dev_buf = ctx.create_host_buffer[dtype](8)
 
         alias layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)

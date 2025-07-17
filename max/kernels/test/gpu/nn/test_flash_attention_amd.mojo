@@ -158,17 +158,17 @@ fn test[
         )
 
     # Device pointers
-    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
+    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
+    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
-    ctx.enqueue_copy(q_device_ptr, q_ptr)
-    ctx.enqueue_copy(k_device_ptr, k_ptr)
-    ctx.enqueue_copy(v_device_ptr, v_ptr)
-    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
+    ctx.memcopy(q_device_ptr, q_ptr)
+    ctx.memcopy(k_device_ptr, k_ptr)
+    ctx.memcopy(v_device_ptr, v_ptr)
+    ctx.memcopy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
     var q_device = NDBuffer[
@@ -251,18 +251,18 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
+    ctx.memcopy(flash_output_ptr, output_device_ptr)
 
     @parameter
     if against_gpu_naive:
-        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+        var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
         var output_ref_device = NDBuffer[
             qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
         ](
             output_ref_device_ptr.unsafe_ptr(),
             Index(batch_size, seq_len, num_heads, depth),
         )
-        ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
+        ctx.memcopy(output_ref_device_ptr, output_ptr)
 
         @parameter
         if mask_rank == 3:
@@ -299,7 +299,7 @@ fn test[
             )
 
         ctx.synchronize()
-        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        ctx.memcopy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
     # This is useful for debugging.

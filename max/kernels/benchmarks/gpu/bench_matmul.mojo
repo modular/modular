@@ -139,8 +139,8 @@ fn bench_matmul[
             initialize(a_host.tensor, init_type)
             initialize(b_host.tensor, init_type)
 
-        ctx.enqueue_copy(buffer_a, a_host.tensor.data)
-        ctx.enqueue_copy(buffer_b, b_host.tensor.data)
+        ctx.memcopy(buffer_a, a_host.tensor.data)
+        ctx.memcopy(buffer_b, b_host.tensor.data)
         ctx.synchronize()
     else:
         init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)

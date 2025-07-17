@@ -40,7 +40,7 @@ fn bad_func(ptr: UnsafePointer[Int32], i: Int):
 
 fn test(ctx: DeviceContext, i: Int) raises:
     alias n = 4
-    var buf = ctx.enqueue_create_buffer[DType.int32](n)
+    var buf = ctx.create_buffer[DType.int32](n)
 
     ctx.enqueue_function[bad_func](buf, i, grid_dim=(1), block_dim=(1))
     ctx.synchronize()

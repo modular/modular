@@ -75,10 +75,10 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     _fill_buffer(input_3_host)
 
     var total_size_inp: Int = input_shape.product[rank]().get()
-    var input_0_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_1_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_2_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
-    var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
+    var input_0_device = ctx.create_buffer[dtype](total_size_inp)
+    var input_1_device = ctx.create_buffer[dtype](total_size_inp)
+    var input_2_device = ctx.create_buffer[dtype](total_size_inp)
+    var input_3_device = ctx.create_buffer[dtype](total_size_inp)
 
     var input_0_device_ref = NDBuffer[dtype, rank](
         input_0_device._unsafe_ptr(), input_shape
@@ -93,13 +93,13 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         input_3_device._unsafe_ptr(), input_shape
     )
 
-    ctx.enqueue_copy(input_0_device, input_0_host.data)
-    ctx.enqueue_copy(input_1_device, input_1_host.data)
-    ctx.enqueue_copy(input_2_device, input_2_host.data)
-    ctx.enqueue_copy(input_3_device, input_3_host.data)
+    ctx.memcopy(input_0_device, input_0_host.data)
+    ctx.memcopy(input_1_device, input_1_host.data)
+    ctx.memcopy(input_2_device, input_2_host.data)
+    ctx.memcopy(input_3_device, input_3_host.data)
 
     var total_size_outp: Int = output_shape.product[rank]().get()
-    var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
+    var output_device = ctx.create_buffer[dtype](total_size_outp)
     var output_device_ref = NDBuffer[dtype, rank](
         output_device._unsafe_ptr(), output_shape
     )
@@ -158,7 +158,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
 
     var output_host = _create_buffer_host[rank, dtype](output_shape)
-    ctx.enqueue_copy(output_host.data, output_device)
+    ctx.memcopy(output_host.data, output_device)
 
     fn validate_results() raises:
         var validTest = True
@@ -235,7 +235,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         "GB/s",
     )
 
-    ctx.enqueue_copy(output_host.data, output_device)
+    ctx.memcopy(output_host.data, output_device)
 
     validate_results()
 

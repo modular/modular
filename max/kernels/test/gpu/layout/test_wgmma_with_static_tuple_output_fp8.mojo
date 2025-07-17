@@ -169,11 +169,11 @@ fn wgmma_e4m3_e4m3_f32[
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var c_tensor = from_ndbuffer_row_major(c_device.tensor)
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
@@ -209,7 +209,7 @@ fn wgmma_e4m3_e4m3_f32[
         block_dim=(128),
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.memcopy(c_host.tensor.data, c_device.buffer)
 
     if transpose_b:
         vendor_blas.matmul(
@@ -235,9 +235,7 @@ fn wgmma_e4m3_e4m3_f32[
         var b_device_col_major = DeviceNDBuffer[
             DType.float8_e4m3fn, 2, DimList(N, K)
         ](ctx=ctx)
-        ctx.enqueue_copy(
-            b_device_col_major.buffer, b_host_col_major.tensor.data
-        )
+        ctx.memcopy(b_device_col_major.buffer, b_host_col_major.tensor.data)
 
         vendor_blas.matmul(
             ctx,
@@ -249,7 +247,7 @@ fn wgmma_e4m3_e4m3_f32[
             transpose_b=True,
         )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
 

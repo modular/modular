@@ -32,7 +32,7 @@ fn _run_memset[
 
     # Copy to and from device buffers.
     in_host.copy_to(on_dev)
-    ctx.enqueue_memset(on_dev, val)
+    ctx.memset(on_dev, val)
     on_dev.copy_to(out_host)
 
     # Wait for the copies to be completed.

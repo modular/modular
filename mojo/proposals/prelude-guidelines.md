@@ -45,7 +45,7 @@ including a particular item.
 - **Used with language syntax or fundamental semantics.**
   - The type is fundamental to effective usage of syntax in the language.
   - *Examples:*
-    - `Reference`
+    - `Pointer`
     - `Slice` — necessary for a type to implement `[a..b]` `__getitem__` syntax.
     - `Origin`, `ImmutableOrigin`, `MutableAnyOrigin` — necessary to use the
       `ref [lifetime] foo: T` syntax.
@@ -88,7 +88,7 @@ prelude include:
   - *Examples:* `bitcast`, `simdwidthof`, `external_call`
 - **Language machinery**
   - *Examples:*
-    - `ListLiteral`, `VariadicListMem`, `VariadicPack`
+    - `VariadicListMem`, `VariadicPack`
       - Note that although we aim to remove these from the prelude eventually,
         they may stay for some time due to missing language features (e.g. kwarg
         splatting) that would eventually obsolete them.

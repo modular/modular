@@ -35,6 +35,7 @@ from max.pipelines.core import (
     TextContext,
     msgpack_numpy_decoder,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
 from max.serve.config import Settings
@@ -483,14 +484,17 @@ def load_decode_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    max_batch_size_tg: int,
-    max_forward_steps_tg: int,
+    pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
 ) -> DecodeScheduler:
     # Create Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
-        max_forward_steps_tg=max_forward_steps_tg,
+        max_batch_size_tg=pipeline_config.max_batch_size
+        if pipeline_config.max_batch_size is not None
+        else 1,
+        max_forward_steps_tg=pipeline_config.max_new_tokens
+        if pipeline_config.max_new_tokens != -1
+        else 1,
     )
 
     # Retrieve Paged Manager

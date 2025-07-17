@@ -30,7 +30,7 @@ from os import abort
 from os.atomic import Consistency
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x, alignof, bitwidthof
+from sys.info import _is_sm_9x, alignof, bitwidthof, CompilationTarget
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 from memory.unsafe import bitcast
 
@@ -194,9 +194,12 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             constraints="=r,r,n,n,n",
             has_side_effect=False,
         ](a, b, c, Int32(lut))
-
-    constrained[False, "The lop function is not supported by AMD GPUs."]()
-    return abort[Int32]("function not available")
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Int32,
+            operation="lop",
+            note="lop() is only supported when targeting NVIDIA GPUs.",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -226,10 +229,22 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    alias asm = StaticString(
-        "llvm.nvvm.prmt"
-    ) if is_nvidia_gpu() else "llvm.amdgcn.perm"
+    alias asm = _byte_permute_inst()
+
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
+
+
+fn _byte_permute_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.prmt"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.perm"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="byte_permute",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -701,7 +716,9 @@ fn store_release[
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
-        abort("unsupported device dtype")
+        return CompilationTarget.unsupported_target_error[
+            operation="store_release"
+        ]()
 
 
 @always_inline
@@ -755,7 +772,10 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:
-        return abort[Scalar[dtype]]("unsupported device dtype")
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype],
+            operation="load_acquire",
+        ]()
 
 
 @always_inline

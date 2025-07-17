@@ -38,14 +38,14 @@ fn test_vec_init[
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
     var timer = Timer()
     var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var out_device = context.enqueue_create_buffer[dtype](length)
+    var out_device = context.create_buffer[dtype](length)
     timer.measure("create-buffer")
 
     init_vector_launch[dtype](out_device, length, init_type, context)
 
     timer.measure("vector_init_launch")
     context.synchronize()
-    context.enqueue_copy(out_host, out_device)
+    context.memcopy(out_host, out_device)
     timer.measure("copy+sync")
 
     # verification for uniform_distribution is not supported!

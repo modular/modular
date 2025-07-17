@@ -10,26 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 import logging
 import queue
 import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar, Union
+from typing import Any, Generic, TypeVar, Union
 
 import zmq
-from max.interfaces import (
-    EngineResult,
-    TextGenerationResponse,
-    TokenGenerator,
-)
+from max.interfaces import EngineResult, TextGenerationResponse, TokenGenerator
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
     msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -64,16 +64,10 @@ class TokenGenerationSchedulerConfig:
     max_forward_steps_tg: int
     """The number of tokens to generate for each request in the token generation iteration."""
 
-    target_tokens_per_batch_tg: Optional[int]
-    """The target total number of tokens to generate in the token generation batch."""
-
     max_batch_size_ce: int
     """The maximum number of requests that can be in the context encoding batch."""
 
-    max_forward_steps_ce: int
-    """The number of tokens to encode for each request in the context encoding iteration."""
-
-    target_tokens_per_batch_ce: Optional[int]
+    target_tokens_per_batch_ce: int | None
     """The target total number of tokens to encode in the context encoding batch."""
 
     enable_chunked_prefill: bool = True
@@ -91,12 +85,6 @@ class TokenGenerationSchedulerConfig:
             msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
             raise ValueError(msg)
 
-        if self.max_forward_steps_ce > 1:
-            logger.info(
-                "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
-            )
-            self.max_forward_steps_ce = 1
-
 
 T = TypeVar("T")
 
@@ -107,8 +95,8 @@ class GenericSchedulerOutput(Generic[T]):
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
         batch_inputs: dict[str, T] = {},
-        input_tokens: Optional[int] = None,
-        cached_tokens: Optional[int] = None,
+        input_tokens: int | None = None,
+        cached_tokens: int | None = None,
     ) -> None:
         self.batch_type = batch_type
         self.num_steps = num_steps
@@ -159,7 +147,7 @@ class TokenGenerationScheduler(Scheduler):
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
-        paged_manager: Optional[PagedKVCacheManager] = None,
+        paged_manager: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -175,7 +163,11 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.response_q = ZmqPushSocket[
             dict[str, EngineResult[TextGenerationResponse]]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -300,7 +292,7 @@ class TokenGenerationScheduler(Scheduler):
                 break
 
             orig_prompt_length = data.active_length
-            num_steps = self.scheduler_config.max_forward_steps_ce
+            num_steps = 1
 
             if self.paged_manager is not None:
                 max_seq_len = self.paged_manager.max_seq_len
@@ -334,7 +326,6 @@ class TokenGenerationScheduler(Scheduler):
             batch_inputs=ce_batch,
             input_tokens=tot_input_tokens,
             cached_tokens=tot_cached_tokens,
-            num_steps=self.scheduler_config.max_forward_steps_ce,
         )
 
     @traced
@@ -450,7 +441,7 @@ class TokenGenerationScheduler(Scheduler):
             # Note that some tokens for req 1 and 3 will be generated but discarded.
             # This is intentional in order to prevent a single short request from
             # limiting the num_steps for performance reasons.
-            num_available_steps_req: Optional[int] = None
+            num_available_steps_req: int | None = None
             for data in self.active_batch.values():
                 # If any request has no max_length, we should not change num_steps
                 if data.max_length is None:
@@ -534,7 +525,7 @@ class TokenGenerationScheduler(Scheduler):
         assert batch_size > 0
         terminated_reqs = sch_output.num_terminated
         num_steps = (
-            self.scheduler_config.max_forward_steps_ce
+            1
             if batch_type == BatchType.ContextEncoding
             else self.scheduler_config.max_forward_steps_tg
         )
@@ -567,7 +558,7 @@ class TokenGenerationScheduler(Scheduler):
         target_tokens = (
             self.scheduler_config.target_tokens_per_batch_ce
             if batch_type == BatchType.ContextEncoding
-            else self.scheduler_config.target_tokens_per_batch_tg
+            else None
         )
         target_tokens_str = f"{target_tokens}" if target_tokens else "INF"
         input_tokens = sch_output.input_tokens
@@ -738,7 +729,6 @@ class TokenGenerationScheduler(Scheduler):
         if not batch_responses:
             return
 
-        # Convert this to list[dict[str, Any]]
         responses: dict[str, EngineResult[TextGenerationResponse]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:
@@ -797,25 +787,20 @@ def load_text_generation_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    max_batch_size_tg: int,
-    max_forward_steps_tg: int,
-    target_tokens_per_batch_tg: Optional[int],
-    max_batch_size_ce: int,
-    max_forward_steps_ce: int,
-    target_tokens_per_batch_ce: Optional[int],
-    enable_chunked_prefill: bool = True,
-    enable_in_flight_batching: bool = False,
+    pipeline_config: PipelineConfig,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
-        max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
-        max_batch_size_ce=max_batch_size_ce,
-        max_forward_steps_ce=max_forward_steps_ce,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        enable_chunked_prefill=enable_chunked_prefill,
-        enable_in_flight_batching=enable_in_flight_batching,
+        max_batch_size_tg=pipeline_config.max_batch_size
+        if pipeline_config.max_batch_size is not None
+        else 1,
+        max_forward_steps_tg=pipeline_config.max_new_tokens
+        if pipeline_config.max_new_tokens != -1
+        else 1,
+        max_batch_size_ce=pipeline_config.max_ce_batch_size,
+        target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
+        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+        enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
     )
 
     # Retrieve Paged Manager

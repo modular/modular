@@ -854,7 +854,7 @@ fn scatter_nd_generator[
             var inp = DeviceBuffer(
                 ctx, data.data, data.num_elements(), owning=False
             )
-            ctx.enqueue_copy(
+            ctx.memcopy(
                 outp,
                 inp,
             )

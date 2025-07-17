@@ -173,8 +173,8 @@ fn test_conv_transposed_cudnn[
     var d_output = DeviceNDBuffer[dtype, 4, output_shape4d_nchw](
         output_shape4d_nchw, ctx=ctx
     )
-    ctx.enqueue_copy(d_input.buffer, input_nchw_host.tensor.data)
-    ctx.enqueue_copy(d_filter.buffer, filter_nchw_host.tensor.data)
+    ctx.memcopy(d_input.buffer, input_nchw_host.tensor.data)
+    ctx.memcopy(d_filter.buffer, filter_nchw_host.tensor.data)
 
     var stride_hw = Index(1, stride_val)
     var dilation_hw = Index(1, dilation_val)
@@ -208,8 +208,8 @@ fn test_conv_transposed_cudnn[
         ctx,
     )
 
-    # Copy result back to host using enqueue_copy
-    ctx.enqueue_copy(output_nchw_host.tensor.data, d_output.buffer)
+    # Copy result back to host using memcopy
+    ctx.memcopy(output_nchw_host.tensor.data, d_output.buffer)
 
     # -------------------------------------------------------------
     # 3. Compare naive vs cuDNN results

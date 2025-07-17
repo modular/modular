@@ -33,7 +33,6 @@ from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
-    batch_config_from_pipeline_config,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
@@ -183,7 +182,6 @@ async def _async_worker(
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )
-    batch_config = batch_config_from_pipeline_config(pipeline_config)
     model_name = pipeline_config.model_config.model_path
     dispatcher_factory = DispatcherFactory[
         Union[PrefillRequest, PrefillResponse]
@@ -197,14 +195,16 @@ async def _async_worker(
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
+    pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
             model_factory=model_factory,
-            batch_config=batch_config,
+            pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
             dispatcher_factory=dispatcher_factory,
+            pipeline_task=pipeline_task,
         ) as engine_queue,
         TokenGeneratorPipeline(
             model_name=model_name,

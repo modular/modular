@@ -77,14 +77,14 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
         for i in range(n):
             vec_host[i] = 1
 
-    var vec_device = ctx.enqueue_create_buffer[F32](n)
+    var vec_device = ctx.create_buffer[F32](n)
     vec_device.copy_from(vec_host.data)
 
-    var res_add_device = ctx.enqueue_create_buffer[F32](1).fill(0)
+    var res_add_device = ctx.create_buffer[F32](1).fill(0)
 
-    var res_min_device = ctx.enqueue_create_buffer[F32](1).fill(0)
+    var res_min_device = ctx.create_buffer[F32](1).fill(0)
 
-    var res_max_device = ctx.enqueue_create_buffer[F32](1).fill(0)
+    var res_max_device = ctx.create_buffer[F32](1).fill(0)
 
     ctx.enqueue_function[reduce](
         res_add_device,

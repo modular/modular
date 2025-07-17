@@ -623,11 +623,11 @@ def test_blackwell_matmul_tma_umma[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var a = from_ndbuffer_row_major(a_device.tensor)
     var b = from_ndbuffer_row_major(b_device.tensor)
@@ -702,8 +702,8 @@ def test_blackwell_matmul_tma_umma[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.memcopy(c_host.tensor.data, c_device.buffer)
+        ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
         alias rtol = 1e-2
 

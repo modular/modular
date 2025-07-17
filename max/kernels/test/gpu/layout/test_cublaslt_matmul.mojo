@@ -52,8 +52,8 @@ fn test_cublaslt[
     var c_device = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
     var c_device_ref = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
     matmul(
         ctx,
@@ -65,7 +65,7 @@ fn test_cublaslt[
         c_row_major=True,
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.memcopy(c_host.tensor.data, c_device.buffer)
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
@@ -88,7 +88,7 @@ fn test_cublaslt[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
 

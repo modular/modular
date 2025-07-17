@@ -109,9 +109,9 @@ def execute_flash_attention[
             max_context_len, Int(cache_valid_length[i] + valid_length[i])
         )
 
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.create_buffer[DType.uint32](batch_size)
 
-    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
+    ctx.memcopy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
         cache_lengths_dev.unsafe_ptr(), Index(batch_size)
     )
@@ -132,7 +132,7 @@ def execute_flash_attention[
         IndexList[1](batch_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy(valid_length_device.buffer, valid_length.data)
+    ctx.memcopy(valid_length_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -142,7 +142,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
+    ctx.memcopy(q_device.buffer, q_host.tensor.data)
 
     # initialize mask tensor
     mask_host = HostNDBuffer[
@@ -190,7 +190,7 @@ def execute_flash_attention[
         IndexList[4](batch_size, num_q_heads, max_prompt_len, max_context_len),
         ctx=ctx,
     )
-    ctx.enqueue_copy(mask_device.buffer, mask_host.tensor.data)
+    ctx.memcopy(mask_device.buffer, mask_host.tensor.data)
 
     mask_device_mod = DeviceNDBuffer[
         DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
@@ -198,7 +198,7 @@ def execute_flash_attention[
         IndexList[4](batch_size, num_q_heads, max_prompt_len, max_context_len),
         ctx=ctx,
     )
-    ctx.enqueue_copy(mask_device_mod.buffer, mask_host_mod.tensor.data)
+    ctx.memcopy(mask_device_mod.buffer, mask_host_mod.tensor.data)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
@@ -307,8 +307,8 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.memcopy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     var ref_out = ref_output_host.tensor

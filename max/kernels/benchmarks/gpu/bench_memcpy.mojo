@@ -128,11 +128,9 @@ fn bench_memcpy(
 ) raises:
     alias dtype = DType.float32
     length_in_elements = length_in_bytes // sizeof[dtype]()
-    var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
+    var mem_host: HostBuffer[dtype] = context.create_host_buffer[dtype](
         length_in_elements
-    ) if config.pinned_memory else DeviceContext(
-        api="cpu"
-    ).enqueue_create_host_buffer[
+    ) if config.pinned_memory else DeviceContext(api="cpu").create_host_buffer[
         dtype
     ](
         length_in_elements
@@ -155,11 +153,11 @@ fn bench_memcpy(
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
-                context.enqueue_copy(mem_host, mem_device)
+                context.memcopy(mem_host, mem_device)
             elif config.direction == Config.HToD:
-                context.enqueue_copy(mem_device, mem_host)
+                context.memcopy(mem_device, mem_host)
             elif config.direction == Config.DToD:
-                context.enqueue_copy(mem_device, mem2_device)
+                context.memcopy(mem_device, mem2_device)
             else:
                 raise Error("Unexpected transfer direction")
 
@@ -210,7 +208,7 @@ fn bench_p2p(
     var dst_buf = ctx2.create_buffer[dtype](length_in_elements)
 
     # Copy initial data to source buffer
-    ctx1.enqueue_copy(src_buf, host_ptr)
+    ctx1.memcopy(src_buf, host_ptr)
     ctx1.synchronize()
 
     @parameter
@@ -219,7 +217,7 @@ fn bench_p2p(
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx2.enqueue_copy(dst_buf, src_buf)
+            ctx2.memcopy(dst_buf, src_buf)
 
         b.iter_custom[kernel_launch](ctx1)
 
@@ -238,7 +236,7 @@ fn bench_p2p(
     )
 
     # Copy back for verification
-    ctx2.enqueue_copy(host_ptr, dst_buf)
+    ctx2.memcopy(host_ptr, dst_buf)
     ctx2.synchronize()
 
     # Parallel verification

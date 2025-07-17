@@ -25,11 +25,11 @@ fn test_memset_async(ctx: DeviceContext) raises:
     fn test_memset[dtype: DType](val: Scalar[dtype]) raises:
         alias length = 4
         var data = UnsafePointer[Scalar[dtype]].alloc(length)
-        var data_device = ctx.enqueue_create_buffer[dtype](length)
-        ctx.enqueue_copy(data_device, data)
+        var data_device = ctx.create_buffer[dtype](length)
+        ctx.memcopy(data_device, data)
         # iota(data, length, 0)
-        ctx.enqueue_memset(data_device, val)
-        ctx.enqueue_copy(data, data_device)
+        ctx.memset(data_device, val)
+        ctx.memcopy(data, data_device)
         ctx.synchronize()
         for i in range(length):
             print(data[i])

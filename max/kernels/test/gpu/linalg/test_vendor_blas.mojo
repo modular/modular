@@ -38,13 +38,13 @@ def test_vendor_blas[
         for n in range(N):
             b_host[k * N + n] = random_float64(-0.1, 0.1).cast[dtype]()
 
-    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
-    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
-    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_device = ctx.create_buffer[dtype](M * K)
+    var b_device = ctx.create_buffer[dtype](K * N)
+    var c_device = ctx.create_buffer[dtype](M * N)
+    var c_device_ref = ctx.create_buffer[dtype](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     var a = NDBuffer[dtype, 2](a_device._unsafe_ptr(), (M, K))
     var b = NDBuffer[dtype, 2](
@@ -55,7 +55,7 @@ def test_vendor_blas[
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
 
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
@@ -73,7 +73,7 @@ def test_vendor_blas[
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.memcopy(c_host_ref, c_device_ref)
 
     ctx.synchronize()
 

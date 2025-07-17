@@ -51,13 +51,13 @@ fn fused_reduce_inner_test[
         "expected vals must match output shape",
     )
 
-    var vec_device = ctx.enqueue_create_buffer[dtype](in_size)
+    var vec_device = ctx.create_buffer[dtype](in_size)
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
             vec_host[i] = i // shape[axis] + offset
 
-    var res_device0 = ctx.enqueue_create_buffer[dtype](out_size)
-    var res_device1 = ctx.enqueue_create_buffer[dtype](out_size)
+    var res_device0 = ctx.create_buffer[dtype](out_size)
+    var res_device1 = ctx.create_buffer[dtype](out_size)
     var input_buf_device = NDBuffer[dtype, rank](
         vec_device._unsafe_ptr(), shape
     )
@@ -143,13 +143,13 @@ fn reduce_inner_test[
         len(expected_vals) == out_size, "expected vals must match output shape"
     )
 
-    var vec_device = ctx.enqueue_create_buffer[dtype](in_size)
+    var vec_device = ctx.create_buffer[dtype](in_size)
 
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
             vec_host[i] = i // shape[axis] + offset
 
-    var res_device = ctx.enqueue_create_buffer[dtype](out_size)
+    var res_device = ctx.create_buffer[dtype](out_size)
     var input_buf_device = NDBuffer[dtype, rank](
         vec_device._unsafe_ptr(), shape
     )

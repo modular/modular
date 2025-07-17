@@ -59,6 +59,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCollectionT,
+    PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
@@ -158,9 +159,11 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    k_grouped_matmul_ragged_paged,
     k_matmul_ragged_paged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
+    v_grouped_matmul_ragged_paged,
 )
 from nn.mha import flash_attention
 from nn.mha_mask import MHAMask
@@ -9141,7 +9144,7 @@ struct DistributedMatmulAllReduce:
 
         @parameter
         for i in range(num_devices):
-            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
+            var device_buffer = dev_ctxs[i].create_buffer[c_type](
                 out_bufs[i].num_elements()
             )
             c_temp_bufs[i] = NDBuffer[
@@ -9586,4 +9589,131 @@ struct MergeRaggedTensors:
             managed_tensor_slice_to_ndbuffer(b),
             managed_tensor_slice_to_ndbuffer(b_row_offsets),
             ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Ragged LoRA SGMV Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lora_sgmv.ragged")
+struct Struct_lora_sgmv_ragged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType, //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        lora_ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_seq_length: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
+        cuda_ctx = context.get_device_context()
+
+        if lora_ids.dim_size[0]() == 0:
+            return
+
+        grouped_matmul(
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(lora_ids),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# K Cache Grouped Matmul Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.k_grouped.matmul.ragged.paged")
+struct Struct_k_grouped_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2],
+        b: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "k_grouped_matmul only supports GPUs"]()
+        k_grouped_matmul_ragged_paged[dtype, target=target,](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(ids),
+            Int(max_num_tokens_per_expert),
+            ids.dim_size[0](),
+            kv_collection,
+            layer_idx,
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# V Cache Grouped Matmul Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.v_grouped.matmul.ragged.paged")
+struct Struct_v_grouped_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2],
+        b: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "v_grouped_matmul only supports GPUs"]()
+        v_grouped_matmul_ragged_paged[dtype, target=target,](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(ids),
+            Int(max_num_tokens_per_expert),
+            ids.dim_size[0](),
+            kv_collection,
+            layer_idx,
+            context,
         )

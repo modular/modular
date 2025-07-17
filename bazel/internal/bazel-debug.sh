@@ -53,8 +53,15 @@ do
 done
 
 script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-root="$(git -C "$script_root" rev-parse --show-toplevel)"
-wrapper="$root/bazelw"
+repo_root="$(git -C "$script_root" rev-parse --show-toplevel)"
+wrapper="$repo_root/bazelw"
+
+previous_pwd="$PWD"
+current_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ "$repo_root" != "$current_repo_root" ]]; then
+  # Only cd if required so relative bazel targets work
+  cd "$repo_root"
+fi
 
 # py_binary rule //path/to:target
 output=$("$wrapper" query "some(labels(actual, $target) union set($target))" --output=label_kind)
@@ -85,7 +92,7 @@ elif [[ "$kind" == modular_genrule ]]; then
 fi
 
 before_target+=("--config=$default_config")
-MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" "$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
+MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" "$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
 if [[ "$run_debug_script" == "true" ]]; then
-  MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
+  MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
 fi

@@ -99,11 +99,11 @@ fn bench_reduce[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy data to device
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].memcopy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
@@ -180,7 +180,7 @@ fn bench_reduce[
     @parameter
     for i in range(ngpus):
         expected_sum += i + 1
-        list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
+        list_of_ctx[i].memcopy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
     @parameter

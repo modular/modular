@@ -97,7 +97,7 @@ fn test_case_batched[
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    ctx.memcopy(device_in.buffer, in_buffer.tensor.data)
 
     var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
         DimList(batch_size), ctx=ctx
@@ -108,7 +108,7 @@ fn test_case_batched[
 
     var max_k = Int(reduce_max(K_host_buffer.tensor))
 
-    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    ctx.memcopy(K_device_buffer.buffer, K_host_buffer.tensor.data)
     ctx.synchronize()
 
     @parameter
@@ -129,8 +129,8 @@ fn test_case_batched[
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
-            ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
-            ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
+            ctx.memcopy(topk_vals.tensor.data, device_out_vals.buffer)
+            ctx.memcopy(topk_idxs.tensor.data, device_out_idxs.buffer)
             ctx.synchronize()
 
         alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
@@ -150,8 +150,8 @@ fn test_case_batched[
     )
 
     # Copy results back to host
-    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.memcopy(topk_vals.tensor.data, device_out_vals.buffer)
+    ctx.memcopy(topk_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     var _msg1: String = "Top-K values: "
@@ -275,7 +275,7 @@ fn test_case_multi_rank[
         out_idxs_shape, ctx=ctx
     )
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    ctx.memcopy(device_in.buffer, in_buffer.tensor.data)
     var batch_size: Int
 
     @parameter
@@ -294,7 +294,7 @@ fn test_case_multi_rank[
     var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
         DimList(batch_size), ctx=ctx
     )
-    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    ctx.memcopy(K_device_buffer.buffer, K_host_buffer.tensor.data)
     ctx.synchronize()
     var max_k = Int(reduce_max(K_host_buffer.tensor))
 
@@ -310,8 +310,8 @@ fn test_case_multi_rank[
     )
 
     # Copy results back to host
-    ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
-    ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.memcopy(topk_vals.tensor.data, device_out_vals.buffer)
+    ctx.memcopy(topk_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference

@@ -27,7 +27,6 @@ from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
 from .config_enums import PipelineEngine, PipelineRole
-from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
     LoRAConfig,
@@ -164,9 +163,6 @@ class PipelineConfig(MAXConfig):
 
     _lora_config: Optional[LoRAConfig] = None
     """The LoRA config."""
-
-    _lora_manager: Optional[LoRAManager] = None
-    """The LoRA Manager"""
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -669,10 +665,6 @@ class PipelineConfig(MAXConfig):
     @property
     def lora_config(self) -> Optional[LoRAConfig]:
         return self._lora_config
-
-    @property
-    def lora_manager(self) -> Optional[LoRAManager]:
-        return self._lora_manager
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

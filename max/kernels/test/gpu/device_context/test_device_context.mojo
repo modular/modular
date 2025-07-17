@@ -50,13 +50,13 @@ fn test_basic(ctx: DeviceContext) raises:
         in1_host[i] = 2
 
     # Device memory buffers for the kernel input and output
-    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0_device = ctx.create_buffer[DType.float32](length)
+    var in1_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
     # Copy the input data from the Host to the Device memory
-    ctx.enqueue_copy(in0_device, in0_host)
-    ctx.enqueue_copy(in1_device, in1_host)
+    ctx.memcopy(in0_device, in0_host)
+    ctx.memcopy(in1_device, in1_host)
 
     var block_dim = 32
     var supplement = 5
@@ -74,7 +74,7 @@ fn test_basic(ctx: DeviceContext) raises:
     )
 
     # Copy the results back from the device to the host
-    ctx.enqueue_copy(out_host, out_device)
+    ctx.memcopy(out_host, out_device)
 
     # Wait for the computation to be completed
     ctx.synchronize()
@@ -115,7 +115,7 @@ def test_id(ctx: DeviceContext):
 def test_print(ctx: DeviceContext):
     alias size = 15
 
-    var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
+    var host_buffer = ctx.create_host_buffer[DType.uint16](size)
     ctx.synchronize()
 
     iota(host_buffer.unsafe_ptr(), size)
@@ -125,7 +125,7 @@ def test_print(ctx: DeviceContext):
     )
     assert_equal(String(host_buffer), expected_host)
 
-    var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
+    var dev_buffer = ctx.create_buffer[DType.uint16](size)
     host_buffer.copy_to(dev_buffer)
     ctx.synchronize()
 
@@ -135,7 +135,7 @@ def test_print(ctx: DeviceContext):
     assert_equal(String(dev_buffer), expected_dev)
 
     alias large_size = 1001
-    var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
+    var large_buffer = ctx.create_host_buffer[DType.float32](large_size)
     ctx.synchronize()
 
     iota(large_buffer.unsafe_ptr(), large_size)

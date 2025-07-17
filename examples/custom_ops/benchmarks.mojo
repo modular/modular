@@ -62,7 +62,7 @@ struct Tensor[
     var buffer: DeviceBuffer[dtype]
 
     fn __init__(out self, ctx: DeviceContext) raises:
-        self.buffer = ctx.enqueue_create_buffer[dtype](Self.size)
+        self.buffer = ctx.create_buffer[dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
             io_spec=io_spec, static_spec=static_spec

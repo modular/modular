@@ -60,7 +60,7 @@ dependencies = [
   "pytest-xdist",
   "pytest>=7.2",
   "python-json-logger",
-  "PyYAML>=5.3.1, <=6.0.1",
+  "PyYAML",
   "pyzmq",
   "plotly",
   "qwen-vl-utils",
@@ -108,7 +108,6 @@ dependencies = [
   # mblack
   "mypy-extensions>=0.4.3",
   "pathspec>=0.9.0",
-  "pip>=22.3.1",
   "platformdirs>=2",
 
   # pillow is required to get the torch tests configured correctly
@@ -119,8 +118,6 @@ dependencies = [
   "librosa==0.10.2",
   "soundfile==0.12.1",
   "grpcio",
-  "grpcio-tools",
-  "grpcio-reflection",
   "pytest-grpc",
 
   # mypy types
@@ -137,7 +134,6 @@ amd = [
   "torchvision==0.22.0",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "nvtx; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
@@ -170,7 +166,6 @@ nvidia = [
   "torchvision==0.22.0",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "nvtx; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",

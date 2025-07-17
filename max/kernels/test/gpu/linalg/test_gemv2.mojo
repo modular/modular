@@ -124,9 +124,9 @@ fn test[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
         c_device.tensor,
@@ -137,7 +137,7 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.memcopy(c_host.tensor.data, c_device.buffer)
 
     var handle = vendor_blas.Handle()
 
@@ -151,7 +151,7 @@ fn test[
         transpose_b=transpose_b,
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
     var errors = 0

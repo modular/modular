@@ -78,6 +78,7 @@ __all__ = [
     "AttentionWithRopeV1",
     "AttentionWithRopeQKV",
     "AttentionWithRope",
+    "AttentionWithRopeAndLoRA",
     "RaggedAttention",
     "clamp",
     "Conv1DV1",

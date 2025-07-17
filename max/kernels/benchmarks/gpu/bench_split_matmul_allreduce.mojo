@@ -131,8 +131,8 @@ fn bench_matmul_all_reduce[
         random.randn(B_host_list[i], nk)
 
         # Copy A and B to device
-        list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
-        list_of_ctx[i].enqueue_copy(B_list[i], B_host_list[i])
+        list_of_ctx[i].memcopy(A_list[i], A_host_list[i])
+        list_of_ctx[i].memcopy(B_list[i], B_host_list[i])
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -140,7 +140,7 @@ fn bench_matmul_all_reduce[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.

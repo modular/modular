@@ -539,6 +539,22 @@ fn _matmul_gpu[
         if multi_gemm_cond:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
+            # Allow caller to overwrite dispatch heuristic with their own config.
+            @parameter
+            if config:
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = config.value(),
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    config.value(),
+                    ctx,
+                )
+                return
+
             @parameter
             if has_amd_gpu_accelerator():
                 alias static_N = c_shape.get[1]()
@@ -879,22 +895,6 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            # Allow caller to overwrite dispatch heuristic with their own config.
-            @parameter
-            if config:
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config = config.value(),
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    config.value(),
-                    ctx,
-                )
-                return
-
             alias use_A100_kernels = ctx.device_info is A100 or (
                 ctx.device_info is H100 and use_A100_kernels_on_H100 != 0
             )
@@ -1231,7 +1231,7 @@ fn multistage_gemm[
             var locks_data = ctx.create_buffer[DType.int32](
                 ceildiv(M, BM) * ceildiv(N, BN)
             )
-            ctx.enqueue_memset(locks_data, 0)
+            ctx.memset(locks_data, 0)
 
             alias gemm_kernel_type = multistage_gemm_split_k_kernel[
                 c_type,
