@@ -56,6 +56,11 @@ public:
     return cast<KGENCallOpInterface>(op).getCallee();
   }
 
+  FlatSymbolRefAttr getCalleeSymbol() {
+    return cast<FlatSymbolRefAttr>(
+        cast<SymbolConstantAttr>(getCallee()).getSymbol());
+  }
+
 private:
   /// The underlying operation.
   Operation *op;

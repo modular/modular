@@ -477,6 +477,13 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     FuncTypeGeneratorType getCalleeType() {
       return cast<FuncTypeGeneratorType>($_op.getCallee().getType());
     }
+
+    /// Get the symbol backing the callee.
+    SymbolRefAttr getCalleeSymbol() {
+      if (auto callee = dyn_cast<SymbolConstantAttr>($_op.getCallee()))
+        return callee.getSymbol();
+      return {};
+    }
   }];
 }
 
