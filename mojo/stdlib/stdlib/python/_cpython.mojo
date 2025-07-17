@@ -946,6 +946,30 @@ alias PyObject_CallObject = ExternalFunction[
     fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
+# Number Protocol
+alias PyNumber_Long = ExternalFunction[
+    "PyNumber_Long",
+    # PyObject *PyNumber_Long(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyNumber_Float = ExternalFunction[
+    "PyNumber_Float",
+    # PyObject *PyNumber_Float(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
+# Iterator Protocol
+alias PyIter_Check = ExternalFunction[
+    "PyIter_Check",
+    # int PyIter_Check(PyObject *o)
+    fn (PyObjectPtr) -> c_int,
+]
+alias PyIter_Next = ExternalFunction[
+    "PyIter_Next",
+    # PyObject *PyIter_Next(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
 # Concrete Objects Layer
 # Type Objects
 alias PyType_GenericAlloc = ExternalFunction[
@@ -1183,6 +1207,12 @@ struct CPython(Copyable, Defaultable, Movable):
     # Call Protocol
     var _PyObject_Call: PyObject_Call.type
     var _PyObject_CallObject: PyObject_CallObject.type
+    # Number Protocol
+    var _PyNumber_Long: PyNumber_Long.type
+    var _PyNumber_Float: PyNumber_Float.type
+    # Iterator Protocol
+    var _PyIter_Check: PyIter_Check.type
+    var _PyIter_Next: PyIter_Next.type
     # Concrete Objects Layer
     # Type Objects
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
@@ -1312,6 +1342,12 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._PyObject_Call = PyObject_Call.load(self.lib)
         self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
+
+        self._PyNumber_Long = PyNumber_Long.load(self.lib)
+        self._PyNumber_Float = PyNumber_Float.load(self.lib)
+
+        self._PyIter_Check = PyIter_Check.load(self.lib)
+        self._PyIter_Next = PyIter_Next.load(self.lib)
 
         self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
         if self.version.minor >= 11:
@@ -2013,6 +2049,77 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
+    # Number Protocol
+    # ref: https://docs.python.org/3/c-api/number.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `obj` converted to an integer object on success,
+        or `NULL` on failure. This is the equivalent of the Python expression
+        `int(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
+        """
+        var r = self._PyNumber_Long(obj)
+        self._inc_total_rc()
+        return r
+
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `o` converted to a float object on success, or `NULL` on
+        failure. This is the equivalent of the Python expression `float(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Float
+        """
+        var r = self._PyNumber_Float(obj)
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Iterator Protocol
+    # ref: https://docs.python.org/3/c-api/iter.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyIter_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return non-zero if the object `obj` can be safely passed to `PyIter_Next()`,
+        and `0` otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Check
+        """
+        return self._PyIter_Check(obj)
+
+    fn PyIter_Next(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Return the next value from the iterator `obj`. The object must be an
+        iterator according to `PyIter_Check()`. If there are no remaining values,
+        returns `NULL` with no exception set. If an error occurs while retrieving
+        the item, returns `NULL` and passes along the exception.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Next
+        """
+        var r = self._PyIter_Next(obj)
+        self.log(
+            r,
+            " NEWREF PyIter_Next from ",
+            obj,
+            ", refcnt(obj):",
+            self._Py_REFCNT(r),
+            "refcnt(iter)",
+            self._Py_REFCNT(obj),
+        )
+        if r:
+            self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Concrete Objects Layer
     # ref: https://docs.python.org/3/c-api/concrete.html
     # ===-------------------------------------------------------------------===#
@@ -2512,30 +2619,9 @@ struct CPython(Copyable, Defaultable, Movable):
         # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
         return self.lib.call["PyLong_AsSsize_t", c_ssize_t](obj)
 
-    fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """Returns the `obj` converted to an integer object on success,
-        or `NULL` on failure. This is the equivalent of the Python expression
-        `int(o)`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
-        """
-        # PyObject *PyNumber_Long(PyObject *o)
-        var r = self.lib.call["PyNumber_Long", PyObjectPtr](obj)
-        self._inc_total_rc()
-        return r
-
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
-
-    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
-        """
-        return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
 
     fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
         """[Reference](
@@ -2650,43 +2736,6 @@ struct CPython(Copyable, Defaultable, Movable):
             )
 
         return ptr[]
-
-    # ===-------------------------------------------------------------------===#
-    # Python Iterator operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyIter_Next(self, iterator: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Next).
-        """
-
-        var next_obj = self.lib.call["PyIter_Next", PyObjectPtr](iterator)
-
-        self.log(
-            next_obj,
-            " NEWREF PyIter_Next from ",
-            iterator,
-            ", refcnt(obj):",
-            self._Py_REFCNT(next_obj),
-            "refcnt(iter)",
-            self._Py_REFCNT(iterator),
-        )
-
-        if next_obj:
-            self._inc_total_rc()
-        return next_obj
-
-    fn PyIter_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Check).
-        """
-        return self.lib.call["PyIter_Check", c_int](obj) != 0
-
-    fn PySequence_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/sequence.html#c.PySequence_Check).
-        """
-        return self.lib.call["PySequence_Check", c_int](obj) != 0
 
     # ===-------------------------------------------------------------------===#
     # Python Slice Creation

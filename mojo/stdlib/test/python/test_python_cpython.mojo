@@ -133,6 +133,34 @@ def test_call_protocol_api(python: Python):
     assert_true(cpy.PyObject_Call(dict_func, t, d))
 
 
+def test_number_protocol_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+
+    var long_value = cpy.PyNumber_Long(n)
+    assert_true(long_value)
+    assert_equal(cpy.PyLong_AsSsize_t(long_value), 42)
+
+    var float_value = cpy.PyNumber_Float(n)
+    assert_true(float_value)
+    assert_equal(cpy.PyFloat_AsDouble(float_value), 42.0)
+
+
+def test_iterator_protocol_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    var l = cpy.PyList_New(1)
+    _ = cpy.PyList_SetItem(l, 0, n)
+
+    var it = cpy.PyObject_GetIter(l)
+
+    assert_false(cpy.PyIter_Check(n))
+    assert_true(it)
+    assert_true(cpy.PyIter_Next(it))
+
+
 def test_type_object_api(python: Python):
     var cpy = python.cpython()
 
@@ -272,6 +300,12 @@ def main():
 
     # Call Protocol
     test_call_protocol_api(python)
+
+    # Number Protocol
+    test_number_protocol_api(python)
+
+    # Iterator Protocol
+    test_iterator_protocol_api(python)
 
     # Concrete Objects Layer
 
