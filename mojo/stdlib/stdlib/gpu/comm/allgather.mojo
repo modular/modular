@@ -99,7 +99,7 @@ fn _allgather_naive[
             )
 
             # Copy from input device to current device.
-            curr_ctx.memcopy(
+            curr_ctx.enqueue_copy(
                 output_device_buffer,
                 device_buffers[input_idx],
             )

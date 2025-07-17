@@ -346,7 +346,7 @@ fn _allreduce_naive[
         for i in range(ngpus):
             if i != device_idx:
                 var tmp = curr_ctx.create_buffer[dtype](num_elements)
-                curr_ctx.memcopy(tmp, device_buffers[i])
+                curr_ctx.enqueue_copy(tmp, device_buffers[i])
                 tmp_buffers.append(tmp)
 
         # Reduce all buffers into accumulation buffer.

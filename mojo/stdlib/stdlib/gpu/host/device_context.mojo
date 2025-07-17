@@ -441,7 +441,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         Args:
             dst: The destination host buffer to copy data to.
         """
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
@@ -454,7 +454,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         Args:
             dst: The destination host buffer to copy data to.
         """
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     fn copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
@@ -470,7 +470,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     @deprecated("Use `copy_to() instead.")
     fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
@@ -487,7 +487,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     fn copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
@@ -503,7 +503,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(dst_ptr, self)
+        self.context().enqueue_copy(dst_ptr, self)
 
     @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
@@ -520,7 +520,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(dst_ptr, self)
+        self.context().enqueue_copy(dst_ptr, self)
 
     fn copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
@@ -536,7 +536,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
@@ -553,7 +553,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     fn copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
@@ -569,7 +569,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
@@ -586,7 +586,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     fn copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
@@ -602,7 +602,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src_ptr)
+        self.context().enqueue_copy(self, src_ptr)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
@@ -619,7 +619,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src_ptr)
+        self.context().enqueue_copy(self, src_ptr)
 
     fn fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -1177,7 +1177,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
@@ -1194,7 +1194,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     fn copy_to(self, dst: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
@@ -1210,7 +1210,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
@@ -1227,7 +1227,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().memcopy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     fn copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
@@ -1243,7 +1243,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(dst_ptr, self)
+        self.context().enqueue_copy(dst_ptr, self)
 
     @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
@@ -1260,7 +1260,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(dst_ptr, self)
+        self.context().enqueue_copy(dst_ptr, self)
 
     fn copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
@@ -1276,7 +1276,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
@@ -1293,7 +1293,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     fn copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
@@ -1309,7 +1309,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
@@ -1326,7 +1326,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src)
+        self.context().enqueue_copy(self, src)
 
     fn copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
@@ -1342,7 +1342,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src_ptr)
+        self.context().enqueue_copy(self, src_ptr)
 
     @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
@@ -1359,7 +1359,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().memcopy(self, src_ptr)
+        self.context().enqueue_copy(self, src_ptr)
 
     fn fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -5034,41 +5034,6 @@ struct DeviceContext(Copyable, Movable):
         return elapsed_nanos
 
     @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype]],
-    ) raises:
-        """Enqueues an async copy from the host to the provided device
-        buffer. The number of bytes copied is determined by the size of the
-        device buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_ptr: Host pointer to copy from.
-        """
-        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_HtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[dtype]],
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_ptr,
-            )
-        )
-
-    @deprecated("Use `memcopy() instead.")
-    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -5102,41 +5067,6 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
-    @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: HostBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype]],
-    ) raises:
-        """Enqueues an async copy from the host to the provided device
-        buffer. The number of bytes copied is determined by the size of the
-        device buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_ptr: Host pointer to copy from.
-        """
-        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_HtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[dtype]],
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_ptr,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -5172,40 +5102,6 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
-        src_buf: DeviceBuffer[dtype, **_],
-    ) raises:
-        """Enqueues an async copy from the device to the host. The
-        number of bytes copied is determined by the size of the device buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_ptr: Host pointer to copy to.
-            src_buf: Device buffer to copy from.
-        """
-        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoH_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_ptr,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
-    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -5238,40 +5134,6 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
-    @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
-        src_buf: HostBuffer[dtype, **_],
-    ) raises:
-        """Enqueues an async copy from the device to the host. The
-        number of bytes copied is determined by the size of the device buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_ptr: Host pointer to copy to.
-            src_buf: Device buffer to copy from.
-        """
-        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoH_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_ptr,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -5306,32 +5168,6 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_ptr: UnsafePointer[Scalar[dtype]],
-        src_ptr: UnsafePointer[Scalar[dtype]],
-        size: Int,
-    ) raises:
-        """Enqueues an async copy of `size` elements from a device pointer to
-        another device pointer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_ptr: Host pointer to copy to.
-            src_ptr: Device pointer to copy from.
-            size: Number of elements (of the specified `DType`) to copy.
-        """
-        # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
-        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
-        self.memcopy(dst_buf, src_buf)
-
-    @deprecated("Use `memcopy()` instead.")
-    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -5354,43 +5190,8 @@ struct DeviceContext(Copyable, Movable):
         # Not directly implemented on DeviceContext, wrap in buffers first
         var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
         var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
-        self.memcopy(dst_buf, src_buf)
+        self.enqueue_copy(dst_buf, src_buf)
 
-    @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self,
-        dst_buf: DeviceBuffer[dtype, **_],
-        src_buf: DeviceBuffer[dtype, **_],
-    ) raises:
-        """Enqueues an async copy from one device buffer to another. The amount
-        of data transferred is determined by the size of the destination buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from. Must be at least as large as
-                `dst`.
-        """
-        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -5426,39 +5227,6 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self, dst_buf: DeviceBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
-    ) raises:
-        """Enqueues an async copy from one device buffer to another. The amount
-        of data transferred is determined by the size of the destination buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from. Must be at least as large as
-                `dst`.
-        """
-        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
-    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -5491,39 +5259,6 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self, dst_buf: HostBuffer[dtype, **_], src_buf: DeviceBuffer[dtype, **_]
-    ) raises:
-        """Enqueues an async copy from one device buffer to another. The amount
-        of data transferred is determined by the size of the destination buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from. Must be at least as large as
-                `dst`.
-        """
-        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
-    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -5555,39 +5290,6 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
-    @always_inline
-    fn memcopy[
-        dtype: DType
-    ](
-        self, dst_buf: HostBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
-    ) raises:
-        """Enqueues an async copy from one device buffer to another. The amount
-        of data transferred is determined by the size of the destination buffer.
-
-        Parameters:
-            dtype: Type of the data being copied.
-
-        Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from. Must be at least as large as
-                `dst`.
-        """
-        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
-                _DeviceContextPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](
-                self._handle,
-                dst_buf._handle,
-                src_buf._handle,
-            )
-        )
-
-    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
