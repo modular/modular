@@ -29,7 +29,7 @@ fn sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
             print("] =", p[i])
             print()
             p.free()
-            raise "Failed"
+            raise Error("Failed")
     p.free()
 
 
