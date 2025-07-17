@@ -25,11 +25,15 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-bool LIT::isTypeExpr(TypedAttr attr) {
-  if (auto param = dyn_cast<ParamType>(attr.getType()))
+static bool isMetaType(Type type) {
+  if (auto genType = dyn_cast<LITGeneratorType>(type))
+    return isMetaType(genType.getBody());
+  if (auto param = dyn_cast<ParamType>(type))
     return isa<StructMetaType, AnyTraitType>(param.getParam().getType());
-  return isa<TypeType, StructMetaType, TraitType, AnyTraitType>(attr.getType());
+  return isa<TypeType, StructMetaType, TraitType, AnyTraitType>(type);
 }
+
+bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 
 //===----------------------------------------------------------------------===//
 // Parameter Mangling
