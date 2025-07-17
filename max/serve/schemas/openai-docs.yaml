@@ -37,6 +37,7 @@ info:
         - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
         - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available to users in the [Mammoth](/mammoth/) public preview.
         - [List models](#operation/listModels) (`/v1/models`)
+        - [Health check](#operation/health) (`/health`)
 
     - **Parameter handling:** While aiming for high compatibility, not all
     OpenAI body parameters are implemented. Some may be accepted as no-ops
@@ -600,6 +601,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      description: |
+        Returns the health status of the service. Used by tools like lm-eval
+        to determine when the service is ready to accept requests.
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X GET http://0.0.0.0:8000/health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                healthy:
+                  summary: Healthy response
+                  value:
+                    status: "ok"
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                unhealthy:
+                  summary: Unhealthy response
+                  value:
+                    status: "unavailable"
 components:
   schemas:
     CreateChatCompletionRequest:
@@ -1176,3 +1211,14 @@ components:
             param:
               type: string
               description: The parameter that caused the error
+    HealthResponse:
+      type: object
+      description: |
+        Health check response from the MAX REST API.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+          description: The health status of the service
