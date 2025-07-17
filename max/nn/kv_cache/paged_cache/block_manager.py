@@ -192,7 +192,7 @@ class BlockManager(Generic[T]):
             len(hashes) * self.block_size : ctx.current_length
         ]
         new_hashes = hash_request_tokens(
-            self.block_size, unhashed_tokens, parent_hash_value
+            unhashed_tokens, self.block_size, parent_hash_value
         )
         hashes.extend(new_hashes)
 
@@ -426,7 +426,7 @@ class BlockManager(Generic[T]):
             return None, 0
 
         child_hash = hash_block_tokens(
-            parent_hash.value, np.array(best_child_tokens)
+            np.array(best_child_tokens), parent_hash.value
         )
         child_block = self.device_block_pool.hash_to_committed_block[
             child_hash.value
@@ -658,5 +658,5 @@ class BlockManager(Generic[T]):
             prev_hash = req_hashes[hash_idx - 1]
             assert curr_hash.parent_hash_value == prev_hash.value
             assert curr_hash == hash_block_tokens(
-                prev_hash.value, np.array(curr_hash.token_ids)
+                np.array(curr_hash.token_ids), prev_hash.value
             )
