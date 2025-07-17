@@ -349,6 +349,8 @@ class SpecInstance:
         return "/".join(tokens)
 
     def hash(self, with_variables: bool = True) -> str:
+        MAX_FILENAME_LEN = 255
+
         tokens = [self.file_stem]
         for param in self.params:
             name = param.name
@@ -357,7 +359,14 @@ class SpecInstance:
                 continue
             name = name.replace("$", "")
             tokens.append(f"{name}-{param.value}")
-        return "_".join(tokens)
+
+        hash_str = "_".join(tokens)
+        if len(hash_str) < MAX_FILENAME_LEN:
+            return hash_str
+        else:
+            MAX_HASH_DIGITS = 8
+            hash_hex = hash(hash_str) % (10**MAX_HASH_DIGITS)
+            return f"{hash_str[: MAX_FILENAME_LEN - MAX_HASH_DIGITS]}{hash_hex}"
 
 
 class GridSearchStrategy:
