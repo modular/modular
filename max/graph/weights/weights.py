@@ -60,7 +60,7 @@ class Weights(Protocol):
         """The current weight name or prefix."""
         ...
 
-    def __getattr__(self: _Self, attr) -> _Self: ...
+    def __getattr__(self: _Self, attr) -> _Self: ...  # noqa: ANN001
 
     def __getitem__(self: _Self, idx: int | str) -> _Self: ...
 
@@ -118,13 +118,13 @@ class WeightData:
     quantization_encoding: Optional[QuantizationEncoding] = None
 
     def __dlpack__(self) -> Any:
-        return self.data.__dlpack__
+        return self.data.__dlpack__()
 
     def __dlpack_device__(self) -> Any:
-        return self.data.__dlpack_device__
+        return self.data.__dlpack_device__()
 
     @classmethod
-    def from_numpy(cls, arr, name):
+    def from_numpy(cls, arr, name):  # noqa: ANN001
         return cls(arr, name, DType.from_numpy(arr.dtype), Shape(arr.shape))
 
     def astype(self, dtype: DType) -> WeightData:

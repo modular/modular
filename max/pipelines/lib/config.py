@@ -27,7 +27,6 @@ from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
 from .config_enums import PipelineEngine, PipelineRole
-from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
     LoRAConfig,
@@ -40,6 +39,9 @@ from .model_config import MAXModelConfig
 from .registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
+
+# Default target number of tokens for chunked prefill and memory estimation.
+DEFAULT_TARGET_NUM_NEW_TOKENS = 8192
 
 
 @dataclass(frozen=False)
@@ -120,7 +122,7 @@ class PipelineConfig(MAXConfig):
     pad_to_multiple_of: int = 2
     """Pad input tensors to be a multiple of value provided."""
 
-    target_num_new_tokens: int = 8192
+    target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
     """The target number of un-encoded tokens to include in each batch.
     This value is used for chunked prefill and memory estimation."""
 
@@ -161,9 +163,6 @@ class PipelineConfig(MAXConfig):
 
     _lora_config: Optional[LoRAConfig] = None
     """The LoRA config."""
-
-    _lora_manager: Optional[LoRAManager] = None
-    """The LoRA Manager"""
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -666,10 +665,6 @@ class PipelineConfig(MAXConfig):
     @property
     def lora_config(self) -> Optional[LoRAConfig]:
         return self._lora_config
-
-    @property
-    def lora_manager(self) -> Optional[LoRAManager]:
-        return self._lora_manager
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

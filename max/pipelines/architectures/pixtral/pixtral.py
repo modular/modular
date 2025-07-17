@@ -94,7 +94,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):
+class PixtralModel(PipelineModel[TextAndVisionContext]):  # type: ignore
     """The overall interface to the Pixtral model."""
 
     def __init__(
@@ -355,7 +355,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             )
             raise ValueError(msg)
 
-        def build_and_compile_model(build, label):
+        def build_and_compile_model(build, label):  # noqa: ANN001
             logger.info(f"Building and compiling {label} model...")
             graph = build()
             before = time.perf_counter()

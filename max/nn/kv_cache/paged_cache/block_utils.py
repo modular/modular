@@ -19,6 +19,10 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
+
+# Ignore unused import.
+# We leave this in to make sure that mojo import hook works properly with MAX.
+from max._core_mojo import block_hasher  # noqa
 from max.profiler import traced
 
 

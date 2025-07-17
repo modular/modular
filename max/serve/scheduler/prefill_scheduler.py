@@ -15,17 +15,19 @@ import logging
 import queue
 import uuid
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Union
 
 import zmq
 from max._core import nixl
+from max.interfaces import TokenGenerator
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
     XferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TokenGenerator
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
 from max.serve.config import Settings
@@ -319,11 +321,13 @@ def load_prefill_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    max_batch_size_ce: int,
-    target_tokens_per_batch_ce: Optional[int],
-    enable_chunked_prefill: bool,
+    pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
 ) -> PrefillScheduler:
+    enable_chunked_prefill = pipeline_config.enable_chunked_prefill
+    target_tokens_per_batch_ce = pipeline_config.target_num_new_tokens
+    max_batch_size_ce = pipeline_config.max_ce_batch_size
+
     if enable_chunked_prefill == True and target_tokens_per_batch_ce is None:
         raise RuntimeError(
             "if enable_chunked_prefill=True, target_tokens_per_batch_ce must be provided"

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/serve-custom-model-architectures.mdx
 
 from .arch import qwen2_arch
 

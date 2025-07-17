@@ -20,13 +20,13 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Generator
-from typing import Any, cast
+from typing import Any
 
 import torch
 import zmq
+from max.interfaces import AudioGenerationResponse, EngineResult
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorOutput,
     TTSContext,
@@ -38,7 +38,6 @@ from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
-from .queues import STOP_STREAM
 from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
@@ -217,9 +216,9 @@ class AudioGenerationScheduler(Scheduler):
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
-        self.response_q = ZmqPushSocket[list[dict[str, AudioGeneratorOutput]]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
-        )
+        self.response_q = ZmqPushSocket[
+            dict[str, EngineResult[AudioGeneratorOutput]]
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -288,8 +287,7 @@ class AudioGenerationScheduler(Scheduler):
                 self.available_cache_indices.add(req_data.cache_seq_id)
                 del self.decode_reqs[req_id]
 
-                stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-                self.response_q.put_nowait([{req_id: stop_stream}])
+                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
 
     @traced
     def _stream_responses_to_frontend(
@@ -299,24 +297,33 @@ class AudioGenerationScheduler(Scheduler):
         if not responses:
             return
 
-        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-        audio_responses: dict[str, AudioGeneratorOutput] = {}
-        stop_responses: dict[str, AudioGeneratorOutput] = {}
+        audio_responses: dict[str, EngineResult[AudioGeneratorOutput]] = {}
         for req_id, response in responses.items():
             if response.has_audio_data:
                 audio_data = torch.from_numpy(response.audio_data)
             else:
                 audio_data = torch.tensor([], dtype=torch.float32)
-            audio_responses[req_id] = AudioGeneratorOutput(
-                audio_data=audio_data,
-                metadata={},
-                is_done=response.is_done,
-                buffer_speech_tokens=response.buffer_speech_tokens,
-            )
-            if response.is_done:
-                stop_responses[req_id] = stop_stream
 
-        self.response_q.put_nowait([audio_responses, stop_responses])
+            if response.is_done:
+                audio_responses[req_id] = EngineResult.complete(
+                    AudioGeneratorOutput(
+                        audio_data=audio_data,
+                        metadata={},
+                        is_done=response.is_done,
+                        buffer_speech_tokens=response.buffer_speech_tokens,
+                    )
+                )
+            else:
+                audio_responses[req_id] = EngineResult.active(
+                    AudioGeneratorOutput(
+                        audio_data=audio_data,
+                        metadata={},
+                        is_done=response.is_done,
+                        buffer_speech_tokens=response.buffer_speech_tokens,
+                    )
+                )
+
+        self.response_q.put_nowait(audio_responses)
 
     def _create_tg_batch(
         self,

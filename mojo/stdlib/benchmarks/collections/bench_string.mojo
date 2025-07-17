@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: ubsan
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
 from collections import Dict, Optional
 from collections.string._utf8 import _is_valid_utf8
@@ -283,6 +279,40 @@ fn bench_write_utf8[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string write
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_write[short: Bool](mut b: Bencher) raises:
+    var items = make_string[1000]("UN_charter_EN.txt")
+    # workaround for "allows writing to mem location ..."
+    # even though I tried using an immutable StringSlice
+    var items_2 = items.copy()
+    var items_3 = items.copy()
+    var items_4 = items.copy()
+    var items_5 = items.copy()
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for _ in range(1_000_000):
+            var res: String
+
+            @parameter
+            if short:  # less than 24 bytes
+                res = String.write(0, " is ", "a", String(" number"))
+            else:  # 5001 bytes long
+                res = String.write(0, items, items_2, items_3, items_4, items_5)
+            keep(Bool(res))
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+    keep(Bool(items_2))
+    keep(Bool(items_3))
+    keep(Bool(items_4))
+    keep(Bool(items_5))
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
@@ -325,6 +355,12 @@ def main():
     """
 
     m.bench_function[bench_string_init](BenchId("bench_string_init"))
+    m.bench_function[bench_string_write[True]](
+        BenchId(String("bench_string_write_short"))
+    )
+    m.bench_function[bench_string_write[False]](
+        BenchId(String("bench_string_write_long"))
+    )
 
     @parameter
     for i in range(len(lengths)):
@@ -371,12 +407,4 @@ def main():
         BenchId(String("bench_string_join_long"))
     )
 
-    results = Dict[String, (Float64, Int)]()
-    for info in m.info_vec:
-        n = info.name
-        time = info.result.mean("ms")
-        avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
-    print("")
-    for k_v in results.items():
-        print(k_v.key, k_v.value[0], sep=",")
+    print(m)

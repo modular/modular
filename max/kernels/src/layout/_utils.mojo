@@ -55,7 +55,7 @@ struct ManagedLayoutTensor[
         self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = {}
         self.device_data = None
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -77,7 +77,7 @@ struct ManagedLayoutTensor[
             runtime_layout
         )
         self.device_data = None
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.host_data = self.ctx.create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -86,10 +86,8 @@ struct ManagedLayoutTensor[
     fn __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.runtime_layout = {}
-        self.device_data = ctx.enqueue_create_buffer[dtype](
-            self.runtime_layout.size()
-        )
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
+        self.host_data = self.ctx.create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -123,10 +121,8 @@ struct ManagedLayoutTensor[
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )
-        self.device_data = ctx.enqueue_create_buffer[dtype](
-            self.runtime_layout.size()
-        )
-        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
+        self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
+        self.host_data = self.ctx.create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -202,12 +198,12 @@ struct ManagedLayoutTensor[
 
     fn _update_device(self) raises:
         if self.ctx.api() != "cpu":
-            self.ctx.enqueue_copy(self.device_data.value(), self.host_data)
+            self.ctx.memcopy(self.device_data.value(), self.host_data)
             self.ctx.synchronize()
 
     fn _update_host(self) raises:
         if self.ctx.api() != "cpu":
-            self.ctx.enqueue_copy(self.host_data, self.device_data.value())
+            self.ctx.memcopy(self.host_data, self.device_data.value())
             self.ctx.synchronize()
 
     @always_inline
@@ -244,9 +240,11 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
     alias element_layout = tensor.element_layout
     alias element_offset = element_layout(element_layout.size() - 1)
+    alias tensor_t = __type_of(tensor)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
-        strides, IndexList[2](tensor.dim[0]() - 1, tensor.dim[1]() - 1)
+        strides,
+        tensor_t.idx_list_t[2](tensor.dim[0]() - 1, tensor.dim[1]() - 1),
     )
     return offset + 1
 

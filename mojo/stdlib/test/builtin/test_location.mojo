@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-# RUN: %mojo -debug-level full %s
+#
+
 
 from builtin._location import (
     __call_location,

@@ -1,23 +1,24 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library", "py_test")
+load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
-load("@protobuf//bazel:py_proto_library.bzl", _py_proto_library = "py_proto_library")
-load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
-load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
-load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
-basic_py_test = py_test
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
+mojo_test_environment = _mojo_test_environment
 proto_library = _proto_library
 py_grpc_library = _py_grpc_library
-py_proto_library = _py_proto_library
 requirement = _requirement
 strip_prefix = _strip_prefix
 
@@ -33,11 +34,12 @@ _DEPS_FROM_WHEEL = [
     "//max/profiler",
     "//max/support",
     "//max:_core",
+    "//max/_core_mojo",
 ]
 
 def _is_internal_reference(dep):
     """Check if a dependency is an internal reference."""
-    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//SDK/integration-test/pipelines/python", "//SDK/lib/API/python/max/mlir"))
+    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//SDK/integration-test/pipelines/python", "//SDK/lib/API/python/max/mlir", "//SDK:max"))
 
 def _has_internal_reference(deps):
     return any([_is_internal_reference(dep) for dep in deps])
@@ -83,9 +85,6 @@ def modular_py_binary(
         deps = [],
         data = [],
         env = {},
-        visibility = ["//visibility:public"],
-        use_sitecustomize = False,  # buildifier: disable=unused-variable # TODO: support
-        mojo_deps = [],  # buildifier: disable=unused-variable # TODO: support
         **kwargs):
     if name == "pipelines":
         # TODO: Fix this hack, there is a layering issue with what is open source right now
@@ -97,21 +96,15 @@ def modular_py_binary(
     if _has_internal_reference(deps) or _has_internal_reference(data):
         return
 
-    py_binary(
+    _modular_py_binary(
         name = name,
         data = data,
         env = env,
         deps = _rewrite_deps(deps),
-        visibility = visibility,
         **kwargs
     )
 
-# buildifier: disable=function-docstring
-def mojo_library(
-        validate_missing_docs = False,  # buildifier: disable=unused-variable
-        build_docs = False,  # buildifier: disable=unused-variable
-        deps = [],
-        **kwargs):
+def mojo_library(deps = [], **kwargs):
     if _has_internal_reference(deps):
         return
 
@@ -143,12 +136,20 @@ def modular_run_binary_test(name, external_noop = False, **kwargs):
         **kwargs
     )
 
+def lit_tests(tools = [], data = [], **kwargs):
+    if _has_internal_reference(data) or _has_internal_reference(tools):
+        return
+
+    _lit_tests(
+        data = data,
+        tools = tools,
+        **kwargs
+    )
+
 def _noop(**_kwargs):
     pass
 
-lit_tests = _noop
 modular_py_test = _noop
-mojo_doc = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop

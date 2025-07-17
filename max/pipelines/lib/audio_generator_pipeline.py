@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
+from max.interfaces import AudioGenerationResponse
 from max.nn import ReturnLogits
 from max.pipelines.core import (
-    AudioGenerationResponse,
     AudioGenerator,
     TTSContext,
 )

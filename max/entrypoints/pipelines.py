@@ -57,29 +57,29 @@ class WithLazyPipelineOptions(click.Command):
             for param in getattr(self.callback, "__click_params__", []):
                 self.params.append(param)
 
-    def get_help(self, ctx):
+    def get_help(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_help(ctx)
 
-    def invoke(self, ctx):
+    def invoke(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().invoke(ctx)
 
-    def parse_args(self, ctx, args):
+    def parse_args(self, ctx, args):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().parse_args(ctx, args)
 
-    def get_params(self, ctx):
+    def get_params(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_params(ctx)
 
-    def shell_complete(self, ctx, incomplete):
+    def shell_complete(self, ctx, incomplete):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
             return rv
@@ -103,16 +103,16 @@ def main() -> None:
     configure_telemetry()
 
 
-def configure_telemetry() -> None:
+def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
     settings = Settings()
-    configure_logging(settings)
+    configure_logging(settings, color)
     configure_metrics(settings)
 
 
-def common_server_options(func):
+def common_server_options(func):  # noqa: ANN001
     @click.option(
         "--profile-serve",
         is_flag=True,
@@ -184,10 +184,10 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_pipeline
     from max.entrypoints.cli.config import parse_task_flags
+    from max.interfaces import PipelineTask
     from max.pipelines import (
         AudioGenerationConfig,
         PipelineConfig,
-        PipelineTask,
     )
 
     # Initialize config, and serve.

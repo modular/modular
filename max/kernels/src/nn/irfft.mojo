@@ -61,7 +61,7 @@ fn _get_fft_workarea(
         return lookup
 
     # manually allocate the memory on the device, and cache the pointer
-    var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
+    var work_space = ctx.create_buffer[DType.uint8](buffer_size)
     var device_ptr = work_space.take_ptr()
 
     global_cache_insert(

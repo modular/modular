@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
@@ -37,7 +38,21 @@ from max.pipelines.lib import (
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float]
+VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+
+
+class JSONType(click.ParamType):
+    """Click parameter type for JSON input."""
+
+    name = "json"
+
+    def convert(self, value, param, ctx):  # noqa: ANN001
+        if isinstance(value, dict):
+            return value
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
 def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
@@ -91,6 +106,8 @@ def get_field_type(field_type: Any):
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
+    elif get_origin(field_type) is dict or field_type is dict:
+        field_type = JSONType()
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
@@ -142,7 +159,7 @@ def create_click_option(
     )
 
 
-def config_to_flag(cls, prefix: Optional[str] = None):
+def config_to_flag(cls, prefix: Optional[str] = None):  # noqa: ANN001
     options = []
     if hasattr(cls, "help"):
         help_text = cls.help()
@@ -174,7 +191,7 @@ def config_to_flag(cls, prefix: Optional[str] = None):
             )
         options.append(new_option)
 
-    def apply_flags(func):
+    def apply_flags(func):  # noqa: ANN001
         for option in reversed(options):
             func = option(func)  # type: ignore
         return func
@@ -182,7 +199,7 @@ def config_to_flag(cls, prefix: Optional[str] = None):
     return apply_flags
 
 
-def pipeline_config_options(func):
+def pipeline_config_options(func):  # noqa: ANN001
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
@@ -206,12 +223,30 @@ def pipeline_config_options(func):
             " or CPU if no GPUs are available (--devices=cpu)."
         ),
     )
+    @click.option(
+        "--draft-devices",
+        is_flag=False,
+        type=DevicesOptionType(),
+        show_default=False,
+        default="default",
+        help=(
+            "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
+            " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"
+            " provided optionally to indicate the device ID to target. If not"
+            " provided, the model will run on the first available GPU (--devices=gpu),"
+            " or CPU if no GPUs are available (--devices=cpu)."
+        ),
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Remove the options from kwargs and replace with unified device_specs.
         devices: str | list[int] = kwargs.pop("devices")
+        draft_devices: str | list[int] = kwargs.pop("draft_devices")
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
+        kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
+            draft_devices
+        )
 
         return func(*args, **kwargs)
 

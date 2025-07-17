@@ -47,6 +47,48 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
     @always_inline("nodebug")
     @staticmethod
+    fn unsupported_target_error[
+        result: AnyType = NoneType._mlir_type,
+        *,
+        operation: Optional[String] = None,
+        note: Optional[String] = None,
+    ]() -> result:
+        """Produces a constraint failure when called indicating that some
+        operation is not supported by the current compilation target.
+
+        Parameters:
+            result: The never-returned result type of this function.
+            operation: Optional name of the operation that is not supported.
+                Should be a function name or short description.
+            note: Optional additional note to print.
+
+        Returns:
+            This function does not return normally, however a return type
+            can be specified to satisfy Mojo type checking.
+        """
+
+        alias note_text = " Note: " + note.value() if note else ""
+
+        @parameter
+        if operation:
+            constrained[
+                False,
+                "Current compilation target does not support operation: "
+                + operation.value()
+                + "."
+                + note_text,
+            ]()
+        else:
+            constrained[
+                False,
+                "Current compilation target does not support this operation."
+                + note_text,
+            ]()
+
+        return os.abort[result]()
+
+    @always_inline("nodebug")
+    @staticmethod
     fn _has_feature[name: StaticString]() -> Bool:
         """Checks if the target has a specific feature.
 
@@ -245,115 +287,6 @@ fn _current_arch_kgen() -> __mlir_type.`!kgen.string`:
 @always_inline("nodebug")
 fn _current_arch() -> StaticString:
     return _current_arch_kgen()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_avx()` instead.")
-fn has_avx() -> Bool:
-    """Returns True if the host system has AVX, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_avx2()` instead.")
-fn has_avx2() -> Bool:
-    """Returns True if the host system has AVX2, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX2, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx2" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_avx512f()` instead.")
-fn has_avx512f() -> Bool:
-    """Returns True if the host system has AVX512, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX512, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx512f" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_fma()` instead.")
-fn has_fma() -> Bool:
-    """Returns True if the host system has FMA (Fused Multiply-Add) support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system has FMA support, otherwise returns False.
-    """
-    return CompilationTarget.has_fma()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_vnni()` instead.")
-fn has_vnni() -> Bool:
-    """Returns True if the host system has avx512_vnni, otherwise returns False.
-
-    Returns:
-        True if the host system has avx512_vnni, otherwise returns False.
-    """
-    return CompilationTarget.has_vnni()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_neon()` instead.")
-fn has_neon() -> Bool:
-    """Returns True if the host system has Neon support, otherwise returns
-    False.
-
-    Returns:
-        True if the host system support the Neon instruction set.
-    """
-    return CompilationTarget.has_neon()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_neon_int8_dotprod()` instead.")
-fn has_neon_int8_dotprod() -> Bool:
-    """Returns True if the host system has the Neon int8 dot product extension,
-    otherwise returns False.
-
-    Returns:
-        True if the host system support the Neon int8 dot product extension and
-        False otherwise.
-    """
-    return CompilationTarget.has_neon_int8_dotprod()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_neon_int8_matmul()` instead.")
-fn has_neon_int8_matmul() -> Bool:
-    """Returns True if the host system has the Neon int8 matrix multiplication
-    extension (I8MM), otherwise returns False.
-
-    Returns:
-        True if the host system support the Neon int8 matrix multiplication
-        extension (I8MM) and False otherwise.
-    """
-    return CompilationTarget.has_neon_int8_matmul()
 
 
 @always_inline("nodebug")

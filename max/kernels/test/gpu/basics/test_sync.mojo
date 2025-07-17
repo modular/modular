@@ -59,7 +59,7 @@ fn test_named_barrier():
     print("== test_named_barrier")
 
     fn test_test_named_barrier_kernel():
-        # CHECK: bar.sync 10 256
+        # CHECK: bar.sync 10, 256
         named_barrier[256,](10)
 
     print(

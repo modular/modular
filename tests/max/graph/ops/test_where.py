@@ -80,7 +80,10 @@ shared_dtypes = st.shared(st.from_type(DType))
     y=tensor_types(dtypes=shared_dtypes),
 )
 def test_where_with_non_broadcastable_shapes(
-    graph_builder, condition, x, y
+    graph_builder,  # noqa: ANN001
+    condition,  # noqa: ANN001
+    x,  # noqa: ANN001
+    y,  # noqa: ANN001
 ) -> None:
     assume(not_broadcastable(condition.shape, x.shape, y.shape))
     with Graph("where", input_types=[condition, x, y]) as graph:
@@ -192,7 +195,10 @@ def test_where_error_message_with_mismatched_devices() -> None:
     ),
 )
 def test_where_with_promotable_dtypes(
-    graph_builder, condition, x_dtype, y_dtype
+    graph_builder,  # noqa: ANN001
+    condition,  # noqa: ANN001
+    x_dtype,  # noqa: ANN001
+    y_dtype,  # noqa: ANN001
 ) -> None:
     """Test where with dtypes that should promote according to RMO::promoteDtype rules."""
     # Skip cases where we expect promotion to fail
@@ -419,7 +425,10 @@ def test_where_with_promotable_dtypes(
     ),
 )
 def test_where_with_incompatible_dtypes(
-    graph_builder, condition, x_dtype, y_dtype
+    graph_builder,  # noqa: ANN001
+    condition,  # noqa: ANN001
+    x_dtype,  # noqa: ANN001
+    y_dtype,  # noqa: ANN001
 ) -> None:
     """Test where with dtypes that should fail to promote according to RMO::promoteDtype rules."""
     assume(
@@ -525,7 +534,10 @@ def test_where_with_incompatible_dtypes(
     ),
 )
 def test_where_with_python_scalars(
-    safe_int, unsafe_int_float16, unsafe_int_float32, safe_float
+    safe_int,  # noqa: ANN001
+    unsafe_int_float16,  # noqa: ANN001
+    unsafe_int_float32,  # noqa: ANN001
+    safe_float,  # noqa: ANN001
 ) -> None:
     """Test where with Python scalar values (int, float) using hypothesis to probe boundaries."""
     with Graph(
@@ -607,7 +619,10 @@ def test_where_with_python_scalars(
     ).map(lambda x: np.array(x, dtype=np.uint64).reshape(2, 2)),
 )
 def test_where_with_numpy_arrays(
-    safe_int32, safe_float64, unsafe_int64, unsafe_uint64
+    safe_int32,  # noqa: ANN001
+    safe_float64,  # noqa: ANN001
+    unsafe_int64,  # noqa: ANN001
+    unsafe_uint64,  # noqa: ANN001
 ) -> None:
     """Test where with NumPy arrays using hypothesis to probe boundaries."""
     with Graph(

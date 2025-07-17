@@ -19,14 +19,13 @@ import logging
 import uuid
 from typing import Optional
 
+from max.interfaces import EmbeddingsResponse, PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    EmbeddingsResponse,
-    PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )

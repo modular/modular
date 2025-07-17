@@ -603,7 +603,7 @@ class ColumnParallelLinear(Linear):
         return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 
-def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
+def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:  # noqa: ANN001
     if isinstance(value, Weight):
         return value
     else:

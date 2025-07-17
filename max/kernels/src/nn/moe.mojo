@@ -216,7 +216,7 @@ fn moe_create_indices[
     with Trace[TraceLevel.OP, target=target]("mo.moe.create_indices"):
         var n = topk_ids.size()
         var pow_2_length = next_power_of_two(n)
-        var padded_input_buffer = cuda_ctx.enqueue_create_buffer[input_type](
+        var padded_input_buffer = cuda_ctx.create_buffer[input_type](
             pow_2_length
         )
         alias unknown_layout = Layout.row_major(UNKNOWN_VALUE)
@@ -227,9 +227,9 @@ fn moe_create_indices[
             RuntimeLayout[unknown_layout].row_major(IndexList[1](pow_2_length)),
         )
 
-        var padded_indices_buffer = cuda_ctx.enqueue_create_buffer[
-            DType.uint32
-        ](pow_2_length)
+        var padded_indices_buffer = cuda_ctx.create_buffer[DType.uint32](
+            pow_2_length
+        )
         var padded_indices = LayoutTensor[
             mut=True, DType.uint32, unknown_layout, token_expert_order.origin
         ](

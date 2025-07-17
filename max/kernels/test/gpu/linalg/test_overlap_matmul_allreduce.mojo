@@ -81,9 +81,7 @@ fn overlap_matmul_allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     var mn = m.value * n.value
     var mk = m.value * k.value
@@ -98,10 +96,10 @@ fn overlap_matmul_allreduce_test[
     @parameter
     for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
-        A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
-        B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
-        C_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
-        C_reduced_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
+        A_list.append(list_of_ctx[i].create_buffer[dtype](mk))
+        B_list.append(list_of_ctx[i].create_buffer[dtype](nk))
+        C_list.append(list_of_ctx[i].create_buffer[dtype](mn))
+        C_reduced_list.append(list_of_ctx[i].create_buffer[dtype](mn))
 
         # Allocate matmul inputs A B and final output C_reduced on host
         A_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mk))
@@ -115,8 +113,8 @@ fn overlap_matmul_allreduce_test[
             B_host_list[i][j] = 1.0
 
         # Copy A and B to device
-        list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
-        list_of_ctx[i].enqueue_copy(B_list[i], B_host_list[i])
+        list_of_ctx[i].memcopy(A_list[i], A_host_list[i])
+        list_of_ctx[i].memcopy(B_list[i], B_host_list[i])
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -124,7 +122,7 @@ fn overlap_matmul_allreduce_test[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.
@@ -133,16 +131,16 @@ fn overlap_matmul_allreduce_test[
     alias C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape]())
+    ](fill={})
     var Bs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape]())
+    ](fill={})
     var Cs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape]())
+    ](fill={})
     var out_bufs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape]())
+    ](fill={})
 
     # Setup the kernel NDBuffers
     @parameter
@@ -219,7 +217,7 @@ fn overlap_matmul_allreduce_test[
     @parameter
     for i in range(ngpus):
         expected_sum += i * k.value
-        list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
+        list_of_ctx[i].memcopy(C_reduced_host_list[i], C_reduced_list[i])
 
     @parameter
     for i in range(ngpus):

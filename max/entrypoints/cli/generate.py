@@ -22,13 +22,13 @@ from collections.abc import Iterable
 from typing import Optional
 
 import requests
+from max.interfaces import TokenGenerator
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
-    TokenGenerator,
     TokenGeneratorRequest,
 )
 

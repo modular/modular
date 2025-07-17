@@ -50,9 +50,9 @@ configure AI coding assistants to help you write Mojo code.
 
 ## 1. Create a Mojo project
 
-To install the Modular Platform, which includes Mojo, you can use `pip` as
-described in the [install guide](/max/packages), but for Mojo developers, we
-currently recommend using [`pixi`](https://pixi.sh/latest/).
+To install the Modular Platform, which includes Mojo, we
+recommend using [`pixi`](https://pixi.sh/latest/) (for other options,
+see the [packages guide](/max/packages)).
 
 1. If you don't have `pixi`, you can install it with this command:
 
@@ -765,11 +765,13 @@ traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. But we also need to indicate
-which trait `Grid` conforms to. In our case, it's `Stringable` because we
-used `fn` to define the method. If you define a function or method with `def`,
-the compiler *always* assumes that the function *can* raise an error. In
-contrast, if you define a function or method with `fn` you must explicitly
-indicate with a `raises` keyword if it can raise an error.
+wwhich trait `Grid` conforms to. In our case, it must be `Stringable` instead of
+`StringableRaising` because we used a `fn` to define the method. If you define
+a function or method with `def`, the compiler *always* assumes that the
+function *can* raise an error. In contrast, an `fn` function is a [non-raising
+function](/mojo/manual/functions#raising-and-non-raising-functions) by default
+(you can still declare it may raise an error using the [`raises`
+keyword](/mojo/manual/errors#raise-an-error)).
 
 So in `gridv1.mojo` we need to update the `Grid` declaration to indicate that
 the type conforms to `Stringable` and rename the `grid_str()` method to

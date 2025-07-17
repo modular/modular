@@ -124,9 +124,9 @@ fn test[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
         c_device.tensor,
@@ -137,7 +137,7 @@ fn test[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.memcopy(c_host.tensor.data, c_device.buffer)
 
     var handle = vendor_blas.Handle()
 
@@ -151,7 +151,7 @@ fn test[
         transpose_b=transpose_b,
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
     var errors = 0
@@ -242,6 +242,13 @@ def main():
             out_type = DType.float32,
             transpose_b=False,
         ](bench, ctx, dynamic(4096), static[1](), static[4096]())
+
+        # N = 1, K % simd_width == 0, transpose_b = True
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.bfloat16,
+            transpose_b=True,
+        ](bench, ctx, dynamic(5120), static[1](), static[13824]())
 
         # GEMV_KERNEL
 

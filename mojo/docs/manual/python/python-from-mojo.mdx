@@ -31,12 +31,30 @@ def main():
 
 Running this program produces the following output:
 
-```
+```output
 [1 2 3]
 ```
 
 Assuming that you have the NumPy package installed in your environment, this
 imports NumPy and you can use any of its features.
+
+If you want to use Python builtin APIs, you just need to import the `builtins`
+module the same way. For example:
+
+```mojo
+from python import Python
+
+def main():
+    np = Python.import_module("numpy")
+    array = np.array(Python.list(1, 2, 3))
+
+    builtins = Python.import_module("builtins")
+    print(builtins.type(array))
+```
+
+```output
+<class 'numpy.ndarray'>
+```
 
 A few things to note:
 

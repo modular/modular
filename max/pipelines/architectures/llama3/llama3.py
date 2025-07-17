@@ -25,11 +25,13 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
     AttentionWithRope,
+    AttentionWithRopeAndLoRA,
     Embedding,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     GPTQLinear,
     Linear,
+    LinearLoRA,
     Module,
     RMSNorm,
     Transformer,
@@ -91,7 +93,7 @@ class ConstantLayerNorm(Module):
 
     def __init__(
         self,
-        dims,
+        dims,  # noqa: ANN001
         device: DeviceRef,
         dtype: DType,
         eps: float = 1e-5,
@@ -159,6 +161,12 @@ class Llama3(Transformer):
             linear_cls = functools.partial(
                 GPTQLinear, quantization_config=config.quantization_config
             )
+        elif config.lora_config:
+            linear_cls = functools.partial(
+                LinearLoRA,
+                max_num_loras=config.lora_config.max_num_loras,
+                max_lora_rank=config.lora_config.max_lora_rank,
+            )
         else:
             linear_cls = functools.partial(
                 Linear, float8_config=config.float8_config
@@ -190,6 +198,14 @@ class Llama3(Transformer):
                 GGUFQAttentionWithRope,
                 quantization_encoding=config.model_quantization_encoding,
                 scale=config.attention_multiplier,
+            )
+        elif config.lora_config:
+            attention_cls = functools.partial(
+                AttentionWithRopeAndLoRA,
+                stacked_qkv=config.stacked_qkv,
+                scale=config.attention_multiplier,
+                clip_qkv=config.clip_qkv,
+                has_bias=config.attention_bias,
             )
         else:
             attention_cls = functools.partial(

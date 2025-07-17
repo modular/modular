@@ -144,7 +144,7 @@ fn _resolve_backend[
     if backend is not Backend.AUTOMATIC:
         return backend
     elif has_amd_gpu_accelerator():
-        return Backend.ROCBLAS
+        return Backend.HIPBLASLT
     elif dtype.is_float8():
         return Backend.CUBLASLT
     return Backend.CUBLAS
@@ -892,9 +892,7 @@ fn _cublasLt_matmul(
     if algorithm_count == 0:
         raise Error("No algorithm was found!")
 
-    var matmul_workspace = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size
-    )
+    var matmul_workspace = ctx.create_buffer[DType.uint8](workspace_size)
 
     if c_row_major:
         check_cublas_error(

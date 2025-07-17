@@ -67,7 +67,6 @@ from layout.layout_tensor import (
     cp_async_k_major,
     cp_async_mn_major,
 )
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
@@ -621,9 +620,7 @@ struct TMemAccumulator[
                     n_mma=n_mma,
                 )
                 tmem = self.tmem_addr + tmem_offset
-                frag = bitcast[DType.uint32, frag_size_b32](
-                    frags._get[mma_id, 0]()
-                )
+                frag = bitcast[DType.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                 tcgen05_st[
                     datapaths=16,  # first dimension of the shape
@@ -667,17 +664,17 @@ struct TMemAccumulator[
                     n_mma=n_mma,
                 )
                 tmem = self.tmem_addr + tmem_offset
-                frags._set[mma_id, 0](
-                    bitcast[Self.dtype, frags.element_layout.size()](
-                        tcgen05_ld[
-                            datapaths=16,  # first dimension of the shape
-                            bits=256,  # second dimension of the shape
-                            repeat=repeat,
-                            dtype = DType.uint32,
-                            pack=False,
-                            width=frag_size_b32,
-                        ](tmem)
-                    )
+                frags[mma_id, 0] = bitcast[
+                    Self.dtype, frags.element_layout.size()
+                ](
+                    tcgen05_ld[
+                        datapaths=16,  # first dimension of the shape
+                        bits=256,  # second dimension of the shape
+                        repeat=repeat,
+                        dtype = DType.uint32,
+                        pack=False,
+                        width=frag_size_b32,
+                    ](tmem)
                 )
 
         tcgen05_load_wait()
@@ -786,7 +783,7 @@ struct TMemOperand[
         for m_mma in range(num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             frag = bitcast[DType.uint32, frag_size_b32](
-                frags._get[m_mma]().cast[dtype]()
+                frags[m_mma].cast[dtype]()
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
@@ -846,19 +843,19 @@ struct TMemOperand[
         for m_mma in range(num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
-            frags._set[m_mma, 0](
-                rebind[SIMD[dst_type, __type_of(frags).element_size]](
-                    bitcast[dtype, Self.frag_size](
-                        tcgen05_ld[
-                            datapaths=16,  # first dimension of the shape
-                            bits=bits,  # second dimension of the shape
-                            repeat=repeat,
-                            dtype = DType.uint32,
-                            pack=False,
-                            width=frag_size_b32,
-                        ](tmem)
-                    ).cast[dst_type]()
-                )
+            frags[m_mma, 0] = rebind[
+                SIMD[dst_type, __type_of(frags).element_size]
+            ](
+                bitcast[dtype, Self.frag_size](
+                    tcgen05_ld[
+                        datapaths=16,  # first dimension of the shape
+                        bits=bits,  # second dimension of the shape
+                        repeat=repeat,
+                        dtype = DType.uint32,
+                        pack=False,
+                        width=frag_size_b32,
+                    ](tmem)
+                ).cast[dst_type]()
             )
         tcgen05_load_wait()
 
@@ -2238,11 +2235,13 @@ fn _mha_sm100[
             # otherwise, the branch requires synchronization
             @parameter
             for row in range(num_rows_per_warp):
-                c = correction._get[row, size = element_layout.size()]()
+                c = SIMD[accum_type, element_layout.size()](
+                    rebind[Scalar[accum_type]](correction[row])
+                )
 
                 @parameter
                 for col in range(num_cols_output):
-                    vout._set[row, col](vout._get[row, col]() * c)
+                    vout[row, col] = vout[row, col] * c
 
         @always_inline
         fn elementwise_reciprocal(
@@ -2251,10 +2250,10 @@ fn _mha_sm100[
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             @parameter
             for row in range(num_rows_per_warp):
-                old = old_rowsum._get[row]()
-                new = new_rowsum._get[row]()
-                new_rowsum._set[row](recip(old)[0])
-                old_rowsum._set[row](new)
+                old = old_rowsum[row]
+                new = new_rowsum[row]
+                new_rowsum[row] = recip(old)[0]
+                old_rowsum[row] = new
 
         @parameter
         @always_inline
@@ -2268,11 +2267,11 @@ fn _mha_sm100[
             # Apply softmax denumerator.
             @parameter
             for row in range(num_rows_per_warp):
-                rs_inv = vout.element_type(rowsum_inv._get[row]()[0])
+                rs_inv = vout.element_type(rowsum_inv[row][0])
 
                 @parameter
                 for col in range(num_cols_output):
-                    vout._set[row, col](vout._get[row, col]() * rs_inv)
+                    vout[row, col] = vout[row, col] * rs_inv
 
             var output_ptr: UnsafePointer[Scalar[output_type]] = output_ptr_arg
 
@@ -2440,9 +2439,8 @@ fn _mha_sm100[
 
             @parameter
             for i in range(num_rows_per_warp):
-                rowsum._set[i](
-                    rowsum._get[i]() * score_frag_rowmax._get[i]()
-                    + score_frag_rowsum._get[i]()
+                rowsum[i] = (
+                    rowsum[i] * score_frag_rowmax[i] + score_frag_rowsum[i]
                 )
 
             wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
@@ -2473,7 +2471,7 @@ fn _mha_sm100[
 
         @parameter
         for row in range(num_rows_per_warp):
-            rowsum._set[row](recip(rowsum._get[row]())[0])
+            rowsum[row] = recip(rowsum[row])[0]
         wgmma_1.wait_group()
 
         output_accumulator.copy_to(output_reg_tile)

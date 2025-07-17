@@ -18,7 +18,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights
 
 
-def test_load_safetensors_one(testdata_directory) -> None:
+def test_load_safetensors_one(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [testdata_directory / "example_data_1.safetensors"]
     )
@@ -51,7 +51,7 @@ def test_load_safetensors_one(testdata_directory) -> None:
         )
 
 
-def test_load_safetensors_multi(testdata_directory) -> None:
+def test_load_safetensors_multi(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [
             testdata_directory / "example_data_1.safetensors",
@@ -108,7 +108,7 @@ def test_load_safetensors_multi(testdata_directory) -> None:
         )
 
 
-def test_load_using_prefix(testdata_directory) -> None:
+def test_load_using_prefix(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [
             testdata_directory / "example_data_1.safetensors",
@@ -124,7 +124,7 @@ def test_load_using_prefix(testdata_directory) -> None:
         )
 
 
-def test_load_same_weight(testdata_directory) -> None:
+def test_load_same_weight(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [
             testdata_directory / "example_data_1.safetensors",
@@ -137,7 +137,7 @@ def test_load_same_weight(testdata_directory) -> None:
             graph.add_weight(weights[1]["a"].allocate())
 
 
-def test_load_allocate_as_bytes(testdata_directory) -> None:
+def test_load_allocate_as_bytes(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [testdata_directory / "example_data_1.safetensors"]
     )
@@ -170,7 +170,7 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
         )  # originally float8_e5m2
 
 
-def test_load_invalid_tensor(testdata_directory) -> None:
+def test_load_invalid_tensor(testdata_directory) -> None:  # noqa: ANN001
     weights = SafetensorWeights(
         [testdata_directory / "example_data_1.safetensors"]
     )

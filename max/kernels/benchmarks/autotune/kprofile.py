@@ -15,19 +15,39 @@
 import ast
 import pickle
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 import click
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import yaml
+from pandas.api.types import is_numeric_dtype
 from rich.console import Console
 from rich.table import Table
 
 LINE = 80 * "-"
 
 
-def spec_to_dict(spec):
+HEADER = """
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""
+
+
+def spec_to_dict(spec):  # noqa: ANN001
     """Convert kbench spec to dictionary"""
     # TODO: move this method to `kbench`
     spec_split = spec.split("/")
@@ -40,13 +60,13 @@ def spec_to_dict(spec):
     return d
 
 
-def specs_to_df(specs):
+def specs_to_df(specs):  # noqa: ANN001
     ds = [spec_to_dict(x) for x in specs]
     df = pd.DataFrame(ds)
     return df
 
 
-def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):
+def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):  # noqa: ANN001
     df = specs_to_df(x_labels)
     valid_columns = []
     for c in list(df.columns):
@@ -63,12 +83,12 @@ def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):
     return pivot_columns, non_pivot_columns
 
 
-def load_pickle(path):
+def load_pickle(path):  # noqa: ANN001
     with open(path, "rb") as handle:
         return pickle.load(handle)
 
 
-def dump_yaml(obj, out_path) -> None:
+def dump_yaml(obj, out_path) -> None:  # noqa: ANN001
     with open(out_path, "w") as f:
         yaml.dump(obj, f, sort_keys=False)
 
@@ -76,13 +96,14 @@ def dump_yaml(obj, out_path) -> None:
     yaml.dump(obj, sys.stdout, sort_keys=False)
 
 
-def top_idx(x, top_percentage=0.05):
+def top_idx(x, top_percentage=0.05):  # noqa: ANN001
     # calculate the threshold to pick top_percentage of the results
     threshold = (top_percentage + (np.min(x) / np.max(x))) * np.max(x)
     return x.where(x < threshold).dropna().index
 
 
-def replace_vals_snippet(p_spec, snippet_path, output_path) -> None:
+def replace_vals_snippet(p_spec, snippet_path) -> str:  # noqa: ANN001
+    # TODO: raise an error if the parameter is not successfully replaced.
     with open(snippet_path) as f:
         c_init = f.read()
 
@@ -90,14 +111,10 @@ def replace_vals_snippet(p_spec, snippet_path, output_path) -> None:
     for k, v in p_spec.items():
         print(f"Replacing [{k}]:[{v}]")
         c = c.replace(f"[@{k}]", v)
-
-    output_path = f"{output_path}"
-    with open(output_path, "w") as f:
-        f.write(c)
-    print(f"wrote results to [{output_path}]")
+    return c
 
 
-def find_common_params(subset):
+def find_common_params(subset):  # noqa: ANN001
     spec_list = []
     for index, row in subset.iterrows():
         p = spec_to_dict(row["spec"])
@@ -113,16 +130,23 @@ def find_common_params(subset):
 
 
 def df_to_console_table(
-    df, col_style={}, header_style="bold blue", index=False
+    df,  # noqa: ANN001
+    col_style={},  # noqa: ANN001
+    header_style="bold blue",  # noqa: ANN001
+    index=False,  # noqa: ANN001
 ) -> None:
     console = Console()
     table = Table(show_header=True, header_style=header_style)
+
+    if index:
+        style = col_style.get("index", "bold blue")
+        table.add_column("index", justify="left", style=style)
 
     for c in df.columns:
         style = col_style.get(c, None)
         table.add_column(c, justify="left", style=style)
 
-    def wrap(x):
+    def wrap(x):  # noqa: ANN001
         return "\n".join(x.split("/"))
 
     for row in df.itertuples(index=index):
@@ -132,6 +156,17 @@ def df_to_console_table(
     console.print(table)
 
 
+# TODO: could this be refactored into a kbench class?
+@dataclass(frozen=True)
+class TuningSpec:
+    name: str = ""
+    file: Path = Path("")
+    params: list[dict] = field(default_factory=list)
+    pkl_path: Path = Path()
+    git_sha: str = ""
+    datetime: str = ""
+
+
 @dataclass(repr=True)
 class KbenchPKL:
     merged_df: pd.DataFrame
@@ -139,7 +174,7 @@ class KbenchPKL:
     pkl_data: dict
     metric: str
 
-    def __init__(self, pickle_path, metric: str) -> None:
+    def __init__(self, pickle_path, metric: str) -> None:  # noqa: ANN001
         self.pkl_data = KbenchPKL.load(pickle_path)
         self.merged_df = self.pkl_data["merged_df"].drop(
             ["name", "iters"], axis=1
@@ -155,7 +190,7 @@ class KbenchPKL:
                     break
         assert valid_metric, f"ERROR: metric [{metric}] is not valid!"
         self.metric = metric
-        assert pd.api.types.is_numeric_dtype(self.merged_df[metric]), (
+        assert is_numeric_dtype(self.merged_df[metric]), (
             f"ERROR: metric [{metric}] is not numeric!"
         )
         # Setting the sort order based on the metric
@@ -177,14 +212,14 @@ class KbenchPKL:
         self.tune_df = tune_df
 
     @staticmethod
-    def load(path) -> dict:
+    def load(path) -> dict:  # noqa: ANN001
         f = load_pickle(path)
         for k in ["merged_df", "build_df"]:
             assert k in f.keys()
         return f
 
 
-def df_round_floats(df, prec=3):
+def df_round_floats(df, prec=3):  # noqa: ANN001
     "Round values in dataframe to specified precision"
     for c in df.columns:
         if df.dtypes[c] in (np.float64, np.float32):
@@ -193,18 +228,20 @@ def df_round_floats(df, prec=3):
 
 
 def profile_results(
-    pickle_path,
-    snippet_path,
-    output_path="output.mojo",
-    top_percentage=0.0,
-    ratio=False,
-    head=-1,
-    tail=-1,
+    pickle_path,  # noqa: ANN001
+    top_percentage=0.0,  # noqa: ANN001
+    ratio=False,  # noqa: ANN001
+    head=-1,  # noqa: ANN001
+    tail=-1,  # noqa: ANN001
     metric: str = "met (ms)",
     pivots: list[str] = [],
-    verbose=False,
-) -> None:
-    pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
+    verbose=False,  # noqa: ANN001
+) -> Optional[TuningSpec]:
+    try:
+        pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
+    except:
+        print(f"Invalid pkl [{pickle_path}]")
+        return None
     merged_df, tune_df, pkl_data = (
         pkl.merged_df,
         pkl.tune_df,
@@ -262,25 +299,20 @@ def profile_results(
         df_to_console_table(merged_df)
 
     print("[Best Spec]\n")
-
-    out_yaml_path = "result.yaml"
-    dump_yaml(
-        {
-            "name": str(pkl_data.get("name", None)),
-            "file": str(pkl_data.get("file", None)),
-            "params": [spec],
-        },
-        out_yaml_path,
+    spec = TuningSpec(
+        name=str(pkl_data.get("name", None)),
+        file=Path(pkl_data.get("file", Path())),
+        params=[spec],
+        pkl_path=pickle_path,
+        git_sha=str(pkl_data.get("git-revision", None)),
+        datetime=str(pkl_data.get("datetime", None)),
     )
+    print(spec)
     print(LINE)
-    print(f"wrote best pick to [{out_yaml_path}]")
-
-    if snippet_path:
-        replace_vals_snippet(spec, snippet_path, output_path)
-        print(LINE)
+    return spec
 
 
-def identical_pivot_values(x, y, pivots) -> bool:
+def identical_pivot_values(x, y, pivots) -> bool:  # noqa: ANN001
     for p in pivots:
         if (
             (p not in x.keys())
@@ -293,7 +325,11 @@ def identical_pivot_values(x, y, pivots) -> bool:
 
 
 def diff_baseline(
-    files, metric: str, pivots: list = [], head: int = -1, verbose: bool = False
+    files,  # noqa: ANN001
+    metric: str,
+    pivots: list = [],
+    head: int = -1,
+    verbose: bool = False,  # noqa: ANN001
 ) -> None:
     base_pkl = KbenchPKL(files[0], metric=metric)
     metric = base_pkl.metric
@@ -332,7 +368,7 @@ def diff_baseline(
                 f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
             )
             print(
-                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f}) / {current_metric:.{prec}f}"
+                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f} / {current_metric:.{prec}f})"
             )
             d = {
                 "shape": [shape],
@@ -347,13 +383,58 @@ def diff_baseline(
             print(LINE)
 
 
+def codegen(specs: list[TuningSpec], snippet_path: Path, output_path: Path):
+    details = []
+    details += [HEADER]
+
+    prefix = """alias configs = List("""
+    suffix = """)"""
+
+    details += [prefix]
+    sep = ","
+    for s in specs:
+        config_str = replace_vals_snippet(s.params[0], snippet_path)
+        print(LINE)
+        details += [f"# Automatically generated from [{s.pkl_path}]"]
+        details += [f"# date: [{s.datetime}]"]
+        details += [f"# git-sha: [{s.git_sha}]"]
+        details += [config_str + sep]
+        details += [""]
+    details += [suffix]
+
+    with open(output_path, "w") as f:
+        f.write("\n".join(details))
+    import os
+
+    os.system(f"mojo format {output_path}")
+    print(f"wrote results to [{output_path}]")
+
+
+def check_specs(specs: list[TuningSpec]):
+    # TODO: check specs have the same tuning hash
+    spec_list = [pd.DataFrame([s.params[0]]) for s in specs]
+    merged_specs = pd.concat(spec_list, axis=0, ignore_index=True)
+    print(merged_specs.to_string())
+
+    key_cols = ["M", "N", "K"]
+    key_cols_values = merged_specs[key_cols]
+    key_cols_values_uniq = key_cols_values.drop_duplicates()
+    if len(key_cols_values) == len(key_cols_values_uniq):
+        print("PASS: UNIQUE KEY COLUMNS")
+    else:
+        # TODO: add check for finding the mismatched rows
+        raise ValueError(
+            "Found duplicates in specs! Make sure you pass each pkl once."
+        )
+
+
 class ComplexParamList(click.Option):
     """Complex parameter list
     Example:
         --pivot=[M] --pivot=[N] --pivot=[K] is equivalent to --pivot=[M,N,K] and vice versa.
     """
 
-    def type_cast_value(self, ctx, value_in):
+    def type_cast_value(self, ctx, value_in):  # noqa: ANN001
         """DO NOT REMOVE this function, it is called from ctx in click."""
         p = []
         assert isinstance(value_in, list)
@@ -362,7 +443,7 @@ class ComplexParamList(click.Option):
         return p
 
     @staticmethod
-    def parse(value) -> list:
+    def parse(value) -> list:  # noqa: ANN001
         try:
             return ast.literal_eval(value)
         except:
@@ -378,6 +459,78 @@ class ComplexParamList(click.Option):
                 return [value]
             else:
                 raise click.BadParameter(value)
+
+
+def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png"):
+    column_names = df.columns
+    width_px = 1600
+    height_px = 1200
+    layout = go.Layout(autosize=True, width=width_px, height=height_px)
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=df,
+            x=column_names,
+            y=column_names,
+            text=df.values,
+            texttemplate="%{text:.2f}",
+            textfont={"size": 20},
+            hoverongaps=False,
+            colorscale="Blues",
+        ),
+        layout=layout,
+    )
+    font_size_pt = 20
+    fig.update_layout(
+        #         font_family=cfg.font_family,
+        #         title_font_family=cfg.title_font_family,
+        font_size=font_size_pt,
+    )
+    fig.write_image(img)
+
+
+def correlation_analysis(
+    files,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    metric: str = "met (ms)",
+    verbose: bool = False,  # noqa: ANN001
+):
+    pkl_list = []
+    for pkl in files:
+        try:
+            pkl_list.append(KbenchPKL(pickle_path=pkl, metric=metric))
+        except:
+            if verbose:
+                print(f"invalid pkl: [{pkl}]")
+    print(LINE)
+
+    # Note: it is crucial to ignore index for later merging the two sets.
+    merged_df = pd.concat([p.merged_df for p in pkl_list], ignore_index=True)
+    specs_df = specs_to_df(merged_df["spec"])
+    agg_df = pd.merge(merged_df, specs_df, left_index=True, right_index=True)
+
+    rm_list = ["mesh_idx", "spec", "name"]
+    metric_col = "met (ms)"
+    cols = []
+    agg_df[metric_col] = agg_df[metric_col].astype(float)
+    for c in list(agg_df.columns):
+        if c not in rm_list:
+            try:
+                agg_df[c] = agg_df[c].astype(float)
+                cols.append(c)
+            except:
+                pass
+
+    corr_method = "kendall"
+    c = pd.DataFrame(agg_df[cols].corr(corr_method))
+
+    c_abs = c[metric_col].fillna(0).abs().sort_values(ascending=False).round(2)
+    c_abs = c_abs.to_frame(name=f"Sorted Absolute Correlation: {metric_col}")
+
+    df_to_console_table(c_abs, index=True)
+    df_to_console_table(round(c, 2), index=True)
+
+    draw_heatmap(c, "correlation.png")
+    return
 
 
 help_str = "Profile kbench output pickle"
@@ -449,6 +602,13 @@ help_str = "Profile kbench output pickle"
     multiple=True,
 )
 @click.option(
+    "--correlation",
+    "-c",
+    is_flag=True,
+    default=False,
+    help="Correlation analysis.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -457,33 +617,28 @@ help_str = "Profile kbench output pickle"
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,
-    output_path,
-    top,
-    snippet_path,
-    ratio,
-    head,
-    tail,
-    diff,
-    metric,
-    pivots,
-    verbose,
+    files,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    top,  # noqa: ANN001
+    snippet_path,  # noqa: ANN001
+    ratio,  # noqa: ANN001
+    head,  # noqa: ANN001
+    tail,  # noqa: ANN001
+    diff,  # noqa: ANN001
+    metric,  # noqa: ANN001
+    pivots,  # noqa: ANN001
+    correlation,  # noqa: ANN001
+    verbose,  # noqa: ANN001
 ) -> bool:
     assert files
 
     if diff:
-        assert len(files) > 1, (
-            "Should provide at least two pkl's for --diff option."
-        )
-    else:
-        assert len(files) == 1
+        assert len(files) > 1, "Provide at least two pkl's for --diff option."
 
-    # TODO: rework
-    for pickle_path in files:
-        print(f"pickle_path: [{pickle_path}]")
-    print(f"top_percentage: [{top}]")
-    print(f"snippet_path: [{snippet_path}]")
-    print(LINE)
+    if verbose:
+        print(f"top_percentage: [{top}]")
+        print(f"snippet_path: [{snippet_path}]")
+        print(LINE)
 
     top_percentage = float(top) if top else 0
     if diff:
@@ -493,18 +648,41 @@ def cli(
             files, metric=metric, pivots=pivots, head=head, verbose=verbose
         )
     else:
-        profile_results(
-            pickle_path=files[0],
-            snippet_path=snippet_path,
-            output_path=output_path,
-            top_percentage=top_percentage,
-            ratio=ratio,
-            head=head,
-            tail=tail,
-            metric=metric,
-            pivots=pivots,
-            verbose=verbose,
+        specs = []
+        invalid_pkls = []
+        for pkl_path in files:
+            top_spec = profile_results(
+                pickle_path=pkl_path,
+                top_percentage=top_percentage,
+                ratio=ratio,
+                head=head,
+                tail=tail,
+                metric=metric,
+                pivots=pivots,
+                verbose=verbose,
+            )
+            if top_spec:
+                specs += [top_spec]
+            else:
+                invalid_pkls += [pkl_path]
+
+        if snippet_path:
+            check_specs(specs=specs)
+            codegen(
+                specs=specs, snippet_path=snippet_path, output_path=output_path
+            )
+
+        print(
+            f"num invalid pkls: {len(invalid_pkls)} out of num-files: {len(files)}"
         )
+        for i, pkl in enumerate(invalid_pkls):
+            print(f"invalid pkl [{i}]: [{pkl}]")
+
+        print(LINE)
+
+    if correlation:
+        correlation_analysis(files, output_path, verbose=verbose)
+
     return True
 
 

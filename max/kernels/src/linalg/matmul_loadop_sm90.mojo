@@ -199,13 +199,6 @@ fn async_load_AB[
 
             write_pipeline_states.step()
 
-        @parameter
-        for j in range(num_pipeline_stages_to_unroll, pipeline_stages):
-            var write_idx = write_pipeline_states.index()
-            empty_mbar[write_idx].wait(write_pipeline_states.phase())
-            _ = full_mbar[write_idx].arrive()
-            write_pipeline_states.step()
-
     @parameter
     if num_remaining_k_iters == 0:
         for k_iter in range(num_full_k_iters):
@@ -317,13 +310,6 @@ fn async_load_AB[
             )
 
             async_copy_arrive(full_mbar[write_idx].unsafe_ptr())
-            _ = full_mbar[write_idx].arrive()
-            write_pipeline_states.step()
-
-        @parameter
-        for j in range(num_pipeline_stages_to_unroll, pipeline_stages):
-            var write_idx = write_pipeline_states.index()
-            empty_mbar[write_idx].wait(write_pipeline_states.phase())
             _ = full_mbar[write_idx].arrive()
             write_pipeline_states.step()
 

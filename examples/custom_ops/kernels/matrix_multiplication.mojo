@@ -822,7 +822,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             gpu_ctx = ctx.get_device_context()
 
             # Zero out the memory in the outbound tensor.
-            gpu_ctx.enqueue_memset(
+            gpu_ctx.memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
                     rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),

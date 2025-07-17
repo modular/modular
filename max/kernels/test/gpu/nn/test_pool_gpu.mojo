@@ -59,7 +59,6 @@ fn test_max_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.MAX, ctx)
 
 
-# CHECK-LABEL: test_avg_pool_2d
 fn test_avg_pool_2d(ctx: DeviceContext) raises:
     print("== test_avg_pool_2d")
 
@@ -172,17 +171,13 @@ fn pool[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        out_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](out_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
-    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
+    ctx.memcopy(d_input_buffer, input_tensor.ptr)
+    ctx.memcopy(d_output_buffer, output_tensor.ptr)
 
     if pool_method == PoolMethod.MAX:
         max_pool_gpu[int_type = DType.int32](
@@ -222,7 +217,7 @@ fn pool[
         )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
+    ctx.memcopy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
@@ -309,17 +304,13 @@ fn pool_ceil_test[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
-    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
+    ctx.memcopy(d_input_buffer, input_tensor.ptr)
+    ctx.memcopy(d_output_buffer, output_tensor.ptr)
 
     if pool_method == PoolMethod.MAX:
         max_pool_gpu[int_type = DType.int32](
@@ -363,7 +354,7 @@ fn pool_ceil_test[
         )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
+    ctx.memcopy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
@@ -452,17 +443,13 @@ fn test_avg_pool_2d_with_padding_gpu[
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
-    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
+    ctx.memcopy(d_input_buffer, input_tensor.ptr)
+    ctx.memcopy(d_output_buffer, output_tensor.ptr)
 
     avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
         ctx,
@@ -483,7 +470,7 @@ fn test_avg_pool_2d_with_padding_gpu[
     )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
+    ctx.memcopy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
@@ -571,17 +558,13 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     )
 
     # Copy data to device
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
-        in_layout.size()
-    )
+    var d_input_buffer = ctx.create_buffer[DType.float32](in_layout.size())
+    var d_output_buffer = ctx.create_buffer[DType.float32](in_layout.size())
     var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
     var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
-    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
+    ctx.memcopy(d_input_buffer, input_tensor.ptr)
+    ctx.memcopy(d_output_buffer, output_tensor.ptr)
 
     max_pool_gpu[int_type = DType.int32](
         ctx,
@@ -602,7 +585,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
+    ctx.memcopy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same

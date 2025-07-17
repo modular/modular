@@ -46,7 +46,7 @@ ACCURACY_ATOL = 1e-8
 are_all_tensor_values = _are_all_tensor_values_iterable
 
 
-def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
+def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):  # noqa: ANN001
     if max_magnitude:
         kwargs.setdefault("max_value", max_magnitude)
 
@@ -102,7 +102,7 @@ def shapes(
     return tuple(draw_dim(dim) for dim in tensor_type.shape)
 
 
-def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
+def arrays(tensor_type: TensorType, static_dims={}, **kwargs):  # noqa: ANN001
     if tensor_type.dtype == DType.bfloat16:
         tensor_type = TensorType(
             DType.float32, tensor_type.shape, device=tensor_type.device
@@ -122,7 +122,7 @@ def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
 
 
 def given_input_types(
-    input_types,
+    input_types,  # noqa: ANN001
     static_dims: Mapping[str, int] = {},
     provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
     max_magnitude: Optional[float] = None,
@@ -154,7 +154,7 @@ def given_input_types(
     return given(st.tuples(*input_arrays))
 
 
-def execute(model, inputs):
+def execute(model, inputs):  # noqa: ANN001
     tensor_inputs = [
         t if isinstance(t, Tensor) else Tensor.from_dlpack(t) for t in inputs
     ]
@@ -164,8 +164,8 @@ def execute(model, inputs):
 
 
 def modular_graph_test(
-    session,
-    graph,
+    session,  # noqa: ANN001
+    graph,  # noqa: ANN001
     *,
     static_dims: Mapping[str, int] = {},
     provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
@@ -173,7 +173,7 @@ def modular_graph_test(
     max_magnitude: Optional[float] = None,
     **kwargs,
 ):
-    def decorator(test_fn):
+    def decorator(test_fn):  # noqa: ANN001
         model = session.load(graph)
 
         @settings(suppress_health_check=[HealthCheck.data_too_large])
@@ -184,7 +184,7 @@ def modular_graph_test(
             max_magnitude=max_magnitude,
             **kwargs,
         )
-        def test_correctness(inputs) -> None:
+        def test_correctness(inputs) -> None:  # noqa: ANN001
             model_execute = functools.partial(execute, model)
 
             torch_inputs = [torch.from_dlpack(t) for t in inputs]

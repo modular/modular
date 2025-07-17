@@ -119,9 +119,9 @@ fn bench_matmul[
         // sizeof[DType.bfloat16]()
     )
 
-    var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
-    var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
+    var buffer_a = ctx.create_buffer[dtype](cache_a)
+    var buffer_b = ctx.create_buffer[dtype](cache_b)
+    var buffer_c = ctx.create_buffer[DType.bfloat16](cache_c)
 
     # TODO: remove init_on_gpu flag and the loading on CPU
     alias init_on_gpu = True
@@ -139,8 +139,8 @@ fn bench_matmul[
             initialize(a_host.tensor, init_type)
             initialize(b_host.tensor, init_type)
 
-        ctx.enqueue_copy(buffer_a, a_host.tensor.data)
-        ctx.enqueue_copy(buffer_b, b_host.tensor.data)
+        ctx.memcopy(buffer_a, a_host.tensor.data)
+        ctx.memcopy(buffer_b, b_host.tensor.data)
         ctx.synchronize()
     else:
         init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)

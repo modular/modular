@@ -511,10 +511,7 @@ fn _apply_mask[
                     @parameter
                     for j in range(WN // 8):
                         score_col = mask_frag_col + j * 8
-                        alias idx = IntTuple(
-                            IntTuple(i, m_mma), IntTuple(j, n_mma)
-                        )
-                        p = p_reg_tile._get[idx=idx]()
+                        p = p_reg_tile[i, m_mma, j, n_mma]
 
                         @parameter
                         if masked:
@@ -580,7 +577,7 @@ fn _apply_mask[
                                 bound,
                                 p,
                             )
-                        p_reg_tile._set[idx=idx](p)
+                        p_reg_tile[i, m_mma, j, n_mma] = p
 
     @parameter
     if decoding:

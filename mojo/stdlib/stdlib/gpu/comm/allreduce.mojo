@@ -338,15 +338,15 @@ fn _allreduce_naive[
         var curr_ctx = ctxs[device_idx]
 
         # Create temporary accumulation buffer.
-        var accum_buffer = curr_ctx.enqueue_create_buffer[dtype](num_elements)
-        curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
+        var accum_buffer = curr_ctx.create_buffer[dtype](num_elements)
+        curr_ctx.memset(accum_buffer, 0)  # Initialize to zero
 
         # Create temporary buffers for remote data.
         var tmp_buffers = List[DeviceBuffer[dtype]]()
         for i in range(ngpus):
             if i != device_idx:
-                var tmp = curr_ctx.enqueue_create_buffer[dtype](num_elements)
-                curr_ctx.enqueue_copy(tmp, device_buffers[i])
+                var tmp = curr_ctx.create_buffer[dtype](num_elements)
+                curr_ctx.memcopy(tmp, device_buffers[i])
                 tmp_buffers.append(tmp)
 
         # Reduce all buffers into accumulation buffer.
@@ -354,7 +354,7 @@ fn _allreduce_naive[
         var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
         # First reduce local buffer.
-        curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+        curr_ctx.call_function[_naive_reduce_kernel[dtype]](
             accum_buffer,
             device_buffers[device_idx],
             num_elements,
@@ -364,7 +364,7 @@ fn _allreduce_naive[
 
         # Reduce remote buffers.
         for tmp in tmp_buffers:
-            curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+            curr_ctx.call_function[_naive_reduce_kernel[dtype]](
                 accum_buffer,
                 tmp,
                 num_elements,
@@ -373,7 +373,7 @@ fn _allreduce_naive[
             )
 
         # Apply output lambda to final accumulated buffer.
-        curr_ctx.enqueue_function[
+        curr_ctx.call_function[
             _naive_reduce_kernel_with_lambda[
                 dtype,
                 rank,
@@ -838,7 +838,7 @@ fn _allreduce_p2p[
             )
 
             # Use the 1-stage allreduce when transfer is latency bound.
-            curr_ctx.enqueue_function[
+            curr_ctx.call_function[
                 _allreduce_1stage_kernel[
                     dtype,
                     rank,
@@ -865,7 +865,7 @@ fn _allreduce_p2p[
             )
 
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
-            curr_ctx.enqueue_function[
+            curr_ctx.call_function[
                 _allreduce_2stage_kernel[
                     dtype,
                     rank,

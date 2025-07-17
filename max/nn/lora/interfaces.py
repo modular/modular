@@ -13,7 +13,7 @@
 
 from typing import Protocol, runtime_checkable
 
-from max.graph import BufferValue
+from max.graph import TensorValue
 
 
 @runtime_checkable
@@ -22,8 +22,8 @@ class SupportsLoRA(Protocol):
 
     def set_lora_batch_info(
         self,
-        lora_ids: BufferValue,
-        lora_ranks: BufferValue,
+        lora_ids: TensorValue,
+        lora_ranks: TensorValue,
     ): ...
 
     def apply_lora(self, *args, **kwargs): ...

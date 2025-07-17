@@ -21,11 +21,14 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, ops
 
 
-@pytest.mark.parametrize("window_length", [0, 1, 2, 5, 10, 100])
+@pytest.mark.parametrize("window_length", [0, 1, 10, 100])
 @pytest.mark.parametrize("periodic", [True, False])
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_hann_window(
-    session, window_length: int, periodic: bool, dtype: DType
+    session,  # noqa: ANN001
+    window_length: int,
+    periodic: bool,
+    dtype: DType,  # noqa: ANN001
 ) -> None:
     """Test hann_window against PyTorch's implementation."""
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:

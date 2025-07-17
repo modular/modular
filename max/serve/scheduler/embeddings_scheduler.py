@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
+from max.interfaces import EmbeddingsResponse, EngineResult
 from max.pipelines.core import (
     EmbeddingsGenerator,
     TextContext,
@@ -25,7 +26,6 @@ from max.pipelines.core import (
 from max.profiler import traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import Scheduler
-from max.serve.scheduler.queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
 
@@ -56,9 +56,9 @@ class EmbeddingsScheduler(Scheduler):
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
         )
-        self.response_q = ZmqPushSocket[Any](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
-        )
+        self.response_q = ZmqPushSocket[
+            dict[str, EngineResult[EmbeddingsResponse]]
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
 
     @traced
     def _create_batch_to_execute(self):
@@ -96,14 +96,18 @@ class EmbeddingsScheduler(Scheduler):
             if req_id in already_terminated:
                 continue
             del batch_executed[req_id]
-            batch_response[req_id] = STOP_STREAM
             already_terminated.add(req_id)
 
     @traced
-    def _schedule_encode(self, batch_to_execute) -> None:
+    def _schedule_encode(self, batch_to_execute) -> None:  # noqa: ANN001
         # execute the batch
         batch_responses = self.pipeline.encode(batch_to_execute)
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # send the responses to the API process
-        self.response_q.put_nowait([batch_responses])
+        self.response_q.put_nowait(
+            {
+                request_id: EngineResult.complete(response)
+                for request_id, response in batch_responses.items()
+            }
+        )

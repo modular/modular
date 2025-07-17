@@ -33,7 +33,7 @@ def create_test_graph():
     return graph
 
 
-def test_max_graph(session) -> None:
+def test_max_graph(session) -> None:  # noqa: ANN001
     graph = create_test_graph()
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)
@@ -44,7 +44,7 @@ def test_max_graph(session) -> None:
     assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
-def test_max_graph_export(session) -> None:
+def test_max_graph_export(session) -> None:  # noqa: ANN001
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     check to ensure that the file contents are non-empty."""
 
@@ -55,7 +55,7 @@ def test_max_graph_export(session) -> None:
         assert os.path.getsize(mef_file.name) > 0
 
 
-def test_max_graph_export_import_mef(session) -> None:
+def test_max_graph_export_import_mef(session) -> None:  # noqa: ANN001
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     loads the mef. Both the original model from the max-graph and the model
     from the mef are executed to ensure that they produce the same output."""
@@ -77,7 +77,7 @@ def test_max_graph_export_import_mef(session) -> None:
         assert np.allclose(output, output2)
 
 
-def test_max_graph_device(session) -> None:
+def test_max_graph_device(session) -> None:  # noqa: ANN001
     graph = create_test_graph()
     device = CPU()
     session = InferenceSession(devices=[device])
@@ -85,7 +85,7 @@ def test_max_graph_device(session) -> None:
     assert str(device) == str(compiled.devices[0])
 
 
-def test_identity(session) -> None:
+def test_identity(session) -> None:  # noqa: ANN001
     # Create identity graph.
     graph = Graph(
         "identity",
@@ -102,7 +102,7 @@ def test_identity(session) -> None:
     _ = output[0].to(CPU())[0]
 
 
-def test_max_graph_export_import_mlir(session) -> None:
+def test_max_graph_export_import_mlir(session) -> None:  # noqa: ANN001
     """Creates a graph via max-graph API, exports the mlir to a tempfile, and
     loads the mlir. Both the original model from the max-graph and the model
     from the mlir are executed to ensure that they produce the same output."""
@@ -128,7 +128,7 @@ def test_max_graph_export_import_mlir(session) -> None:
         assert output == output2
 
 
-def test_no_output_error_message(session) -> None:
+def test_no_output_error_message(session) -> None:  # noqa: ANN001
     with Graph("test", input_types=()) as graph:
         pass
 

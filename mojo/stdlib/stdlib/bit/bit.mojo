@@ -356,13 +356,61 @@ fn log2_floor(val: Int) -> Int:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0.
     """
-    if val == 32:
-        return 5
-    if val == 64:
-        return 6
-
     alias bitwidth = bitwidthof[Int]()
     return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
+
+
+@always_inline
+fn log2_floor(val: Scalar) -> __type_of(val):
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns -1 if val is 0.
+    """
+    constrained[val.dtype.is_integral(), "the input dtype must be integral"]()
+    alias bitwidth = bitwidthof[val.dtype]()
+    return select(
+        val <= 1, __type_of(val)(0), bitwidth - count_leading_zeros(val) - 1
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# log2_ceil
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn log2_ceil(val: Int) -> Int:
+    """Returns the ceiling of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The ceiling of the base-2 logarithm of the input value, which corresponds
+        to the smallest power of 2 greater than or equal to the input. Returns 0
+        if val is 0.
+    """
+    return select(val <= 1, 0, log2_floor(val - 1) + 1)
+
+
+@always_inline
+fn log2_ceil(val: Scalar) -> __type_of(val):
+    """Returns the ceiling of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The smallest integer `n` such that `2^n` is greater than or equal to
+        the input value. Returns 0 if `val` is 0.
+    """
+    constrained[val.dtype.is_integral(), "the input dtype must be integral"]()
+    return select(val <= 1, __type_of(val)(0), log2_floor(val - 1) + 1)
 
 
 # ===-----------------------------------------------------------------------===#

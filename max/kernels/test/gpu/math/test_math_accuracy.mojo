@@ -31,7 +31,7 @@ def run_elementwise[
 ](ctx: DeviceContext, in_device: DeviceBuffer[dtype],):
     alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
-    var out_device = ctx.enqueue_create_buffer[dtype](length)
+    var out_device = ctx.create_buffer[dtype](length)
 
     var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
@@ -63,7 +63,7 @@ def run_elementwise[
 
 
 def test_exp[dtype: DType](ctx: DeviceContext):
-    var input = ctx.enqueue_create_buffer[dtype](length)
+    var input = ctx.create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):
@@ -72,7 +72,7 @@ def test_exp[dtype: DType](ctx: DeviceContext):
 
 
 def test_exp2[dtype: DType](ctx: DeviceContext):
-    var input = ctx.enqueue_create_buffer[dtype](length)
+    var input = ctx.create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):

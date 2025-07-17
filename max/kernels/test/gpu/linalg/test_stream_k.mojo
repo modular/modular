@@ -317,8 +317,8 @@ fn matmul_stream_k[
         total_iters_streamk % total_programs_streamk
     )
 
-    var locks_data = ctx.enqueue_create_buffer[DType.int32](total_tiles_streamk)
-    ctx.enqueue_memset(locks_data, 0)
+    var locks_data = ctx.create_buffer[DType.int32](total_tiles_streamk)
+    ctx.memset(locks_data, 0)
 
     print("M=", M, ", N=", N, ", K=", K)
     print(
@@ -445,9 +445,9 @@ fn run_matmul_stream_k[
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
+    var a_device = ctx.create_buffer[type](M * K)
+    var b_device = ctx.create_buffer[type](K * N)
+    var c_device = ctx.create_buffer[type](M * N)
     var a_buf = NDBuffer[type, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
@@ -458,12 +458,12 @@ fn run_matmul_stream_k[
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.create_buffer[type](M * K)
+    var b_device_n = ctx.create_buffer[type](K * N)
+    var c_device_n = ctx.create_buffer[type](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     alias sm_count = ctx.device_info.sm_count
 
@@ -477,11 +477,11 @@ fn run_matmul_stream_k[
         ctx,
     )
 
-    ctx.enqueue_copy(c_host, c_device)
+    ctx.memcopy(c_host, c_device)
     ctx.synchronize()
 
-    ctx.enqueue_copy(a_device_n, a_host)
-    ctx.enqueue_copy(b_device_n, b_host)
+    ctx.memcopy(a_device_n, a_host)
+    ctx.memcopy(b_device_n, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -496,7 +496,7 @@ fn run_matmul_stream_k[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    ctx.enqueue_copy(c_host_n, c_device_n)
+    ctx.memcopy(c_host_n, c_device_n)
     ctx.synchronize()
 
     var rtol = 0.01

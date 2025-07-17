@@ -140,7 +140,7 @@ def max_tokens_to_generate(
     return min(max_new_tokens, _difference_between_max_and_prompt)
 
 
-async def run_with_default_executor(fn, *args):
+async def run_with_default_executor(fn, *args):  # noqa: ANN001
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args)
 
@@ -374,6 +374,7 @@ class TextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            model_name=request.model_name,
         )
         context.assign_to_cache(request.index)
         return context
@@ -665,7 +666,8 @@ class TextAndVisionTokenizer(
 
 
 def _rgba_to_rgb(
-    image: Image.Image, background_color=(255, 255, 255)
+    image: Image.Image,
+    background_color=(255, 255, 255),  # noqa: ANN001
 ) -> Image.Image:
     """Convert an RGBA image to RGB with filled background color."""
     assert image.mode == "RGBA"

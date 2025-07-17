@@ -19,10 +19,10 @@ from gpu.host import DeviceContext
 fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     alias length = 64
 
-    var in_host = context.enqueue_create_host_buffer[DType.float32](length)
-    var out_host = context.enqueue_create_host_buffer[DType.float32](length)
-    var in_dev = context.enqueue_create_buffer[DType.float32](length)
-    var out_dev = context.enqueue_create_buffer[DType.float32](length)
+    var in_host = context.create_host_buffer[DType.float32](length)
+    var out_host = context.create_host_buffer[DType.float32](length)
+    var in_dev = context.create_buffer[DType.float32](length)
+    var out_dev = context.create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -30,9 +30,9 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    in_host.enqueue_copy_to(in_dev)
-    in_dev.enqueue_copy_to(out_dev)
-    out_dev.enqueue_copy_to(out_host)
+    in_host.copy_to(in_dev)
+    in_dev.copy_to(out_dev)
+    out_dev.copy_to(out_host)
 
     # Wait for the copies to be completed.
     context.synchronize()

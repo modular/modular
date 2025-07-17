@@ -588,7 +588,7 @@ fn test_bicubic_kernel[
     var input_dev = DeviceNDBuffer[dtype, 4, input_dim](input_dim, ctx=ctx)
     var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
-    ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
+    ctx.memcopy(input_dev.buffer, input_host.tensor.data)
 
     alias N = output_dim.get[0]()
     alias C = output_dim.get[1]()
@@ -597,7 +597,7 @@ fn test_bicubic_kernel[
 
     resize_bicubic[target="gpu"](output_dev.tensor, input_dev.tensor, ctx)
 
-    ctx.enqueue_copy(output_ref_host.tensor.data, output_dev.buffer)
+    ctx.memcopy(output_ref_host.tensor.data, output_dev.buffer)
     ctx.synchronize()
 
     print(
@@ -654,7 +654,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     var input_dev = DeviceNDBuffer[dtype, 4, input_dim](input_dim, ctx=ctx)
     var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
-    ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
+    ctx.memcopy(input_dev.buffer, input_host.tensor.data)
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
     ctx.enqueue_function[gpu_bicubic_kernel[dtype, rank=4]](
@@ -664,7 +664,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         block_dim=(256,),
     )
 
-    ctx.enqueue_copy(output_gpu_host.tensor.data, output_dev.buffer)
+    ctx.memcopy(output_gpu_host.tensor.data, output_dev.buffer)
 
     ctx.synchronize()
 

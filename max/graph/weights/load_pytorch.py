@@ -22,14 +22,9 @@ from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
-from max.graph import DeviceRef
-
-try:
-    import torch  # type: ignore
-except ImportError:
-    torch = None
-
+import torch  # type: ignore
 from max.dtype import DType
+from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
@@ -39,33 +34,33 @@ from .weights import WeightData
 
 @dataclass
 class TensorInfo:
-    dtype: Any  # torch.dtype
+    dtype: torch.dtype
     offset: int
     shape: tuple[int, ...]
 
 
 class WeightUnpickler(pickle.Unpickler):
-    def __init__(self, pkl_file, zip_file) -> None:
+    def __init__(self, pkl_file, zip_file) -> None:  # noqa: ANN001
         super().__init__(pkl_file)
         self.zip_file = zip_file
 
     def build_tensor(
         self,
-        zip_info,
-        unused_storage_offset,
-        size,
+        zip_info,  # noqa: ANN001
+        unused_storage_offset,  # noqa: ANN001
+        size,  # noqa: ANN001
         *unused_args,
         **unused_kwargs,
     ):
         zip_info.shape = size
         return zip_info
 
-    def find_class(self, module, name):
+    def find_class(self, module, name):  # noqa: ANN001
         if module == "torch._utils" and name == "_rebuild_tensor_v2":
             return self.build_tensor
         return super().find_class(module, name)
 
-    def persistent_load(self, pid):
+    def persistent_load(self, pid):  # noqa: ANN001
         data = pid[1:]
         storage_type, key, unused_location, unused_num_elements = data
 
@@ -90,13 +85,8 @@ class PytorchWeights:
         filepath: PathLike,
         tensor_infos: Optional[dict[str, Any]] = None,
         prefix: str = "",
-        allocated=None,
+        allocated=None,  # noqa: ANN001
     ) -> None:
-        if torch is None:
-            raise ImportError(
-                "Unable to import torch. Please make sure that PyTorch is"
-                " installed on your system."
-            )
         self._filepath = filepath
         if tensor_infos is not None:
             self._tensor_infos = tensor_infos
@@ -142,7 +132,7 @@ class PytorchWeights:
                     ),
                 )
 
-    def __getattr__(self, attr) -> PytorchWeights:
+    def __getattr__(self, attr) -> PytorchWeights:  # noqa: ANN001
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:
@@ -174,7 +164,6 @@ class PytorchWeights:
         return self._tensor_infos[self._prefix]
 
     def data(self) -> WeightData:
-        assert torch is not None
         tensor_info = self._tensor_infos[self._prefix]
         dtype = DType.from_torch(self._tensor_infos[self._prefix].dtype)
         return WeightData(

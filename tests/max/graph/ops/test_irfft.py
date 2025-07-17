@@ -74,7 +74,7 @@ def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:
     normalization=Normalization.FORWARD,
 )
 def test_irfft(
-    graph_builder,
+    graph_builder,  # noqa: ANN001
     input_type: TensorType,
     n: int | None,
     axis: int,

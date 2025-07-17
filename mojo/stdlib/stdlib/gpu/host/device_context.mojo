@@ -189,7 +189,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
 
     To allocate a `HostBuffer`, use one of the methods provided by
     `DeviceContext`, such as
-    [`enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer).
+    [`create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#create_host_buffer).
 
     Parameters:
         dtype: Data type to be stored in the buffer.
@@ -431,6 +431,19 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         )
         return HostBuffer[view_type](new_handle, new_host_ptr)
 
+    fn copy_to(self, dst: HostBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to another host buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination host buffer to copy data to.
+        """
+        dst.context().memcopy(dst, self)
+
+    @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
 
@@ -441,8 +454,25 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         Args:
             dst: The destination host buffer to copy data to.
         """
-        dst.context().enqueue_copy(dst, self)
+        dst.context().memcopy(dst, self)
 
+    fn copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to a device buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination device buffer to copy data to.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        dst.context().memcopy(dst, self)
+
+    @deprecated("Use `copy_to() instead.")
     fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
@@ -457,8 +487,25 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        dst.context().enqueue_copy(dst, self)
+        dst.context().memcopy(dst, self)
 
+    fn copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
+        """Enqueues an asynchronous copy from this buffer to host memory.
+
+        This method schedules a memory copy operation from this device buffer to the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            dst_ptr: Pointer to the destination host memory location.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(dst_ptr, self)
+
+    @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -473,8 +520,25 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(dst_ptr, self)
+        self.context().memcopy(dst_ptr, self)
 
+    fn copy_from(self, src: HostBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from another host buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source host buffer to copy data from.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
 
@@ -489,8 +553,25 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src)
+        self.context().memcopy(self, src)
 
+    fn copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from a device buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source device buffer to copy data from.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
 
@@ -505,8 +586,25 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src)
+        self.context().memcopy(self, src)
 
+    fn copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
+        """Enqueues an asynchronous copy to this buffer from host memory.
+
+        This method schedules a memory copy operation to this device buffer from the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            src_ptr: Pointer to the source host memory location.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src_ptr)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -521,8 +619,29 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src_ptr)
+        self.context().memcopy(self, src_ptr)
 
+    fn fill(self, val: Scalar[dtype]) raises -> Self:
+        """Enqueues an operation to fill this buffer with a specified value.
+
+        This method schedules a memory set operation that fills the entire buffer
+        with the specified value. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            val: The value to fill the buffer with.
+
+        Returns:
+            Self reference for method chaining.
+        """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self.context().memset(self, val)
+        return self
+
+    @deprecated("Use `fill()` instead.")
     fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
 
@@ -540,7 +659,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -732,7 +851,7 @@ struct DeviceBuffer[dtype: DType](
 
     To allocate a `DeviceBuffer`, use one of the methods provided by
     `DeviceContext`, such as
-    [`enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer).
+    [`create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#create_buffer).
 
     Parameters:
         dtype: Data dtype to be stored in the buffer.
@@ -1044,6 +1163,23 @@ struct DeviceBuffer[dtype: DType](
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
+    fn copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to another device buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination device buffer to copy data to.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        dst.context().memcopy(dst, self)
+
+    @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
@@ -1058,8 +1194,25 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().enqueue_copy(dst, self)
+        dst.context().memcopy(dst, self)
 
+    fn copy_to(self, dst: HostBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to a host buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination host buffer to copy data to.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        dst.context().memcopy(dst, self)
+
+    @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
@@ -1074,8 +1227,25 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        dst.context().enqueue_copy(dst, self)
+        dst.context().memcopy(dst, self)
 
+    fn copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
+        """Enqueues an asynchronous copy from this buffer to host memory.
+
+        This method schedules a memory copy operation from this device buffer to the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            dst_ptr: Pointer to the destination host memory location.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(dst_ptr, self)
+
+    @deprecated("Use `copy_to()` instead.")
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -1090,8 +1260,25 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(dst_ptr, self)
+        self.context().memcopy(dst_ptr, self)
 
+    fn copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from another device buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source device buffer to copy data from.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
@@ -1106,8 +1293,25 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src)
+        self.context().memcopy(self, src)
 
+    fn copy_from(self, src: HostBuffer[dtype, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from a host buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source host buffer to copy data from.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
 
@@ -1122,8 +1326,25 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src)
+        self.context().memcopy(self, src)
 
+    fn copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
+        """Enqueues an asynchronous copy to this buffer from host memory.
+
+        This method schedules a memory copy operation to this device buffer from the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            src_ptr: Pointer to the source host memory location.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        self.context().memcopy(self, src_ptr)
+
+    @deprecated("Use `copy_from()` instead.")
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1138,8 +1359,29 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_copy(self, src_ptr)
+        self.context().memcopy(self, src_ptr)
 
+    fn fill(self, val: Scalar[dtype]) raises -> Self:
+        """Enqueues an operation to fill this buffer with a specified value.
+
+        This method schedules a memory set operation that fills the entire buffer
+        with the specified value. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            val: The value to fill the buffer with.
+
+        Returns:
+            Self reference for method chaining.
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
+        self.context().memset(self, val)
+        return self
+
+    @deprecated("Use `fill()` instead.")
     fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
 
@@ -1157,7 +1399,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        self.context().enqueue_memset(self, val)
+        self.context().memset(self, val)
         return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
@@ -1284,8 +1526,8 @@ struct DeviceBuffer[dtype: DType](
 
         var ctx = DeviceContext()
         var length = 1024
-        var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-        var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var in_dev = ctx.create_buffer[DType.float32](length)
+        var out_dev = ctx.create_buffer[DType.float32](length)
 
         # Initialize the input and output with known values.
         with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
@@ -1528,7 +1770,7 @@ struct DeviceFunction[
 
     var ctx = DeviceContext()
     var kernel = ctx.compile_function[my_kernel]()
-    ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
+    ctx.call_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
     ```
     """
 
@@ -2581,7 +2823,7 @@ struct DeviceContext(Copyable, Movable):
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+        ctx.call_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
         ctx.synchronize()
     ```
 
@@ -2596,7 +2838,7 @@ struct DeviceContext(Copyable, Movable):
         @staticmethod
         fn execute(ctx_ptr: DeviceContextPtr) raises:
             var ctx = ctx_ptr.get_device_context()
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
+            ctx.call_function[kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
     """
@@ -2826,6 +3068,25 @@ struct DeviceContext(Copyable, Movable):
         )
         return String(api_ptr)
 
+    fn create_buffer[
+        dtype: DType
+    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+        """Enqueues a buffer creation using the `DeviceBuffer` constructor.
+
+        For GPU devices, the space is allocated in the device's global memory.
+
+        Parameters:
+            dtype: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            The allocated buffer.
+        """
+        return DeviceBuffer[dtype](self, size, _DeviceBufferMode._ASYNC)
+
+    @deprecated("Use `create_buffer()` instead.")
     fn enqueue_create_buffer[
         dtype: DType
     ](self, size: Int) raises -> DeviceBuffer[dtype]:
@@ -2862,6 +3123,55 @@ struct DeviceContext(Copyable, Movable):
         self.synchronize()
         return result
 
+    fn create_host_buffer[
+        dtype: DType
+    ](self, size: Int) raises -> HostBuffer[dtype]:
+        """Enqueues the creation of a HostBuffer.
+
+        This function allocates memory on the host that is accessible by the device.
+        The memory is page-locked (pinned) for efficient data transfer between host and device.
+
+        Pinned memory is guaranteed to remain resident in the host's RAM, not be
+        paged/swapped out to disk. Memory allocated normally (for example, using
+        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
+        is pageable—individual pages of memory can be moved to secondary storage
+        (disk/SSD) when main memory fills up.
+
+        Using pinned memory allows devices to make fast transfers
+        between host memory and device memory, because they can use direct
+        memory access (DMA) to transfer data without relying on the CPU.
+
+        Allocating too much pinned memory can cause performance issues, since it
+        reduces the amount of memory available for other processes.
+
+        Parameters:
+            dtype: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            A `HostBuffer` object that wraps the allocated host memory.
+
+        Raises:
+            If memory allocation fails or if the device context is invalid.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            # Allocate host memory accessible by the device
+            var host_buffer = ctx.create_host_buffer[DType.float32](1024)
+
+            # Use the host buffer for device operations
+            # ...
+        ```
+        """
+        return HostBuffer[dtype](self, size)
+
+    @deprecated("Use `create_host_buffer()` instead.")
     fn enqueue_create_host_buffer[
         dtype: DType
     ](self, size: Int) raises -> HostBuffer[dtype]:
@@ -2902,7 +3212,7 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+            var host_buffer = ctx.create_host_buffer[DType.float32](1024)
 
             # Use the host buffer for device operations
             # ...
@@ -3374,6 +3684,103 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
+    fn call_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *Ts: AnyType,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The dtype of the function to launch.
+            func: The function to launch.
+            Ts: The dtypes of the arguments being passed to the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `call_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+
+        var gpu_kernel = self.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function_unchecked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @deprecated("Use `call_function()` instead.")
+    @parameter
+    @always_inline
     fn enqueue_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -3420,7 +3827,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3430,7 +3837,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3441,13 +3848,13 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
 
         var gpu_kernel = self.compile_function[
             func,
@@ -3516,7 +3923,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3526,7 +3933,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3537,8 +3944,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -3568,6 +3975,88 @@ struct DeviceContext(Copyable, Movable):
             constant_memory=constant_memory^,
         )
 
+    @parameter
+    @always_inline
+    fn call_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: Argument dtypes.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `call_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+
+        constrained[
+            not f.declared_arg_types,
+            (
+                "A checked DeviceFunction should be called with"
+                " `enqueue_function_checked`."
+            ),
+        ]()
+        self._enqueue_function_unchecked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @deprecated("Use `call_function()` instead.")
     @parameter
     @always_inline
     fn enqueue_function[
@@ -3600,7 +4089,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3610,7 +4099,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3623,13 +4112,13 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
 
         constrained[
             not f.declared_arg_types,
@@ -3681,7 +4170,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3691,7 +4180,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3704,8 +4193,8 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -3766,7 +4255,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3776,7 +4265,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3789,8 +4278,8 @@ struct DeviceContext(Copyable, Movable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -3869,7 +4358,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3879,7 +4368,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3890,8 +4379,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -3970,7 +4459,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -3980,7 +4469,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -3991,8 +4480,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4077,7 +4566,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -4087,7 +4576,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4098,8 +4587,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4179,7 +4668,7 @@ struct DeviceContext(Copyable, Movable):
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
 
-        You can pass the function directly to `enqueue_function` without
+        You can pass the function directly to `call_function` without
         compiling it first:
 
         ```mojo
@@ -4189,7 +4678,7 @@ struct DeviceContext(Copyable, Movable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4200,8 +4689,8 @@ struct DeviceContext(Copyable, Movable):
         ```mojo
         with DeviceContext() as ctx:
             var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4222,6 +4711,97 @@ struct DeviceContext(Copyable, Movable):
 
         self._enqueue_function_checked(
             gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    # TODO: Rename to call_function once we're sure this works for every
+    # callsite.
+    fn enqueue_function_experimental[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        declared_arg_types: Optional[
+            __mlir_type[`!kgen.variadic<`, AnyType, `>`]
+        ],
+        *Ts: DevicePassable,
+    ](
+        self,
+        f: DeviceFunction[func, declared_arg_types, **_],
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            func_type: Something.
+            func: Something.
+            declared_arg_types: Something.
+            Ts: Argument dtypes.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `call_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.call_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.call_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim
+        )
+
+        constrained[
+            Bool(f.declared_arg_types), "Calling a non-checked function."
+        ]()
+        self._enqueue_function_checked(
+            f,
             args,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -4285,6 +4865,79 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
+    fn call_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues an external device function for asynchronous execution on the GPU.
+
+        This method schedules an external device function to be executed on the GPU with the
+        specified execution configuration. The function and its arguments are passed to the
+        underlying GPU runtime, which will execute them when resources are available.
+
+        Parameters:
+            Ts: The dtypes of the arguments to be passed to the device function.
+
+        Args:
+            f: The external device function to execute.
+            args: The arguments to pass to the device function.
+            grid_dim: The dimensions of the grid (number of thread blocks).
+            block_dim: The dimensions of each thread block (number of threads per block).
+            cluster_dim: Optional dimensions for thread block clusters (for newer GPU architectures).
+            shared_mem_bytes: Optional amount of dynamic shared memory to allocate per block.
+            attributes: Optional list of launch attributes for fine-grained control.
+            constant_memory: Optional list of constant memory mappings to use during execution.
+
+        Raises:
+            If there's an error enqueuing the function or if the function execution fails.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+        from gpu.host.device_context import DeviceExternalFunction
+
+        # Create a device context and load an external function
+        with DeviceContext() as ctx:
+            var ext_func = DeviceExternalFunction("my_kernel")
+
+            # Enqueue the external function with execution configuration
+            ctx.call_function(
+                ext_func,
+                grid_dim=Dim(16),
+                block_dim=Dim(256)
+            )
+
+            # Wait for completion
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
+
+        self._enqueue_external_function(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @deprecated("Use `call_function()` instead.")
+    @parameter
+    @always_inline
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -4331,7 +4984,7 @@ struct DeviceContext(Copyable, Movable):
             var ext_func = DeviceExternalFunction("my_kernel")
 
             # Enqueue the external function with execution configuration
-            ctx.enqueue_function(
+            ctx.call_function(
                 ext_func,
                 grid_dim=Dim(16),
                 block_dim=Dim(256)
@@ -4341,8 +4994,8 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.call_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.call_function", "block_dim"](block_dim)
 
         self._enqueue_external_function(
             f,
@@ -4591,7 +5244,7 @@ struct DeviceContext(Copyable, Movable):
 
         fn benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
             # Run kernel with different parameters based on iteration
-            ctx.enqueue_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
+            ctx.call_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
 
         with DeviceContext() as ctx:
             # Measure execution time with iteration awareness
@@ -4633,6 +5286,41 @@ struct DeviceContext(Copyable, Movable):
         return elapsed_nanos
 
     @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, **_],
+        src_ptr: UnsafePointer[Scalar[dtype]],
+    ) raises:
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_HtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[dtype]],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_ptr,
+            )
+        )
+
+    @deprecated("Use `memcopy() instead.")
+    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -4666,6 +5354,41 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: HostBuffer[dtype, **_],
+        src_ptr: UnsafePointer[Scalar[dtype]],
+    ) raises:
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_HtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[dtype]],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_ptr,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -4701,6 +5424,40 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_buf: DeviceBuffer[dtype, **_],
+    ) raises:
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoH_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                UnsafePointer[Scalar[dtype]],
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_ptr,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
+    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -4733,6 +5490,40 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_buf: HostBuffer[dtype, **_],
+    ) raises:
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoH_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                UnsafePointer[Scalar[dtype]],
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_ptr,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -4767,6 +5558,32 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_ptr: UnsafePointer[Scalar[dtype]],
+        size: Int,
+    ) raises:
+        """Enqueues an async copy of `size` elements from a device pointer to
+        another device pointer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_ptr: Device pointer to copy from.
+            size: Number of elements (of the specified `DType`) to copy.
+        """
+        # Not directly implemented on DeviceContext, wrap in buffers first
+        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
+        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
+        self.memcopy(dst_buf, src_buf)
+
+    @deprecated("Use `memcopy()` instead.")
+    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -4789,8 +5606,43 @@ struct DeviceContext(Copyable, Movable):
         # Not directly implemented on DeviceContext, wrap in buffers first
         var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
         var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
-        self.enqueue_copy(dst_buf, src_buf)
+        self.memcopy(dst_buf, src_buf)
 
+    @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, **_],
+        src_buf: DeviceBuffer[dtype, **_],
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -4826,6 +5678,39 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self, dst_buf: DeviceBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
+    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -4857,6 +5742,39 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self, dst_buf: HostBuffer[dtype, **_], src_buf: DeviceBuffer[dtype, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
     @always_inline
     fn enqueue_copy[
         dtype: DType
@@ -4890,6 +5808,39 @@ struct DeviceContext(Copyable, Movable):
         )
 
     @always_inline
+    fn memcopy[
+        dtype: DType
+    ](
+        self, dst_buf: HostBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @deprecated("Use `memcopy()` instead.")
+    @always_inline
     fn enqueue_copy[
         dtype: DType
     ](
@@ -4921,6 +5872,55 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    @always_inline
+    fn memset[
+        dtype: DType
+    ](self, dst: DeviceBuffer[dtype, **_], val: Scalar[dtype]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            dtype: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
+        alias bitwidth = bitwidthof[dtype]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
+        ]()
+        var value: UInt64
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt64,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[dtype](),
+            )
+        )
+
+    @deprecated("Use `memset()` instead.")
     @always_inline
     fn enqueue_memset[
         dtype: DType
@@ -4969,6 +5969,54 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    fn memset[
+        dtype: DType
+    ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination host buffer to the specified value.
+
+        Parameters:
+            dtype: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
+        alias bitwidth = bitwidthof[dtype]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
+        ]()
+        var value: UInt64
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt64,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[dtype](),
+            )
+        )
+
+    @deprecated("Use `memset()` instead.")
     fn enqueue_memset[
         dtype: DType
     ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:
@@ -5611,7 +6659,7 @@ struct _HostMappedBuffer[dtype: DType]:
     var _cpu_buf: HostBuffer[dtype]
 
     fn __init__(out self, ctx: DeviceContext, buf: DeviceBuffer[dtype]) raises:
-        var cpu_buf = ctx.enqueue_create_host_buffer[dtype](len(buf))
+        var cpu_buf = ctx.create_host_buffer[dtype](len(buf))
         self._ctx = ctx
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
@@ -5620,13 +6668,13 @@ struct _HostMappedBuffer[dtype: DType]:
         pass
 
     fn __enter__(mut self) raises -> HostBuffer[dtype]:
-        self._dev_buf.enqueue_copy_to(self._cpu_buf)
+        self._dev_buf.copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
 
     fn __exit__(mut self) raises:
         self._ctx.synchronize()
-        self._cpu_buf.enqueue_copy_to(self._dev_buf)
+        self._cpu_buf.copy_to(self._dev_buf)
         self._ctx.synchronize()
 
 

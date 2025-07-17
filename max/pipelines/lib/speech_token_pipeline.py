@@ -21,11 +21,13 @@ import torch
 from max.driver import DeviceStream, Tensor
 from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.interfaces import (
+    GenerationStatus,
+    TextGenerationResponse,
+    TextResponse,
+)
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import (
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
     TTSContext,
 )
 from max.profiler import Tracer, traced
@@ -255,7 +257,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = TextGenerationStatus.ACTIVE
+            status = GenerationStatus.ACTIVE
             res[request_id] = TextGenerationResponse([], status)
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
             for step in range(num_valid_tokens):

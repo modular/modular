@@ -1159,10 +1159,7 @@ fn iota[
 
     alias step_dtype = dtype if dtype.is_integral() else DType.index
     var step: SIMD[step_dtype, width]
-    alias is_amd = is_amd_gpu()
-    # We can't use llvm.stepvector on AMD GPUs, because of a bug in the
-    # amd backend. See https://github.com/llvm/llvm-project/issues/139317
-    if is_amd or is_compile_time():
+    if is_compile_time():
         step = 0
 
         @parameter

@@ -26,7 +26,7 @@ fn run_func[
     fn kernel(output: UnsafePointer[Scalar[dtype]], input: Scalar[dtype]):
         output[0] = kernel_fn(input)
 
-    var out = ctx.enqueue_create_buffer[dtype](1)
+    var out = ctx.create_buffer[dtype](1)
     ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 

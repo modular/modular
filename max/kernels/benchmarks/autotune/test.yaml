@@ -13,7 +13,12 @@
 
 
 name: multistage_gemm
-file: sample.mojo
+file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.mojo
+
+rules:
+  - stages<=4 and $x<2
+  - stages>1
+
 params:
 
 - dtype: DType.float16

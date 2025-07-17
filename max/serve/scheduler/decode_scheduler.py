@@ -16,9 +16,15 @@ import queue
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Union, cast
+from typing import Union
 
 import zmq
+from max.interfaces import (
+    EngineResult,
+    TextGenerationResponse,
+    TextResponse,
+    TokenGenerator,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -27,11 +33,9 @@ from max.nn.kv_cache import (
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    TextGenerationResponse,
-    TextResponse,
-    TokenGenerator,
     msgpack_numpy_decoder,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
 from max.serve.config import Settings
@@ -41,7 +45,6 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
 from .base import Scheduler
-from .queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
 
@@ -168,12 +171,12 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: list[dict[str, TextResponse]] = [{}]
+        self, responses: dict[str, EngineResult[TextResponse]]
     ) -> None:
         """Pushes response messages to the response socket.
 
         Args:
-            responses: List of response dictionaries to send, defaults to empty dict.
+            responses: Dictionary of request_id, response of generation results.
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket.
@@ -408,23 +411,12 @@ class DecodeScheduler(Scheduler):
         if not responses:
             return
 
-        # Convert this to list[dict[str, Any]]
-        stream_responses: list[dict[str, TextResponse]] = [{}]
+        stream_responses: dict[str, EngineResult[TextResponse]] = {}
         for request_id, response in responses.items():
-            # This will just ensure that there is always a response for each token
-            # We add one here, as we need to send a stop sentinel
-            while (len(response.tokens) + (1 if response.is_done else 0)) > len(
-                stream_responses
-            ):
-                stream_responses.append({})
-
-            for token_idx, text_response in enumerate(response.tokens):
-                stream_responses[token_idx][request_id] = text_response
-
             if response.is_done:
-                stream_responses[len(response.tokens)][request_id] = cast(
-                    TextResponse, STOP_STREAM
-                )
+                stream_responses[request_id] = EngineResult.complete(response)
+            else:
+                stream_responses[request_id] = EngineResult.active(response)
 
         self.push_to_response_socket(stream_responses)
 
@@ -492,14 +484,17 @@ def load_decode_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    max_batch_size_tg: int,
-    max_forward_steps_tg: int,
+    pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
 ) -> DecodeScheduler:
     # Create Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
-        max_forward_steps_tg=max_forward_steps_tg,
+        max_batch_size_tg=pipeline_config.max_batch_size
+        if pipeline_config.max_batch_size is not None
+        else 1,
+        max_forward_steps_tg=pipeline_config.max_new_tokens
+        if pipeline_config.max_new_tokens != -1
+        else 1,
     )
 
     # Retrieve Paged Manager

@@ -15,6 +15,22 @@
     prompts, resulting in improved memory efficiency and faster
     time-to-first-token performance.
 
+- [Multi-Head Flash Attention](multi-head-flash-attention)
+
+    This document describes the implementation of multi-head attention using
+    Flash Attention algorithms, progressing from the basic self-attention
+    mechanism, through Flash Attention 2's memory-efficient tiling approach, to
+    Flash Attention 3's specialized optimizations for Hopper architecture with
+    asynchronous operations and warp-group specialization.
+
+- [U/WGMMA Flash Decoding](uwgmma-flash-decoding)
+
+    This document explores "U/WGMMA Flash Decoding," proposing to transpose matrix
+    operations in Flash Attention 3 to better utilize GPU hardware by operating
+    on 64+ rows at once instead of wasting computation on smaller group sizes,
+    while analyzing the trade-offs between improved throughput and increased
+    memory/synchronization costs.
+
 - [Multi-Head Latent Attention](multi-head-latent-attention)
 
     This design document presents an optimized Multi-head Latent

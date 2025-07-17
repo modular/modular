@@ -260,7 +260,7 @@ class BufferValue(Value[mo.BufferType]):
         device = self.device
         return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
-    def __getitem__(self, index) -> TensorValue:
+    def __getitem__(self, index) -> TensorValue:  # noqa: ANN001
         """Loads data from the buffer at the specified index.
 
         Args:
@@ -276,7 +276,7 @@ class BufferValue(Value[mo.BufferType]):
 
     def __setitem__(
         self,
-        index,
+        index,  # noqa: ANN001
         val: TensorValue,
     ) -> None:
         """Stores data into the buffer at the specified index.
@@ -747,10 +747,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             index: The index or slice to access. Can be an integer, slice, ellipsis, or tuple of indices.
         """
-        return ops.slice_tensor(
-            self,
-            index if isinstance(index, Iterable) else (index,),  # type: ignore
-        )
+        if isinstance(index, TensorValue) or not isinstance(index, Iterable):
+            index = (index,)
+        return ops.slice_tensor(self, index)
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.

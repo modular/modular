@@ -222,7 +222,7 @@ struct MatmulConfig[
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("ampere_")
+        writer.write("kernel_")
         writer.write(a_type, "_")
         writer.write(c_type, "_")
         # Use BNxBM to match cublas
@@ -568,8 +568,8 @@ fn create_hilbert_lut(
         d += 1
 
     # Allocate device buffer and copy.
-    var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
-    ctx.enqueue_copy(device_buf, host_ptr)
+    var device_buf = ctx.create_buffer[DType.uint32](num_blocks)
+    ctx.memcopy(device_buf, host_ptr)
     host_ptr.free()
     return device_buf
 

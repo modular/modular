@@ -59,6 +59,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCollectionT,
+    PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
@@ -158,9 +159,11 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    k_grouped_matmul_ragged_paged,
     k_matmul_ragged_paged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
+    v_grouped_matmul_ragged_paged,
 )
 from nn.mha import flash_attention
 from nn.mha_mask import MHAMask
@@ -5646,8 +5649,12 @@ struct ConvTranspose:
                 "(2*(input_rank-2)) value expected in convTranspose paddings"
             )
 
-        var stride_tuple = IndexList[input.rank - 2](0)
-        var dilation_tuple = IndexList[input.rank - 2](0)
+        var stride_tuple = IndexList[
+            __type_of(input.to_layout_tensor()).layout.rank() - 2
+        ](0)
+        var dilation_tuple = IndexList[
+            __type_of(input.to_layout_tensor()).layout.rank() - 2
+        ](0)
 
         @parameter
         for i in range(input.rank - 2):
@@ -5682,18 +5689,12 @@ struct ConvTranspose:
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         alias filter_is_cfrs = filter_layout == "CFRS"
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # Input shape.
-                filter._static_shape,  # Filter shape.
-                output._static_shape,  # Output shape.
+                _,
+                _,
+                _,
                 input.dtype,
                 filter.dtype,  # Filter dtype.
                 output.dtype,  # Output dtype.
@@ -5702,9 +5703,9 @@ struct ConvTranspose:
                 lambdas_have_fusion,
                 output_fn,
             ](
-                output_buf,
-                input_buf,
-                filter_buf,
+                output.to_layout_tensor(),
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
@@ -5722,7 +5723,9 @@ struct ConvTranspose:
             ]()
 
             var cuda_ctx = ctx.get_device_context()
-            var pad_tuple = IndexList[input.rank - 2](0)
+            var pad_tuple = IndexList[
+                __type_of(input.to_layout_tensor()).layout.rank() - 2
+            ](0)
 
             @parameter
             if input.rank == 4:
@@ -5730,11 +5733,9 @@ struct ConvTranspose:
                 pad_tuple[1] = pad_w[0]
 
             conv_transposed_gpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,
-                filter._static_shape,
-                output._static_shape,
+                _,
+                _,
+                _,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -5742,9 +5743,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](output_fn) if lambdas_have_fusion else None,
             ](
-                output_buf,
-                input_buf,
-                filter_buf,
+                output.to_layout_tensor(),
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -5762,13 +5763,15 @@ struct ConvTranspose:
         paddings: InputTensor[rank=1],
         output_paddings: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
-        return conv_transpose_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output_paddings),
+        return rebind[IndexList[input.rank]](
+            conv_transpose_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+                output_paddings.to_layout_tensor(),
+            )
         )
 
 
@@ -7238,13 +7241,17 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-    dtype: DType, //, *, interleaved: Bool, target: StaticString
+    dtype: DType,
+    freq_dtype: DType, //,
+    *,
+    interleaved: Bool,
+    target: StaticString,
 ](
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
@@ -7266,7 +7273,11 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        dtype: DType,
+        freq_dtype: DType,
+        num_heads: Int,
+        head_dim: Int, //,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
@@ -7275,7 +7286,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
             dtype,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -7294,7 +7305,8 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-    dtype: DType, //,
+    dtype: DType,
+    freq_dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
@@ -7305,7 +7317,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         dtype,
         *_,
     ],
-    freqs_cis: ManagedTensorSlice[dtype=dtype, rank=2],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     context: DeviceContextPtr,
@@ -7329,6 +7341,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
@@ -7342,7 +7355,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
-        freqs_cis: InputTensor[dtype=dtype, rank=2],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
@@ -7979,8 +7992,8 @@ fn layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        managed_tensor_slice_to_ndbuffer(filter),
-        managed_tensor_slice_to_ndbuffer(packed_filter),
+        filter.to_layout_tensor(),
+        packed_filter.to_layout_tensor(),
         1,
     )
 
@@ -8074,7 +8087,7 @@ struct PackConvTransposeFilterShape:
     fn execute[
         rank: Int,
         filter_type: DType,
-    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) raises:
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
@@ -8082,10 +8095,12 @@ struct PackConvTransposeFilterShape:
     fn shape[
         rank: Int,
         filter_type: DType,
-    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) -> IndexList[
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) -> IndexList[
         rank + 1
     ]:
-        return pack_filter_shape_conv_transpose(filter_buf, 1)
+        return rebind[IndexList[rank + 1]](
+            pack_filter_shape_conv_transpose(filter_buf.to_layout_tensor(), 1)
+        )
 
 
 # Wrapper that take `num_groups` as a parameter.
@@ -8895,7 +8910,7 @@ struct DistributedAllReduceSum:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8903,15 +8918,13 @@ struct DistributedAllReduceSum:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8985,7 +8998,7 @@ struct DistributedAllGather:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8993,15 +9006,13 @@ struct DistributedAllGather:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9081,10 +9092,10 @@ struct DistributedMatmulAllReduce:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
-        ](NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]())
+        ](fill={})
         var weight_bufs = InlineArray[
             NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
-        ](NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9095,7 +9106,7 @@ struct DistributedMatmulAllReduce:
 
         var out_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9103,9 +9114,7 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9131,11 +9140,11 @@ struct DistributedMatmulAllReduce:
         # Allocate temporarie buffers to store the matmul outputs
         var c_temp_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](uninitialized=True)
 
         @parameter
         for i in range(num_devices):
-            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
+            var device_buffer = dev_ctxs[i].create_buffer[c_type](
                 out_bufs[i].num_elements()
             )
             c_temp_bufs[i] = NDBuffer[
@@ -9580,4 +9589,131 @@ struct MergeRaggedTensors:
             managed_tensor_slice_to_ndbuffer(b),
             managed_tensor_slice_to_ndbuffer(b_row_offsets),
             ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Ragged LoRA SGMV Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lora_sgmv.ragged")
+struct Struct_lora_sgmv_ragged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType, //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        lora_ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_seq_length: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
+        cuda_ctx = context.get_device_context()
+
+        if lora_ids.dim_size[0]() == 0:
+            return
+
+        grouped_matmul(
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(lora_ids),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# K Cache Grouped Matmul Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.k_grouped.matmul.ragged.paged")
+struct Struct_k_grouped_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2],
+        b: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "k_grouped_matmul only supports GPUs"]()
+        k_grouped_matmul_ragged_paged[dtype, target=target,](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(ids),
+            Int(max_num_tokens_per_expert),
+            ids.dim_size[0](),
+            kv_collection,
+            layer_idx,
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# V Cache Grouped Matmul Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.v_grouped.matmul.ragged.paged")
+struct Struct_v_grouped_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2],
+        b: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.uint32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "v_grouped_matmul only supports GPUs"]()
+        v_grouped_matmul_ragged_paged[dtype, target=target,](
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(ids),
+            Int(max_num_tokens_per_expert),
+            ids.dim_size[0](),
+            kv_collection,
+            layer_idx,
+            context,
         )

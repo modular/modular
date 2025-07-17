@@ -14,5 +14,6 @@ modular_py_binary(
 modular_run_binary_test(
     name = "basic_test",
     binary = "basic",
+    external_noop = True,
     tags = ["requires-network"],
 )

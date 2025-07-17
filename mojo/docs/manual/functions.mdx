@@ -348,7 +348,7 @@ so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code
 
 Inside the function, `args` is available as a
 [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack). The easiest
-way to work with the arguments is to use the `each()` method to iterate through
+way to work with the arguments is to use the `@parameter for` language to iterate through
 the `VariadicPack`:
 
 ```mojo
@@ -356,10 +356,9 @@ fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
     @parameter
-    fn add[Type: Intable](value: Type):
-        total += Int(value)
+    for i in range(args.__len__()):
+        total += Int(args[i])
 
-    args.each[add]()
     return total
 
 print(count_many_things(5, 11.7, 12))
@@ -393,10 +392,10 @@ fn print_many[T: Stringable, *Ts: Stringable](first: T, *rest: *Ts):
     print_string(String(first))
 
     @parameter
-    fn print_elt[T: Stringable](a: T):
+    for i in range(rest.__len__()):
         print_string(" ")
-        print_string(String(a))
-    rest.each[print_elt]()
+        print_string(String(rest[i]))
+
 print_many("Bob")
 ```
 
@@ -776,7 +775,7 @@ def create_immovable_object(var name: String, out obj: ImmovableObject):
     # obj is implicitly returned
 
 def main():
-    my_obj = create_immutable_object("Blob")
+    my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:

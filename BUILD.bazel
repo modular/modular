@@ -1,4 +1,5 @@
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,27 +32,39 @@ alias(
     alias(
         name = "{}_gpu".format(gpu),
         actual = "@mojo_gpu_toolchains//:{}_gpu".format(gpu),
-        tags = ["maybe-unused"],
+        tags = [ALLOW_UNUSED_TAG],
     )
     for gpu in SUPPORTED_GPUS.keys()
 ]
 
 config_setting(
     name = "asan",
-    tags = ["maybe-unused"],
+    tags = [ALLOW_UNUSED_TAG],
     values = {"features": "asan"},
 )
 
 config_setting(
     name = "tsan",
-    tags = ["maybe-unused"],
+    tags = [ALLOW_UNUSED_TAG],
     values = {"features": "tsan"},
 )
 
 config_setting(
     name = "ubsan",
-    tags = ["maybe-unused"],
+    tags = [ALLOW_UNUSED_TAG],
     values = {"features": "ubsan"},
+)
+
+config_setting(
+    name = "production_build",
+    tags = [ALLOW_UNUSED_TAG],
+    values = {"features": "UNREACHABLE"},
+)
+
+config_setting(
+    name = "modular_config_production",
+    tags = [ALLOW_UNUSED_TAG],
+    values = {"features": "UNREACHABLE"},
 )
 
 config_setting(
@@ -73,13 +86,13 @@ config_setting(
 alias(
     name = "lint",
     actual = "//bazel/lint",
-    tags = ["top-level"],
+    tags = [TOP_LEVEL_TAG],
 )
 
 alias(
     name = "format",
     actual = "//bazel/lint:fix",
-    tags = ["top-level"],
+    tags = [TOP_LEVEL_TAG],
 )
 
 platform(

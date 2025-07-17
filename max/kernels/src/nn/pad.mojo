@@ -854,7 +854,7 @@ fn pad_repeat[
         post_pads[axis] = Int(paddings[2 * axis + 1])
 
     var loop_bounds = _NestedLoopIter[output_layout.rank()].LoopBoundSpec(
-        output_layout.rank()
+        fill=output_layout.rank()
     )
 
     for i in range(output_layout.rank()):

@@ -729,7 +729,7 @@ fn _topp_minp_sampling_gpu[
 
     var input_size = input_logits.size()
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.enqueue_create_buffer[type](input_size * 2)
+    var probs_buf = ctx.create_buffer[type](input_size * 2)
     var input_probs = NDBuffer[type, input_logits.rank](
         probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
     )
@@ -747,8 +747,8 @@ fn _topp_minp_sampling_gpu[
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals = ctx.enqueue_create_buffer[type](Int(batch_size))
-    var skip_sort = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
+    var max_vals = ctx.create_buffer[type](Int(batch_size))
+    var skip_sort = ctx.create_buffer[DType.bool](Int(batch_size))
 
     alias K = 1
     alias num_blocks_per_input = 1
@@ -770,7 +770,7 @@ fn _topp_minp_sampling_gpu[
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
-    var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
+    var ids_buf = ctx.create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
         probs_buf.unsafe_ptr(), probs_buf.unsafe_ptr().offset(input_size)
     )
@@ -790,7 +790,7 @@ fn _topp_minp_sampling_gpu[
     if _test_sort:
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
-        ctx.enqueue_copy(
+        ctx.memcopy(
             input_logits.ptr,
             probs_buf.unsafe_ptr(),
             input_size,

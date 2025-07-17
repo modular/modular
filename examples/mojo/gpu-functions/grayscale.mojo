@@ -37,8 +37,8 @@ def main():
 
     var ctx = DeviceContext()
 
-    var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](rgb_layout.size())
-    var gray_buffer = ctx.enqueue_create_buffer[int_dtype](gray_layout.size())
+    var rgb_buffer = ctx.create_buffer[int_dtype](rgb_layout.size())
+    var gray_buffer = ctx.create_buffer[int_dtype](gray_layout.size())
 
     # Map device buffer to host to initialize values from CPU
     with rgb_buffer.map_to_host() as host_buffer:
@@ -91,7 +91,7 @@ fn color_to_grayscale(
         blue = rgb_tensor[row, col, 2].cast[float_dtype]()
         gray = 0.21 * red + 0.71 * green + 0.07 * blue
 
-        gray_tensor[row, col, 0] = gray.cast[int_dtype]()
+        gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
 def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout]):

@@ -144,7 +144,7 @@ class Qwen2_5VLInputs(ModelInputs):
         return self.input_row_offsets_or_attn_mask
 
 
-class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
+class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):  # type: ignore
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -273,10 +273,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             msg = "Llama Vision only supports continuous batching"
             raise ValueError(msg)
 
-        def has_image(pixel_values: Sequence[np.ndarray]) -> bool:
-            return pixel_values is not None and len(pixel_values) > 0
-
-        has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
+        has_images = any(ctx.needs_vision_encoding for ctx in context_batch)
         # TODO(AITLIB-257): Update this after vision context is updated to check for video pixel values too.
         has_videos = False
 
@@ -309,9 +306,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
                 [0]
                 + [
                     # Use an input row offset of 0 to mean no image.
-                    self.vision_max_seq_len
-                    if has_image(ctx.pixel_values)
-                    else 0
+                    self.vision_max_seq_len if ctx.needs_vision_encoding else 0
                     for ctx in context_batch
                 ],
                 dtype=np.uint32,
@@ -339,10 +334,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             )
         )
 
-        # Unset the context's pixel values so that subsequent next_token
-        # calls reusing the same context won't run the vision encoder.
+        # Mark that vision encoding is complete for all contexts in the batch.
+        # This prevents re-encoding on subsequent calls.
         for ctx in context_batch:
-            ctx.pixel_values = tuple()
+            ctx.needs_vision_encoding = False
             # TODO: Update other visual input related attributes too
 
         return Qwen2_5VLInputs(

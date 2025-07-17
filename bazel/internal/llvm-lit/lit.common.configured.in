@@ -1,0 +1,13 @@
+# Used internally by lit
+config.llvm_tools_dir = "../+llvm_configure+llvm-project/llvm"
+
+config.llvm_use_sanitizer = "@LLVM_USE_SANITIZER@"
+if @ENABLE_ASSERTIONS@:
+    config.available_features.add("ASSERTIONS")
+
+import lit.llvm
+lit.llvm.initialize(lit_config, config)
+lit.llvm.llvm_config.use_default_substitutions()
+
+# Setup attributes common for all top-level directories
+lit_config.load_config(config, "./bazel/internal/llvm-lit/lit.common.cfg.py")

@@ -61,9 +61,7 @@ def main():
         ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-            num_elements
-        )
+        host_buffer = ctx.create_host_buffer[DType.float32](num_elements)
 
         # Wait for buffer creation to complete.
         ctx.synchronize()
@@ -73,10 +71,10 @@ def main():
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        device_buffer = ctx.enqueue_create_buffer[DType.float32](num_elements)
+        device_buffer = ctx.create_buffer[DType.float32](num_elements)
 
         # Copy data from host memory to device memory for GPU processing.
-        ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
+        ctx.memcopy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
         scalar_add_kernel = ctx.compile_function[scalar_add]()
@@ -99,7 +97,7 @@ def main():
         )
 
         # Copy the computed results back from device memory to host memory.
-        ctx.enqueue_copy(src_buf=device_buffer, dst_buf=host_buffer)
+        ctx.memcopy(src_buf=device_buffer, dst_buf=host_buffer)
 
         # Wait for all GPU operations to complete.
         ctx.synchronize()

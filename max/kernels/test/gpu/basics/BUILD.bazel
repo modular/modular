@@ -7,12 +7,14 @@ _LIT_TESTS = [
 
 _FILECHECK_TESTS = [
     "test_cluster_dims_attribute.mojo",
+    "test_cluster_sync.mojo",
     "test_debug_assert_gpu_error.mojo",
     "test_grid_dependence_control.mojo",
     "test_kernel_with_list.mojo",
     "test_print.mojo",
     "test_printf.mojo",
     "test_producer_consumer.mojo",
+    "test_sync.mojo",
     "test_tbc_launch_config.mojo",
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
@@ -28,6 +30,7 @@ _EXTRA_CONSTRAINTS = {
     "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
     "test_cluster_dims_attribute.mojo": ["//:h100_gpu"],
     "test_cluster_sync.mojo": ["//:h100_gpu"],
+    "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_debug_assert_gpu_error.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1738
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
@@ -97,5 +100,4 @@ lit_tests(
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
 )

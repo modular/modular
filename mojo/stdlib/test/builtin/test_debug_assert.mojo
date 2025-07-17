@@ -14,7 +14,6 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D DEBUG -debug-level full %s | FileCheck %s
 
 
 def main():

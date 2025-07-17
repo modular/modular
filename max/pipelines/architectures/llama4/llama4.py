@@ -35,11 +35,11 @@ from max.nn.kv_cache import (
 from max.nn.layer import LayerList
 
 from .layers.attention import Llama4TextAttention
-from .layers.moe import DistributedMoE
+from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
 
 
-def distribute_value(v, devices: list[DeviceRef]):
+def distribute_value(v, devices: list[DeviceRef]):  # noqa: ANN001
     return [v.to(device) for device in devices]
 
 
@@ -75,14 +75,17 @@ class Llama4DecoderLayer(Module):
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
         if self.is_moe_layer:
-            self.feed_forward = DistributedMoE(
-                hidden_dim=config.hidden_size,
-                top_k=config.num_experts_per_tok,
-                num_experts=config.num_local_experts,
-                intermediate_size=config.intermediate_size,
-                intermediate_size_mlp=config.intermediate_size_mlp,
-                dtype=config.dtype,
+            self.feed_forward = DistributedLlama4MoE(
                 devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.num_local_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.intermediate_size,
+                gate_cls=Llama4MoEGate,
+                has_shared_experts=True,
+                shared_experts_dim=config.intermediate_size,
+                dtype=config.dtype,
+                apply_router_weight_first=True,
             )
         else:
             self.feed_forward = DistributedMLP(
@@ -97,12 +100,14 @@ class Llama4DecoderLayer(Module):
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.post_attention_layernorm = DistributedRMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.devices = devices
 
@@ -162,6 +167,7 @@ class Llama4TextModel(Module):
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,

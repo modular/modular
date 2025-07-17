@@ -41,7 +41,7 @@ The lazy rabbit rests beside the brown fox
 
 
 class NextWordFrequency:
-    def __init__(self, text) -> None:
+    def __init__(self, text) -> None:  # noqa: ANN001
         # nested `DefaultDict` to create the keys when first indexed
         # Structure looks like: {"word": {"next_word": count}}
         self.word_frequencies: defaultdict[str, defaultdict[str, int]] = (
@@ -61,7 +61,7 @@ class NextWordFrequency:
                 self.max_next_words, len(self.word_frequencies[current_word])
             )
 
-    def next_word_probabilities(self, words) -> NDArray[np.float32]:
+    def next_word_probabilities(self, words) -> NDArray[np.float32]:  # noqa: ANN001
         if not words:
             return np.empty(0, dtype=np.float32)
 
@@ -94,7 +94,7 @@ class NextWordFrequency:
 
         return np.stack(prob_distributions, axis=0)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):  # noqa: ANN001
         return self.word_frequencies[idx]
 
 

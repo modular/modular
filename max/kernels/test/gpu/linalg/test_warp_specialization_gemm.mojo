@@ -89,22 +89,15 @@ def test_warp_specialize_gemm[
     # Initialize matmul operands
     random(a_host.tensor)
     random(b_host.tensor)
-    # at = a_host.tensor
-    # bt = b_host.tensor
-    # for i in range(M):
-    #     for j in range(K):
-    #         at[i, j] = i * K + j
-    #         bt[i, j] = i * K + j
-
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var a = from_ndbuffer_row_major(a_device.tensor)
     var b = from_ndbuffer_row_major(b_device.tensor)
@@ -146,8 +139,8 @@ def test_warp_specialize_gemm[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.memcopy(c_host.tensor.data, c_device.buffer)
+    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
     alias rtol = 1e-2
     assert_almost_equal(
@@ -234,3 +227,11 @@ def main():
             DType.bfloat16,
             num_consumer=2,
         ](ctx, dynamic(90), static[256](), static[270]())
+
+        test_warp_specialize_gemm[
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
+        ](ctx, dynamic(213), static[1111](), static[128]())

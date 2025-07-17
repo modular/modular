@@ -31,7 +31,14 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
+from sys import (
+    CompilationTarget,
+    bitwidthof,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    llvm_intrinsic,
+    sizeof,
+)
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
 
@@ -259,8 +266,13 @@ fn shuffle_idx[
             "idx",
             WIDTH_MASK=_WIDTH_MASK,
         ](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_idx",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -349,8 +361,13 @@ fn shuffle_up[
         return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](
             mask, val, offset
         )
-    else:
+    elif is_amd_gpu():
         return _shuffle_up_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_up",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -438,8 +455,13 @@ fn shuffle_down[
     @parameter
     if is_nvidia_gpu():
         return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_down",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -531,8 +553,13 @@ fn shuffle_xor[
     @parameter
     if is_nvidia_gpu():
         return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_xor",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#

@@ -34,13 +34,13 @@ def main():
     var ctx = DeviceContext()
 
     # Allocate data on the GPU address space
-    var lhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
-    var rhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
-    var out_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    var lhs_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
+    var rhs_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
+    var out_buffer = ctx.create_buffer[float_dtype](VECTOR_WIDTH)
 
     # Fill in values across the entire width
-    _ = lhs_buffer.enqueue_fill(1.25)
-    _ = rhs_buffer.enqueue_fill(2.5)
+    _ = lhs_buffer.fill(1.25)
+    _ = rhs_buffer.fill(2.5)
 
     # Wrap the device buffers in tensors
     var lhs_tensor = LayoutTensor[float_dtype, layout](lhs_buffer)

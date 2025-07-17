@@ -106,7 +106,7 @@ fn load_store(
 # CHECK-LABEL: test_shuffle_compile
 def test_shuffle_compile():
     print("== test_shuffle_compile")
-    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !1
+    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
@@ -121,7 +121,7 @@ def test_shuffle_compile():
         ]()
     )
 
-    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !1
+    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
@@ -136,7 +136,7 @@ def test_shuffle_compile():
         ]()
     )
 
-    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !1
+    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
@@ -152,7 +152,7 @@ def test_shuffle_compile():
         ]()
     )
 
-    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !1
+    # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = and i32 %5, 1073741760

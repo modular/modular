@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo --debug-level full %s
 
 from sys import simdwidthof, sizeof
 
@@ -279,6 +278,270 @@ def test_memcmp_extensive():
     test_memcmp_extensive[DType.float32, "inf"](254)
 
 
+def test_memcmp_simd_boundary():
+    """Test edge cases in SIMD memcmp implementation that could expose bugs."""
+    alias simd_width = simdwidthof[DType.int8]()
+
+    # Test 1: Difference exactly at SIMD boundary
+    alias size = simd_width + 1
+    var ptr1 = UnsafePointer[Int8].alloc(size)
+    var ptr2 = UnsafePointer[Int8].alloc(size)
+
+    # Fill with identical data
+    for i in range(size):
+        ptr1[i] = 42
+        ptr2[i] = 42
+
+    # Make difference at SIMD boundary
+    ptr2[simd_width] = 43
+
+    var result = memcmp(ptr1, ptr2, size)
+    assert_equal(result, -1, "Should detect difference at SIMD boundary")
+
+    # Test opposite direction
+    ptr1[simd_width] = 44
+    ptr2[simd_width] = 42
+    result = memcmp(ptr1, ptr2, size)
+    assert_equal(
+        result, 1, "Should detect difference at SIMD boundary (reverse)"
+    )
+
+    ptr1.free()
+    ptr2.free()
+
+
+def test_memcmp_simd_overlap():
+    """Test overlapping region handling in SIMD memcmp."""
+    alias simd_width = simdwidthof[DType.int8]()
+
+    # Test sizes that trigger overlapping tail reads
+    var test_sizes = List[Int](
+        simd_width + 1, simd_width + 2, simd_width * 2 - 1, simd_width * 2 + 1
+    )
+
+    for i in range(len(test_sizes)):
+        var size = test_sizes[i]
+        var ptr1 = UnsafePointer[Int8].alloc(size)
+        var ptr2 = UnsafePointer[Int8].alloc(size)
+
+        # Fill with identical data
+        for j in range(size):
+            ptr1[j] = 42
+            ptr2[j] = 42
+
+        # Should be equal
+        var result = memcmp(ptr1, ptr2, size)
+        assert_equal(result, 0, "Overlapping regions should be equal")
+
+        # Make difference in overlap region
+        ptr2[size - 1] = ptr2[size - 1] + 1
+        result = memcmp(ptr1, ptr2, size)
+        assert_equal(result, -1, "Should detect difference in overlap region")
+
+        ptr1.free()
+        ptr2.free()
+
+
+def test_memcmp_simd_index_finding():
+    """Test index finding logic in SIMD memcmp."""
+    var simd_width = simdwidthof[DType.int8]()
+
+    # Test difference at each possible SIMD lane position
+    for lane in range(simd_width):
+        var ptr1 = UnsafePointer[Int8].alloc(simd_width)
+        var ptr2 = UnsafePointer[Int8].alloc(simd_width)
+
+        # Fill with identical data
+        for i in range(simd_width):
+            ptr1[i] = 100
+            ptr2[i] = 100
+
+        # Create difference at specific lane
+        ptr2[lane] = 101
+
+        var result = memcmp(ptr1, ptr2, simd_width)
+        assert_equal(
+            result, -1, "Should detect difference at lane " + String(lane)
+        )
+
+        # Test opposite direction
+        ptr1[lane] = 102
+        ptr2[lane] = 100
+        result = memcmp(ptr1, ptr2, simd_width)
+        assert_equal(
+            result,
+            1,
+            "Should detect difference at lane " + String(lane) + " (reverse)",
+        )
+
+        ptr1.free()
+        ptr2.free()
+
+
+def test_memcmp_simd_signed_overflow():
+    """Test signed byte overflow cases in SIMD memcmp."""
+    var ptr1 = UnsafePointer[Int8].alloc(4)
+    var ptr2 = UnsafePointer[Int8].alloc(4)
+
+    # Test extreme signed values
+    ptr1[0] = -128  # Most negative
+    ptr1[1] = -1
+    ptr1[2] = 0
+    ptr1[3] = 127  # Most positive
+
+    ptr2[0] = -128
+    ptr2[1] = -1
+    ptr2[2] = 0
+    ptr2[3] = 127
+
+    var result = memcmp(ptr1, ptr2, 4)
+    assert_equal(result, 0, "Identical extreme values should be equal")
+
+    # Test signed comparison edge cases
+    ptr1[0] = -1  # 0xFF as unsigned
+    ptr2[0] = 1  # 0x01 as unsigned
+
+    result = memcmp(ptr1, ptr2, 4)
+    assert_equal(
+        result, 1, "0xFF should be greater than 0x01 in unsigned comparison"
+    )
+
+    ptr1.free()
+    ptr2.free()
+
+
+def test_memcmp_simd_alignment():
+    """Test alignment-related bugs in SIMD memcmp."""
+    var size = 64
+    var large_ptr1 = UnsafePointer[Int8].alloc(size)
+    var large_ptr2 = UnsafePointer[Int8].alloc(size)
+
+    # Fill with pattern
+    for i in range(size):
+        large_ptr1[i] = Int8(i % 256)
+        large_ptr2[i] = Int8(i % 256)
+
+    # Test various unaligned starting positions
+    for offset in range(1, 8):
+        var ptr1 = large_ptr1 + offset
+        var ptr2 = large_ptr2 + offset
+        var test_size = size - offset - 8
+
+        var result = memcmp(ptr1, ptr2, test_size)
+        assert_equal(
+            result,
+            0,
+            "Unaligned comparison should work at offset " + String(offset),
+        )
+
+        # Create difference and test
+        ptr2[test_size - 1] = ptr2[test_size - 1] + 1
+        result = memcmp(ptr1, ptr2, test_size)
+        assert_equal(
+            result, -1, "Should detect difference with unaligned access"
+        )
+
+        # Restore for next iteration
+        ptr2[test_size - 1] = ptr2[test_size - 1] - 1
+
+    large_ptr1.free()
+    large_ptr2.free()
+
+
+def test_memcmp_simd_width_edge_cases():
+    """Test edge cases around different SIMD widths."""
+    var simd_width = simdwidthof[DType.int8]()
+
+    # Test sizes that might cause issues with SIMD width calculations
+    var critical_sizes = List[Int](
+        simd_width - 1,
+        simd_width,
+        simd_width + 1,
+        simd_width * 2 - 1,
+        simd_width * 2,
+        simd_width * 2 + 1,
+        simd_width * 3 - 1,
+        simd_width * 3,
+        simd_width * 3 + 1,
+    )
+
+    for i in range(len(critical_sizes)):
+        var size = critical_sizes[i]
+        var ptr1 = UnsafePointer[Int8].alloc(size)
+        var ptr2 = UnsafePointer[Int8].alloc(size)
+
+        # Fill with identical sequential data
+        for j in range(size):
+            ptr1[j] = Int8(j % 256)
+            ptr2[j] = Int8(j % 256)
+
+        var result = memcmp(ptr1, ptr2, size)
+        assert_equal(
+            result,
+            0,
+            "Sequential data should be equal for size " + String(size),
+        )
+
+        # Test difference at end
+        if size > 0:
+            ptr2[size - 1] = ptr2[size - 1] + 1
+            result = memcmp(ptr1, ptr2, size)
+            assert_equal(
+                result,
+                -1,
+                "Should detect end difference for size " + String(size),
+            )
+
+        ptr1.free()
+        ptr2.free()
+
+
+def test_memcmp_simd_zero_bytes():
+    """Test handling of zero bytes in SIMD memcmp."""
+    alias size = simdwidthof[DType.int8]() * 2
+    var ptr1 = UnsafePointer[Int8].alloc(size)
+    var ptr2 = UnsafePointer[Int8].alloc(size)
+
+    # Fill with zeros
+    memset_zero(ptr1, size)
+    memset_zero(ptr2, size)
+
+    var result = memcmp(ptr1, ptr2, size)
+    assert_equal(result, 0, "Zero-filled buffers should be equal")
+
+    # Test zero vs non-zero at different positions
+    var test_positions = List[Int](0, 1, size // 2, size - 1)
+
+    for i in range(len(test_positions)):
+        var pos = test_positions[i]
+
+        # Reset to zeros
+        memset_zero(ptr1, size)
+        memset_zero(ptr2, size)
+
+        # Create difference at position
+        ptr2[pos] = 1
+        result = memcmp(ptr1, ptr2, size)
+        assert_equal(
+            result,
+            -1,
+            "Should detect zero vs non-zero at position " + String(pos),
+        )
+
+        # Test opposite
+        ptr1[pos] = 2
+        ptr2[pos] = 0
+        result = memcmp(ptr1, ptr2, size)
+        assert_equal(
+            result,
+            1,
+            "Should detect non-zero vs zero at position " + String(pos),
+        )
+
+    ptr1.free()
+    ptr2.free()
+
+
 def test_memset():
     var pair = Pair(1, 2)
 
@@ -512,6 +775,13 @@ def main():
     test_memcmp_overflow()
     test_memcmp_simd()
     test_memcmp_extensive()
+    test_memcmp_simd_boundary()
+    test_memcmp_simd_overlap()
+    test_memcmp_simd_index_finding()
+    test_memcmp_simd_signed_overflow()
+    test_memcmp_simd_alignment()
+    test_memcmp_simd_width_edge_cases()
+    test_memcmp_simd_zero_bytes()
     test_memset()
 
     test_pointer_explicit_copy()

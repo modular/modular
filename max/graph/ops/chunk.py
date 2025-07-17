@@ -20,11 +20,10 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     """
     Chunk the tensor into an exact number of chunks along the specified dim.
 
-    .. code-block:: python
-
-        a = TensorValue([1, 2, 3, 4, 5])
-        chunk(a, 2, 0)
-        # [TensorValue([1, 2]), TensorValue([3, 4])]
+    Example:
+        >>> a = TensorValue([1, 2, 3, 4, 5])
+        >>> chunk(a, 2, 0)
+        [TensorValue([1, 2]), TensorValue([3, 4])]
 
     Args:
         x: The tensor to chunk.
@@ -60,7 +59,7 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     # Determine chunk size using ceiling division.
     chunk_size = n // chunks
 
-    def slices(offset):
+    def slices(offset):  # noqa: ANN001
         slices = [slice(None)] * x.rank
         slices[axis] = slice(chunk_size * offset, chunk_size * (offset + 1))
         return slices

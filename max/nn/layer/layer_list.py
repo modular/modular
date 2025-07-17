@@ -55,7 +55,7 @@ class LayerList(Module):
     def __setitem__(self, i: int, layer: Layer) -> None:
         self.layers[i] = layer
 
-    def insert(self, i, layer: Layer) -> None:
+    def insert(self, i, layer: Layer) -> None:  # noqa: ANN001
         self.layers.insert(i, layer)
 
     def append(self, layer: Layer) -> None:

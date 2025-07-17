@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
+from sys import sizeof
 from sys.info import CompilationTarget
 
 from bit import count_leading_zeros
@@ -1930,9 +1930,9 @@ def test_float_conversion():
 
 
 def test_from_bytes_as_bytes():
-    alias TwoBytes = InlineArray[Byte, DType.int16.sizeof()]
-    alias TwoUBytes = InlineArray[Byte, DType.uint16.sizeof()]
-    alias FourBytes = InlineArray[Byte, DType.int32.sizeof()]
+    alias TwoBytes = InlineArray[Byte, sizeof[Int16]()]
+    alias TwoUBytes = InlineArray[Byte, sizeof[UInt16]()]
+    alias FourBytes = InlineArray[Byte, sizeof[Int32]()]
 
     assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
     assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)
@@ -1970,6 +1970,57 @@ def test_from_bytes_as_bytes():
                 ),
                 x,
             )
+
+
+def test_vector_from_bytes_as_bytes():
+    var v8_u8 = SIMD[DType.uint8, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    assert_equal(v8_u8, SIMD[DType.uint8, 8].from_bytes(v8_u8.as_bytes()))
+
+    var v8_u16 = SIMD[DType.uint16, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    # fmt: off
+    var expected_v8_u16_be_bytes = [
+        0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
+    ]
+    # fmt: on
+    var actual_v8_u16_be_bytes = v8_u16.as_bytes[big_endian=True]()
+    for i in range(len(expected_v8_u16_be_bytes)):
+        assert_equal(
+            Int(actual_v8_u16_be_bytes[i]), expected_v8_u16_be_bytes[i]
+        )
+    # fmt: off
+    var expected_v8_u16_le_bytes = [
+        1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0,
+    ]
+    # fmt: on
+    var actual_v8_u16_le_bytes = v8_u16.as_bytes[big_endian=False]()
+    for i in range(len(expected_v8_u16_le_bytes)):
+        assert_equal(
+            Int(actual_v8_u16_le_bytes[i]), expected_v8_u16_le_bytes[i]
+        )
+
+    var v8_i64 = SIMD[DType.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
+    assert_equal(
+        v8_i64,
+        SIMD[DType.int64, 8].from_bytes[big_endian=False](
+            v8_i64.as_bytes[big_endian=False]()
+        ),
+    )
+    assert_equal(
+        v8_i64,
+        SIMD[DType.int64, 8].from_bytes[big_endian=True](
+            v8_i64.as_bytes[big_endian=True]()
+        ),
+    )
+
+    var v8_f64 = SIMD[DType.float64, 8](
+        1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8
+    )
+    assert_equal(v8_f64, SIMD[DType.float64, 8].from_bytes(v8_f64.as_bytes()))
+
+    var v8_bool = SIMD[DType.bool, 8](
+        True, True, False, True, False, True, True, True
+    )
+    assert_equal(v8_bool, SIMD[DType.bool, 8].from_bytes(v8_bool.as_bytes()))
 
 
 def test_reversed():
@@ -2085,6 +2136,7 @@ def main():
     test_floor()
     test_floordiv()
     test_from_bytes_as_bytes()
+    test_vector_from_bytes_as_bytes()
     test_iadd()
     test_indexing()
     test_init_from_index()

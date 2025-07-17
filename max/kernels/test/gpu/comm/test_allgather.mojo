@@ -37,9 +37,7 @@ def all_gather_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     # Calculate temp buffer size for signals.
     var max_length = 0
@@ -71,11 +69,11 @@ def all_gather_test[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy to device.
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].memcopy(in_bufs_list[i], host_buffers[i])
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
@@ -89,7 +87,7 @@ def all_gather_test[
 
     # Create input NDBuffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[dtype, rank, MutableAnyOrigin]()
+        fill={}
     )
 
     for i in range(ngpus):
@@ -100,7 +98,7 @@ def all_gather_test[
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+    ](fill={})
 
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
@@ -124,7 +122,7 @@ def all_gather_test[
     # Reset output buffers for second test.
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
-            list_of_ctx[device_idx].enqueue_memset[dtype](
+            list_of_ctx[device_idx].memset[dtype](
                 out_bufs_list[device_idx][input_idx], val=0
             )
 
@@ -162,7 +160,7 @@ fn _verify_results[
             var host_output = UnsafePointer[Scalar[dtype]].alloc(length)
 
             # Copy output back to host.
-            list_of_ctx[device_idx].enqueue_copy(
+            list_of_ctx[device_idx].memcopy(
                 host_output, out_bufs_list[device_idx][input_idx]
             )
             list_of_ctx[device_idx].synchronize()

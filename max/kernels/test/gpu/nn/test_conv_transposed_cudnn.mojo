@@ -13,8 +13,15 @@
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
+from buffer import DimList
 from nn.conv_transpose import conv_transpose_naive
 from nn.conv_transpose import conv_transposed_cudnn
 from internal_utils import (
@@ -24,7 +31,7 @@ from internal_utils import (
 )
 from testing import assert_almost_equal
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 alias dtype = DType.float32
 
@@ -61,6 +68,8 @@ fn test_conv_transposed_cudnn[
         ")",
     )
 
+    alias layout_unknown_5d = Layout.row_major[5]()
+
     # Shapes.
     alias input_shape4d = DimList(1, 1, input_len, in_channels)
     alias filter_shape4d = DimList(1, kernel_len, out_channels, in_channels)
@@ -71,9 +80,11 @@ fn test_conv_transposed_cudnn[
         + 1
     )
     alias output_shape4d = DimList(1, 1, output_len, out_channels)
-    alias input_shape5d = DimList(1, 1, 1, input_len, in_channels)
-    alias filter_shape5d = DimList(1, 1, kernel_len, out_channels, in_channels)
-    alias output_shape5d = DimList(1, 1, 1, output_len, out_channels)
+    alias input_layout5d = Layout.row_major(1, 1, 1, input_len, in_channels)
+    alias filter_layout5d = Layout.row_major(
+        1, 1, kernel_len, out_channels, in_channels
+    )
+    alias output_layout5d = Layout.row_major(1, 1, 1, output_len, out_channels)
 
     # Create host buffers using HostNDBuffer
     var input_host = HostNDBuffer[dtype, 4, input_shape4d](input_shape4d)
@@ -93,14 +104,23 @@ fn test_conv_transposed_cudnn[
 
     # Execute naive reference implementation.
     conv_transpose_naive[dtype](
-        NDBuffer[dtype, 5, MutableAnyOrigin](
-            output_ref_host.tensor.data, output_shape5d
+        LayoutTensor[dtype, layout_unknown_5d](
+            output_ref_host.tensor.data,
+            RuntimeLayout[layout_unknown_5d].row_major(
+                IndexList[5](1, 1, 1, output_len, out_channels)
+            ),
         ),
-        NDBuffer[dtype, 5, MutableAnyOrigin](
-            input_host.tensor.data, input_shape5d
+        LayoutTensor[dtype, layout_unknown_5d](
+            input_host.tensor.data,
+            RuntimeLayout[layout_unknown_5d].row_major(
+                IndexList[5](1, 1, 1, input_len, in_channels)
+            ),
         ),
-        NDBuffer[dtype, 5, MutableAnyOrigin](
-            filter_host.tensor.data, filter_shape5d
+        LayoutTensor[dtype, layout_unknown_5d](
+            filter_host.tensor.data,
+            RuntimeLayout[layout_unknown_5d].row_major(
+                IndexList[5](1, 1, kernel_len, out_channels, in_channels)
+            ),
         ),
         stride,
         dilation,
@@ -153,26 +173,43 @@ fn test_conv_transposed_cudnn[
     var d_output = DeviceNDBuffer[dtype, 4, output_shape4d_nchw](
         output_shape4d_nchw, ctx=ctx
     )
-    ctx.enqueue_copy(d_input.buffer, input_nchw_host.tensor.data)
-    ctx.enqueue_copy(d_filter.buffer, filter_nchw_host.tensor.data)
+    ctx.memcopy(d_input.buffer, input_nchw_host.tensor.data)
+    ctx.memcopy(d_filter.buffer, filter_nchw_host.tensor.data)
 
     var stride_hw = Index(1, stride_val)
     var dilation_hw = Index(1, dilation_val)
     var padding_hw = Index(0, pad_val)
 
+    alias layout_unknown_4d = Layout.row_major[4]()
+
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
-        d_input.tensor,  # dy (input grad)
-        d_filter.tensor,  # w (filter)
-        d_output.tensor,  # dx (output)
+        LayoutTensor[dtype, layout_unknown_4d](
+            d_input.buffer,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](1, in_channels, 1, input_len)
+            ),
+        ),  # dy (input grad)
+        LayoutTensor[dtype, layout_unknown_4d](
+            d_filter.buffer,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](in_channels, out_channels, 1, kernel_len)
+            ),
+        ),  # w (filter)
+        LayoutTensor[dtype, layout_unknown_4d](
+            d_output.buffer,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](1, out_channels, 1, output_len)
+            ),
+        ),  # dx (output)
         stride_hw,
         dilation_hw,
         padding_hw,
         ctx,
     )
 
-    # Copy result back to host using enqueue_copy
-    ctx.enqueue_copy(output_nchw_host.tensor.data, d_output.buffer)
+    # Copy result back to host using memcopy
+    ctx.memcopy(output_nchw_host.tensor.data, d_output.buffer)
 
     # -------------------------------------------------------------
     # 3. Compare naive vs cuDNN results

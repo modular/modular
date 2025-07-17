@@ -15,28 +15,50 @@
 import os
 from pathlib import Path
 
+from ._loader_wrappers import GGUFWeights, PytorchWeights
 from .format import WeightsFormat, weights_format
-from .load_gguf import GGUFWeights
-from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
 from .weights import Weights
 
 
 def load_weights(paths: list[Path]) -> Weights:
-    """Loads weight paths into a Weights object.
+    """Loads neural network weights from checkpoint files.
+
+    Automatically detects checkpoint formats based on file extensions and returns
+    the appropriate `Weights` implementation, creating a seamless interface for
+    loading weights from different formats.
+
+
+    Supported formats:
+    - `Safetensors`: .safetensors
+    - `PyTorch`: .bin, .pt, .pth
+    - `GGUF`: .gguf
+
+    The following example shows how to load weights from a Safetensors file:
+
+    .. code-block:: python
+
+        from pathlib import Path
+        from max.graph.weights import load_weights
+
+        # Load multi-file checkpoints
+        sharded_paths = [
+            Path("model-00001-of-00003.safetensors"),
+            Path("model-00002-of-00003.safetensors"),
+            Path("model-00003-of-00003.safetensors")
+        ]
+        weights = load_weights(sharded_paths)
+        layer_weight = weights.model.layers[23].mlp.gate_proj.weight.allocate(
+            dtype=DType.float32,
+            shape=[4096, 14336],
+            device=DeviceRef.GPU(0)
+        )
 
     Args:
-        paths:
-          Local paths of weight files to load.
-
-    Returns:
-        A `Weights` object, with all of the associated weights loaded into a single object.
-
-    Raises:
-        ValueError: If an empty paths list is passed.
-
-        ValueError: If a path provided does not exist.
-
+        paths: List of `pathlib.Path` objects pointing to checkpoint files.
+            For multi-file checkpoints (e.g., sharded `Safetensors`), provide
+            all file paths in the list. For single-file checkpoints, provide
+            a list with one path.
     """
     # Check that paths is not empty.
     if not paths:

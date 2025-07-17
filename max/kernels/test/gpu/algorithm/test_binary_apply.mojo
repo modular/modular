@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
-
 
 from gpu import *
 from gpu.host import DeviceContext
@@ -39,9 +37,9 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     alias length = 1024
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
-    var out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.create_buffer[DType.float32](length)
+    var in1 = ctx.create_buffer[DType.float32](length)
+    var out = ctx.create_buffer[DType.float32](length)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):

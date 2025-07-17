@@ -83,11 +83,11 @@ fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
     for i in range(nd):
         print(py_array_object_ptr[].strides[i], end=" ")
     print()
-    print("  descr:", String(py_array_object_ptr[].descr.unsized_obj_ptr))
+    print("  descr:", py_array_object_ptr[].descr)
     print("  flags:", hex(py_array_object_ptr[].flags))
     print(
         "  weakreflist:",
-        String(py_array_object_ptr[].weakreflist.unsized_obj_ptr),
+        py_array_object_ptr[].weakreflist,
     )
     print()
 

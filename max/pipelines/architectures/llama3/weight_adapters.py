@@ -61,12 +61,7 @@ def convert_safetensor_state_dict(
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
 
-    # TODO: This is a hack to bypass float8_e4m3fn - we need to circle back and figure out how to handle this.
-    if (
-        pipeline_config.model_config._applied_dtype_cast_from
-        and pipeline_config.model_config.quantization_encoding
-        != SupportedEncoding.float8_e4m3fn
-    ):
+    if pipeline_config.model_config._applied_dtype_cast_from:
         assert pipeline_config.model_config._applied_dtype_cast_to, (
             "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
             "This should not happen."

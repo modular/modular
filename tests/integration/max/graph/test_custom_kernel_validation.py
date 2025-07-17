@@ -41,7 +41,8 @@ class TestCustomKernelValidation:
     """Tests for ops.custom that require actual kernel validation."""
 
     def test_custom__success__basic_kernel(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test successful custom operation with a real kernel."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -62,7 +63,8 @@ class TestCustomKernelValidation:
             graph.output(result[0])
 
     def test_custom__success__kernel_with_parameters(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test successful custom operation with parameters."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -84,7 +86,8 @@ class TestCustomKernelValidation:
             graph.output(result[0])
 
     def test_custom__success__multiple_outputs(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test successful custom operation with multiple outputs."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -107,7 +110,8 @@ class TestCustomKernelValidation:
             graph.output(*result)
 
     def test_custom__error__wrong_input_count_too_many(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test error when providing too many inputs to kernel."""
         input_type1 = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -140,7 +144,8 @@ class TestCustomKernelValidation:
             )
 
     def test_custom__error__wrong_output_count(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test error when specifying wrong number of outputs."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -171,7 +176,8 @@ class TestCustomKernelValidation:
             )
 
     def test_custom__missing_parameter_behavior(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test behavior when required parameter is not provided - validates actual behavior."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -196,7 +202,8 @@ class TestCustomKernelValidation:
             # Test documents that missing parameters don't cause immediate errors
 
     def test_custom__different_parameter_types(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test different parameter types work correctly."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -233,7 +240,8 @@ class TestInplaceCustomKernelValidation:
     """Tests for ops.inplace_custom that require actual kernel validation."""
 
     def test_inplace_custom__success__basic_kernel(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test successful inplace custom operation with a real kernel."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
@@ -253,7 +261,8 @@ class TestInplaceCustomKernelValidation:
             graph.output(*result)
 
     def test_inplace_custom__chain_integration(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test that inplace operations integrate properly with execution chains."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
@@ -284,7 +293,8 @@ class TestCustomKernelSignatureValidation:
     """Tests for comprehensive kernel signature validation."""
 
     def test_custom__rank_mismatch_behavior(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test behavior when tensor rank doesn't match - validates actual behavior."""
         # Test documents that rank mismatches are handled gracefully at graph construction
@@ -314,7 +324,8 @@ class TestCustomKernelSignatureValidation:
             # Test documents that rank validation doesn't happen at graph construction
 
     def test_custom__comprehensive_validation_success(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test that properly matching signatures work correctly in sequence."""
         input_type = TensorType(DType.float32, (5, 5), DeviceRef.CPU())
@@ -350,7 +361,8 @@ class TestCustomDeviceValidation:
     """Tests for device compatibility validation."""
 
     def test_custom__cpu_device_compatibility(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test device compatibility validation with CPU device."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
@@ -372,7 +384,8 @@ class TestCustomDeviceValidation:
             graph.output(result[0])
 
     def test_custom__device_context_handling(
-        self, kernel_verification_ops_path
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
     ) -> None:
         """Test that kernels with device context work correctly."""
         input_type = TensorType(DType.float32, (3, 3), DeviceRef.CPU())
@@ -398,7 +411,9 @@ class TestCustomOperationExecution:
     """Integration tests that verify actual execution behavior."""
 
     def test_custom__execution_with_session(
-        self, kernel_verification_ops_path, session
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
+        session,  # noqa: ANN001
     ) -> None:
         """Test custom operation execution with inference session."""
         input_type = TensorType(DType.int32, (1,), DeviceRef.CPU())
@@ -426,7 +441,9 @@ class TestCustomOperationExecution:
         compiled_model.execute(input_tensor)
 
     def test_inplace_custom__execution_with_session(
-        self, kernel_verification_ops_path, session
+        self,
+        kernel_verification_ops_path,  # noqa: ANN001
+        session,  # noqa: ANN001
     ) -> None:
         """Test inplace custom operation execution with inference session."""
         buffer_type = BufferType(DType.float32, (3,), DeviceRef.CPU())

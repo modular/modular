@@ -39,12 +39,12 @@ def test_external_shared_mem(ctx: DeviceContext):
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
     var res_host_ptr = UnsafePointer[Float32].alloc(16)
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.create_buffer[DType.float32](16)
 
     for i in range(16):
         res_host_ptr[i] = 0
 
-    ctx.enqueue_copy(res_device, res_host_ptr)
+    ctx.memcopy(res_device, res_host_ptr)
 
     ctx.enqueue_function[dynamic_smem_kernel, dump_llvm=True](
         res_device,
@@ -54,7 +54,7 @@ def test_external_shared_mem(ctx: DeviceContext):
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(24960),
     )
 
-    ctx.enqueue_copy(res_host_ptr, res_device)
+    ctx.memcopy(res_host_ptr, res_device)
 
     for i in range(16):
         assert_equal(res_host_ptr[i], 2 * i)

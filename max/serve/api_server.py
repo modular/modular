@@ -23,8 +23,10 @@ from typing import Union
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines.core import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.pipelines.core import PipelinesFactory, PipelineTokenizer
+from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
@@ -42,7 +44,6 @@ from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
 from max.serve.scheduler import (
     PrefillRequest,
     PrefillResponse,
-    TokenGeneratorSchedulerConfig,
 )
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
@@ -62,7 +63,7 @@ class ServingTokenGeneratorSettings:
     # Pipeline config
     model_name: str
     model_factory: PipelinesFactory
-    pipeline_config: TokenGeneratorSchedulerConfig
+    pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
 
@@ -122,6 +123,7 @@ async def lifespan(
                     settings,
                     metric_client,
                     dispatcher_factory,
+                    serving_settings.pipeline_task,
                 )
             )
 
@@ -205,7 +207,7 @@ def fastapi_app(
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
-            RecorderMiddleware,
+            RecorderMiddleware,  # type: ignore
             recorder_factory=(
                 lambda: JSONLFileRecorder(transaction_recording_file)
             ),

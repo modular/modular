@@ -15,7 +15,6 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    has_avx2,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
@@ -24,6 +23,7 @@ from sys.info import (
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from layout import LayoutTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList
@@ -270,6 +270,52 @@ struct ConvShape[rank: Int](Copyable, Movable):
         """Given a global channel idx, returns the offset of the channel in its group.
         """
         return c_idx % self.c_per_group()
+
+
+@always_inline
+fn get_conv_shape[
+    rank: Int,
+    filter_packed: Bool,
+](
+    output: LayoutTensor,
+    input: LayoutTensor,
+    filter: LayoutTensor,
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+) -> ConvShape[rank]:
+    var output_dims = IndexList[rank](0)
+    var input_dims = IndexList[rank](0)
+    var filter_dims = IndexList[rank](0)
+
+    @parameter
+    for i in range(rank):
+        output_dims[i] = output.dim[i + 1]()
+        input_dims[i] = input.dim[i + 1]()
+
+        @parameter
+        if filter_packed:
+            filter_dims[i] = filter.dim[i + 1]()
+        else:
+            filter_dims[i] = filter.dim[i]()
+
+    return ConvShape[rank](
+        n=input.dim[0](),
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=input.dim[rank + 1](),
+        f=output.dim[rank + 1](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
 
 
 @always_inline

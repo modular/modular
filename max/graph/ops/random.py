@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+import weakref
+from collections.abc import MutableMapping
 
 import numpy as np
 from max.dtype import DType
@@ -25,7 +26,7 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 
-SEED = ContextVar[TensorValue]("Seed")
+SEEDS: MutableMapping[Graph, TensorValue] = weakref.WeakKeyDictionary()
 SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
 
 
@@ -41,11 +42,12 @@ def assert_scalar(value: TensorValueLike) -> None:
 
 
 def _next_seed():
+    graph = Graph.current
     try:
-        seed = SEED.get()
+        seed = SEEDS[graph]
     except LookupError:
         raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")
-    SEED.set(_rotate_seed(seed))
+    SEEDS[graph] = _rotate_seed(seed)
     return seed
 
 
@@ -69,7 +71,7 @@ def set_seed(seed: TensorValue | int = 0):
     )
     if seed.dtype != DType.int64:
         raise TypeError("Seed value must be int64")
-    return SEED.set(seed)
+    SEEDS[Graph.current] = seed
 
 
 def gaussian(

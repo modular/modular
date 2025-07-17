@@ -20,6 +20,7 @@ from .bit import (
     count_leading_zeros,
     count_trailing_zeros,
     log2_floor,
+    log2_ceil,
     next_power_of_two,
     pop_count,
     prev_power_of_two,

@@ -13,7 +13,7 @@
 
 from sys import sizeof
 from math import ceildiv
-
+from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 
@@ -38,6 +38,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
+from linalg.mmaop_sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -70,8 +71,8 @@ fn blackwell_matmul_tma_umma_kernel[
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -211,27 +212,17 @@ fn blackwell_matmul_tma_umma_kernel[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    # give me a tensor for matrices A and B, sliced down to the portion that this CTA is responsible for, and referring to original global tensor
-    # so it's the 128 x 64 portion the CTA will copy from global tensor into smem tile A and B
-    alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    alias b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
-    ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
-    alias b_stride01 = b_canonical_layout[0].stride[1].value()
-    alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
-
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
-
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
-        accum_type,
+    # Create MmaOpSM100_SS instance to handle MMA operations
+    var mma_op = MmaOpSM100_SS[
+        c_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        block_tile_shape,
+        mma_shape,
+        accum_type=accum_type,
+        cta_group=1,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
 
@@ -276,26 +267,15 @@ fn blackwell_matmul_tma_umma_kernel[
 
         # now we do the mma, again only one thread issues the instruction
         if elect_one_thread:
+            # Use MmaOpSM100_SS to perform the MMA operation
+            mma_op.mma(
+                a_smem_tile,
+                b_smem_tile,
+                tmem_addr,
+                init_c=(i == 0),  # Initialize C on first iteration
+            )
 
-            @parameter
-            for j in range(
-                num_k_mmas
-            ):  # BK by MMA_K chunks for the mma acc required this time, since you can only do MMA_K at a time (16 elements)
-                alias idx = IntTuple(0, MMA_K * j)
-                alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
-
-                # use c_scale=0 for the first mma only on the first iteration to initialize
-                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
-                mma(
-                    adesc + a_offset,
-                    bdesc + b_offset,
-                    tmem_addr,
-                    idesc,
-                    c_scale=c_scale_value,
-                )
-
-            mma_arrive(mma_mbar)
+            mma_op.commit(mma_mbar)
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
@@ -366,8 +346,8 @@ fn blackwell_matmul_tma_umma[
     transpose_b: Bool,
     umma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -437,12 +417,8 @@ fn blackwell_matmul_tma_umma[
     )
 
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
-
-
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int]]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]
@@ -451,20 +427,22 @@ fn get_dic_of_shapes(
         return (128, 128, 128)
 
 
-fn make_dic_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
-    var dic = Dict[Int, Tuple[Int, Int, Int]]()
-    dic[0] = (8192, 2560, 8192)
-    dic[1] = (4096, 2560, 8192)
-    dic[2] = (512, 2560, 8192)
-    dic[3] = (8192, 8192, 2048)
-    dic[4] = (4096, 8192, 2048)
-    dic[5] = (512, 8192, 2048)
-    dic[6] = (8192, 14336, 8192)
-    dic[7] = (4096, 14336, 8192)
-    dic[8] = (512, 14336, 8192)
-    dic[9] = (8192, 8192, 7168)
-    dic[10] = (4096, 8192, 7168)
-    dic[11] = (512, 8192, 7168)
+fn make_dic_of_shapes() -> (
+    Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
+):
+    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
+    dic[0] = (512, 2560, 8192)
+    dic[1] = (512, 8192, 2048)
+    dic[2] = (512, 14336, 8192)
+    dic[3] = (512, 8192, 7168)
+    dic[4] = (4096, 2560, 8192)
+    dic[5] = (4096, 8192, 2048)
+    dic[6] = (4096, 14336, 8192)
+    dic[7] = (4096, 8192, 7168)
+    dic[8] = (8192, 2560, 8192)
+    dic[9] = (8192, 8192, 2048)
+    dic[10] = (8192, 14336, 8192)
+    dic[11] = (8192, 8192, 7168)
     return dic
 
 
@@ -480,26 +458,12 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
     print("Benchmarking blackwell_matmul_tma_umma_kernel")
     print("============================================")
-    print("Shapes: [M, N, K]")
-    print("Data types: a=", a_type, ", b=", b_type, ", c=", c_type)
-    print("UMMA shape:", umma_shape[0], "x", umma_shape[1], "x", umma_shape[2])
-    print("BK:", BK)
-    print("transpose_b:", transpose_b)
-    print()
+    print("M, N, K, time(ms), TFLOPS")
 
     @parameter
     for i in range(len(dic_of_shapes)):
         alias shape = get_dic_of_shapes(i, dic_of_shapes)
         try:
-            print(
-                "Benchmarking shape: [",
-                shape[0],
-                ",",
-                shape[1],
-                ",",
-                shape[2],
-                "]",
-            )
             test_blackwell_matmul_tma_umma[
                 a_type,
                 b_type,
@@ -526,13 +490,8 @@ def test_blackwell_matmul_tma_umma[
     var N = n.value
     var K = k.value
 
-    print(
-        M,
-        "x",
-        N,
-        "x",
-        K,
-    )
+    if not benchmark:
+        print(M, "x", N, "x", K)
 
     alias static_a_shape = DimList(m.dim, k.dim)
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
@@ -571,11 +530,11 @@ def test_blackwell_matmul_tma_umma[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var a = from_ndbuffer_row_major(a_device.tensor)
     var b = from_ndbuffer_row_major(b_device.tensor)
@@ -623,15 +582,14 @@ def test_blackwell_matmul_tma_umma[
         for _ in range(num_warmup):
             run_kernel(ctx)
         ctx.synchronize()
-        print("finished warmup")
+        # print("finished warmup")
 
         var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
 
-        print("  Average time: ", sectime * 1000, " ms")
-        print("  Performance: ", TFlop / sectime, " TFLOPS")
-        print()
+        print(String(M, "x", N, "x", K), sectime * 1000, TFlop / sectime)
+
     else:
         vendor_blas.matmul(
             ctx,
@@ -644,8 +602,8 @@ def test_blackwell_matmul_tma_umma[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.memcopy(c_host.tensor.data, c_device.buffer)
+        ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
         alias rtol = 1e-2
         assert_almost_equal(
@@ -654,6 +612,8 @@ def test_blackwell_matmul_tma_umma[
             atol=0.0001,
             rtol=rtol,
         )
+
+        print("passed")
 
     _ = c_device
     _ = c_device_ref
@@ -690,6 +650,7 @@ def main():
         ](ctx, dynamic(1024), static[2048](), static[2048]())
 
         alias BK_list = List[Int](64, 128)
+        # alias BK_list = List[Int](64, 128)
 
         @parameter
         for BK in BK_list:

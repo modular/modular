@@ -34,8 +34,8 @@ def run_elementwise[
 
     alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
-    var in_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_device = ctx.enqueue_create_buffer[dtype](length)
+    var in_device = ctx.create_buffer[dtype](length)
+    var out_device = ctx.create_buffer[dtype](length)
 
     var in_host: HostBuffer[dtype]
     with in_device.map_to_host() as in_host2:

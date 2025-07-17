@@ -32,7 +32,7 @@ extend-exclude = [
   "*max/serve/schemas/openai.py", # Generated file
   "Support/python/modular/utils/debuglib/lldbtypes.py",
   "third-party",
-  "utils/build/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
+  "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "utils/mblack",
 ]
 
@@ -56,7 +56,6 @@ ignore = [
   "D209", # new-line-after-last-paragraph
   "D212", # multi-line-summary-first-line (to allow init with args only)
   "UP007", # TODO: Enable when we drop 3.9
-  "ANN001", # TODO: Missing type annotation for function argument
   "ANN002", # TODO: Missing type annotation for *args
   "ANN003", # TODO: Missing type annotation for **kwargs
   "ANN201", # TODO: Missing return type annotation for public function
@@ -80,6 +79,9 @@ convention = "google"
 "__init__.py" = ["F401"] # Ignore unused imports being re-exported
 # Slow rollout of pydocstyle lint:
 "!SDK/lib/API/python/max/{engine/api.py,driver/driver.py}" = ["D"]
+# Ignore ANN001 (function argument missing type annotation) for auto-generated
+# stubfiles
+"*.pyi" = ["ANN001"]
 
 [tool.pyright]
 # TODO: Upgrade to strict mode

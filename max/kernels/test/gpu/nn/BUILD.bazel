@@ -1,12 +1,5 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-_EXTRA_COPTS = {
-    "test_mha_causal_mask_amd.mojo": [
-        "-D",
-        "FLASH_ATTENTION_HW_SUPPORTED=False",
-    ],
-}
-
 _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
@@ -17,9 +10,6 @@ _EXTRA_CONSTRAINTS = {
     "test_mla.mojo": ["//:nvidia_gpu"],
     "test_padding_gpu.mojo": ["//:nvidia_gpu"],
     "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_topk_gpu.mojo": select({
-        "//conditions:default": [],
-    }),
     "test_toppminp_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
 }
 
@@ -54,7 +44,7 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
-        copts = _EXTRA_COPTS.get(src, []),
+        copts = [],
         enable_assertions = src != "test_layer_norm.mojo",
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),

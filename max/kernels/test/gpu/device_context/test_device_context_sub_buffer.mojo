@@ -40,13 +40,13 @@ fn test(ctx: DeviceContext) raises:
         in_host[i] = i
         in_host[i + length] = 2
 
-    var in_device = ctx.enqueue_create_buffer[DType.float32](2 * length)
+    var in_device = ctx.create_buffer[DType.float32](2 * length)
     var in0_device = in_device.create_sub_buffer[DType.float32](0, length)
     var in1_device = in_device.create_sub_buffer[DType.float32](length, length)
 
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy(in_device, in_host)
+    ctx.memcopy(in_device, in_host)
 
     var block_dim = 32
     var supplement = 5
@@ -64,7 +64,7 @@ fn test(ctx: DeviceContext) raises:
     # Make sure our main input device tensor doesn't disappear
     _ = in_device
 
-    ctx.enqueue_copy(out_host, out_device)
+    ctx.memcopy(out_host, out_device)
 
     ctx.synchronize()
 

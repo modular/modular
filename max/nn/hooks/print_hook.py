@@ -72,7 +72,7 @@ class PrintHook(BasePrintHook):
 _SUPPORTED_TYPES = (Layer, list, tuple)
 
 
-def _walk_layers(model):
+def _walk_layers(model):  # noqa: ANN001
     """Walks through model and yields all layers with generated names."""
     seen = IdentitySet()
     seen.add(model)

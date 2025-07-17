@@ -22,6 +22,7 @@ are used to optimize code generation and ensure hardware compatibility.
 """
 
 from sys.info import (
+    CompilationTarget,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     _is_amd_rdna,
@@ -107,5 +108,7 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return "rocdl.flat_work_group_size".value
     else:
-        constrained[False, "no accelerator detected"]()
-        return "".value
+        return CompilationTarget.unsupported_target_error[
+            __mlir_type.`!kgen.string`,
+            operation="MAX_THREADS_PER_BLOCK_METADATA",
+        ]()

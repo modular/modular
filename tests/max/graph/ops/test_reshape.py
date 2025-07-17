@@ -63,7 +63,7 @@ def subseqs(c: Collection):
     )
 
 
-def negative_one_reshape(shapes):
+def negative_one_reshape(shapes):  # noqa: ANN001
     return (
         shapes.flatmap(subseqs)
         .map(lambda subseq: [*subseq, -1])
@@ -129,7 +129,7 @@ def test_reshapes__zero_dim(
         graph.output(out)
 
 
-def shapes_plus_ones(shapes=shapes()):
+def shapes_plus_ones(shapes=shapes()):  # noqa: ANN001
     ones = st.lists(st.just(1))
     shapes = shapes.flatmap(lambda shape: ones.map(lambda ones: shape + ones))
     return shapes.flatmap(st.permutations)

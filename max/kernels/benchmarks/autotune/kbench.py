@@ -16,6 +16,7 @@ import copy
 import csv
 import functools
 import logging
+import math
 import os
 import pickle
 import shutil
@@ -37,6 +38,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,7 +48,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from utils import YAML, pretty_exception_handler
+from utils import pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -123,11 +125,15 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     try:
         if dryrun:
             print(list2cmdline(cmd))
-            return ProcessOutput(None, None)
+            return ProcessOutput(None, None, -1, None)
 
-        output = subprocess.run(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
-            output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+            output.stdout.decode("utf-8"),
+            output.stderr.decode("utf-8"),
+            output.returncode,
         )
 
     except Exception as exc:
@@ -160,6 +166,7 @@ class ParamSpace:
 class ProcessOutput:
     stdout: str | None = None
     stderr: str | None = None
+    return_code: int = -1
     path: Path | None = None
 
     def log(self) -> None:
@@ -228,6 +235,15 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
+                )
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")
@@ -261,6 +277,7 @@ class SpecInstance:
         build_opts: list[str] = [],
         dryrun: bool = False,
         idx: int = -1,
+        enable_logging: bool = True,
     ) -> ProcessOutput:
         """Build the spec instance. Use set of compile-time
         parameters as path of the compiled binary and store
@@ -270,12 +287,13 @@ class SpecInstance:
         bin_name = self.hash(with_variables=False)
         bin_path = output_dir / Path(bin_name)
 
-        logging.info(f"building [{idx}][{bin_name}]")
-        logging.debug(
-            f"defines: {self._get_defines}"
-            + "\n"
-            + f"vars   : {self._get_vars}"
-        )
+        if enable_logging:
+            logging.info(f"building [{idx}][{bin_name}]")
+            logging.debug(
+                f"defines: {self._get_defines}"
+                + "\n"
+                + f"vars   : {self._get_vars}"
+            )
 
         # TODO: add mojo-specific functions and allow for further expansion to other executors.
         cmd = self.get_executor()
@@ -291,9 +309,11 @@ class SpecInstance:
             ]
         )
         out = _run_cmdline(cmd, dryrun)
-        if out.stderr:
-            return ProcessOutput(out.stdout, out.stderr, None)
-        return ProcessOutput(out.stdout, out.stderr, bin_path)
+        if out.return_code == os.EX_OK:
+            out.path = bin_path
+        else:
+            out.path = None
+        return out
 
     def execute(
         self,
@@ -329,6 +349,8 @@ class SpecInstance:
         return "/".join(tokens)
 
     def hash(self, with_variables: bool = True) -> str:
+        MAX_FILENAME_LEN = 255
+
         tokens = [self.file_stem]
         for param in self.params:
             name = param.name
@@ -337,13 +359,20 @@ class SpecInstance:
                 continue
             name = name.replace("$", "")
             tokens.append(f"{name}-{param.value}")
-        return "_".join(tokens)
+
+        hash_str = "_".join(tokens)
+        if len(hash_str) < MAX_FILENAME_LEN:
+            return hash_str
+        else:
+            MAX_HASH_DIGITS = 8
+            hash_hex = hash(hash_str) % (10**MAX_HASH_DIGITS)
+            return f"{hash_str[: MAX_FILENAME_LEN - MAX_HASH_DIGITS]}{hash_hex}"
 
 
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params) -> None:
+    def __init__(self, name, file, params) -> None:  # noqa: ANN001
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -376,13 +405,13 @@ class GridSearchStrategy:
         self.offset += 1
         return res
 
-    def __getitem__(self, i):
+    def __getitem__(self, i):  # noqa: ANN001
         return self.instances[i]
 
     def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other) -> None:
+    def extend(self, other) -> None:  # noqa: ANN001
         self.instances.extend(other.instances)
 
 
@@ -393,6 +422,7 @@ class Spec:
     params: list[list[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
     mesh: list[SpecInstance] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> Spec:
@@ -508,7 +538,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -522,7 +552,7 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
         if "name" not in obj.keys():
             logging.warning("Field [name] is not set in YAML")
@@ -543,10 +573,10 @@ class Spec:
             name=obj.get("name", ""),
             file=obj.get("file", ""),
             params=params,
+            rules=obj.get("rules", []),
         )
 
     def __len__(self) -> int:
-        assert self.mesh
         return len(self.mesh)
 
     def __post_init__(self):
@@ -554,7 +584,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
@@ -584,7 +616,8 @@ class Spec:
 
         Return the total size of mesh.
         """
-        self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        grid_mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        self.mesh = self.apply_rules(grid_mesh, self.rules)
         return len(self.mesh)
 
     def join(self, other: Spec) -> None:
@@ -595,6 +628,38 @@ class Spec:
         self.mesh_idx = 0
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
+
+    @staticmethod
+    def apply_rules(
+        mesh: list[SpecInstance], rules: list[str]
+    ) -> list[SpecInstance]:
+        new_mesh: list[SpecInstance] = []
+
+        if not rules:
+            return mesh
+
+        def remove_dlr(s: str) -> str:
+            return s.replace("$", "")
+
+        for s in mesh:
+            valid = True
+            for r in rules:
+                # TODO: revise handling of $ in string.
+                locals = {remove_dlr(p.name): p.value for p in s.params}
+                r = remove_dlr(r)
+
+                try:
+                    e = eval(r, {}, locals)
+                # the following exception is required in case a parameter
+                # is present in rule and missing from spec-instance combination.
+                except NameError:
+                    e = True
+                valid = valid & e
+                if not valid:
+                    break
+            if valid:
+                new_mesh.append(s)
+        return new_mesh
 
     def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
@@ -654,7 +719,7 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_tmp_path(file_path):
+def _get_tmp_path(file_path):  # noqa: ANN001
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
     return Path(tf)
@@ -715,6 +780,8 @@ class Scheduler:
     output_dir: Path
     num_specs: int
 
+    CHUNKSIZE: int = 4
+
     def __init__(
         self,
         num_cpu: int,
@@ -726,6 +793,7 @@ class Scheduler:
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
     ) -> None:
+        self.num_cpu = num_cpu
         self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
@@ -750,7 +818,7 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(output_dir):
+    def kbench_mkdir(output_dir):  # noqa: ANN001
         """Run the following command:
         `rm -rf {output_dir} && mkdir -p {output_dir}`
         """
@@ -760,13 +828,21 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
+    def get_chunksize(self, num_elements: int) -> int:
+        elements_per_cpu = int(math.ceil(num_elements / self.num_cpu))
+        return min(elements_per_cpu, self.CHUNKSIZE)
+
     def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [b.output_dir for b in self.build_items]
-        res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
-        for r in res:
+
+        for r in self.cpu_pool.imap(
+            self.kbench_mkdir,
+            output_dir_list,
+            chunksize=self.get_chunksize(len(output_dir_list)),
+        ):
             logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
 
@@ -803,15 +879,15 @@ class Scheduler:
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
-        build_output = bi.spec_instance.build(
+        bi.build_output = bi.spec_instance.build(
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
             idx=bi.idx,
+            enable_logging=False,
         )
         build_elapsed_time = int((time() - t_start_item) * 1e3)
 
-        bi.build_output = build_output
         bi.build_elapsed_time = build_elapsed_time
         return bi
 
@@ -834,27 +910,31 @@ class Scheduler:
 
         if unique_build_items:
             obj_cache = self.obj_cache
-            build_result = self.cpu_pool.map(
-                self._pool_build_wrapper, unique_build_items
-            )
 
             build_progress = self.progress.add_task(
                 "build",
                 total=len(unique_build_items),
+                auto_refresh=False,
             )
 
-            for b in build_result:
-                i = b.idx
-                s = b.spec_instance
-
+            # TODO: revise chunk-size
+            for b in self.cpu_pool.imap(
+                self._pool_build_wrapper,
+                unique_build_items,
+                chunksize=self.CHUNKSIZE,
+            ):
                 build_output = b.build_output
                 # update the data with build_output result
-                self.build_items[i].build_output = build_output
-                self.build_items[i].build_elapsed_time = b.build_elapsed_time
+                self.build_items[b.idx].build_output = build_output
+                self.build_items[
+                    b.idx
+                ].build_elapsed_time = b.build_elapsed_time
 
-                bin_name = s.hash(with_variables=False)
+                bin_name = b.spec_instance.hash(with_variables=False)
+
                 self.progress.update(
-                    build_progress, description=f"building {str(bin_name)}"
+                    build_progress,
+                    description=f"build [ {b.idx} ][ {bin_name} ] finished",
                 )
 
                 # print build_output stdout and stderr using log function.
@@ -864,7 +944,7 @@ class Scheduler:
                 # - cache is active
                 # - no error is reported in stderr
                 # - build_output path is found
-                if not build_output.stderr and build_output.path:
+                if build_output.return_code == os.EX_OK and build_output.path:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
@@ -873,7 +953,11 @@ class Scheduler:
         return unique_build_paths
 
     def execute_all(
-        self, unique_build_paths, profile, exec_prefix, exec_suffix
+        self,
+        unique_build_paths,  # noqa: ANN001
+        profile,  # noqa: ANN001
+        exec_prefix,  # noqa: ANN001
+        exec_suffix,  # noqa: ANN001
     ) -> None:
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
@@ -889,7 +973,7 @@ class Scheduler:
             bin_name = s.hash(with_variables=False)
             bin_path = unique_build_paths.get(bin_name, None)
 
-            self.progress.update(exec_progress, description=f"run {str(s)}")
+            self.progress.update(exec_progress, description=f"run [ {str(s)} ]")
 
             exec_prefix = copy.deepcopy(exec_prefix_in)
             exec_suffix = copy.deepcopy(exec_suffix_in)
@@ -922,23 +1006,27 @@ class Scheduler:
 
             self.progress.update(exec_progress, advance=1)
 
+    def close_pool(self):
+        self.cpu_pool.close()
+        self.cpu_pool.join()
+
 
 def run(
-    yaml_path_list,
+    yaml_path_list,  # noqa: ANN001
     obj_cache: KbenchCache,
     shape: SpecInstance,
-    output_path=None,
-    mode=KBENCH_MODE.RUN,
-    param_list=None,
-    filter_list=None,
+    output_path: Path = Path(),
+    mode=KBENCH_MODE.RUN,  # noqa: ANN001
+    param_list=None,  # noqa: ANN001
+    filter_list=None,  # noqa: ANN001
     build_opts: list[str] = [],
     profile: str = "",
     exec_prefix: list[str] = [],
     exec_suffix: list[str] = [],
     dryrun: bool = False,
-    verbose=False,
-    output_dir=None,
-    num_cpu=1,
+    verbose=False,  # noqa: ANN001
+    output_dir=None,  # noqa: ANN001
+    num_cpu=1,  # noqa: ANN001
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -967,6 +1055,10 @@ def run(
     # Generate a tmp path for intermediate results.
     if not output_dir:
         output_dir = _get_tmp_path(spec.file)
+    else:
+        output_path = output_dir / output_path
+    os.makedirs(output_path.parent, exist_ok=True)
+
     output_dir = Path(output_dir)
     logging.info(f"output-dir: [{output_dir}]")
 
@@ -979,6 +1071,7 @@ def run(
         TimeElapsedColumn(),
         console=CONSOLE,
         expand=True,
+        transient=True,
     )
 
     # Set num_cpu to the half of maximum number of available CPUs
@@ -1008,6 +1101,7 @@ def run(
             # - could not find executable in the cache or cache is not active,
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
+            scheduler.close_pool()
             if mode == KBENCH_MODE.RUN:
                 scheduler.execute_all(
                     unique_build_paths,
@@ -1016,6 +1110,7 @@ def run(
                     exec_suffix=exec_suffix,
                 )
         except KeyboardInterrupt:
+            scheduler.close_pool()
             obj_cache.dump()
             sys.exit(0)
 
@@ -1121,23 +1216,27 @@ def run(
     if output_path:
         output_dict["name"] = spec.name
         output_dict["file"] = spec.file
-        store_pickle(f"{output_path}.pkl", output_dict)
+        pkl_path = Path(output_path).with_suffix(".pkl")
+        csv_path = Path(output_path).with_suffix(".csv")
+        txt_path = Path(output_path).with_suffix(".txt")
+        store_pickle(f"{pkl_path}", output_dict)
 
         # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
-        # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
+        # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
         if mode == KBENCH_MODE.RUN and valid_specs:
             merged_df.drop(columns=["mesh_idx"]).to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
             )
+            logging.info(f"wrote results to [{csv_path}]")
         elif mode == KBENCH_MODE.BUILD:
-            build_df.to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        else:
-            with open(output_path, "w") as f:
-                f.write(output_str + "\n")
+            build_df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+            logging.info(f"wrote results to [{csv_path}]")
 
-        logging.info(f"wrote results to [{output_path}]")
+        with open(txt_path, "w") as f:
+            f.write(output_str + "\n")
+
+        logging.info(f"wrote results to [{txt_path}]")
+        logging.info(f"wrote results to [{pkl_path}]")
     logging.info(f"output-dir: [{output_dir}]")
     print(LINE + "\n\n")
 
@@ -1198,11 +1297,11 @@ class FileGlobArg:
 
 
 def set_build_opts(
-    debug_level=None,
-    optimization_level=None,
-    use_experimental_kernels=None,
-    target_accelerator=None,
-    disable_warnings=None,
+    debug_level=None,  # noqa: ANN001
+    optimization_level=None,  # noqa: ANN001
+    use_experimental_kernels=None,  # noqa: ANN001
+    target_accelerator=None,  # noqa: ANN001
+    disable_warnings=None,  # noqa: ANN001
 ):
     build_opts = []
     if debug_level:
@@ -1221,9 +1320,7 @@ def set_build_opts(
     return build_opts
 
 
-help_str = (
-    "Grid-search all the params for a mojo benchmark and pick the top value"
-)
+help_str = "Benchmarking toolkit for Mojo kernels"
 
 
 @click.command(help=help_str, no_args_is_help=True)
@@ -1239,7 +1336,11 @@ help_str = (
     multiple=True,
 )
 @click.option(
-    "--output", "-o", "output_path", default=None, help="Path to output file."
+    "--output",
+    "-o",
+    "output_path",
+    default="output.csv",
+    help="Path to output file.",
 )
 @click.option(
     "--output-dir",
@@ -1353,29 +1454,29 @@ help_str = (
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,
-    filter,
-    output_path,
-    output_dir,
-    tune,
-    build,
-    param,
-    debug_level,
-    use_experimental_kernels,
-    optimization_level,
-    target_accelerator,
-    disable_warnings,
-    force,
-    cached,
-    clear_cache,
-    num_cpu,
-    dryrun,
-    verbose,
-    shapes,
-    build_opts,
-    profile,
-    exec_prefix,
-    exec_suffix,
+    files,  # noqa: ANN001
+    filter,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    output_dir,  # noqa: ANN001
+    tune,  # noqa: ANN001
+    build,  # noqa: ANN001
+    param,  # noqa: ANN001
+    debug_level,  # noqa: ANN001
+    use_experimental_kernels,  # noqa: ANN001
+    optimization_level,  # noqa: ANN001
+    target_accelerator,  # noqa: ANN001
+    disable_warnings,  # noqa: ANN001
+    force,  # noqa: ANN001
+    cached,  # noqa: ANN001
+    clear_cache,  # noqa: ANN001
+    num_cpu,  # noqa: ANN001
+    dryrun,  # noqa: ANN001
+    verbose,  # noqa: ANN001
+    shapes,  # noqa: ANN001
+    build_opts,  # noqa: ANN001
+    profile,  # noqa: ANN001
+    exec_prefix,  # noqa: ANN001
+    exec_suffix,  # noqa: ANN001
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1405,9 +1506,9 @@ def cli(
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.hash(with_variables=True) for sh in shape_list]
+        [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
-        else [output_path]
+        else [Path(output_path)]
     )
 
     assert len(shape_path_list) == len(shape_list), (
@@ -1461,4 +1562,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
+
     main()

@@ -114,7 +114,7 @@ struct HostNDBuffer[
         var retval = DeviceNDBuffer[dtype, rank, shape](
             self.tensor.dynamic_shape, ctx=ctx
         )
-        ctx.enqueue_copy(retval.buffer, self.tensor.data)
+        ctx.memcopy(retval.buffer, self.tensor.data)
         return retval^
 
     fn to_layout_tensor(
@@ -160,7 +160,7 @@ struct DeviceNDBuffer[
             ),
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
+        self.buffer = ctx.create_buffer[dtype](shape.product().get())
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(),
         )
@@ -173,9 +173,7 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](
-            product(dynamic_shape, rank)
-        )
+        self.buffer = ctx.create_buffer[dtype](product(dynamic_shape, rank))
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(), dynamic_shape
         )
@@ -198,9 +196,7 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[dtype](
-            product(dynamic_shape, rank)
-        )
+        self.buffer = ctx.create_buffer[dtype](product(dynamic_shape, rank))
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(), dynamic_shape, stride
         )
@@ -219,7 +215,7 @@ struct DeviceNDBuffer[
         self, ctx: DeviceContext
     ) -> HostNDBuffer[dtype, rank, shape]:
         var retval = HostNDBuffer[dtype, rank, shape](self.tensor.dynamic_shape)
-        ctx.enqueue_copy(retval.tensor.data, self.buffer)
+        ctx.memcopy(retval.tensor.data, self.buffer)
         return retval^
 
     fn to_layout_tensor(

@@ -50,7 +50,7 @@ def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
 # Note: Keep alphabetized.
 
 
-def _elementwise_binary(op):
+def _elementwise_binary(op):  # noqa: ANN001
     def elementwise_op(
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
@@ -558,7 +558,7 @@ Raises:
 # Note: Keep alphabetized.
 
 
-def _elementwise_unary(op):
+def _elementwise_unary(op):  # noqa: ANN001
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
         return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
@@ -568,7 +568,7 @@ def _elementwise_unary(op):
 
 
 def _elementwise_unary_predicate(
-    op,
+    op,  # noqa: ANN001
 ) -> Callable[[TensorValueLike], TensorValue]:
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)

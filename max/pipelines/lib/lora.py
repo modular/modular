@@ -20,15 +20,18 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, TypeVar
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
-from max.graph.type import BufferType, DeviceRef
-from max.graph.value import BufferValue, TensorValue
+from max.engine import DLPackCompatible
+from max.graph import Weight
+from max.graph.type import DeviceRef, TensorType
+from max.graph.value import TensorValue
 from max.graph.weights import WeightData, Weights, WeightsFormat, load_weights
-from max.nn.layer import Module, recursive_named_layers
+from max.interfaces import InputContext
+from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
 
 from .hf_utils import HuggingFaceRepo
@@ -36,6 +39,8 @@ from .hf_utils import HuggingFaceRepo
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
+
+T = TypeVar("T", bound=InputContext)
 
 
 class LoRAType(Enum):
@@ -94,29 +99,47 @@ class LoRAModel:
         self.name = name
         self.path = path
         self.strict = strict
-        self._lora_A: dict[str, Tensor] = {}
-        self._lora_B: dict[str, Tensor] = {}
-        self._lora_bias: dict[str, Tensor] = {}
+        self._lora_A: dict[str, WeightData] = {}
+        self._lora_B: dict[str, WeightData] = {}
+        self._lora_bias: dict[str, WeightData] = {}
 
         self._adapter_config = self._load_weights()
 
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]
-        self.scale: float = self.adapter_config["lora_alpha"] / self.rank
+
+    def get(self, key: str) -> WeightData | None:
+        """
+        Gets the WeightData from the key. If key doesn't exist in model, then None is returned.
+
+        Args:
+            key: Key of LoRA
+
+        Returns:
+            WeightData for the key or None if it doesn't exist.
+        """
+        if key in self._lora_A:
+            return self.lora_A[key]
+        elif key in self._lora_B:
+            return self._lora_B[key]
+        elif key in self._lora_bias:
+            return self._lora_bias[key]
+
+        return None
 
     @property
-    def lora_A(self) -> dict[str, Tensor]:
-        """A dictionary mapping weight keys to LoRA A tensors."""
+    def lora_A(self) -> dict[str, WeightData]:
+        """A dictionary mapping weight keys to LoRA A WeightData."""
         return self._lora_A
 
     @property
-    def lora_B(self) -> dict[str, Tensor]:
-        """A dictionary mapping weight keys to LoRA B tensors."""
+    def lora_B(self) -> dict[str, WeightData]:
+        """A dictionary mapping weight keys to LoRA B WeightData."""
         return self._lora_B
 
     @property
-    def lora_bias(self) -> dict[str, Tensor]:
-        """A dictionary mapping weight keys to LoRA bias tensors."""
+    def lora_bias(self) -> dict[str, WeightData]:
+        """A dictionary mapping weight keys to LoRA bias WeightData."""
         return self._lora_bias
 
     @property
@@ -184,15 +207,21 @@ class LoRAModel:
             # TODO (E2EOPT-279)
             raise ValueError("LoRA only supports files in safetensors format.")
 
+        scale = adapter_config["lora_alpha"] / adapter_config["r"]
         for key, weight in weights.items():
             key = self._normalize_lora_key(key)
-            tensor = Tensor.from_numpy(weight.raw_tensor())
+            data = weight.data()
+
             if LoRAType.A.value in key:
-                self._lora_A[key] = tensor
+                self._lora_A[key] = data
             elif LoRAType.B.value in key:
-                self._lora_B[key] = tensor
+                # A minor optimization so we don't have to multiply scale
+                # by LoRA B in the kernel every forward.
+                # The loaded safetensors weights are read-only, so we must copy.
+                data.data = data.data.copy() * scale
+                self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
-                self._lora_bias[key] = tensor
+                self._lora_bias[key] = data
             else:
                 raise ValueError(f"Invalid LoRA type got key: {key}")
 
@@ -209,8 +238,9 @@ class LoRAManager:
         self,
         base_weights: Weights,
         max_num_loras: int,
-        lora_paths: Optional[list[str]] = None,
-    ) -> None:
+        max_lora_rank: int,
+        lora_paths: list[str] | None = None,
+    ):
         """
         Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
@@ -221,18 +251,77 @@ class LoRAManager:
         """
         self.base_weights = base_weights
         self.max_num_loras = max_num_loras
+        self.max_lora_rank = max_lora_rank
+
         self._loras: dict[str, LoRAModel] = dict()
         self._active_loras: dict[str, LoRAModel] = dict()
-        self._lora_index_to_id: list[Optional[str]] = [
-            None
-        ] * self.max_num_loras
-
-        self._A_buffers: dict[str, Tensor] = {}
-        self._B_buffers: dict[str, Tensor] = {}
-        self._bias_buffers: dict[str, Tensor] = {}
+        self._lora_index_to_id: list[str | None] = [None] * self.max_num_loras
 
         if lora_paths:
             self.load_adapters(lora_paths)
+
+        self._alias_buffers: dict[str, DLPackCompatible] = {}
+
+    def _name_to_slot(self, name: str):
+        """
+        Maps the model name to the assigned slot.
+        """
+        return self._lora_index_to_id.index(name)
+
+    def _model_name_to_id(self, name: str) -> int:
+        """
+        Maps the model name to it's assigned slot id.
+        """
+        return (
+            self._name_to_slot(name)
+            if name in self._loras
+            else self.max_num_loras - 1
+        )
+
+    def _model_name_to_rank(self, name: str) -> int:
+        """s
+        Maps the model name to it's rank.
+        """
+        return self._loras[name].rank if name in self._loras else 0
+
+    def _model_names_to_ids(self, model_names: list[str]) -> list[int]:
+        """
+        Maps the list of model names to their assigned slots.
+        If a model isn't a valid loaded LoRA, we assume the base model is
+        selected and set id to max_num_loras.
+        """
+        return [self._model_name_to_id(name) for name in model_names]
+
+    def _model_names_to_ranks(self, model_names: list[str]) -> list[int]:
+        """
+        Maps the list of model names to their assigned ranks.
+        If a model isn't a valid loaded LoRA, we assume the base model is
+        selected and set rank to 0.
+        """
+        return [self._model_name_to_rank(name) for name in model_names]
+
+    def get_lora_graph_inputs(
+        self,
+        model_names: list[str],
+        device: Device,
+    ) -> tuple[Tensor, ...]:
+        """
+        Gets the LoRA graph inputs
+
+        Args:
+            model_names: List of model names
+            input_row_offsets: The offsets for each sequence in the batch
+            device: The device
+        """
+        ids = self._model_names_to_ids(model_names)
+        ranks = self._model_names_to_ranks(model_names)
+
+        lora_ids = Tensor.from_numpy(np.array(ids, dtype=np.uint32)).to(device)
+        lora_ranks = Tensor.from_numpy(np.array(ranks, dtype=np.uint32)).to(
+            device
+        )
+
+        return lora_ids, lora_ranks
 
     def load_adapters(self, lora_paths: list[str]) -> list[str]:
         """
@@ -267,6 +356,8 @@ class LoRAManager:
         Finds and returns the index of the next available slot for a new LoRA adapter.
 
         This is an internal utility used to manage a fixed number of LoRA slots.
+        The last slot (max_num_loras) is reserved for inactive LoRAs and
+        should always contain zeros.
 
         .. code-block:: python
 
@@ -278,12 +369,13 @@ class LoRAManager:
         Raises:
             RuntimeError: If no available slots are left.
         """
-        for i, slot in enumerate(self._lora_index_to_id):
+        # Reserve the last slot (max_num_loras - 1) for inactive LoRAs
+        for i, slot in enumerate(self._lora_index_to_id[:-1]):
             if slot is None:
                 return i
 
         raise RuntimeError(
-            f"No available LoRA slots left. Current max is: {self.max_num_loras}"
+            f"No available LoRA slots left. Current max is: {self.max_num_loras - 1} (last slot reserved for inactive LoRAs)"
         )
 
     def load_adapter(self, path: str) -> str:
@@ -318,6 +410,7 @@ class LoRAManager:
         if name not in self._loras:
             slot = self._next_free_slot()
             lora = LoRAModel(name, path)
+
             self._lora_index_to_id[slot] = lora.name
             self._loras[lora.name] = lora
             return lora.name
@@ -372,20 +465,40 @@ class LoRAManager:
         """
         pass
 
-    def set_active_loras(self, loras: list[str]) -> None:
+    def _get_lora_weights(self, key: str, base_weight: Weight) -> WeightData:
         """
-        Set the active LoRAs for the next forward pass.
+        Get's the LoRA weights for the specified key for each LoRA that is loaded.
+        If the LoRA's don't contain the weight for the key, a zero-weight is returned.
+
+        Args:
+            key: Key for LoRA selection.
+            base_weight: Weight used to provide WeightData properties.
+
+        Returns:
+            A WeightData object with the weights from the loaded LoRAs.
         """
-        self._active_loras.clear()
-        for lora in loras:
-            model = self._loras.get(lora, None)
+        weight = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
 
-            if model is None:
-                raise RuntimeError(
-                    f"LoRA name should be valid when setting active LoRAs. Attempted to access LoRA: {lora} but doesn't exist."
-                )
+        for name, lora in self._loras.items():
+            if lora_weight := lora.get(key):
+                slot = self._name_to_slot(name)
 
-            self._active_loras[lora] = model
+                if LoRAType.A.value in key:
+                    weight[slot, : lora.rank, :] = lora_weight.data
+                elif LoRAType.B.value in key:
+                    weight[slot, :, : lora.rank] = lora_weight.data
+                elif LoRAType.BIAS.value in key:
+                    weight[slot, :] = lora_weight.data
+
+        lora_weights = WeightData(
+            weight,
+            key,
+            DType.float32,
+            base_weight.shape,
+            base_weight.quantization_encoding,
+        )
+        lora_weights = lora_weights.astype(base_weight.dtype)
+        return lora_weights
 
     def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:
         """
@@ -420,12 +533,14 @@ class LoRAManager:
 
         return leaf_lora_layers
 
-    def zero_init_weights(
-        self, model: Module, state_dict: dict[str, WeightData], device: Device
+    def init_weights(
+        self, model: Module, state_dict: dict[str, WeightData]
     ) -> None:
         """
         Recursively collect all leaf modules in the model that are instances of SupportsLoRA.
-        Zero-init's their weights adding them to the `state_dict` and init underlying LoRA buffers.
+        Init's their weights with the loaded LoRAs and adds them to the `state_dict`.
+
+        Acquires the alias-able buffers for dynamic LoRA swapping.
 
         Must be called to initialize the base model properly.
 
@@ -435,44 +550,32 @@ class LoRAManager:
             device: The device the base model resides in.
         """
         self._lora_layers = self._get_lora_leaf_layers(model)
-        self._lora_keys = []
         for key, layer in self._lora_layers.items():
             for weight_key, weight in layer.layer_weights.items():
                 if not is_lora_kind(weight_key):
                     continue
 
                 state_key = f"{key}.{weight_key}"
-                state_dict[state_key] = WeightData(
-                    np.zeros(weight.shape.static_dims),
-                    state_key,
-                    weight.dtype,
-                    weight.shape,
+                state_dict[state_key] = self._get_lora_weights(
+                    state_key, weight
                 )
-                self._lora_keys.append(state_key)
 
-                buffer = Tensor(
-                    shape=weight.shape.static_dims,
-                    dtype=weight.dtype,
-                    device=device,
-                )
-                if LoRAType.A.value in key:
-                    self._A_buffers[key] = buffer
-                elif LoRAType.B.value in key:
-                    self._B_buffers[key] = buffer
-                elif LoRAType.BIAS.value in key:
-                    self._bias_buffers[key] = buffer
+                self._alias_buffers[state_key] = state_dict[state_key].data
 
-    def input_symbols(self, device_ref: DeviceRef) -> list[BufferType]:
+    def input_symbols(self, device_ref: DeviceRef) -> list[TensorType]:
         """
         Returns the input symbols needed for the graph inputs
 
         Args:
             device_ref: Symbolic device to be used for the symbols.
+
+        Returns:
+            The graph input symbols.
         """
-        lora_ids_type = BufferType(
+        lora_ids_type = TensorType(
             DType.uint32, shape=["lora_ids"], device=device_ref
         )
-        lora_ranks_type = BufferType(
+        lora_ranks_type = TensorType(
             DType.uint32, shape=["lora_ranks"], device=device_ref
         )
 
@@ -480,9 +583,8 @@ class LoRAManager:
 
     def set_graph_info(
         self,
-        lora_ids: BufferValue,
-        lora_ranks: BufferValue,
-        input_row_offsets: TensorValue,
+        lora_ids: TensorValue,
+        lora_ranks: TensorValue,
     ):
         """
         Sets the lora batch info required for the forward-pass.
@@ -490,8 +592,24 @@ class LoRAManager:
         Args:
             lora_ids: IDs of the LoRAs used in the batch.
             lora_ranks: Ranks of the LoRAs used in the batch.
-            input_row_offsets: Offsets used for ragged inputs.
         """
-        for key, layer in self._lora_layers.items():
+        for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
                 layer.set_lora_batch_info(lora_ids, lora_ranks)
+
+    def sort_lora_batch(self, batch: dict[str, T]) -> dict[str, T]:
+        """ "
+        Sorts the LoRA batch by name
+        Args:
+            batch: The context batch to sort
+        """
+        batch_by_model_names = {
+            req_id: batch[req_id]
+            for req_id, _ in sorted(
+                batch.items(),
+                key=lambda item: self._model_name_to_rank(
+                    getattr(item[1], "model_name")
+                ),
+            )
+        }
+        return batch_by_model_names

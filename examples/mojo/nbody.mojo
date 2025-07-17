@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-linux
-# COM: currently flaky on Linux only, see SDLC-1080
-# RUN: %mojo %s
 
 # This sample implements the nbody benchmarking in
 # https://benchmarksgame-team.pages.debian.net/benchmarksgame/performance/nbody.html

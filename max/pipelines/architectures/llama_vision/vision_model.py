@@ -176,9 +176,9 @@ class VisionModel(Layer):
     def _manual_constant_pad_4d(
         self,
         dtype: DType,
-        input_tensor,
+        input_tensor,  # noqa: ANN001
         pad: tuple[int, int, int, int],
-        value=0,
+        value=0,  # noqa: ANN001
     ) -> TensorValue:
         """
         Manually pads a 4D tensor (batch of images) with constant values.

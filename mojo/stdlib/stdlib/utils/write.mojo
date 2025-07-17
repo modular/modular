@@ -212,15 +212,29 @@ struct _WriteBufferHeap(Writable, Writer):
             Span[Byte, __origin_of(self)](ptr=self.data, length=self.pos)
         )
 
+    fn nul_terminate(mut self):
+        if self.pos + 1 > HEAP_BUFFER_BYTES:
+            _printf[
+                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
+                " HEAP_BUFFER_BYTES=4096`\n"
+            ]()
+            abort()
+        self.data[self.pos] = 0
+        self.pos += 1
 
-struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
-    var data: InlineArray[UInt8, STACK_BUFFER_BYTES]
+
+struct _WriteBufferStack[
+    origin: MutableOrigin,
+    W: Writer, //,
+    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+](Writer):
+    var data: InlineArray[UInt8, stack_buffer_bytes]
     var pos: Int
     var writer: Pointer[W, origin]
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, STACK_BUFFER_BYTES](uninitialized=True)
+        self.data = InlineArray[UInt8, stack_buffer_bytes](uninitialized=True)
         self.pos = 0
         self.writer = Pointer(to=writer)
 
@@ -244,12 +258,12 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > STACK_BUFFER_BYTES:
+        if len_bytes > stack_buffer_bytes:
             self.flush()
             self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > STACK_BUFFER_BYTES:
+        elif self.pos + len_bytes > stack_buffer_bytes:
             self.flush()
         # Continue writing to buffer
         memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)

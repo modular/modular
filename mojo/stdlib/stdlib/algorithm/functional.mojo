@@ -1674,7 +1674,7 @@ fn _elementwise_impl_gpu[
             launch_dependent_grids()
 
     if shape[rank - 1] % simd_width == 0:
-        ctx.enqueue_function[
+        ctx.call_function[
             _elementwise_gpu_kernel[
                 block_size=block_size, handle_uneven_simd=False
             ]
@@ -1684,7 +1684,7 @@ fn _elementwise_impl_gpu[
             attributes=pdl_launch_attributes(),
         )
     else:
-        ctx.enqueue_function[
+        ctx.call_function[
             _elementwise_gpu_kernel[
                 block_size=block_size, handle_uneven_simd=True
             ]
@@ -2046,4 +2046,4 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    ctx.enqueue_function[stencil_kernel](grid_dim=grid_dim, block_dim=block_dim)
+    ctx.call_function[stencil_kernel](grid_dim=grid_dim, block_dim=block_dim)

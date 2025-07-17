@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import randn, seed
@@ -51,12 +50,12 @@ def run_matvec[
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N)
 
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
@@ -106,12 +105,12 @@ def run_matvec[
     var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
-        ctx.enqueue_copy(c_host, c_device)
+        ctx.memcopy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
-        ctx.enqueue_copy(c_host, c_device)
+        ctx.memcopy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
@@ -125,8 +124,8 @@ def run_matvec[
     print()
 
     # running naive
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     alias BLOCK_DIM = 16
 
@@ -152,7 +151,7 @@ def run_matvec[
         )
 
     run_func_naive(ctx)
-    ctx.enqueue_copy(c_host_naive, c_device)
+    ctx.memcopy(c_host_naive, c_device)
     ctx.synchronize()
 
     nstime = ctx.execution_time[run_func_naive](iterations)
@@ -220,24 +219,29 @@ fn run_matvec_with_epilogue_fn[
     for i in range(M * N * c_stride):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
+    var a_device = ctx.create_buffer[DType.float32](M * K)
+    var b_device = ctx.create_buffer[DType.float32](K * N)
+    var c_device = ctx.create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
         c_device._unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
     )
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
+
+    var const_val = 4.0
 
     @parameter
     @always_inline
-    @__copy_capture(c_device_nd)
+    @__copy_capture(c_device_nd, const_val)
     fn epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
-            idx, rebind[SIMD[DType.float32, width]](val + 4.0)
+            idx,
+            rebind[SIMD[DType.float32, width]](
+                val + SIMD[dtype, width](const_val)
+            ),
         )
 
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
@@ -245,15 +249,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gemv_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            reduction_method=reduction_method,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -267,15 +272,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -286,18 +292,18 @@ fn run_matvec_with_epilogue_fn[
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    ctx.enqueue_copy(c_device, c_host)
+    ctx.memcopy(c_device, c_host)
 
     var nstime = 0.0
     var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
-        ctx.enqueue_copy(c_host, c_device)
+        ctx.memcopy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
-        ctx.enqueue_copy(c_host, c_device)
+        ctx.memcopy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
@@ -313,23 +319,24 @@ fn run_matvec_with_epilogue_fn[
     print()
 
     # running naive
-    ctx.enqueue_copy(a_device, a_host)
-    ctx.enqueue_copy(b_device, b_host)
+    ctx.memcopy(a_device, a_host)
+    ctx.memcopy(b_device, b_host)
 
     alias BLOCK_DIM = 16
 
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -341,7 +348,7 @@ fn run_matvec_with_epilogue_fn[
         )
 
     run_func_naive(ctx)
-    ctx.enqueue_copy(c_host_naive, c_device)
+    ctx.memcopy(c_host_naive, c_device)
 
     nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = (nstime / iterations) / 1000000000

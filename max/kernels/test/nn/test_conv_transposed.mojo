@@ -16,8 +16,14 @@ from random import rand
 from sys.info import simdwidthof
 
 from algorithm.functional import vectorize
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
@@ -174,31 +180,53 @@ fn test_conv_transposed[
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
+    alias input_layout = Layout.row_major[rank + 2]()
     var input_shape = extend_shape(input_dims, N, C)
-    var input = NDBuffer[dtype, rank + 2](input_ptr, input_shape)
-    var input_ref = NDBuffer[dtype, 5](
-        input_ptr, extend_shape_5d(input_dims, N, C)
+    var input = LayoutTensor[dtype, input_layout](
+        input_ptr,
+        RuntimeLayout[input_layout].row_major(input_shape),
+    )
+    var input_ref = LayoutTensor[dtype, Layout.row_major[5]()](
+        input_ptr,
+        RuntimeLayout[Layout.row_major[5]()].row_major(
+            extend_shape_5d(input_dims, N, C)
+        ),
     )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, F, C_per_group)
-    var filter = NDBuffer[dtype, rank + 2](filter_ptr, filter_shape)
-    var filter_ref = NDBuffer[dtype, 5](
-        filter_ptr, append_shape_5d(filter_dims, F, C_per_group)
+    var filter = LayoutTensor[dtype, Layout.row_major[rank + 2]()](
+        filter_ptr,
+        RuntimeLayout[Layout.row_major[rank + 2]()].row_major(filter_shape),
+    )
+    var filter_ref = LayoutTensor[dtype, Layout.row_major[5]()](
+        filter_ptr,
+        RuntimeLayout[Layout.row_major[5]()].row_major(
+            append_shape_5d(filter_dims, F, C_per_group)
+        ),
     )
 
     var packed_filter_shape = pack_filter_shape(filter, num_groups)
     var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, rank + 3](
-        packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
+    var packed_filter = LayoutTensor[dtype, Layout.row_major[rank + 3]()](
+        packed_filter_ptr,
+        RuntimeLayout[Layout.row_major[rank + 3]()].row_major(
+            rebind[IndexList[rank + 3]](packed_filter_shape)
+        ),
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = NDBuffer[dtype, rank + 2](output_ptr, output_shape)
-    var output_ref = NDBuffer[dtype, 5](
-        output_ref_ptr, extend_shape_5d(output_dims, N, F)
+    var output = LayoutTensor[dtype, Layout.row_major[rank + 2]()](
+        output_ptr,
+        RuntimeLayout[Layout.row_major[rank + 2]()].row_major(output_shape),
+    )
+    var output_ref = LayoutTensor[dtype, Layout.row_major[5]()](
+        output_ref_ptr,
+        RuntimeLayout[Layout.row_major[5]()].row_major(
+            extend_shape_5d(output_dims, N, F)
+        ),
     )
 
     # Bias for epilogue
@@ -223,7 +251,7 @@ fn test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.data + F * (
+            var output_ref_ptr = output_ref.ptr + F * (
                 i + output_image_size * n
             )
 
@@ -243,7 +271,7 @@ fn test_conv_transposed[
             vectorize[body0, simd_size](F)
 
     # Test.
-    alias conv_attr = ConvInfoStatic[rank + 2 - 2]()
+    alias conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
 
     # Test epilogue
     @always_inline
@@ -256,10 +284,16 @@ fn test_conv_transposed[
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
-            var vec = output.load[width=width](curr_coords)
+            var output_idx = output.runtime_layout(
+                RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](
+                    curr_coords
+                )
+            )
 
-            output.store(
-                curr_coords,
+            var vec = output.ptr.load[width=width](output_idx)
+
+            output.ptr.store(
+                output_idx,
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
@@ -267,15 +301,12 @@ fn test_conv_transposed[
         vectorize[body1, simd_size](f_size)
 
     ConvTransposedPacked[
-        rank + 2,  # input rank
-        rank + 3,  # filter rank
-        rank + 2,  # output rank
         _,  # input origin
         _,  # filter origin,
         _,  # output origin,
-        DimList.create_unknown[rank + 2](),  # input shape
-        DimList.create_unknown[rank + 3](),  # filter shape
-        DimList.create_unknown[rank + 2](),  # output shape
+        input_layout,  # input layout
+        Layout.row_major[rank + 3](),  # filter layout
+        Layout.row_major[rank + 2](),  # output layout
         dtype,  # input
         dtype,  # filter
         dtype,  # output
@@ -285,7 +316,7 @@ fn test_conv_transposed[
         output,
         input,
         packed_filter,
-        rebind[ConvShape[rank + 2 - 2]](conv_shape),
+        rebind[ConvShape[input_layout.rank() - 2]](conv_shape),
     )
 
     input_ptr.free()
@@ -295,18 +326,20 @@ fn test_conv_transposed[
 
     # Check results, return on the first failed comparison.
     for i in range(output_size):
-        if not isclose(
-            output_ref.data[i],
-            output.data[i],
-            atol=1e-4,  # absolute error tolerance
-            rtol=1e-4,  # relative error tolerance
+        if not all(
+            isclose(
+                output_ref.ptr.load[width=simd_size](i),
+                output.ptr.load[width=simd_size](i),
+                atol=1e-4,  # absolute error tolerance
+                rtol=1e-4,  # relative error tolerance
+            )
         ):
             print("Input shape: ", input_shape)
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.data[i])
-            print("Actual value: ", output.data[i])
+            print("Golden value: ", output_ref.ptr.load[width=simd_size](i))
+            print("Actual value: ", output.ptr.load[width=simd_size](i))
             output_ptr.free()
             output_ref_ptr.free()
             return

@@ -259,8 +259,8 @@ def execute_matmul_kv_cache_ragged[
         ctx,
     )
 
-    ctx.enqueue_copy(kv_block_host.tensor.data, kv_block_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.memcopy(kv_block_host.tensor.data, kv_block_device.buffer)
+    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor
@@ -445,8 +445,8 @@ def execute_matmul_k_cache_ragged[
         ctx,
     )
 
-    ctx.enqueue_copy(kv_block_host.tensor.data, kv_block_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.memcopy(kv_block_host.tensor.data, kv_block_device.buffer)
+    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor
@@ -508,8 +508,8 @@ def generic_assert_output_equals[
         test_output_device.shape,
     ](test_output_device.tensor.dynamic_shape)
 
-    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
-    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.memcopy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     batch_size = len(prompt_lens)
@@ -804,7 +804,7 @@ def execute_paged_fused_qkv_matmul[
     var ref_output_device = results[0]
     var test_output_device = results[1]
 
-    ctx.enqueue_copy(kv_block_host.tensor.data, kv_block_device.buffer)
+    ctx.memcopy(kv_block_host.tensor.data, kv_block_device.buffer)
 
     generic_assert_output_equals[num_q_heads=num_q_heads, rtol=rtol](
         k_cache_host,
@@ -929,7 +929,7 @@ def execute_cont_batch_fused_qkv_matmul[
     var ref_output_device = results[0]
     var test_output_device = results[1]
 
-    ctx.enqueue_copy(kv_block_host.tensor.data, kv_block_device.buffer)
+    ctx.memcopy(kv_block_host.tensor.data, kv_block_device.buffer)
 
     generic_assert_output_equals[num_q_heads=num_q_heads, rtol=rtol](
         k_cache_host,

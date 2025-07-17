@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import functools
+from typing import TYPE_CHECKING
 
 import numpy as np
 from max.pipelines.lib import TextAndVisionTokenizer
@@ -28,6 +29,9 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+if TYPE_CHECKING:
+    from max.pipelines.lib import PipelineConfig
+
 # The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer.
 # This is used to identify where to insert image embeddings in the text.
 IMAGE_CONTEXT_TOKEN_ID = 151667
@@ -35,6 +39,83 @@ IMAGE_CONTEXT_TOKEN_ID = 151667
 # ImageNet normalization constants.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def float32_to_bfloat16_as_uint16(arr: np.ndarray) -> np.ndarray:
+    """Convert float32 array to bfloat16 representation stored as uint16.
+
+    BFloat16 is the upper 16 bits of float32 with proper rounding.
+    This allows us to halve memory usage while maintaining the exponent range.
+
+    Args:
+        arr: Float32 numpy array
+
+    Returns:
+        Uint16 array containing bfloat16 bit representation with same shape
+    """
+    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
+
+    # Flatten for processing.
+    original_shape = arr.shape
+    flat = arr.ravel()
+
+    # View as uint32 for bit manipulation.
+    uint32_view = flat.view(np.uint32)
+
+    # Round to nearest even.
+    round_bit = (uint32_view >> 16) & 1
+    lower_half = uint32_view & 0xFFFF
+    round_up = (lower_half > 0x8000) | (
+        (lower_half == 0x8000) & (round_bit == 1)
+    )
+    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
+
+    # Extract upper 16 bits as bfloat16.
+    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
+
+    # Restore original shape.
+    return bfloat16_bits.reshape(original_shape)
+
+
+class InternVLImageConfig:
+    """InternVL image-specific configuration values for processing and memory estimation."""
+
+    num_image_token: int
+    """Number of tokens per image patch."""
+
+    max_dynamic_patch: int
+    """Maximum number of dynamic patches."""
+
+    image_size: int
+    """Size of input images."""
+
+    patch_size: int
+    """Size of each patch."""
+
+    def __init__(self, config: AutoConfig, vision_overrides: dict) -> None:
+        """Initialize from HuggingFace model configuration.
+
+        Args:
+            config: HuggingFace model configuration
+            vision_overrides: Vision config overrides from pipeline config
+        """
+        vision_config = config.vision_config
+
+        # Get configuration values with defaults.
+        self.image_size = getattr(vision_config, "image_size", 448)
+        self.patch_size = getattr(vision_config, "patch_size", 14)
+
+        # Check for override first, then fall back to config attribute.
+        self.max_dynamic_patch = vision_overrides.get(
+            "max_dynamic_patch", getattr(config, "max_dynamic_patch", 12)
+        )
+
+        downsample_ratio = getattr(config, "downsample_ratio", 0.5)
+
+        # Calculate number of image tokens per patch.
+        self.num_image_token = int(
+            (self.image_size // self.patch_size) ** 2 * (downsample_ratio**2)
+        )
 
 
 def find_closest_aspect_ratio(
@@ -244,7 +325,10 @@ def preprocess_image_to_tensor(
 
     # Stack all images together - shape: (batch_size, num_patches, features)
     # batch_size = number of images (including thumbnail if applicable)
-    return np.stack(processed_images).astype(np.float32)
+    stacked = np.stack(processed_images).astype(np.float32)
+
+    # Convert to bfloat16 representation as uint16.
+    return float32_to_bfloat16_as_uint16(stacked)
 
 
 class InternVLProcessor:
@@ -259,26 +343,24 @@ class InternVLProcessor:
     """
 
     def __init__(
-        self, tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast, config
+        self,
+        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
+        config,  # noqa: ANN001
+        vision_overrides: dict | None = None,
     ) -> None:
         self.tokenizer = tokenizer
         self.config = config
 
-        # InternVL configuration
-        self.image_size = getattr(config.vision_config, "image_size", 448)
-        self.max_dynamic_patch = getattr(config, "max_dynamic_patch", 12)
+        # Extract InternVL image configuration.
+        image_config = InternVLImageConfig(config, vision_overrides or {})
+        self.image_size = image_config.image_size
+        self.max_dynamic_patch = image_config.max_dynamic_patch
+        self.num_image_token = image_config.num_image_token
 
         # Image token configuration
         self.IMG_START_TOKEN = "<img>"
         self.IMG_END_TOKEN = "</img>"
         self.IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
-
-        # Calculate number of image tokens per patch
-        patch_size = getattr(config.vision_config, "patch_size", 14)
-        downsample_ratio = getattr(config, "downsample_ratio", 0.5)
-        self.num_image_token = int(
-            (self.image_size // patch_size) ** 2 * (downsample_ratio**2)
-        )
 
     def apply_chat_template(
         self,
@@ -398,6 +480,7 @@ class InternVLProcessor:
                 max_num=self.max_dynamic_patch,
                 patch_size=self.config.vision_config.patch_size,
             )
+            # Store the uint16 array (bfloat16 representation)
             raw_pixel_values.append(image_array)
 
         # Tokenize the processed text
@@ -439,6 +522,7 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
+        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -467,8 +551,17 @@ class InternVLTokenizer(TextAndVisionTokenizer):
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
 
+        # Get vision config overrides from pipeline config.
+        vision_overrides = (
+            pipeline_config.model_config.vision_config_overrides
+            if pipeline_config
+            else {}
+        )
+
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)
-        self.processor = InternVLProcessor(self.delegate, config)
+        self.processor = InternVLProcessor(
+            self.delegate, config, vision_overrides
+        )
 
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])

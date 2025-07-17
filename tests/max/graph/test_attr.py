@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 
 
-def test_array_attr(mlir_context) -> None:
+def test_array_attr(mlir_context) -> None:  # noqa: ANN001
     """Tests array attribute creation."""
     buffer = array.array("f", [42, 3.14])
 

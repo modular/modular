@@ -21,13 +21,13 @@ import sys
 from typing import Optional, Union
 
 import uvloop
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
-from max.pipelines.core import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
@@ -35,7 +35,6 @@ from max.serve.api_server import (
     fastapi_config,
 )
 from max.serve.config import Settings
-from max.serve.pipelines.llm import batch_config_from_pipeline_config
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
     get_performance_fake,
@@ -49,7 +48,7 @@ logger = logging.getLogger("max.entrypoints")
 _server_instance: Optional[Server] = None
 
 
-def sigterm_handler(sig, frame) -> None:
+def sigterm_handler(sig, frame) -> None:  # noqa: ANN001
     # If we have a server instance, trigger its shutdown
     if _server_instance is not None:
         _server_instance.should_exit = True
@@ -61,7 +60,7 @@ def sigterm_handler(sig, frame) -> None:
     sys.exit(0)
 
 
-def sigint_handler(sig, frame) -> None:
+def sigint_handler(sig, frame) -> None:  # noqa: ANN001
     """Handle SIGINT by raising KeyboardInterrupt to allow lifespan to handle it."""
     # Trigger server shutdown
     if _server_instance is not None:
@@ -136,11 +135,6 @@ def serve_pipeline(
             KVCacheStrategy.CONTINUOUS
         )
 
-    # Load batch config.
-    batch_config = batch_config_from_pipeline_config(
-        pipeline_config=pipeline_config, pipeline_task=pipeline_task
-    )
-
     # If explicit model name is not provided, set to model_path.
     if model_name is None:
         model_name = pipeline_config.model_config.model_path
@@ -148,7 +142,7 @@ def serve_pipeline(
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=pipeline_factory,
-        pipeline_config=batch_config,
+        pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
     )

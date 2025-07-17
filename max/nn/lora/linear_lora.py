@@ -16,12 +16,10 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight
 from max.graph.quantization import QuantizationEncoding
 
-from ..kernels import (
-    sgmv_lora_kernel,
-)
+from ..kernels import sgmv_lora_kernel
 from ..linear import Float8Config, Linear
 
 
@@ -83,6 +81,7 @@ class LinearLoRA(Linear):
         )
         self.max_num_loras = max_num_loras
         self.max_lora_rank = max_lora_rank
+        self.in_dim = in_dim
 
         self.lora_A = Weight(
             name=f"{name}.lora_A.weight" if name else "lora_A.weight",
@@ -90,6 +89,7 @@ class LinearLoRA(Linear):
             shape=[max_num_loras, max_lora_rank, in_dim],
             device=device,
             quantization_encoding=quantization_encoding,
+            _has_alias=True,
         )
         self.lora_B = Weight(
             name=f"{name}.lora_B.weight" if name else "lora_B.weight",
@@ -97,6 +97,7 @@ class LinearLoRA(Linear):
             shape=[max_num_loras, out_dim, max_lora_rank],
             device=device,
             quantization_encoding=quantization_encoding,
+            _has_alias=True,
         )
         self.lora_bias = (
             Weight(
@@ -105,6 +106,7 @@ class LinearLoRA(Linear):
                 shape=[max_num_loras, out_dim],
                 device=device,
                 quantization_encoding=quantization_encoding,
+                _has_alias=True,
             )
             if has_lora_bias
             else None
@@ -114,11 +116,11 @@ class LinearLoRA(Linear):
 
     def set_lora_batch_info(
         self,
-        lora_ids: BufferValue,
-        lora_ranks: BufferValue,
+        lora_ids: TensorValue,
+        lora_ranks: TensorValue,
     ):
-        self.lora_ids = ops.buffer_load(lora_ids)
-        self.lora_ranks = ops.buffer_load(lora_ranks)
+        self.lora_ids = lora_ids
+        self.lora_ranks = lora_ranks
 
     def apply_lora(
         self, x: TensorValue, input_row_offsets: TensorValue
@@ -130,15 +132,13 @@ class LinearLoRA(Linear):
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        return (
-            y
-            + sgmv_lora_kernel(
-                input=y,  # should be X but graph comp crashes because of stubbed kernel
-                lora_a=self.lora_A,
-                lora_b=self.lora_B,
-                lora_ids=self.lora_ids,
-                lora_ranks=self.lora_ranks,
-                input_row_offsets=input_row_offsets,
-                bias=self.lora_bias,
-            )
+        return y + sgmv_lora_kernel(
+            input=x,
+            lora_a=self.lora_A,
+            lora_b=self.lora_B,
+            lora_ids=self.lora_ids,
+            lora_ranks=self.lora_ranks,
+            input_row_offsets=input_row_offsets,
+            max_lora_seq_len=self.in_dim,
+            bias=self.lora_bias,
         )

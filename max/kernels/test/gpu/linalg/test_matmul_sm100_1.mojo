@@ -13,7 +13,7 @@
 
 from sys import sizeof
 from math import ceildiv
-
+from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 
@@ -489,7 +489,7 @@ alias NumWarpPerWarpGroup = 4
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int]]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]
@@ -498,8 +498,10 @@ fn get_dic_of_shapes(
         return (128, 128, 128)
 
 
-fn make_dic_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
-    var dic = Dict[Int, Tuple[Int, Int, Int]]()
+fn make_dic_of_shapes() -> (
+    Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
+):
+    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
     dic[0] = (8192, 2560, 8192)
     dic[1] = (4096, 2560, 8192)
     dic[2] = (512, 2560, 8192)
@@ -621,11 +623,11 @@ def test_blackwell_matmul_tma_umma[
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.memcopy(a_device.buffer, a_host.tensor.data)
+    ctx.memcopy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.memcopy(c_device.buffer, c_host.tensor.data)
+    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var a = from_ndbuffer_row_major(a_device.tensor)
     var b = from_ndbuffer_row_major(b_device.tensor)
@@ -700,8 +702,8 @@ def test_blackwell_matmul_tma_umma[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.memcopy(c_host.tensor.data, c_device.buffer)
+        ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
         alias rtol = 1e-2
 
