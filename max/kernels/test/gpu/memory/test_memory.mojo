@@ -28,7 +28,7 @@ fn test_memset_async(ctx: DeviceContext) raises:
         var data_device = ctx.create_buffer[dtype](length)
         ctx.enqueue_copy(data_device, data)
         # iota(data, length, 0)
-        ctx.memset(data_device, val)
+        ctx.enqueue_memset(data_device, val)
         ctx.enqueue_copy(data, data_device)
         ctx.synchronize()
         for i in range(length):

@@ -105,7 +105,7 @@ fn run_cublas[
             ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
         )
         # Do one iteration for verification.
-        ctx.memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
+        ctx.enqueue_memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
         vendor_blas.matmul(
             ctx,
             handle,
@@ -217,7 +217,7 @@ fn run_gemm_kernel_1[
     time_kernel[run_func](m, ctx, M * N * K, "naive")
 
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -337,7 +337,7 @@ fn run_gemm_kernel_2[
     time_kernel[run_func](m, ctx, M * N * K, "mem_coalesce")
 
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -485,7 +485,7 @@ fn run_gemm_kernel_3[
     time_kernel[run_func](m, ctx, M * N * K, "shared_mem")
 
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -649,7 +649,7 @@ fn run_gemm_kernel_4[
     time_kernel[run_func](m, ctx, M * N * K, "1d_blocktiling")
 
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -802,7 +802,7 @@ fn run_gemm_kernel_5[
 
     time_kernel[run_func](m, ctx, M * N * K, "2d_blocktiling")
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -980,7 +980,7 @@ fn run_gemm_kernel_6[
 
     time_kernel[run_func](m, ctx, M * N * K, "vectorized_mem_access")
     # Do one iteration for verifciation
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
@@ -1207,7 +1207,7 @@ fn run_gemm_kernel_tc[
 
     time_kernel[run_func](m, ctx, M * N * K, "tensor_core")
     # Do one iteration for verification
-    ctx.memset(
+    ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
             rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
