@@ -1188,6 +1188,8 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
     var _PyType_GetName: PyType_GetName.type
     var _PyType_FromSpec: PyType_FromSpec.type
+    # The None Object
+    var _Py_None: PyObjectPtr
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
@@ -1319,6 +1321,22 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+
+        if self.version.minor >= 13:
+            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
+            # References:
+            # - https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
+            # - https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
+
+            # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
+            self._Py_None = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](0)
+        else:
+            # PyObject *Py_None
+            self._Py_None = PyObjectPtr(
+                self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            )
 
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
@@ -2068,6 +2086,19 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
+    # The None Object
+    # ref: https://docs.python.org/3/c-api/none.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_None(self) -> PyObjectPtr:
+        """The Python `None` object, denoting lack of value.
+
+        References:
+        - https://docs.python.org/3/c-api/none.html#c.Py_None
+        """
+        return self._Py_None
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2394,29 +2425,6 @@ struct CPython(Copyable, Defaultable, Movable):
     # Concrete Objects
     # ref: https://docs.python.org/3/c-api/concrete.html
     # ===-------------------------------------------------------------------===#
-
-    fn Py_None(self) -> PyObjectPtr:
-        """The Python `None` object, denoting lack of value.
-
-        References:
-        - https://docs.python.org/3/c-api/none.html#c.Py_None
-        """
-
-        # Get pointer to the immortal `None` PyObject struct instance.
-        # Note:
-        #   The name of this global is technical a private part of the
-        #   CPython API, but unfortunately the only stable ways to access it are
-        #   macros.
-        # TODO(MSTDL-977):
-        #   Investigate doing this without hard-coding private API details.
-
-        # PyObject *Py_None
-        var ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-
-        if not ptr:
-            abort("error: unable to get pointer to CPython `None` struct")
-
-        return PyObjectPtr(ptr)
 
     # ===-------------------------------------------------------------------===#
     # Boolean Objects
