@@ -54,7 +54,7 @@ struct _PythonGlobal(Defaultable, Movable):
         self.cpython = other.cpython^
 
     fn __del__(owned self):
-        CPython.destroy(self.cpython)
+        self.cpython.destroy()
 
 
 fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
