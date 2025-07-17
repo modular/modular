@@ -50,10 +50,16 @@ def transfer_routine_sender(
     engine.send_xfer_sync(xfer_req)
     t1 = time.time()
     bw = total_bytes / (t1 - t0) / GB
+    ms = (t1 - t0) * 1000
     print(
-        f"Transferring {total_bytes / GB:.2f} GB took {t1 - t0:.2f} seconds ({bw:.2f} GB/s)",
+        f"Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)",
         flush=True,
     )
+    # Check that the transfer speed is at least 10 GB/s
+    # We found that CUDA_COPY yields ~.3GB/s while CUDA_IPC yields 100+GB/s
+    # Note that CUDA_IPC requires memory to be allocated via `cuMemAlloc` and not
+    # `cuMemAllocAsync`.
+    assert bw > 10.0, "Transfer speed is too low"
 
     # Verify results
     expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
