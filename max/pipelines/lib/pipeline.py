@@ -15,11 +15,14 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import logging
 import unittest.mock
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from os import environ
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -498,6 +501,20 @@ def get_paged_manager(
     return None
 
 
+@dataclasses.dataclass
+class BatchInfo:
+    """Information about a batch of requests passed to the pipeline"""
+
+    past_seq_lens: list[int]
+    """Coordinated list of past sequence lengths (i.e. context lengths)"""
+
+    seq_lens: list[int]
+    """Coordinated list of sequence lengths, i.e. prompt_len or 1"""
+
+    num_steps: int
+    """Number of steps to do in the pipeline"""
+
+
 class TextGenerationPipeline(TokenGenerator[T]):
     """Generalized token generator pipeline."""
 
@@ -512,6 +529,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._pipeline_config = pipeline_config
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
+
+        self.batch_info_output_fname = environ.get(
+            "MAX_BATCH_INFO_FILENAME", None
+        )
+        self.batch_infos: list[BatchInfo] = []
 
         # Expand eos tokens if more are provided in pipeline_config
         if (
@@ -916,6 +938,36 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         return self._pipeline_model._lora_manager.sort_lora_batch(batch)
 
+    def _record_batch_info(self, contexts: Iterable[T], num_steps: int) -> None:
+        """
+        Records batch information for the current inference step.
+
+        Args:
+            contexts (Iterable[T]): An iterable of context objects, each containing
+                'start_idx' (past sequence length) and 'active_length' (current sequence length).
+            num_steps (int): The number of steps processed in this batch.
+
+        Side Effects:
+            Appends a BatchInfo instance to self.batch_infos, capturing the past sequence lengths,
+            current sequence lengths, and number of steps for the batch.
+        """
+        self.batch_infos.append(
+            BatchInfo(
+                past_seq_lens=[x.start_idx for x in contexts],
+                seq_lens=[x.active_length for x in contexts],
+                num_steps=num_steps,
+            )
+        )
+
+    def __del__(self) -> None:
+        if self.batch_info_output_fname is not None:
+            output = {
+                "batch_data": [dataclasses.asdict(x) for x in self.batch_infos]
+            }
+            with open(self.batch_info_output_fname, "w") as f:
+                json.dump(output, f, indent=2)
+                f.flush()  # Refer to MAXSERV-893
+
     @traced
     def next_token(
         self,
@@ -927,6 +979,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         """
 
         batch = self._maybe_sort_loras(batch)
+        if self.batch_info_output_fname is not None:
+            self._record_batch_info(batch.values(), num_steps)
+
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
