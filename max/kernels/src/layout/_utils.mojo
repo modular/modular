@@ -55,7 +55,7 @@ struct ManagedLayoutTensor[
         self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = {}
         self.device_data = None
-        self.host_data = self.ctx.create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -77,7 +77,7 @@ struct ManagedLayoutTensor[
             runtime_layout
         )
         self.device_data = None
-        self.host_data = self.ctx.create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -87,7 +87,7 @@ struct ManagedLayoutTensor[
         self.ctx = ctx
         self.runtime_layout = {}
         self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
-        self.host_data = self.ctx.create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()
@@ -122,7 +122,7 @@ struct ManagedLayoutTensor[
             runtime_layout
         )
         self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
-        self.host_data = self.ctx.create_host_buffer[dtype](
+        self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
         self.ctx.synchronize()

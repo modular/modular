@@ -128,9 +128,11 @@ fn bench_memcpy(
 ) raises:
     alias dtype = DType.float32
     length_in_elements = length_in_bytes // sizeof[dtype]()
-    var mem_host: HostBuffer[dtype] = context.create_host_buffer[dtype](
+    var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
-    ) if config.pinned_memory else DeviceContext(api="cpu").create_host_buffer[
+    ) if config.pinned_memory else DeviceContext(
+        api="cpu"
+    ).enqueue_create_host_buffer[
         dtype
     ](
         length_in_elements

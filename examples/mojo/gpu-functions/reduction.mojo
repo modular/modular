@@ -135,7 +135,7 @@ def main():
 
         # Calculate the sum in a sequential fashion on the host
         # for correctness check
-        expected = ctx.create_host_buffer[dtype](1).fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](1).fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
                 expected[0] += a_host[i]
