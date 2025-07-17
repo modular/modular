@@ -166,10 +166,10 @@ fn test[
         )
 
     # Device pointers
-    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
-    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
-    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
@@ -264,7 +264,7 @@ fn test[
 
     @parameter
     if against_gpu_naive:
-        var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
+        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = NDBuffer[
             qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
         ](
@@ -443,15 +443,15 @@ fn test_prefill[
     )
 
     # device pointers
-    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
-    var cache_device_ptr = ctx.create_buffer[qkv_type](cache_size)
-    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
-    var input_row_offsets_device_ptr = ctx.create_buffer[DType.uint32](
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var cache_device_ptr = ctx.enqueue_create_buffer[qkv_type](cache_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
 
@@ -606,13 +606,13 @@ fn test_prefill[
     )
 
     # create device pointers for K_ref and V_ref
-    var k_ref_device_ptr = ctx.create_buffer[qkv_type](
+    var k_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_device_ptr = ctx.create_buffer[qkv_type](
+    var v_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_device_ptr = ctx.create_buffer[qkv_type](
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
     # create device buffers for K_ref and V_ref
@@ -790,21 +790,23 @@ fn test_cascade_prefill[
     )
 
     # device pointers
-    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
-    var k_chunk_device_ptr = ctx.create_buffer[qkv_type](k_chunk_size)
-    var v_chunk_device_ptr = ctx.create_buffer[qkv_type](v_chunk_size)
-    var cache_device_ptr = ctx.create_buffer[qkv_type](cache_size)
-    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
-    var input_row_offsets_device_ptr = ctx.create_buffer[DType.uint32](
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var k_chunk_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_chunk_size)
+    var v_chunk_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_chunk_size)
+    var cache_device_ptr = ctx.enqueue_create_buffer[qkv_type](cache_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
-    var cache_offsets_device_ptr = ctx.create_buffer[DType.uint32](batch_size)
-    var softmax_info_device_ptr = ctx.create_buffer[accum_type](
+    var cache_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    var softmax_info_device_ptr = ctx.enqueue_create_buffer[accum_type](
         softmax_info_size
     )
 
@@ -954,7 +956,7 @@ fn test_cascade_prefill[
     )
 
     # create device pointers for K_ref and V_ref
-    var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = NDBuffer[
         qkv_type, 3, _, DimList(Dim(), num_heads, kv_depth)
     ](
@@ -968,9 +970,9 @@ fn test_cascade_prefill[
         cache_row_offsets_ref[i] = i * num_keys
 
     # create device pointers for cache_row_offsets_ref and input_row_offsets_device
-    var cache_row_offsets_ref_device_ptr = ctx.create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var cache_row_offsets_ref_device_ptr = ctx.enqueue_create_buffer[
+        DType.uint32
+    ](batch_size + 1)
 
     # copy from host to device
     ctx.enqueue_copy(cache_row_offsets_ref_device_ptr, cache_row_offsets_ref)

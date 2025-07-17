@@ -38,9 +38,9 @@ def main():
         var vec_b_ptr = UnsafePointer[Float32].alloc(16)
         var vec_c_ptr = UnsafePointer[Float32].alloc(16)
 
-        var vec_a_dev = ctx.create_buffer[DType.float32](16)
-        var vec_b_dev = ctx.create_buffer[DType.float32](16)
-        var vec_c_dev = ctx.create_buffer[DType.float32](16)
+        var vec_a_dev = ctx.enqueue_create_buffer[DType.float32](16)
+        var vec_b_dev = ctx.enqueue_create_buffer[DType.float32](16)
+        var vec_c_dev = ctx.enqueue_create_buffer[DType.float32](16)
 
         for i in range(16):
             vec_a_ptr[i] = i

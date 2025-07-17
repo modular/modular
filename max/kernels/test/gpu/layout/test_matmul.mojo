@@ -82,10 +82,16 @@ struct test_matmul[
         self.c_host = HostNDBuffer[dtype, 2](c_shape)
         self.c_host_ref = HostNDBuffer[dtype, 2](c_shape)
 
-        self.a_device_buffer = ctx.create_buffer[dtype](a_shape.product().get())
-        self.b_device_buffer = ctx.create_buffer[dtype](b_shape.product().get())
-        self.c_device_buffer = ctx.create_buffer[dtype](c_shape.product().get())
-        self.c_device_buffer_ref = ctx.create_buffer[dtype](
+        self.a_device_buffer = ctx.enqueue_create_buffer[dtype](
+            a_shape.product().get()
+        )
+        self.b_device_buffer = ctx.enqueue_create_buffer[dtype](
+            b_shape.product().get()
+        )
+        self.c_device_buffer = ctx.enqueue_create_buffer[dtype](
+            c_shape.product().get()
+        )
+        self.c_device_buffer_ref = ctx.enqueue_create_buffer[dtype](
             c_shape.product().get()
         )
 

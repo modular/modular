@@ -40,8 +40,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext):
     for i in range(length):
         in_host[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
 
-    var in_device = ctx.create_buffer[dtype](flattened_length)
-    var out_device = ctx.create_buffer[dtype](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
     ctx.enqueue_copy(in_device, in_host.data)
 

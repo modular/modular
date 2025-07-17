@@ -651,7 +651,7 @@ struct LayoutTensor[
 
         var ctx = DeviceContext()
         # Allocate buffers
-        var dev_buf = ctx.create_buffer[dtype](16)
+        var dev_buf = ctx.enqueue_create_buffer[dtype](16)
         var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
         # Ensure buffers have been created
         ctx.synchronize()

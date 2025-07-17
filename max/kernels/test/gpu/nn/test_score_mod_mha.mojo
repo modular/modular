@@ -109,7 +109,7 @@ def execute_flash_attention[
             max_context_len, Int(cache_valid_length[i] + valid_length[i])
         )
 
-    var cache_lengths_dev = ctx.create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](

@@ -37,7 +37,7 @@ fn _create_device_buffer[
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 ]:
-    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
+    var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
         NDBuffer[dtype, rank, _, shape](
@@ -120,11 +120,11 @@ def test_split_k_reduce_rank3[
         sum += epilogue_data_host[i].cast[DType.float32]()
         c_host_ref[i] = sum.cast[c_type]()
 
-    var work_space_device = ctx.create_buffer[work_space_type](
+    var work_space_device = ctx.enqueue_create_buffer[work_space_type](
         num_partitions * M * N
     )
-    var c_device = ctx.create_buffer[c_type](M * N)
-    var epilogue_data_device = ctx.create_buffer[c_type](M * N)
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var epilogue_data_device = ctx.enqueue_create_buffer[c_type](M * N)
 
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)

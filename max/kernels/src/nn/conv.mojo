@@ -3296,7 +3296,9 @@ fn conv_cudnn[
             workspace_size_ptr,
         )
     )
-    var workspace_buffer = ctx.create_buffer[DType.uint8](workspace_size_var)
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size_var
+    )
     check_cudnn_error(
         cudnnConvolutionForward(
             ptr_meta[].ptr_handle,
@@ -3377,7 +3379,7 @@ fn conv_gpu[
             @parameter
             if maybe_epilogue_func:
                 alias epilogue = maybe_epilogue_func.value()
-                var output_tmp_data = ctx.create_buffer[output_type](
+                var output_tmp_data = ctx.enqueue_create_buffer[output_type](
                     output.num_elements()
                 )
 

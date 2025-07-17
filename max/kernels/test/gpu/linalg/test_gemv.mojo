@@ -50,9 +50,9 @@ def run_matvec[
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = ctx.create_buffer[DType.float32](M * K)
-    var b_device = ctx.create_buffer[DType.float32](K * N)
-    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -219,9 +219,9 @@ fn run_matvec_with_epilogue_fn[
     for i in range(M * N * c_stride):
         c_host_naive[i] = 0
 
-    var a_device = ctx.create_buffer[DType.float32](M * K)
-    var b_device = ctx.create_buffer[DType.float32](K * N)
-    var c_device = ctx.create_buffer[DType.float32](M * N * c_stride)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
         c_device._unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)

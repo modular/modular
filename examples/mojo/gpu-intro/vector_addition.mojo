@@ -69,15 +69,17 @@ def main():
         print("RHS buffer: ", rhs_host_buffer)
 
         # Create DeviceBuffers for the input vectors
-        lhs_device_buffer = ctx.create_buffer[float_dtype](vector_size)
-        rhs_device_buffer = ctx.create_buffer[float_dtype](vector_size)
+        lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+        rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
 
         # Copy the input vectors from the HostBuffers to the DeviceBuffers
         ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
         ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
-        result_device_buffer = ctx.create_buffer[float_dtype](vector_size)
+        result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
 
         # Wrap the DeviceBuffers in LayoutTensors
         lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)

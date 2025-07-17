@@ -77,7 +77,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_host = NDBuffer[
         DType.bfloat16, 1, MutableAnyOrigin, 8
     ].stack_allocation()
-    var out_device = ctx.create_buffer[DType.bfloat16](8)
+    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     ctx.enqueue_function[call_int4tobf16[no_lop]](
         UInt32(0x76543210), out_device, grid_dim=1, block_dim=1

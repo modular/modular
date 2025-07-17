@@ -115,10 +115,10 @@ fn check_ldmatrix_fp8[
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.create_buffer[input_type](M * K)
-    var b_device = ctx.create_buffer[input_type](K * N)
-    var c_device = ctx.create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[input_type](M * K)
+    var b_device = ctx.enqueue_create_buffer[input_type](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

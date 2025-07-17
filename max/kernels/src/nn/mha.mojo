@@ -681,9 +681,9 @@ fn flash_attention_dispatch[
                 # We split partitions and then reduce
                 # allocate memory for intermediate results
                 # q # [B, S, H, D]
-                var output_intermediate_data = ctx.create_buffer[output.dtype](
-                    num_heads * depth * batch_size * num_partitions_value
-                )
+                var output_intermediate_data = ctx.enqueue_create_buffer[
+                    output.dtype
+                ](num_heads * depth * batch_size * num_partitions_value)
 
                 var output_intermediate = NDBuffer[output.dtype, 4](
                     output_intermediate_data._unsafe_ptr(),
@@ -701,7 +701,7 @@ fn flash_attention_dispatch[
                     batch_size,
                     Int(num_heads),
                 )
-                var exp_sum_qk_max_data = ctx.create_buffer[accum_type](
+                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
                     2 * data_len
                 )
 
@@ -4381,7 +4381,7 @@ fn mha_gpu_naive[
     var num_keys = max_cache_size
 
     alias p_type = get_accum_type[q_type]()
-    var p_device = ctx.create_buffer[p_type](
+    var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext

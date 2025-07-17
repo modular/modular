@@ -89,7 +89,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
 fn run_mandelbrot(ctx: DeviceContext) raises:
     var out_host = UnsafePointer[Scalar[int_type]].alloc(width * height)
 
-    var out_device = ctx.create_buffer[int_type](width * height)
+    var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
     @parameter

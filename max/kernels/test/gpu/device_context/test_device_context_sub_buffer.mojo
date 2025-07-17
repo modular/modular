@@ -40,11 +40,11 @@ fn test(ctx: DeviceContext) raises:
         in_host[i] = i
         in_host[i + length] = 2
 
-    var in_device = ctx.create_buffer[DType.float32](2 * length)
+    var in_device = ctx.enqueue_create_buffer[DType.float32](2 * length)
     var in0_device = in_device.create_sub_buffer[DType.float32](0, length)
     var in1_device = in_device.create_sub_buffer[DType.float32](length, length)
 
-    var out_device = ctx.create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
     ctx.enqueue_copy(in_device, in_host)
 

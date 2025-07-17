@@ -130,16 +130,16 @@ def test_load_and_mma_and_multiply_operands[
     var b_lane_host_ptr = UnsafePointer[Scalar[dtype]].alloc(WARP_SIZE)
     var c_lane_host_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(WARP_SIZE * 4)
 
-    var a_device = ctx.create_buffer[dtype](M * K)
-    var b_device = ctx.create_buffer[dtype](K * N)
-    var c_device = ctx.create_buffer[dst_dtype](M * N)
-    var d_device = ctx.create_buffer[dst_dtype](M * N)
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
+    var d_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
 
-    var d_device_mma = ctx.create_buffer[dst_dtype](M * N)
+    var d_device_mma = ctx.enqueue_create_buffer[dst_dtype](M * N)
 
-    var a_lane_device = ctx.create_buffer[dtype](WARP_SIZE)
-    var b_lane_device = ctx.create_buffer[dtype](WARP_SIZE)
-    var c_lane_device = ctx.create_buffer[dst_dtype](WARP_SIZE * 4)
+    var a_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
+    var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
+    var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
 
     var a_host = tb[dtype]().row_major[M, K]().view(a_host_ptr)
     var a_dev = tb[dtype]().row_major[M, K]().view(a_device.unsafe_ptr())

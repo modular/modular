@@ -31,8 +31,8 @@ fn add_constant_fn(
 def run_add_constant(ctx: DeviceContext):
     alias length = 1024
 
-    var in_device = ctx.create_buffer[DType.float32](length)
-    var out_device = ctx.create_buffer[DType.float32](length)
+    var in_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
     with in_device.map_to_host() as in_host:
         for i in range(length):

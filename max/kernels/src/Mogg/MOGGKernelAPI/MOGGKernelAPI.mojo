@@ -9144,7 +9144,7 @@ struct DistributedMatmulAllReduce:
 
         @parameter
         for i in range(num_devices):
-            var device_buffer = dev_ctxs[i].create_buffer[c_type](
+            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
                 out_bufs[i].num_elements()
             )
             c_temp_bufs[i] = NDBuffer[

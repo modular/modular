@@ -61,8 +61,12 @@ fn test_pad_constant_gpu[
         print(input)
 
     # create device buffers
-    var in_device = ctx.create_buffer[dtype](input_shape.flattened_length())
-    var out_device = ctx.create_buffer[dtype](output_shape.flattened_length())
+    var in_device = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var out_device = ctx.enqueue_create_buffer[dtype](
+        output_shape.flattened_length()
+    )
 
     # copy from host to device
     ctx.enqueue_copy(in_device, input.ptr)

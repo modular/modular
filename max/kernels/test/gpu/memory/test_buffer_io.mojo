@@ -71,7 +71,7 @@ fn kernel_lds[dtype: DType, nowait: Bool](a: UnsafePointer[Scalar[dtype]]):
 
 def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
-    a_device_buf = ctx.create_buffer[dtype](size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1
@@ -95,7 +95,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
 def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
     alias dtype = DType.float32
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
-    a_device_buf = ctx.create_buffer[dtype](size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1

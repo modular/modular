@@ -59,8 +59,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
         in_data[i] = i + 1
         out_data[i] = 0
 
-    var in_device = ctx.create_buffer[DType.float32](16)
-    var out_device = ctx.create_buffer[DType.float32](16)
+    var in_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     ctx.enqueue_copy(in_device, in_data)
     ctx.enqueue_copy(out_device, out_data)

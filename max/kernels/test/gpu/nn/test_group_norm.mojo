@@ -67,9 +67,9 @@ fn run_group_norm_gpu[
         gamma_h[i] = ((i + C) / C).cast[dtype]()
         beta_h[i] = (i / C).cast[dtype]()
 
-    var data_d = ctx.create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.create_buffer[dtype](C)
-    var beta_d = ctx.create_buffer[dtype](C)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](C)
+    var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
     var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)

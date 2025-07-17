@@ -86,7 +86,9 @@ struct ManagedLayoutTensor[
     fn __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.runtime_layout = {}
-        self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
+        self.device_data = ctx.enqueue_create_buffer[dtype](
+            self.runtime_layout.size()
+        )
         self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
@@ -121,7 +123,9 @@ struct ManagedLayoutTensor[
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )
-        self.device_data = ctx.create_buffer[dtype](self.runtime_layout.size())
+        self.device_data = ctx.enqueue_create_buffer[dtype](
+            self.runtime_layout.size()
+        )
         self.host_data = self.ctx.enqueue_create_host_buffer[dtype](
             self.runtime_layout.size()
         )
