@@ -391,19 +391,19 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         # We import torch here so that only folks that use the
         # AudioGeneratorPipeline will need to have it installed.
-        import torch
+        import numpy as np
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
-                audio_data=torch.tensor([], dtype=torch.float32),
+                audio_data=np.array([], dtype=np.float32),
                 metadata={},
                 is_done=True,
             )
 
         # Combine audio chunks and metadata.
-        combined_audio = torch.concat(
-            [chunk.audio_data for chunk in audio_chunks], dim=-1
-        )
+        # Convert numpy arrays to torch tensors for concatenation, then back to numpy
+        np_chunks = [chunk.audio_data for chunk in audio_chunks]
+        combined_audio = np.concatenate(np_chunks, axis=-1)
 
         # We should only return from the next_chunk loop when the last chunk
         # is done.

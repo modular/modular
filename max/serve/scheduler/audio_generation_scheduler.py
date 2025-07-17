@@ -22,7 +22,7 @@ from collections import deque
 from collections.abc import Generator
 from typing import Any
 
-import torch
+import numpy as np
 import zmq
 from max.interfaces import AudioGenerationResponse, EngineResult
 from max.nn.kv_cache import PagedKVCacheManager
@@ -300,9 +300,9 @@ class AudioGenerationScheduler(Scheduler):
         audio_responses: dict[str, EngineResult[AudioGeneratorOutput]] = {}
         for req_id, response in responses.items():
             if response.has_audio_data:
-                audio_data = torch.from_numpy(response.audio_data)
+                audio_data = response.audio_data
             else:
-                audio_data = torch.tensor([], dtype=torch.float32)
+                audio_data = np.array([], dtype=np.float32)
 
             if response.is_done:
                 audio_responses[req_id] = EngineResult.complete(

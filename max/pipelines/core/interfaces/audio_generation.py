@@ -28,7 +28,6 @@ from typing import (
 
 if TYPE_CHECKING:
     import numpy as np
-    import torch
 
 from max.interfaces import AudioGenerationResponse, SamplingParams
 
@@ -100,7 +99,7 @@ DecoderOutput = TypeVar("DecoderOutput")
 
 @dataclass(frozen=True)
 class AudioGeneratorOutput:
-    audio_data: torch.Tensor
+    audio_data: np.ndarray
     metadata: dict[str, Any]
     is_done: bool
 
