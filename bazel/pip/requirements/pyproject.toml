@@ -3,6 +3,7 @@ name = "bazel-pyproject"
 version = "0"
 requires-python = ">=3.9" # NOTE: Must be kept in sync with other global settings
 dependencies = [
+  "absl-py",
   "aiofiles",
   "aiohttp",
   "asgiref",
@@ -27,6 +28,7 @@ dependencies = [
   "jinja2",
   "jiwer",
   "kaleido==0.2.1",
+  "llguidance",
   "logbar",
   "markupsafe",
   "matplotlib",
@@ -86,7 +88,6 @@ dependencies = [
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
-  "absl-py",
   "wheel",
 
   # modeltool

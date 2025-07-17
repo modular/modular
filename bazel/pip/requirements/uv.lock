@@ -492,6 +492,7 @@ dependencies = [
     { name = "jiwer", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "kaleido", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "librosa", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "llguidance", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "locust", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "logbar", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "markupsafe", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -652,6 +653,7 @@ requires-dist = [
     { name = "jiwer" },
     { name = "kaleido", specifier = "==0.2.1" },
     { name = "librosa", specifier = "==0.10.2" },
+    { name = "llguidance" },
     { name = "locust" },
     { name = "logbar" },
     { name = "markupsafe" },
@@ -2982,6 +2984,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0f/bb/63a6a8c9e7a96b6ba92647fa5b1595c2dbee29f8178705adb4704d82ecba/lightning_utilities-0.14.3.tar.gz", hash = "sha256:37e2f83f273890052955a44054382c211a303012ee577619efbaa5df9e65e9f5", size = 30346, upload-time = "2025-04-03T15:59:56.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1a/c1/31b3184cba7b257a4a3b5ca5b88b9204ccb7aa02fe3c992280899293ed54/lightning_utilities-0.14.3-py3-none-any.whl", hash = "sha256:4ab9066aa36cd7b93a05713808901909e96cc3f187ea6fd3052b2fd91313b468", size = 28894, upload-time = "2025-04-03T15:59:55.658Z" },
+]
+
+[[package]]
+name = "llguidance"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/93/6434849e372b6bdf4aa9a25a85f40d26742bee9298b6a0e024269a2fd8ca/llguidance-1.0.1.tar.gz", hash = "sha256:a226aeec28a9cd47ca93f7ff9e61ae615f153ca0b6f346cd43d7a56f1a5c037c", size = 1055250, upload-time = "2025-07-03T22:16:50.331Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/78/3ada6cf70c68c221187185a88d274daa492d2b7c0ead12345ba3323b4b3f/llguidance-1.0.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a6bd83566160e0bda7d07d8c8edd67301f059188a45b41c6f1bf5399a78f9e71", size = 3210748, upload-time = "2025-07-03T22:16:49.03Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/0c/7aced078db33c6978fca71113f9acbd14a0a7090001a64f27cbc45dc5ef5/llguidance-1.0.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:a181761fdf4de4c383104c51ef9a10723217455d252de37a55276e653dae2b4d", size = 3081322, upload-time = "2025-07-03T22:16:47.804Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/89/aa2ea261847ec8d6a56704f85903f2fa94e611b07ce97b3f115c11b45641/llguidance-1.0.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:63ece7bdeefecba36d47f41c436b687eb2ac098bb8b4ac184f56677ec698332a", size = 2824711, upload-time = "2025-07-03T22:16:43.51Z" },
+    { url = "https://files.pythonhosted.org/packages/84/d3/3a7692766a292ad4c3ecdfa22eba0722bcade2ab9f90edc6b08d150e0479/llguidance-1.0.1-cp39-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:9c1e0f1ca8045a22b34fafbed242079f60ddaec2c24f260231d2b95d02a5e7de", size = 3288162, upload-time = "2025-07-03T22:16:45.21Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/c2/c74e1ab8c5a5954064e007bedace4744bdcd051811d9466214eee1b6ad51/llguidance-1.0.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:945ab9c077d35dc8c6a603ea6a3e4f5ba2deeae80a0b3cbfbedd142881fb4262", size = 3040392, upload-time = "2025-07-03T22:16:46.515Z" },
+    { url = "https://files.pythonhosted.org/packages/15/4c/226d06895860a85cf762873a4f18e7ceab4ad22d074c326fd42bffd39e03/llguidance-1.0.1-cp39-abi3-win32.whl", hash = "sha256:513942a309dd2600b6c0c633714e28dca91c71b22427ded61042ea3f77602bad", size = 2599505, upload-time = "2025-07-03T22:16:52.48Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/4e/0af07c40b3eec3296c4a9cca0dcdbefdd5c786a4f0df75b2d1875e8d9504/llguidance-1.0.1-cp39-abi3-win_amd64.whl", hash = "sha256:1bb9baf7e617900fac006f5d9163a345722f3c8a625568a8a87fbd69e3cfa21e", size = 2805334, upload-time = "2025-07-03T22:16:51.341Z" },
 ]
 
 [[package]]

@@ -41,6 +41,7 @@ PINS = {
     "jiwer": "jiwer@3.0.5",
     "kaleido": "kaleido@0.2.1",
     "librosa": "librosa@0.10.2",
+    "llguidance": "llguidance@1.0.1",
     "lm-eval": "lm-eval@0.4.7",
     "locust": "locust@2.18.4",
     "logbar": "logbar@0.0.3",
@@ -2742,6 +2743,32 @@ def targets():
         name = "lightning-utilities@0.14.3",
         deps = _lightning_utilities_0_14_3_deps,
         wheel = ":_wheel_lightning-utilities@0.14.3",
+    )
+
+    native.alias(
+        name = "_wheel_llguidance@1.0.1",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "llguidance@1.0.1",
+        wheel = ":_wheel_llguidance@1.0.1",
     )
 
     _llvmlite_0_43_0_build_deps = [
@@ -11435,6 +11462,36 @@ def repositories():
         ],
         sha256 = "4ab9066aa36cd7b93a05713808901909e96cc3f187ea6fd3052b2fd91313b468",
         downloaded_file_path = "lightning_utilities-0.14.3-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/2b/0c/7aced078db33c6978fca71113f9acbd14a0a7090001a64f27cbc45dc5ef5/llguidance-1.0.1-cp39-abi3-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "a181761fdf4de4c383104c51ef9a10723217455d252de37a55276e653dae2b4d",
+        downloaded_file_path = "llguidance-1.0.1-cp39-abi3-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ce/89/aa2ea261847ec8d6a56704f85903f2fa94e611b07ce97b3f115c11b45641/llguidance-1.0.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "63ece7bdeefecba36d47f41c436b687eb2ac098bb8b4ac184f56677ec698332a",
+        downloaded_file_path = "llguidance-1.0.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_llguidance_1.0.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/0e/c2/c74e1ab8c5a5954064e007bedace4744bdcd051811d9466214eee1b6ad51/llguidance-1.0.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "945ab9c077d35dc8c6a603ea6a3e4f5ba2deeae80a0b3cbfbedd142881fb4262",
+        downloaded_file_path = "llguidance-1.0.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
