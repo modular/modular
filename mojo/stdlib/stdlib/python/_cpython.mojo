@@ -273,10 +273,6 @@ fn _py_get_version(lib: DLHandle) -> StaticString:
     )
 
 
-fn _py_finalize(lib: DLHandle):
-    lib.call["Py_Finalize"]()
-
-
 @fieldwise_init
 struct PyMethodDef(Copyable, Defaultable, Movable):
     """Represents a Python method definition. This struct is used to define
@@ -1339,14 +1335,13 @@ struct CPython(Copyable, Defaultable, Movable):
     fn __del__(owned self):
         pass
 
-    @staticmethod
-    fn destroy(mut existing: CPython):
-        if existing.logging_enabled:
-            print("CPython destroy")
-            print("Number of remaining refs:", existing.total_ref_count[])
-        _py_finalize(existing.lib)
-        existing.lib.close()
-        existing.total_ref_count.free()
+    fn destroy(mut self):
+        self.log("CPython destroy")
+        self.log("Number of remaining refs:", self.total_ref_count[])
+        # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
+        self.lib.call["Py_FinalizeEx"]()
+        self.lib.close()
+        self.total_ref_count.free()
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
