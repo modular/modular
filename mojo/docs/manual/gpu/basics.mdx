@@ -75,12 +75,12 @@ git clone git@github.com:modular/max
 cd max/mojo/docs/manual/gpu
 ```
 
-And open `basics.mdx` to run the code cells interactively.
+And open `basics.mdx` to run the code cells interactively. If you don't have `mojo` on your system PATH it will automacailly download and install it the first time you run a Mojo cell.
 
 If you prefer the traditional approach using a CLI, first install
 [`pixi`](https://pixi.sh/latest/) if you don't have it:
 
-```bash
+```sh
 curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
@@ -111,8 +111,15 @@ def main():
 
     var ctx = DeviceContext()
 
-    ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+    ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
     ctx.synchronize()
+```
+
+```text
+GPU thread: [ 0 0 0 ]
+GPU thread: [ 1 0 0 ]
+GPU thread: [ 2 0 0 ]
+GPU thread: [ 3 0 0 ]
 ```
 
 Then compile and run the file using `mojo main.mojo`.
@@ -153,7 +160,7 @@ condition. See [Functions](/mojo/manual/functions) more information.
 
 :::
 
-We can pass this function as a parameter to `enqueue_function()` to compile it
+We can pass this function as a parameter to `call_function()` to compile it
 for your attached GPU and launch it. First we need to get the
 [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) for your
 GPU:
@@ -165,7 +172,7 @@ var ctx = DeviceContext()
 Now we have the `DeviceContext` we can compile and launch the kernel:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
 
 # Wait for the kernel to finish executing before handing back to CPU
 ctx.synchronize()
@@ -206,7 +213,7 @@ using a tuple with up to three values will determine the (x, y, z) dimensions.
 :::
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
+ctx.call_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
 ctx.synchronize()
 ```
 
@@ -223,19 +230,19 @@ GPU thread: [ 1 1 1 ]
 
 We're now launching 8 (2x2x2) threads in total.
 
-## Host vs device and enqueue
+## Host vs device
 
 You'll see the word host which refers to the CPU that schedules work for the
 device, device refers to the accelerator which in this case is a GPU.
 
-When you encounter the term `enqueue` in a method or function call, it means
-that the host is scheduling the operation to execute asynchronously on the
-device. If your host-side code relies on the outcome of these device-enqueued
-operations, you need to call `ctx.synchronize()`. For instance, printing from
-the CPU without first synchronizing might result in out-of-order output:
+When you're running device side code, it means that the host is scheduling the
+operation to execute asynchronously on the device. If your host-side code relies
+on the outcome of device-side code, you need to call `ctx.synchronize()`. For
+instance, printing from the CPU without first synchronizing might result in
+out-of-order output:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
 print("This might print before the GPU has completed its work")
 ```
 
@@ -252,7 +259,7 @@ host, the device could be slightly slower to finish its work, so you might
 see that output after the host output. Let's add a `synchronize()` call:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
 ctx.synchronize()
 print("This will print after the GPU has completed its work")
 ```
@@ -265,24 +272,23 @@ GPU thread: [ 3 0 0 ]
 This will print after the GPU has completed its work
 ```
 
-Any method or function you `enqueue` to run on the device, will run in the order
-that you enqueued them. It's only when you're doing something from the host
-which is dependent on the results of enqueued calls that you have to
-synchronize.
+Any method you run on a `DeviceContext` that interacts with the device, will run
+in the order that you called them. You only have to synchronize when you're
+doing something from the host which is dependent on the results of the device.
 
 In GPU programming with Mojo, when there's a tradeoff between GPU performance
 and safety or ergonomics, performance takes priority, aligning with the
-expectations of kernel engineers. For instance, while we could eliminate the
-`enqueue` prefix from method calls and force synchronization for each of them,
-this would come at a performance cost. Take note to remember anything from these
-warning text blocks for potential safety violations:
+expectations of kernel engineers. For instance while we could force
+synchronization for each call that interacts with the device, this would come at
+a performance cost where we want to run multiple functions asynchronously and
+synchronize once.
 
 :::warning Synchronization
 
-For any methods or functions prefixed with `enqueue`, you must synchronize
-before running CPU code that is dependent on what you're enqueuing. Enqueueing
-multiple method or function calls for a single GPU is safe, as they are
-scheduled to run in the order you call them.
+For any methods or functions that interact with the device, you must synchronize
+before running CPU code that is dependent on it's execution. Multiple method or
+function calls for a single GPU is safe, as they are scheduled to run in the
+order you call them.
 
 :::
 
@@ -313,19 +319,19 @@ fn block_kernel():
         "]"
     )
 
-ctx.enqueue_function[block_kernel](grid_dim=(2, 2), block_dim=2)
+ctx.call_function[block_kernel](grid_dim=(2, 2), block_dim=2)
 ctx.synchronize()
 ```
 
 ```text
 block: [ 0 0 0 ] thread: [ 0 0 0 ]
 block: [ 0 0 0 ] thread: [ 1 0 0 ]
-block: [ 1 0 0 ] thread: [ 0 0 0 ]
-block: [ 1 0 0 ] thread: [ 1 0 0 ]
-block: [ 1 1 0 ] thread: [ 0 0 0 ]
-block: [ 1 1 0 ] thread: [ 1 0 0 ]
 block: [ 0 1 0 ] thread: [ 0 0 0 ]
 block: [ 0 1 0 ] thread: [ 1 0 0 ]
+block: [ 1 1 0 ] thread: [ 0 0 0 ]
+block: [ 1 1 0 ] thread: [ 1 0 0 ]
+block: [ 1 0 0 ] thread: [ 0 0 0 ]
+block: [ 1 0 0 ] thread: [ 1 0 0 ]
 ```
 
 We're still launching 8 (2x2x2) threads, where there are 4 blocks, each with 2
@@ -391,7 +397,7 @@ alias blocks = 4
 alias threads = 4
 alias elements_in = blocks * threads # one element per thread
 
-var in_buffer = ctx.enqueue_create_buffer[dtype](elements_in)
+var in_buffer = ctx.create_buffer[dtype](elements_in)
 ```
 
 Creating the GPU buffer is allocating _global memory_ which can be accessed from
@@ -467,29 +473,29 @@ fn print_values_kernel(in_tensor: InTensor):
     var tid = thread_idx.x
     print("block:", bid, "thread:", tid, "val:", in_tensor[bid, tid])
 
-ctx.enqueue_function[print_values_kernel](
+ctx.call_function[print_values_kernel](
     in_tensor, grid_dim=blocks, block_dim=threads,
 )
 ctx.synchronize()
 ```
 
 ```text
-block: 3 thread: 0 val: 12
-block: 3 thread: 1 val: 13
-block: 3 thread: 2 val: 14
-block: 3 thread: 3 val: 15
-block: 1 thread: 0 val: 4
-block: 1 thread: 1 val: 5
-block: 1 thread: 2 val: 6
-block: 1 thread: 3 val: 7
-block: 2 thread: 0 val: 8
-block: 2 thread: 1 val: 9
-block: 2 thread: 2 val: 10
-block: 2 thread: 3 val: 11
 block: 0 thread: 0 val: 0
 block: 0 thread: 1 val: 1
 block: 0 thread: 2 val: 2
 block: 0 thread: 3 val: 3
+block: 1 thread: 0 val: 4
+block: 1 thread: 1 val: 5
+block: 1 thread: 2 val: 6
+block: 1 thread: 3 val: 7
+block: 3 thread: 0 val: 12
+block: 3 thread: 1 val: 13
+block: 3 thread: 2 val: 14
+block: 3 thread: 3 val: 15
+block: 2 thread: 0 val: 8
+block: 2 thread: 1 val: 9
+block: 2 thread: 2 val: 10
+block: 2 thread: 3 val: 11
 ```
 
 As in the visualization above, the block/thread is getting the corresponding
@@ -506,7 +512,7 @@ launch a kernel to multiply each value:
 fn multiply_kernel[multiplier: Int](in_tensor: InTensor):
     in_tensor[block_idx.x, thread_idx.x] *= multiplier
 
-ctx.enqueue_function[multiply_kernel[2]](
+ctx.call_function[multiply_kernel[2]](
     in_tensor,
     grid_dim=blocks,
     block_dim=threads,
@@ -542,10 +548,10 @@ Output: [ block[0] block[1] block[2] block[3] ]
 Set up the output buffer/tensor for the host and device:
 
 ```mojo :clear
-var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
+var out_buffer = ctx.create_buffer[dtype](blocks)
 
 # Zero the values on the device as they'll be used to accumulate results
-_ = out_buffer.enqueue_fill(0)
+_ = out_buffer.fill(0)
 
 alias out_layout = Layout.row_major(blocks)
 alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
@@ -588,7 +594,7 @@ fn sum_reduce_kernel(
         for i in range(threads):
             out_tensor[block_idx.x] += shared[i]
 
-ctx.enqueue_function[sum_reduce_kernel](
+ctx.call_function[sum_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -631,7 +637,7 @@ fn simd_reduce_kernel(
     # The [4] means it loads 4 sequential values before doing the `reduce_add`
     out_tensor[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
 
-ctx.enqueue_function[simd_reduce_kernel](
+ctx.call_function[simd_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -694,7 +700,7 @@ fn warp_reduce_kernel(
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.enqueue_function[warp_reduce_kernel](
+ctx.call_function[warp_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -709,8 +715,8 @@ with out_buffer.map_to_host() as host_buffer:
 ```text
 thread: 0 value: 6
 thread: 1 value: 6
-thread: 2 value: 5
-thread: 3 value: 3
+thread: 2 value: 6
+thread: 3 value: 6
 HostBuffer([6, 22, 38, 54])
 ```
 
@@ -739,7 +745,7 @@ and initialize the numbers ordered sequentially. Copy the host buffer to the
 device.
 2. Create a in_tensor that wraps the host buffer, with the dimensions (8, 4)
 3. Create an host and device buffer for the output of `DType` `Float32`, with 8
-elements, don't forget to zero the values with `enqueue_memset()`.
+elements, don't forget to zero the values with `memset()`.
 4. Launch a GPU kernel with 8 blocks and 4 threads that reduce sums the values,
 using your preferred method to write to the output buffer.
 5. Copy the device buffer to the host buffer, and print it out on the CPU.
@@ -762,15 +768,15 @@ alias elements_in = blocks * threads
 var ctx = DeviceContext()
 
 # Create buffers
-var in_buffer = ctx.enqueue_create_buffer[dtype](elements_in)
-var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
+var in_buffer = ctx.create_buffer[dtype](elements_in)
+var out_buffer = ctx.create_buffer[dtype](blocks)
 
 # Fill in input values sequentially and copy to device
 with in_buffer.map_to_host() as host_buffer:
     iota(host_buffer.unsafe_ptr(), elements_in)
 
 # Zero output buffer values
-_ = out_buffer.enqueue_fill(0)
+_ = out_buffer.fill(0)
 
 # Create the LayoutTensors
 alias layout = Layout.row_major(blocks, threads)
@@ -787,7 +793,7 @@ fn reduce_sum(in_tensor: InTensor, out_tensor: OutTensor):
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.enqueue_function[reduce_sum](
+ctx.call_function[reduce_sum](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
