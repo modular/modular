@@ -47,6 +47,7 @@ modular_py_test(
         requirement("click"),
         requirement("gguf"),
         requirement("hypothesis"),
+        requirement("llguidance"),
         requirement("torch"),
         requirement("transformers"),
         requirement("msgspec"),
