@@ -274,11 +274,12 @@ the `@value` decorator.
 ### `@value` decorator
 
 When you add the [`@value` decorator](/mojo/manual/decorators/value) to a
-struct, Mojo will synthesize the essential lifecycle methods so your object
-provides full value semantics. Specifically, it generates the `__init__()`,
-`__copyinit__()`, and `__moveinit__()` methods, which allow you to construct,
-copy, and move your struct type in a manner that's value semantic and
-compatible with Mojo's ownership model.
+struct, Mojo will synthesize the essential [lifecycle
+methods](/mojo/manual/lifecycle/life) so your object provides full value
+semantics. Specifically, it generates the `__init__()`, `__copyinit__()`, and
+`__moveinit__()` methods, which allow you to construct, copy, and move your
+struct type in a manner that's value semantic and compatible with Mojo's
+ownership model.
 
 For example:
 
@@ -289,9 +290,9 @@ struct MyPet:
     var age: Int
 ```
 
-Mojo will notice that you don't have a member-wise initializer, a move
-constructor, or a copy constructor, and it will synthesize these for you as if
-you had written:
+Mojo will notice that you don't have a member-wise constructor (`__init__()`),
+a copy constructor (`__copyinit__()`), or a move constructor
+(`__moveinit__()`), and it will synthesize these for you as if you had written:
 
 ```mojo
 struct MyPet:

@@ -79,12 +79,22 @@ implementing the copy and move constructors.
 
 :::note
 
-Mojo does not require a destructor to destroy an object. As long as
+Mojo doesn't require a destructor to destroy an object. As long as
 all fields in the struct are destructible (every type in the standard library
 is destructible, except for
 [pointers](/mojo/stdlib/memory/unsafe)), then Mojo knows how to destroy
 the type when its lifetime ends. We'll discuss that more in [Death of a
 value](/mojo/manual/lifecycle/death).
+
+:::
+
+:::note The "constructor" name
+
+In a Python class, object construction happens across both the `__new__()` and
+`__init__()` methods, so the `__init__()` method is technically just the
+initializer for attributes (but it's often still called the constructor).
+However, in a Mojo struct, there is no `__new__()` method, so we prefer to
+always call `__init__()` the constructor.
 
 :::
 
