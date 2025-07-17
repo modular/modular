@@ -200,12 +200,3 @@ modular_python_binding_library_test(
         "//Support:CPython",
     ],
 )
-
-modular_python_binding_library_test(
-    name = "CPythonNanobindUtilTest",
-    srcs = ["CPython/UtilTest.cpp"],
-    py_deps = [],
-    deps = [
-        "//Support:CPythonNanobind",
-    ],
-)
