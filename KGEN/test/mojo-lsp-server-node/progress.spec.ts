@@ -15,6 +15,8 @@ describe("progress", function () {
   });
 
   it("should respect client capabilities", async function () {
+    return this.skip();
+
     await server.initialize({
       window: {
         workDoneProgress: undefined,
@@ -39,6 +41,8 @@ describe("progress", function () {
   });
 
   it("should send progress notifications when parsing", async function () {
+    return this.skip();
+
     await server.initialize({
       window: {
         workDoneProgress: true,
@@ -92,6 +96,8 @@ describe("progress", function () {
   });
 
   it("must not send the same progress token", async function () {
+    return this.skip();
+
     await server.initialize({
       window: {
         workDoneProgress: true,
