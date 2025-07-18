@@ -15,12 +15,9 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Format.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <cstdlib>
 #include <cstring>
-#include <system_error>
 
 namespace M {
 
@@ -100,21 +97,6 @@ public:
 
   /// Convert this Error into a LogicalResult.
   /*implicit*/ operator LogicalResult() const { return failure(); }
-
-  /// Construct an Error from std::error_code.
-  static Error fromErrorCode(std::error_code ec, StringRef str = "") {
-    if (str.empty())
-      return Error(ec.message());
-    return Twine(str) + ": " + ec.message();
-  }
-
-  template <typename... Ts>
-  static Error fromErrorCode(std::error_code ec, char const *fmt,
-                             const Ts &...vals) {
-    std::string str;
-    llvm::raw_string_ostream(str) << llvm::format(fmt, vals...);
-    return Error::fromErrorCode(ec, str);
-  }
 
   Error &operator=(Error &&other) {
     if (&other != this) {
