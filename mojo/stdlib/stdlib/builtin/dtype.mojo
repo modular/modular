@@ -622,6 +622,98 @@ struct DType(
         return 8 * self.sizeof()
 
     # ===-------------------------------------------------------------------===#
+    # Floating point generics
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn mantissa_width[dtype: DType]() -> Int:
+        """Returns the mantissa width of a floating point type.
+
+        Parameters:
+            dtype: The DType.
+
+        Returns:
+            The mantissa width.
+        """
+        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+        return bitwidthof[dtype]() - DType.exponent_width[dtype]() - 1
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn max_exponent[dtype: DType]() -> Int:
+        """Returns the max exponent of a floating point dtype without accounting
+        for inf representations. This is not the maximum representable exponent,
+        which is generally equal to the exponent_bias.
+
+        Parameters:
+            dtype: The DType.
+
+        Returns:
+            The max exponent.
+        """
+        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+
+        @parameter
+        if dtype is DType.float8_e4m3fnuz:
+            return 7
+        elif dtype is DType.float8_e4m3fn:
+            return 8
+        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
+            return 16
+        elif dtype in (DType.bfloat16, DType.float32):
+            return 128
+        elif dtype is DType.float64:
+            return 1024
+        else:
+            constrained[False, "unsupported float type"]()
+            return {}
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn exponent_width[dtype: DType]() -> Int:
+        """Returns the exponent width of a floating point type.
+
+        Parameters:
+            dtype: The DType.
+
+        Returns:
+            The exponent width.
+        """
+        constrained[dtype.is_floating_point(), "dtype must be floating point"]()
+
+        @parameter
+        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            return 4
+        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
+            return 5
+        elif dtype in (DType.float32, DType.bfloat16):
+            return 8
+        elif dtype is DType.float64:
+            return 11
+        else:
+            constrained[False, "unsupported float type"]()
+            return {}
+
+    @staticmethod
+    @always_inline
+    fn exponent_bias[dtype: DType]() -> Int:
+        """Returns the exponent bias of a floating point type.
+
+        Parameters:
+            dtype: The DType.
+
+        Returns:
+            The exponent bias.
+        """
+
+        @parameter
+        if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+            return DType.max_exponent[dtype]()
+        else:
+            return DType.max_exponent[dtype]() - 1
+
+    # ===-------------------------------------------------------------------===#
     # dispatch_integral
     # ===-------------------------------------------------------------------===#
 
