@@ -24,11 +24,9 @@ namespace M {
 constexpr size_t kMaxRank = 8;
 
 /// The value representing dynamic dimension in TensorShape and TensorSpec.
-/// This value can be retrieved by M_getDynamicDimensionValue in C API.
 constexpr int64_t kDynamicDimensionValue = -1;
 
 /// The value representing dynamic rank in TensorShape and TensorSpec.
-/// This value can be retrieved by M_getDynamicRankValue in C API.
 constexpr int64_t kDynamicRankValue = -1;
 
 /// Flag to signal construction of dynamic ranked shapes.
