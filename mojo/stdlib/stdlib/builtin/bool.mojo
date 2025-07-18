@@ -521,15 +521,6 @@ struct Bool(
         """
         return lhs ^ self
 
-    @always_inline("builtin")
-    fn __neg__(self) -> Int:
-        """Defines the unary `-` operation.
-
-        Returns:
-            0 for False and -1 for True.
-        """
-        return select[Int](self, -1, 0)
-
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
