@@ -9,11 +9,71 @@ This module provides data structures and interfaces for handling audio generatio
 responses, including status tracking and audio data encapsulation.
 """
 
-from typing import Optional
+from typing import Any, Optional, Union
 
 import msgspec
 import numpy as np
 from max.interfaces.status import GenerationStatus
+
+
+class AudioGenerationMetadata(
+    msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
+):
+    """
+    Represents metadata associated with audio generation.
+
+    This class will eventually replace the metadata dictionary used throughout
+    the AudioGenerationOutput object, providing a structured and type-safe
+    alternative for audio generation metadata.
+
+    Configuration:
+        sample_rate: The sample rate of the generated audio in Hz.
+        duration: The duration of the generated audio in seconds.
+        chunk_id: Identifier for the audio chunk (useful for streaming).
+        timestamp: Timestamp when the audio was generated.
+        final_chunk: Whether this is the final chunk in a streaming sequence.
+        model_name: Name of the model used for generation.
+        request_id: Unique identifier for the generation request.
+        tokens_generated: Number of tokens generated for this audio.
+        processing_time: Time taken to process this audio chunk in seconds.
+        echo: Echo of the input prompt or identifier for verification.
+    """
+
+    sample_rate: Optional[int] = msgspec.field(default=None)
+    duration: Optional[float] = msgspec.field(default=None)
+    chunk_id: Optional[int] = msgspec.field(default=None)
+    timestamp: Optional[str] = msgspec.field(default=None)
+    final_chunk: Optional[bool] = msgspec.field(default=None)
+    model_name: Optional[str] = msgspec.field(default=None)
+    request_id: Optional[str] = msgspec.field(default=None)
+    tokens_generated: Optional[int] = msgspec.field(default=None)
+    processing_time: Optional[float] = msgspec.field(default=None)
+    echo: Optional[str] = msgspec.field(default=None)
+
+    def to_dict(self) -> dict[str, Union[int, float, str, bool]]:
+        """
+        Convert the metadata to a dictionary format.
+
+        Returns:
+            dict[str, any]: Dictionary representation of the metadata.
+        """
+        result = {}
+        for attr in self.__annotations__:
+            if value := getattr(self, attr, None):
+                result[attr] = value
+        return result
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        Support equality comparison with both AudioGenerationMetadata objects and dictionaries.
+
+        This allows tests to compare metadata objects with plain dictionaries.
+        """
+        if isinstance(other, AudioGenerationMetadata):
+            return super().__eq__(other)
+        elif isinstance(other, dict):
+            return self.to_dict() == other
+        return False
 
 
 class AudioGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
