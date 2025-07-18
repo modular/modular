@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
+import pytest
 import torch
 from max.driver import Tensor
 from max.dtype import DType
@@ -53,10 +54,9 @@ def test_gather(session) -> None:  # noqa: ANN001
     # Should raise an error since indices must be between [0,3).
     index = torch.Tensor([[0], [1], [2], [3], [4]]).to(torch.int64)
 
-    # TODO(GEX-1808): Uncomment the following line when calling the model raises
-    # an error.
-    # with pytest.raises(RuntimeError):
-    actual = model(
-        Tensor.from_dlpack(inputs).to(model.input_devices[0]),
-        Tensor.from_dlpack(index).to(model.input_devices[1]),
-    )[0].to_numpy()
+    # Test 2: Invalid indices should raise an error
+    with pytest.raises(ValueError):
+        actual = model(
+            Tensor.from_dlpack(inputs).to(model.input_devices[0]),
+            Tensor.from_dlpack(index).to(model.input_devices[1]),
+        )[0].to_numpy()

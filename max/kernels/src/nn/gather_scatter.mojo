@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, InlineArray
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from sys import simdwidthof, sizeof
@@ -528,6 +528,16 @@ fn gather_elementwise_fn_wrapper[
             input_rank: Int, indices_rank: Int
         ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
+    error_buffer_fn: OptionalReg[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank], SIMD[DType.int32, width]) capturing -> None
+    ] = None,
+    error_index_fn: OptionalReg[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank], SIMD[DType.int32, width]) capturing -> None
+    ] = None,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -566,9 +576,27 @@ fn gather_elementwise_fn_wrapper[
         @parameter
         for i in range(input_shape.size):
             if i == Int(axis):
-                data_indices[i] = Int(
-                    _unsafe_normalize_neg_index(data_index, input_shape[axis])
+                var normalized_idx = _unsafe_normalize_neg_index(
+                    data_index, input_shape[axis]
                 )
+                data_indices[i] = Int(normalized_idx)
+
+                # BOUNDS CHECK: Validate normalized index is within bounds
+                @parameter
+                if error_buffer_fn and error_index_fn:
+                    if not (0 <= Int(normalized_idx) < input_shape[axis]):
+                        # Signal error: write 1 to error buffer
+                        alias error_buffer_func = error_buffer_fn.value()
+                        alias error_index_func = error_index_fn.value()
+                        var error_coords = IndexList[1](0)
+                        error_buffer_func[1, 1](
+                            error_coords, SIMD[DType.int32, 1](1)
+                        )
+                        # Store the invalid index for debugging
+                        error_index_func[1, 1](
+                            error_coords, SIMD[DType.int32, 1](Int(data_index))
+                        )
+                        return  # Early return on bounds error
             elif i > Int(axis):
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
                 data_indices[i] = idx[i + skip_factor]
@@ -633,6 +661,24 @@ fn gather[
         ):
             return
 
+        # Create error reporting arrays since we cannot raise from an elementwise lambda.
+        var error_buffer = InlineArray[Int32, 1](0)  # Initialize to no error
+        var error_index = InlineArray[Int32, 1](0)  # Initialize invalid index
+
+        @parameter
+        @always_inline
+        fn error_buffer_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[DType.int32, width]):
+            error_buffer[0] = val[0]
+
+        @parameter
+        @always_inline
+        fn error_index_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[DType.int32, width]):
+            error_index[0] = val[0]
+
         @parameter
         @always_inline
         fn gather_elementwise_fn[
@@ -646,6 +692,8 @@ fn gather[
                 output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
+                error_buffer_fn=error_buffer_fn,
+                error_index_fn=error_index_fn,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -674,6 +722,15 @@ fn gather[
             ](
                 output_shape.canonicalize(),
                 context,
+            )
+
+        # Check for bounds errors after elementwise operation completes
+        if error_buffer[0] != 0:
+            var invalid_index = Int(error_index[0])
+            raise Error(
+                String(
+                    "gather index {} is out of bounds for axis {} with size {}"
+                ).format(invalid_index, Int(axis), input_shape[axis])
             )
 
 
@@ -723,6 +780,24 @@ fn gather[
         ):
             return
 
+        # Create error reporting arrays
+        var error_buffer = InlineArray[Int32, 1](0)  # Initialize to no error
+        var error_index = InlineArray[Int32, 1](0)  # Initialize invalid index
+
+        @parameter
+        @always_inline
+        fn error_buffer_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[DType.int32, width]):
+            error_buffer[0] = val[0]
+
+        @parameter
+        @always_inline
+        fn error_index_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[DType.int32, width]):
+            error_index[0] = val[0]
+
         @parameter
         @always_inline
         fn gather_elementwise_fn[
@@ -736,6 +811,8 @@ fn gather[
                 output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
+                error_buffer_fn=error_buffer_fn,
+                error_index_fn=error_index_fn,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -759,6 +836,15 @@ fn gather[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
+
+        # Check for bounds errors after elementwise operation completes
+        if error_buffer[0] != 0:
+            var invalid_index = Int(error_index[0])
+            raise Error(
+                String(
+                    "gather index {} is out of bounds for axis {} with size {}"
+                ).format(invalid_index, Int(axis), input_shape[axis])
+            )
 
 
 # ===-----------------------------------------------------------------------===#
