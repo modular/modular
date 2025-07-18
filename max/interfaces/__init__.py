@@ -9,7 +9,9 @@ from .context import InputContext, SamplingParams
 from .engine import EngineResult, EngineStatus
 from .log_probabilities import LogProbabilities
 from .pipeline_variants import (
+    AudioGenerationMetadata,
     AudioGenerationResponse,
+    AudioGeneratorOutput,
     EmbeddingsResponse,
     TextGenerationResponse,
     TextResponse,
@@ -30,4 +32,6 @@ __all__ = [
     "PipelineTask",
     "EmbeddingsResponse",
     "AudioGenerationResponse",
+    "AudioGeneratorOutput",
+    "AudioGenerationMetadata",
 ]
