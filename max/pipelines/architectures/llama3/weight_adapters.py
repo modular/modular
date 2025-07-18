@@ -105,4 +105,10 @@ def convert_gguf_state_dict(
         for before, after in LLAMA_GGUF_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
+    # GGUF bakes `rope_freqs` into the weights file, because `Llama.cpp` expects
+    # to just load and use it as a precomputed tensor. On the other hand, in
+    # the HuggingFace ecosystem, rotary positional encodings are not parameters;
+    # they are deterministic and computed from the config at runtime. So, we
+    # need to remove `rope_freqs.weight` from the state dict.
+    new_state_dict.pop("rope_freqs.weight", None)
     return new_state_dict
