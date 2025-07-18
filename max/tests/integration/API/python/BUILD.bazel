@@ -279,7 +279,9 @@ modular_run_binary_test(
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
     gpu_constraints = ["//:has_gpu"],
     tags = [
+        "AITLIB-293",
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
     ],
