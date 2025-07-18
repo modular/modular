@@ -2670,6 +2670,30 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
+    # Python Set operations
+    # ===-------------------------------------------------------------------===#
+
+    fn PySet_New(self) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/set.html#c.PySet_New).
+        """
+
+        var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
+        self.log(r, " NEWREF PySet_New, refcnt:", self._Py_REFCNT(r))
+        self._inc_total_rc()
+        return r
+
+    # int PySet_Add(PyObject *set, PyObject *key)
+    fn PySet_Add(self, set: PyObjectPtr, element: PyObjectPtr) -> c_int:
+        """[Reference](
+        https://docs.python.org/3/c-api/set.html#c.PySet_Add).
+        """
+
+        var r = self.lib.call["PySet_Add", c_int](set, element)
+        self.log(set, " PySet_Add, element: ", element)
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2768,30 +2792,6 @@ struct CPython(Copyable, Defaultable, Movable):
             step,
         )
         self._inc_total_rc()
-        return r
-
-    # ===-------------------------------------------------------------------===#
-    # Python Set operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PySet_New(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_New).
-        """
-
-        var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
-        self.log(r, " NEWREF PySet_New, refcnt:", self._Py_REFCNT(r))
-        self._inc_total_rc()
-        return r
-
-    # int PySet_Add(PyObject *set, PyObject *key)
-    fn PySet_Add(self, set: PyObjectPtr, element: PyObjectPtr) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_Add).
-        """
-
-        var r = self.lib.call["PySet_Add", c_int](set, element)
-        self.log(set, " PySet_Add, element: ", element)
         return r
 
     fn PyEval_GetBuiltins(self) -> PyObjectPtr:
