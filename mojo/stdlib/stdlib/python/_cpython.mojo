@@ -1559,6 +1559,27 @@ struct CPython(Copyable, Defaultable, Movable):
             return self.unsafe_get_error()
         return Error("internal error: expected CPython exception not found")
 
+    fn get_error_global(
+        self,
+        global_name: StringSlice,
+    ) -> PyObjectPtr:
+        """Get a Python read-only reference to the specified global exception
+        object.
+        """
+
+        # Get pointer to the immortal `global_name` PyObject struct
+        # instance.
+        var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
+
+        if not ptr:
+            abort(
+                "error: unable to get pointer to CPython `"
+                + String(global_name)
+                + "` global"
+            )
+
+        return ptr[]
+
     # ===-------------------------------------------------------------------===#
     # Logging
     # ===-------------------------------------------------------------------===#
@@ -2804,31 +2825,6 @@ struct CPython(Copyable, Defaultable, Movable):
         )
         self._inc_total_rc()
         return r
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error types
-    # ===-------------------------------------------------------------------===#
-
-    fn get_error_global(
-        self,
-        global_name: StringSlice,
-    ) -> PyObjectPtr:
-        """Get a Python read-only reference to the specified global exception
-        object.
-        """
-
-        # Get pointer to the immortal `global_name` PyObject struct
-        # instance.
-        var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
-
-        if not ptr:
-            abort(
-                "error: unable to get pointer to CPython `"
-                + String(global_name)
-                + "` global"
-            )
-
-        return ptr[]
 
     # ===-------------------------------------------------------------------===#
     # Capsules
