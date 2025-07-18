@@ -64,7 +64,7 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
 
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
+from .matmul_amd import gemm_kernel_amd
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
@@ -1335,7 +1335,7 @@ fn multistage_gemm[
     @parameter
     if has_amd_gpu_accelerator() and transpose_b:
         logger.info("Executing: AMD standard GEMM (no split-K)")
-        alias gemm_kernel_type = amd_gemm_kernel[
+        alias gemm_kernel_type = gemm_kernel_amd[
             c_type,
             tensor_c.layout,
             a_type,

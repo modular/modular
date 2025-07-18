@@ -78,10 +78,10 @@ from linalg.bmm import batched_matmul
 from linalg.transpose import transpose
 from memory import stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
-from nn._amd_flash_attention_gpu import (
-    mha_decoding_single_batch as amd_mha_decoding_single_batch,
+from nn.mha_amd import (
+    mha_decoding_single_batch_amd,
+    mha_single_batch_amd,
 )
-from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
@@ -1121,7 +1121,7 @@ fn mha[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        amd_mha_single_batch[group=group, config=config](
+        mha_single_batch_amd[group=group, config=config](
             output_ptr.offset(q_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -2736,7 +2736,7 @@ fn mha_decoding[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        amd_mha_decoding_single_batch[group=group, config=config](
+        mha_decoding_single_batch_amd[group=group, config=config](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,

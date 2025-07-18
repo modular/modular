@@ -66,7 +66,7 @@ from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
+from .matmul_amd import gemm_kernel_amd
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
@@ -1195,7 +1195,7 @@ fn multistage_gemm_split_k_kernel[
 
         @parameter
         if has_amd_gpu_accelerator() and transpose_b:
-            amd_gemm_kernel[
+            gemm_kernel_amd[
                 work_space_type,
                 work_space_part.layout,
                 a_type,
