@@ -94,7 +94,6 @@ single_version_override(
         "//bazel/public-patches:rules_mypy_pycross.patch",
         # https://github.com/theoremlp/rules_mypy/pull/104
         "//bazel/public-patches:rules_mypy_user_site.patch",
-        "//bazel/public-patches:rules_mypy_zipfile.patch",
     ],
 )
 
