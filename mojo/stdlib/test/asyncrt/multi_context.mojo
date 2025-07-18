@@ -48,12 +48,12 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in0_host2[i] = i
 
     # Setup right side constants.
-    _ = in1_dev1.fill(2.0)
-    _ = in1_dev2.fill(2.0)
+    _ = in1_dev1.enqueue_fill(2.0)
+    _ = in1_dev2.enqueue_fill(2.0)
 
     # Write known bad values to out_dev.
-    _ = out_dev1.fill(101.0)
-    _ = out_dev2.fill(102.0)
+    _ = out_dev1.enqueue_fill(101.0)
+    _ = out_dev2.enqueue_fill(102.0)
 
     var block_dim = 32
 
