@@ -562,7 +562,7 @@ their position in the function signature.
 For example, here's a function with two parameters, each with a default value:
 
 ```mojo
-fn speak[a: Int = 3, msg: StringLiteral = "woof"]():
+fn speak[a: Int = 3, msg: String = "woof"]():
     print(msg, a)
 
 fn use_defaults() raises:
@@ -588,7 +588,7 @@ but this is just for demonstration purposes):
 struct Bar[v: Int]:
     pass
 
-fn speak[a: Int = 3, msg: StringLiteral = "woof"](bar: Bar[a]):
+fn speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
     print(msg, a)
 
 fn use_inferred():
