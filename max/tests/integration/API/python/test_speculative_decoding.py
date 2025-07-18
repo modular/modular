@@ -192,8 +192,19 @@ def test_speculative_decoding_no_rejection(
     assert context1.start_idx == 0
     assert context2.start_idx == 0
 
+    # Generate draft tokens.
+    draft_inputs, draft_num_steps = pipeline.prepare_batch(
+        pipeline._draft_model,
+        context_batch,
+        num_steps,
+        return_n_logits=1,
+        is_draft=True,
+    )
+
     num_steps, draft_tokens, draft_logits, model_inputs, all_draft_logits = (
-        pipeline.generate_draft_tokens(context_batch, num_steps)
+        pipeline.generate_draft_tokens(
+            context_batch, draft_num_steps, draft_inputs
+        )
     )
 
     # Merge draft tokens with target tokens
@@ -208,6 +219,7 @@ def test_speculative_decoding_no_rejection(
     # Verify draft tokens with target model
     first_rejected_tokens, recovered_tokens, bonus_tokens = (
         pipeline.verify_draft_tokens_with_target_model(
+            draft_inputs,
             context_batch,
             num_steps,
             draft_tokens,
@@ -253,8 +265,16 @@ def test_speculative_decoding_partial_rejection(
     assert context1.start_idx == 0
     assert context2.start_idx == 0
 
+    # Generate draft tokens.
+    draft_inputs, draft_num_steps = pipeline.prepare_batch(
+        pipeline._draft_model,
+        context_batch,
+        num_steps,
+        return_n_logits=1,
+        is_draft=True,
+    )
     num_steps, draft_tokens, draft_logits, model_inputs, all_draft_logits = (
-        pipeline.generate_draft_tokens(context_batch, num_steps)
+        pipeline.generate_draft_tokens(context_batch, num_steps, draft_inputs)
     )
 
     # Merge draft tokens with target tokens
@@ -290,6 +310,7 @@ def test_speculative_decoding_partial_rejection(
     # Verify draft tokens with target model
     first_rejected_tokens, recovered_tokens, bonus_tokens = (
         pipeline.verify_draft_tokens_with_target_model(
+            draft_inputs,
             context_batch,
             num_steps,
             draft_tokens,
