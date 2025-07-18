@@ -1910,6 +1910,17 @@ struct CPython(Copyable, Defaultable, Movable):
         return self._PyImport_AddModule(name.unsafe_cstr_ptr())
 
     # ===-------------------------------------------------------------------===#
+    # Reflection
+    # ref: https://docs.python.org/3/c-api/reflection.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
+        """
+        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
+
+    # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
     # ref: https://docs.python.org/3/c-api/abstract.html
     # ===-------------------------------------------------------------------===#
@@ -2794,18 +2805,6 @@ struct CPython(Copyable, Defaultable, Movable):
         self._inc_total_rc()
         return r
 
-    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
-        """
-        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn PyObject_Free(self, p: OpaquePointer):
-        """[Reference](
-        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
-        """
-        self.lib.call["PyObject_Free"](p)
-
     # ===-------------------------------------------------------------------===#
     # Python Error types
     # ===-------------------------------------------------------------------===#
@@ -2878,6 +2877,17 @@ struct CPython(Copyable, Defaultable, Movable):
         if self.PyErr_Occurred():
             raise self.get_error()
         return ptr
+
+    # ===-------------------------------------------------------------------===#
+    # Memory Management
+    # ref: https://docs.python.org/3/c-api/memory.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_Free(self, p: OpaquePointer):
+        """[Reference](
+        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
+        """
+        self.lib.call["PyObject_Free"](p)
 
     # ===-------------------------------------------------------------------===#
     # Object Implementation Support
