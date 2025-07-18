@@ -2451,6 +2451,120 @@ struct CPython(Copyable, Defaultable, Movable):
         )
 
     # ===-------------------------------------------------------------------===#
+    # Tuple Objects
+    # ref: https://docs.python.org/3/c-api/tuple.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new tuple object of size `length`, or `NULL` with an exception set on failure.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
+        """
+
+        # PyObject *PyTuple_New(Py_ssize_t len)
+        var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
+
+        self.log(
+            r,
+            " NEWREF PyTuple_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", tuple size:",
+            length,
+        )
+
+        self._inc_total_rc()
+        return r
+
+    fn PyTuple_GetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `pos` in the tuple pointed to by `tuple`.
+
+        Returns borrowed reference.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
+        """
+
+        # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
+        return self.lib.call["PyTuple_GetItem", PyObjectPtr](tuple, pos)
+
+    fn PyTuple_SetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Insert a reference to object `value` at position `pos` of the tuple pointed to by `tuple`.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
+        """
+
+        # PyTuple_SetItem steals the reference - the value object will be
+        # destroyed along with the tuple
+        self._dec_total_rc()
+
+        # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
+        return self.lib.call["PyTuple_SetItem", c_int](tuple, pos, value)
+
+    # ===-------------------------------------------------------------------===#
+    # List Objects
+    # ref: https://docs.python.org/3/c-api/list.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new list of length `length` on success, or `NULL` on failure.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_New).
+        """
+
+        # PyObject *PyList_New(Py_ssize_t len)
+        var r = self.lib.call["PyList_New", PyObjectPtr](length)
+
+        self.log(
+            r,
+            " NEWREF PyList_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", list size:",
+            length,
+        )
+
+        self._inc_total_rc()
+        return r
+
+    fn PyList_GetItem(
+        self,
+        list_obj: PyObjectPtr,
+        index: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `index` in the list pointed to by `list_obj`.
+
+        Returns a borrowed reference instead of a strong reference.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
+        """
+
+        # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
+        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
+
+    fn PyList_SetItem(
+        self,
+        list_obj: PyObjectPtr,
+        index: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Set the item at index `index` in list to `value`.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
+        """
+
+        # PyList_SetItem steals the reference - the element object will be
+        # destroyed along with the list
+        self._dec_total_rc()
+        return self.PyList_SetItem_func(list_obj, index, value)
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2691,120 +2805,6 @@ struct CPython(Copyable, Defaultable, Movable):
         https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
         """
         self.lib.call["PyObject_Free"](p)
-
-    # ===-------------------------------------------------------------------===#
-    # Tuple Objects
-    # ref: https://docs.python.org/3/c-api/tuple.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new tuple object of size `length`, or `NULL` with an exception set on failure.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
-        """
-
-        # PyObject *PyTuple_New(Py_ssize_t len)
-        var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
-
-        self.log(
-            r,
-            " NEWREF PyTuple_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", tuple size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyTuple_GetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `pos` in the tuple pointed to by `tuple`.
-
-        Returns borrowed reference.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
-        """
-
-        # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
-        return self.lib.call["PyTuple_GetItem", PyObjectPtr](tuple, pos)
-
-    fn PyTuple_SetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Insert a reference to object `value` at position `pos` of the tuple pointed to by `tuple`.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
-        """
-
-        # PyTuple_SetItem steals the reference - the value object will be
-        # destroyed along with the tuple
-        self._dec_total_rc()
-
-        # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
-        return self.lib.call["PyTuple_SetItem", c_int](tuple, pos, value)
-
-    # ===-------------------------------------------------------------------===#
-    # List Objects
-    # ref: https://docs.python.org/3/c-api/list.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new list of length `length` on success, or `NULL` on failure.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_New).
-        """
-
-        # PyObject *PyList_New(Py_ssize_t len)
-        var r = self.lib.call["PyList_New", PyObjectPtr](length)
-
-        self.log(
-            r,
-            " NEWREF PyList_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", list size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyList_GetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `index` in the list pointed to by `list_obj`.
-
-        Returns a borrowed reference instead of a strong reference.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
-        """
-
-        # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
-        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
-
-    fn PyList_SetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Set the item at index `index` in list to `value`.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
-        """
-
-        # PyList_SetItem steals the reference - the element object will be
-        # destroyed along with the list
-        self._dec_total_rc()
-        return self.PyList_SetItem_func(list_obj, index, value)
 
     # ===-------------------------------------------------------------------===#
     # Python Error types
