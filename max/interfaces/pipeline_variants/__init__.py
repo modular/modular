@@ -4,7 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .audio_generation import AudioGenerationResponse
+from .audio_generation import (
+    AudioGenerationMetadata,
+    AudioGenerationResponse,
+    AudioGeneratorOutput,
+)
 from .embeddings_generation import EmbeddingsResponse
 from .text_generation import (
     TextGenerationResponse,
@@ -12,4 +16,12 @@ from .text_generation import (
     TokenGenerator,
 )
 
-__all__ = ["AudioGenerationResponse"]
+__all__ = [
+    "AudioGenerationResponse",
+    "AudioGeneratorOutput",
+    "AudioGenerationMetadata",
+    "EmbeddingsResponse",
+    "TextGenerationResponse",
+    "TextResponse",
+    "TokenGenerator",
+]
