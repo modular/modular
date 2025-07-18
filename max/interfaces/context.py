@@ -244,7 +244,7 @@ class InputContext(Protocol):
 
     @property
     def matcher(self) -> Optional[Any]:
-        """An optional xgr Grammar Matcher provided when using structured output."""
+        """An optional Grammar Matcher provided when using structured output."""
         ...
 
     @property
