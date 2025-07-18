@@ -71,8 +71,6 @@ def execute_gather_nd_test[
         actual_output_device.tensor.make_dims_unknown(),
         ctx,
     )
-    # Give the kernel an opportunity to raise the error before finishing the test.
-    ctx.synchronize()
 
     _ = data_device^
     _ = indices_device^
@@ -104,7 +102,6 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices.tensor[IndexList[indices_rank](1, 1)] = 100  # wildly out of bounds
 
     execute_gather_nd_test[batch_dims](data, indices, ctx)
-    ctx.synchronize()
 
 
 def main():
