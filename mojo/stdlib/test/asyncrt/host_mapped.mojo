@@ -26,7 +26,7 @@ fn main() raises:
         for i in range(length):
             in_map[i] = i
 
-    in_buf.copy_to(out_buf)
+    in_buf.enqueue_copy_to(out_buf)
 
     with out_buf.map_to_host() as out_map:
         for i in range(length):

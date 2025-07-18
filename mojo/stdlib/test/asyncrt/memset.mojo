@@ -31,9 +31,9 @@ fn _run_memset[
         out_host[i] = length + i
 
     # Copy to and from device buffers.
-    in_host.copy_to(on_dev)
+    in_host.enqueue_copy_to(on_dev)
     ctx.enqueue_memset(on_dev, val)
-    on_dev.copy_to(out_host)
+    on_dev.enqueue_copy_to(out_host)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -52,7 +52,7 @@ fn _run_memset_cascade[
     print("-")
     print("_run_memset_cascade(", length, ", ", val, ")")
 
-    var buf = ctx.enqueue_create_buffer[dtype](length).fill(val)
+    var buf = ctx.enqueue_create_buffer[dtype](length).enqueue_fill(val)
 
     with buf.map_to_host() as buf:
         for i in range(length):
