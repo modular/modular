@@ -11,10 +11,8 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.interfaces.pipeline_variants.audio_generation import (
-    AudioGenerationMetadata,
-)
-from max.pipelines.core import AudioGenerationRequest, AudioGeneratorOutput
+from max.interfaces import AudioGenerationMetadata, AudioGeneratorOutput
+from max.pipelines.core import AudioGenerationRequest
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
 

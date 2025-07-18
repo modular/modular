@@ -13,13 +13,13 @@ from unittest.mock import Mock
 
 import numpy as np
 import torch
-from max.interfaces import SamplingParams
-from max.interfaces.pipeline_variants.audio_generation import (
+from max.interfaces import (
     AudioGenerationMetadata,
+    AudioGeneratorOutput,
+    SamplingParams,
 )
 from max.pipelines.core import (
     AudioGenerationRequest,
-    AudioGeneratorOutput,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
