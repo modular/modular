@@ -26,6 +26,7 @@ from os import environ
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Generic,
     Optional,
     Protocol,
@@ -147,6 +148,13 @@ class ModelInputs:
 
     lora_ranks: Tensor | None = None
     """Tensor containing the LoRA ranks"""
+
+    def update(self, **kwargs) -> None:
+        key: str
+        value: Any
+        for key, value in kwargs.items():
+            if hasattr(self, key) and value is not None:
+                setattr(self, key, value)
 
 
 @dataclass(frozen=True)

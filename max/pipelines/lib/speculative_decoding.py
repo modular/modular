@@ -14,6 +14,7 @@
 """Speculative Decoding Text Generation Pipeline"""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, TypeVar, cast
 
@@ -36,7 +37,7 @@ from max.interfaces import (
     TokenGenerator,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -389,27 +390,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             else num_available_steps
         )
 
-    def _prepare_llama3_batch(
-        self,
-        model: PipelineModel,
-        num_steps: int,
-        return_n_logits: int,
-        merged_draft_tokens: Tensor,
-        merged_draft_offsets: Tensor,
-        kv_cache_inputs: KVCacheInputsSequence,
-    ) -> "Llama3Inputs":  # type: ignore
-        from ..architectures.llama3.model import Llama3Inputs
-
-        return Llama3Inputs(
-            tokens=merged_draft_tokens,
-            input_row_offsets=merged_draft_offsets,
-            signal_buffers=[],
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-        )
-
     @traced
     def prepare_batch(
         self,
@@ -418,6 +398,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
+        draft_inputs: Optional[ModelInputs] = None,
         merged_draft_tokens: Optional[Tensor] = None,
         merged_draft_offsets: Optional[Tensor] = None,
     ) -> tuple[ModelInputs, int]:
@@ -448,19 +429,24 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         else:
             assert merged_draft_tokens is not None
             assert merged_draft_offsets is not None
-            return (
-                self._prepare_llama3_batch(
-                    model,
-                    num_steps,
-                    return_n_logits,
-                    merged_draft_tokens,
-                    merged_draft_offsets,
-                    kv_cache_inputs=KVCacheInputsSequence(
-                        kv_cache_inputs=kv_cache_inputs
-                    ),
+            assert draft_inputs is not None
+            kv_cache_updated_inputs: KVCacheInputs
+            if isinstance(kv_cache_inputs, Sequence):
+                kv_cache_updated_inputs = KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs,
+                )
+            else:
+                kv_cache_updated_inputs = kv_cache_inputs
+            draft_inputs.update(
+                tokens=merged_draft_tokens,
+                input_row_offsets=merged_draft_offsets,
+                signal_buffers=[],
+                kv_cache_inputs=kv_cache_updated_inputs,
+                return_n_logits=Tensor.from_numpy(
+                    np.array([return_n_logits], dtype=np.int64)
                 ),
-                num_steps,
             )
+            return (draft_inputs, num_steps)
 
     @traced
     def sample_draft_logits(
@@ -493,17 +479,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def generate_draft_tokens(
-        self, batch: list[T], num_steps: int
+        self, batch: list[T], num_steps: int, model_inputs: ModelInputs
     ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
-        # Prepare the Batch
-        model_inputs, num_steps = self.prepare_batch(
-            self._draft_model,
-            batch,
-            num_steps,
-            return_n_logits=1,
-            is_draft=True,
-        )
-
         # Create sampling parameters once for the entire batch
         top_k_np = np.array(
             [context.sampling_params.top_k for context in batch], dtype=np.int64
@@ -607,6 +584,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def verify_draft_tokens_with_target_model(
         self,
+        draft_inputs: ModelInputs,
         context_batch: list[T],
         num_draft_tokens_generated: int,
         draft_tokens: Tensor,
@@ -622,6 +600,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             # I believe, num steps in this scenario is 1, as we are only
             # generating one token beyond the draft tokens.
             num_steps=1,
+            draft_inputs=draft_inputs,
             return_n_logits=num_draft_tokens_generated + 1,
             is_draft=False,
             merged_draft_tokens=merged_draft_tokens,
@@ -658,13 +637,22 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         context_batch = list(batch.values())
 
         # Generate draft tokens.
+        draft_inputs, draft_num_steps = self.prepare_batch(
+            self._draft_model,
+            context_batch,
+            num_steps,
+            return_n_logits=1,
+            is_draft=True,
+        )
         (
             num_draft_tokens_generated,
             draft_tokens,
             draft_logits,
             model_inputs,
             all_draft_logits,
-        ) = self.generate_draft_tokens(context_batch, num_steps)
+        ) = self.generate_draft_tokens(
+            context_batch, draft_num_steps, draft_inputs
+        )
 
         # Merge draft tokens with target tokens
         merged_tokens, merged_offsets = self._ragged_token_merger(
@@ -678,6 +666,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Verify draft tokens with target model
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self.verify_draft_tokens_with_target_model(
+                draft_inputs,
                 context_batch,
                 num_draft_tokens_generated,
                 draft_tokens,
