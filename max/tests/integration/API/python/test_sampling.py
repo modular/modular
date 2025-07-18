@@ -12,7 +12,6 @@ import llguidance.numpy
 import numpy as np
 import pytest
 import torch
-import xgrammar as xgr
 from llguidance import LLMatcher
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -136,115 +135,6 @@ def test_llguidance_sampling(
         assert isinstance(new_tokens, Tensor)
         for token in new_tokens.to_numpy():
             assert matcher.validate_tokens(token) == len(token)
-
-
-def test_bitmask_sampling_vs_xgrammar(
-    session: InferenceSession,
-    modular_ai_llama_3_1_local_path,  # noqa: ANN001
-) -> None:
-    # Get Tokenizer and Model Info
-    config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)
-    tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-        AutoTokenizer.from_pretrained(modular_ai_llama_3_1_local_path),
-        vocab_size=config.vocab_size,
-    )
-
-    # Create a grammar compiler for the tokenizer
-    compiler = xgr.GrammarCompiler(tokenizer_info, max_threads=8)
-
-    # Compile the grammar for a sample schema.
-    person_schema = {
-        "title": "Person",
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "age": {
-                "type": "integer",
-            },
-        },
-        "required": ["name", "age"],
-    }
-    compiled_grammar = compiler.compile_json_schema(json.dumps(person_schema))
-
-    # Instantiate grammar matcher
-    matcher = xgr.GrammarMatcher(compiled_grammar)
-
-    sampling_config = SamplingConfig(
-        enable_structured_output=True,
-        in_dtype=DType.float32,
-        out_dtype=DType.float32,
-    )
-    # Create one op sampling graph
-    graph = token_sampler(
-        sampling_config,
-        device=DeviceRef.GPU(),
-    )
-
-    device = session.devices[0]
-    sampler = session.load(graph)
-
-    # Variables
-    batch_size = 1
-    vocab_size = tokenizer_info.vocab_size
-    n_trials = 1
-
-    sampling_params = SamplingParams(top_k=5)
-
-    generated_tokens = Tensor(
-        shape=(batch_size, 0),
-        dtype=DType.int64,
-        device=device,
-    )
-
-    temperature = Tensor.from_numpy(
-        np.array([sampling_params.temperature] * batch_size, dtype=np.float32)
-    ).to(device)
-    top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
-    top_k = Tensor.from_numpy(top_k_np).to(device)
-    max_k = Tensor.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
-    top_p = Tensor.from_numpy(
-        np.array([sampling_params.top_p] * batch_size, dtype=np.float32)
-    ).to(device)
-    seed = Tensor.from_numpy(
-        np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
-    ).to(device)
-    for i in range(n_trials):
-        # Allocate a bitmask
-        token_bitmask = torch.ones(
-            xgr.get_bitmask_shape(1, vocab_size),
-            dtype=torch.int32,
-        )
-
-        # Update the bitmask
-        matcher.fill_next_token_bitmask(token_bitmask, 0)
-
-        # Generate Random Logits
-        logits = np.random.default_rng().random(
-            size=(batch_size, vocab_size), dtype=np.float32
-        )
-
-        # Unpack bitmask
-        bits = 2 ** torch.arange(32, dtype=torch.int32)
-        bitmask = (token_bitmask.unsqueeze(-1) & bits) != 0
-        bitmask = bitmask.reshape(
-            batch_size,
-            vocab_size,
-        ).to(torch.bool)
-
-        # Run through Sampler
-        _, new_tokens = sampler(
-            Tensor.from_dlpack(logits).to(device),
-            generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
-            top_k,
-            max_k,
-            temperature,
-            top_p,
-            seed,
-            Tensor.from_dlpack(bitmask).to(device),
-        )[:2]
-        assert isinstance(new_tokens, Tensor)
-        for token in new_tokens.to_numpy():
-            assert matcher.accept_token(token[0], debug_print=True)
 
 
 @pytest.mark.skip("TODO(AITLIB-348): Fix this test")

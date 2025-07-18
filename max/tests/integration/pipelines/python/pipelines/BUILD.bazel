@@ -81,6 +81,5 @@ modular_py_test(
         "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
-        requirement("xgrammar"),
     ],
 )

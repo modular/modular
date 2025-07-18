@@ -51,7 +51,6 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("msgspec"),
-        requirement("xgrammar"),  # needed only for test_sampling.py
         requirement("pytest-asyncio"),
     ],
 )
@@ -105,7 +104,6 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("msgspec"),
-        requirement("xgrammar"),  # needed only for test_sampling.py
         requirement("pytest-asyncio"),
     ],
 )
