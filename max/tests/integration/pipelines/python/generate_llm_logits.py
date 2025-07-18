@@ -378,6 +378,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=hf_repo_id,
             engine=PipelineEngine.MAX,
+            max_length=8192,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
