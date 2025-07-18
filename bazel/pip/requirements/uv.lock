@@ -2,38 +2,50 @@ version = 1
 revision = 2
 requires-python = ">=3.9"
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and sys_platform == 'darwin' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
@@ -46,14 +58,18 @@ resolution-markers = [
     "python_full_version < '3.10' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
@@ -62,18 +78,22 @@ resolution-markers = [
     "python_full_version < '3.10' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
     "python_full_version < '3.10' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-15-bazel-pyproject-amd' and extra != 'group-15-bazel-pyproject-cpu' and extra != 'group-15-bazel-pyproject-nvidia'",
@@ -669,7 +689,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = "==1.19.2" },
     { name = "openai", specifier = "==1.52.2" },
     { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.28.2" },
     { name = "opentelemetry-exporter-prometheus" },
     { name = "opentelemetry-sdk" },
     { name = "packaging" },
@@ -681,7 +701,7 @@ requires-dist = [
     { name = "pre-commit" },
     { name = "prometheus-async" },
     { name = "prometheus-client" },
-    { name = "protobuf", specifier = "==5.29.1" },
+    { name = "protobuf", specifier = "==6.31.1" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "py-cpuinfo" },
     { name = "pyarrow" },
@@ -1365,18 +1385,6 @@ wheels = [
 ]
 
 [[package]]
-name = "deprecated"
-version = "1.2.14"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wrapt", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/92/14/1e41f504a246fc224d2ac264c227975427a85caf37c3979979edb9b1b232/Deprecated-1.2.14.tar.gz", hash = "sha256:e5323eb936458dccc2582dc6f9c322c852a775a27065ff2b0c4970b9d53d01b3", size = 2974416, upload-time = "2023-05-27T16:07:13.869Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/8d/778b7d51b981a96554f29136cd59ca7880bf58094338085bcf2a979a0e6a/Deprecated-1.2.14-py2.py3-none-any.whl", hash = "sha256:6fac8b097794a90302bdbb17b9b815e732d3c4720583ff1b198499d78470466c", size = 9561, upload-time = "2023-05-27T16:07:09.379Z" },
-]
-
-[[package]]
 name = "device-smi"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1924,7 +1932,7 @@ wheels = [
 
 [[package]]
 name = "google-api-core"
-version = "2.19.1"
+version = "2.25.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-auth", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -1933,9 +1941,9 @@ dependencies = [
     { name = "protobuf", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "requests", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c2/41/42a127bf163d9bf1f21540a3bf41c69b231b88707d8d753680b8878201a6/google-api-core-2.19.1.tar.gz", hash = "sha256:f4695f1e3650b316a795108a76a1c416e6afb036199d1c1f1f110916df479ffd", size = 148925, upload-time = "2024-06-24T16:51:17.894Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/21/e9d043e88222317afdbdb567165fdbc3b0aad90064c7e0c9eb0ad9955ad8/google_api_core-2.25.1.tar.gz", hash = "sha256:d2aaa0b13c78c61cb3f4282c464c046e45fbd75755683c9c525e6e8f7ed0a5e8", size = 165443, upload-time = "2025-06-12T20:52:20.439Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/99/daa3541e8ecd7d8b7907b714ba92126097a976b5b3dbabdb5febdcf08554/google_api_core-2.19.1-py3-none-any.whl", hash = "sha256:f12a9b8309b5e21d92483bbd47ce2c445861ec7d269ef6784ecc0ea8c1fa6125", size = 139384, upload-time = "2024-06-24T16:51:15.472Z" },
+    { url = "https://files.pythonhosted.org/packages/14/4b/ead00905132820b623732b175d66354e9d3e69fcf2a5dcdab780664e7896/google_api_core-2.25.1-py3-none-any.whl", hash = "sha256:8a2a56c1fef82987a524371f99f3bd0143702fecc670c72e600c1cda6bf8dbb7", size = 160807, upload-time = "2025-06-12T20:52:19.334Z" },
 ]
 
 [package.optional-dependencies]
@@ -2044,14 +2052,14 @@ wheels = [
 
 [[package]]
 name = "googleapis-common-protos"
-version = "1.63.2"
+version = "1.70.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/1a/41723ae380fa9c561cbe7b61c4eef9091d5fe95486465ccfc84845877331/googleapis-common-protos-1.63.2.tar.gz", hash = "sha256:27c5abdffc4911f28101e635de1533fb4cfd2c37fbaa9174587c799fac90aa87", size = 112890, upload-time = "2024-06-24T16:51:33.669Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/24/33db22342cf4a2ea27c9955e6713140fedd51e8b141b5ce5260897020f1a/googleapis_common_protos-1.70.0.tar.gz", hash = "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257", size = 145903, upload-time = "2025-04-14T10:17:02.924Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/48/87422ff1bddcae677fb6f58c97f5cfc613304a5e8ce2c3662760199c0a84/googleapis_common_protos-1.63.2-py2.py3-none-any.whl", hash = "sha256:27a2499c7e8aff199665b22741997e485eccc8645aa9176c7c988e6fae507945", size = 220001, upload-time = "2024-06-24T16:51:31.399Z" },
+    { url = "https://files.pythonhosted.org/packages/86/f1/62a193f0227cf15a920390abe675f386dec35f7ae3ffe6da582d3ade42c7/googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8", size = 294530, upload-time = "2025-04-14T10:17:01.271Z" },
 ]
 
 [[package]]
@@ -4224,98 +4232,98 @@ wheels = [
 
 [[package]]
 name = "opentelemetry-api"
-version = "1.28.2"
+version = "1.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "importlib-metadata", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/34/e4e9245c868c6490a46ffedf6bd5b0f512bbc0a848b19e3a51f6bbad648c/opentelemetry_api-1.28.2.tar.gz", hash = "sha256:ecdc70c7139f17f9b0cf3742d57d7020e3e8315d6cffcdf1a12a905d45b19cc0", size = 62796, upload-time = "2024-11-18T18:29:42.747Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/c9/4509bfca6bb43220ce7f863c9f791e0d5001c2ec2b5867d48586008b3d96/opentelemetry_api-1.35.0.tar.gz", hash = "sha256:a111b959bcfa5b4d7dffc2fbd6a241aa72dd78dd8e79b5b1662bda896c5d2ffe", size = 64778, upload-time = "2025-07-11T12:23:28.804Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/58/b17393cdfc149e14ee84c662abf921993dcce8058628359ef1f49e2abb97/opentelemetry_api-1.28.2-py3-none-any.whl", hash = "sha256:6fcec89e265beb258fe6b1acaaa3c8c705a934bd977b9f534a2b7c0d2d4275a6", size = 64302, upload-time = "2024-11-18T18:29:16.783Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/5a/3f8d078dbf55d18442f6a2ecedf6786d81d7245844b2b20ce2b8ad6f0307/opentelemetry_api-1.35.0-py3-none-any.whl", hash = "sha256:c4ea7e258a244858daf18474625e9cc0149b8ee354f37843415771a40c25ee06", size = 65566, upload-time = "2025-07-11T12:23:07.944Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-otlp-proto-common"
-version = "1.28.2"
+version = "1.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-proto", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/cd/cd990f891b64e7698b8a6b6ab90dfac7f957db5a3d06788acd52f73ad4c0/opentelemetry_exporter_otlp_proto_common-1.28.2.tar.gz", hash = "sha256:7aebaa5fc9ff6029374546df1f3a62616fda07fccd9c6a8b7892ec130dd8baca", size = 19136, upload-time = "2024-11-18T18:29:46.87Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/d1/887f860529cba7fc3aba2f6a3597fefec010a17bd1b126810724707d9b51/opentelemetry_exporter_otlp_proto_common-1.35.0.tar.gz", hash = "sha256:6f6d8c39f629b9fa5c79ce19a2829dbd93034f8ac51243cdf40ed2196f00d7eb", size = 20299, upload-time = "2025-07-11T12:23:31.046Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/4d/769f3b1b1c6af5e603da50349ba31af757897540a75d666de22d39461055/opentelemetry_exporter_otlp_proto_common-1.28.2-py3-none-any.whl", hash = "sha256:545b1943b574f666c35b3d6cc67cb0b111060727e93a1e2866e346b33bff2a12", size = 18460, upload-time = "2024-11-18T18:29:22.79Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/2c/e31dd3c719bff87fa77391eb7f38b1430d22868c52312cba8aad60f280e5/opentelemetry_exporter_otlp_proto_common-1.35.0-py3-none-any.whl", hash = "sha256:863465de697ae81279ede660f3918680b4480ef5f69dcdac04f30722ed7b74cc", size = 18349, upload-time = "2025-07-11T12:23:11.713Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-otlp-proto-http"
-version = "1.28.2"
+version = "1.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "googleapis-common-protos", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-api", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-exporter-otlp-proto-common", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-proto", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-sdk", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "requests", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/91/4e32e52d13dbdf9560bc095dfe66a2c09e0034a886f7725fcda8fe10a052/opentelemetry_exporter_otlp_proto_http-1.28.2.tar.gz", hash = "sha256:d9b353d67217f091aaf4cfe8693c170973bb3e90a558992570d97020618fda79", size = 15043, upload-time = "2024-11-18T18:29:48.237Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/7f/7bdc06e84266a5b4b0fefd9790b3859804bf7682ce2daabcba2e22fdb3b2/opentelemetry_exporter_otlp_proto_http-1.35.0.tar.gz", hash = "sha256:cf940147f91b450ef5f66e9980d40eb187582eed399fa851f4a7a45bb880de79", size = 15908, upload-time = "2025-07-11T12:23:32.335Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/23/802b889cf8bf3e235f30fbcbaa2b3fd484fe8c76b5b4db00f00c0e9af20f/opentelemetry_exporter_otlp_proto_http-1.28.2-py3-none-any.whl", hash = "sha256:af921c18212a56ef4be68458ba475791c0517ebfd8a2ff04669c9cd477d90ff2", size = 17218, upload-time = "2024-11-18T18:29:25.474Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/71/f118cd90dc26797077931dd598bde5e0cc652519db166593f962f8fcd022/opentelemetry_exporter_otlp_proto_http-1.35.0-py3-none-any.whl", hash = "sha256:9a001e3df3c7f160fb31056a28ed7faa2de7df68877ae909516102ae36a54e1d", size = 18589, upload-time = "2025-07-11T12:23:13.906Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-prometheus"
-version = "0.49b2"
+version = "0.56b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-sdk", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "prometheus-client", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/58/b7/fbb8508964a01b3b1673afee85afa2fcd6b03eef65e9a8662c2955a238bc/opentelemetry_exporter_prometheus-0.49b2.tar.gz", hash = "sha256:70ca3a462ce1ba0d756e4be8a87c04f7196687825fd2d151a428f6c18ef6fd2d", size = 14587, upload-time = "2024-11-18T18:29:48.92Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/75/e784a56805a0bf125da3cadacdbb2d5e2519ac48852ec52eac86a9f16fa3/opentelemetry_exporter_prometheus-0.56b0.tar.gz", hash = "sha256:c783146b66400269783b773c5ccedf7d2ff140271478e2816202930a14c07c6b", size = 14905, upload-time = "2025-07-11T12:23:33.271Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/c5/cda7786ed3c73c20b2a57a16a1367f87c5389fa9bad33b69a052dbb02d21/opentelemetry_exporter_prometheus-0.49b2-py3-none-any.whl", hash = "sha256:307594007ee20ec3a51c42548a4dbd66e46701f8523a7780d5e12a8f986a7783", size = 12890, upload-time = "2024-11-18T18:29:26.404Z" },
+    { url = "https://files.pythonhosted.org/packages/de/a4/813a192c391c252cacb8d95e606a9917036ca94b477f2a8fc6748d86692d/opentelemetry_exporter_prometheus-0.56b0-py3-none-any.whl", hash = "sha256:0a7d8952e2938f830deb5000505eecf20416ef25fdb591753b9b0cb91d9560ea", size = 12924, upload-time = "2025-07-11T12:23:14.886Z" },
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "1.28.2"
+version = "1.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/45/96c4f34c79fd87dc8a1c0c432f23a5a202729f21e4e63c8b36fc8e57767a/opentelemetry_proto-1.28.2.tar.gz", hash = "sha256:7c0d125a6b71af88bfeeda16bfdd0ff63dc2cf0039baf6f49fa133b203e3f566", size = 34316, upload-time = "2024-11-18T18:29:57.324Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/a2/7366e32d9a2bccbb8614942dbea2cf93c209610385ea966cb050334f8df7/opentelemetry_proto-1.35.0.tar.gz", hash = "sha256:532497341bd3e1c074def7c5b00172601b28bb83b48afc41a4b779f26eb4ee05", size = 46151, upload-time = "2025-07-11T12:23:38.797Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/12/646f48d6d698a6df0437a22b591387440dc4888c8752d1a1300f730da710/opentelemetry_proto-1.28.2-py3-none-any.whl", hash = "sha256:0837498f59db55086462915e5898d0b1a18c1392f6db4d7e937143072a72370c", size = 55818, upload-time = "2024-11-18T18:29:37.002Z" },
+    { url = "https://files.pythonhosted.org/packages/00/a7/3f05de580da7e8a8b8dff041d3d07a20bf3bb62d3bcc027f8fd669a73ff4/opentelemetry_proto-1.35.0-py3-none-any.whl", hash = "sha256:98fffa803164499f562718384e703be8d7dfbe680192279a0429cb150a2f8809", size = 72536, upload-time = "2025-07-11T12:23:23.247Z" },
 ]
 
 [[package]]
 name = "opentelemetry-sdk"
-version = "1.28.2"
+version = "1.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-semantic-conventions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/f4/840a5af4efe48d7fb4c456ad60fd624673e871a60d6494f7ff8a934755d4/opentelemetry_sdk-1.28.2.tar.gz", hash = "sha256:5fed24c5497e10df30282456fe2910f83377797511de07d14cec0d3e0a1a3110", size = 157272, upload-time = "2024-11-18T18:29:58.094Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9a/cf/1eb2ed2ce55e0a9aa95b3007f26f55c7943aeef0a783bb006bdd92b3299e/opentelemetry_sdk-1.35.0.tar.gz", hash = "sha256:2a400b415ab68aaa6f04e8a6a9f6552908fb3090ae2ff78d6ae0c597ac581954", size = 160871, upload-time = "2025-07-11T12:23:39.566Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/8b/4f2b418496c08016d4384f9b1c4725a8af7faafa248d624be4bb95993ce1/opentelemetry_sdk-1.28.2-py3-none-any.whl", hash = "sha256:93336c129556f1e3ccd21442b94d3521759541521861b2214c499571b85cb71b", size = 118757, upload-time = "2024-11-18T18:29:38.744Z" },
+    { url = "https://files.pythonhosted.org/packages/01/4f/8e32b757ef3b660511b638ab52d1ed9259b666bdeeceba51a082ce3aea95/opentelemetry_sdk-1.35.0-py3-none-any.whl", hash = "sha256:223d9e5f5678518f4842311bb73966e0b6db5d1e0b74e35074c052cd2487f800", size = 119379, upload-time = "2025-07-11T12:23:24.521Z" },
 ]
 
 [[package]]
 name = "opentelemetry-semantic-conventions"
-version = "0.49b2"
+version = "0.56b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "opentelemetry-api", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/0a/e3b93f94aa3223c6fd8e743502a1fefd4fb3a753d8f501ce2a418f7c0bd4/opentelemetry_semantic_conventions-0.49b2.tar.gz", hash = "sha256:44e32ce6a5bb8d7c0c617f84b9dc1c8deda1045a07dc16a688cc7cbeab679997", size = 95213, upload-time = "2024-11-18T18:29:58.915Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/8e/214fa817f63b9f068519463d8ab46afd5d03b98930c39394a37ae3e741d0/opentelemetry_semantic_conventions-0.56b0.tar.gz", hash = "sha256:c114c2eacc8ff6d3908cb328c811eaf64e6d68623840be9224dc829c4fd6c2ea", size = 124221, upload-time = "2025-07-11T12:23:40.71Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/be/6661c8f76708bb3ba38c90be8fa8d7ffe17ccbc5cbbc229334f5535f6448/opentelemetry_semantic_conventions-0.49b2-py3-none-any.whl", hash = "sha256:51e7e1d0daa958782b6c2a8ed05e5f0e7dd0716fc327ac058777b8659649ee54", size = 159199, upload-time = "2024-11-18T18:29:39.906Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/3f/e80c1b017066a9d999efffe88d1cce66116dcf5cb7f80c41040a83b6e03b/opentelemetry_semantic_conventions-0.56b0-py3-none-any.whl", hash = "sha256:df44492868fd6b482511cc43a942e7194be64e94945f572db24df2e279a001a2", size = 201625, upload-time = "2025-07-11T12:23:25.63Z" },
 ]
 
 [[package]]
@@ -4680,30 +4688,30 @@ wheels = [
 
 [[package]]
 name = "proto-plus"
-version = "1.24.0"
+version = "1.26.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3e/fc/e9a65cd52c1330d8d23af6013651a0bc50b6d76bcbdf91fae7cd19c68f29/proto-plus-1.24.0.tar.gz", hash = "sha256:30b72a5ecafe4406b0d339db35b56c4059064e69227b8c3bda7462397f966445", size = 55942, upload-time = "2024-06-19T15:02:44.501Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/ac/87285f15f7cce6d4a008f33f1757fb5a13611ea8914eb58c3d0d26243468/proto_plus-1.26.1.tar.gz", hash = "sha256:21a515a4c4c0088a773899e23c7bbade3d18f9c66c73edd4c7ee3816bc96a012", size = 56142, upload-time = "2025-03-10T15:54:38.843Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/6f/db31f0711c0402aa477257205ce7d29e86a75cb52cd19f7afb585f75cda0/proto_plus-1.24.0-py3-none-any.whl", hash = "sha256:402576830425e5f6ce4c2a6702400ac79897dab0b4343821aa5188b0fab81a12", size = 50080, upload-time = "2024-06-19T15:02:40.052Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/6d/280c4c2ce28b1593a19ad5239c8b826871fc6ec275c21afc8e1820108039/proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66", size = 50163, upload-time = "2025-03-10T15:54:37.335Z" },
 ]
 
 [[package]]
 name = "protobuf"
-version = "5.29.1"
+version = "6.31.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d2/4f/1639b7b1633d8fd55f216ba01e21bf2c43384ab25ef3ddb35d85a52033e8/protobuf-5.29.1.tar.gz", hash = "sha256:683be02ca21a6ffe80db6dd02c0b5b2892322c59ca57fd6c872d652cb80549cb", size = 424965, upload-time = "2024-12-04T19:48:10.986Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/f3/b9655a711b32c19720253f6f06326faf90580834e2e83f840472d752bc8b/protobuf-6.31.1.tar.gz", hash = "sha256:d8cac4c982f0b957a4dc73a80e2ea24fab08e679c0de9deb835f4a12d69aca9a", size = 441797, upload-time = "2025-05-28T19:25:54.947Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/c7/28669b04691a376cf7d0617d612f126aa0fff763d57df0142f9bf474c5b8/protobuf-5.29.1-cp310-abi3-win32.whl", hash = "sha256:22c1f539024241ee545cbcb00ee160ad1877975690b16656ff87dde107b5f110", size = 422706, upload-time = "2024-12-04T19:47:54.119Z" },
-    { url = "https://files.pythonhosted.org/packages/e3/33/dc7a7712f457456b7e0b16420ab8ba1cc8686751d3f28392eb43d0029ab9/protobuf-5.29.1-cp310-abi3-win_amd64.whl", hash = "sha256:1fc55267f086dd4050d18ef839d7bd69300d0d08c2a53ca7df3920cc271a3c34", size = 434505, upload-time = "2024-12-04T19:47:56.955Z" },
-    { url = "https://files.pythonhosted.org/packages/e5/39/44239fb1c6ec557e1731d996a5de89a9eb1ada7a92491fcf9c5d714052ed/protobuf-5.29.1-cp38-abi3-macosx_10_9_universal2.whl", hash = "sha256:d473655e29c0c4bbf8b69e9a8fb54645bc289dead6d753b952e7aa660254ae18", size = 417822, upload-time = "2024-12-04T19:47:58.194Z" },
-    { url = "https://files.pythonhosted.org/packages/fb/4a/ec56f101d38d4bef2959a9750209809242d86cf8b897db00f2f98bfa360e/protobuf-5.29.1-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:b5ba1d0e4c8a40ae0496d0e2ecfdbb82e1776928a205106d14ad6985a09ec155", size = 319572, upload-time = "2024-12-04T19:48:00.053Z" },
-    { url = "https://files.pythonhosted.org/packages/04/52/c97c58a33b3d6c89a8138788576d372a90a6556f354799971c6b4d16d871/protobuf-5.29.1-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:8ee1461b3af56145aca2800e6a3e2f928108c749ba8feccc6f5dd0062c410c0d", size = 319671, upload-time = "2024-12-04T19:48:01.325Z" },
-    { url = "https://files.pythonhosted.org/packages/99/19/5a3957e08de18578131810563ccfeebc7d2aad31ee52e367a61f56cc3cab/protobuf-5.29.1-cp39-cp39-win32.whl", hash = "sha256:5a41deccfa5e745cef5c65a560c76ec0ed8e70908a67cc8f4da5fce588b50d57", size = 422671, upload-time = "2024-12-04T19:48:05.447Z" },
-    { url = "https://files.pythonhosted.org/packages/24/67/8bc07bb755c8badf08db4a8bc2eb542a4e733135a6d584d1922b701d7751/protobuf-5.29.1-cp39-cp39-win_amd64.whl", hash = "sha256:012ce28d862ff417fd629285aca5d9772807f15ceb1a0dbd15b88f58c776c98c", size = 434591, upload-time = "2024-12-04T19:48:07.413Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/24/c8c49df8f6587719e1d400109b16c10c6902d0c9adddc8fff82840146f99/protobuf-5.29.1-py3-none-any.whl", hash = "sha256:32600ddb9c2a53dedc25b8581ea0f1fd8ea04956373c0c07577ce58d312522e0", size = 172547, upload-time = "2024-12-04T19:48:09.17Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/6f/6ab8e4bf962fd5570d3deaa2d5c38f0a363f57b4501047b5ebeb83ab1125/protobuf-6.31.1-cp310-abi3-win32.whl", hash = "sha256:7fa17d5a29c2e04b7d90e5e32388b8bfd0e7107cd8e616feef7ed3fa6bdab5c9", size = 423603, upload-time = "2025-05-28T19:25:41.198Z" },
+    { url = "https://files.pythonhosted.org/packages/44/3a/b15c4347dd4bf3a1b0ee882f384623e2063bb5cf9fa9d57990a4f7df2fb6/protobuf-6.31.1-cp310-abi3-win_amd64.whl", hash = "sha256:426f59d2964864a1a366254fa703b8632dcec0790d8862d30034d8245e1cd447", size = 435283, upload-time = "2025-05-28T19:25:44.275Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/c9/b9689a2a250264a84e66c46d8862ba788ee7a641cdca39bccf64f59284b7/protobuf-6.31.1-cp39-abi3-macosx_10_9_universal2.whl", hash = "sha256:6f1227473dc43d44ed644425268eb7c2e488ae245d51c6866d19fe158e207402", size = 425604, upload-time = "2025-05-28T19:25:45.702Z" },
+    { url = "https://files.pythonhosted.org/packages/76/a1/7a5a94032c83375e4fe7e7f56e3976ea6ac90c5e85fac8576409e25c39c3/protobuf-6.31.1-cp39-abi3-manylinux2014_aarch64.whl", hash = "sha256:a40fc12b84c154884d7d4c4ebd675d5b3b5283e155f324049ae396b95ddebc39", size = 322115, upload-time = "2025-05-28T19:25:47.128Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/b1/b59d405d64d31999244643d88c45c8241c58f17cc887e73bcb90602327f8/protobuf-6.31.1-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:4ee898bf66f7a8b0bd21bce523814e6fbd8c6add948045ce958b73af7e8878c6", size = 321070, upload-time = "2025-05-28T19:25:50.036Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/f0/4160dbd205eee8fdf8647d154e7ceaa9d25b3a877b6311274eb6dc896b75/protobuf-6.31.1-cp39-cp39-win32.whl", hash = "sha256:0414e3aa5a5f3ff423828e1e6a6e907d6c65c1d5b7e6e975793d5590bdeecc16", size = 423626, upload-time = "2025-05-28T19:25:51.355Z" },
+    { url = "https://files.pythonhosted.org/packages/09/34/13989eb9f482409ed821bfa3e34e6a3878b42607c38e7f7572b4cc825091/protobuf-6.31.1-cp39-cp39-win_amd64.whl", hash = "sha256:8764cf4587791e7564051b35524b72844f845ad0bb011704c3736cce762d8fe9", size = 435347, upload-time = "2025-05-28T19:25:52.932Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/af/ab3c51ab7507a7325e98ffe691d9495ee3d3aa5f589afad65ec920d39821/protobuf-6.31.1-py3-none-any.whl", hash = "sha256:720a6c7e6b77288b85063569baae8536671b39f15cc22037ec7045658d80489e", size = 168724, upload-time = "2025-05-28T19:25:53.926Z" },
 ]
 
 [[package]]
@@ -6582,10 +6590,12 @@ name = "torch"
 version = "2.7.0"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
@@ -6613,14 +6623,18 @@ name = "torch"
 version = "2.7.0+cpu"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
@@ -6666,17 +6680,23 @@ name = "torch"
 version = "2.7.0+cu128"
 source = { url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch/2.7.0/76be807ccbeeca14632a7a49c3737b9b4e4b8f57e78889730314de0807d28bb7/torch-2.7.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -6752,17 +6772,21 @@ name = "torch"
 version = "2.7.0+rocm6.3"
 source = { registry = "https://download.pytorch.org/whl/rocm6.3" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -6792,17 +6816,21 @@ name = "torchaudio"
 version = "2.7.0"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -6832,8 +6860,10 @@ name = "torchaudio"
 version = "2.7.0"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
@@ -6858,10 +6888,12 @@ name = "torchaudio"
 version = "2.7.0+cpu"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -6890,15 +6922,19 @@ name = "torchaudio"
 version = "2.7.0+cu128"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
@@ -6929,17 +6965,21 @@ name = "torchaudio"
 version = "2.7.0+rocm6.3"
 source = { registry = "https://download.pytorch.org/whl/rocm6.3" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -6986,17 +7026,21 @@ name = "torchvision"
 version = "0.22.0"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -7028,8 +7072,10 @@ name = "torchvision"
 version = "0.22.0"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine == 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
@@ -7056,10 +7102,12 @@ name = "torchvision"
 version = "0.22.0+cpu"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -7090,15 +7138,19 @@ name = "torchvision"
 version = "0.22.0+cu128"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_machine != 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
@@ -7131,17 +7183,21 @@ name = "torchvision"
 version = "0.22.0+rocm6.3"
 source = { registry = "https://download.pytorch.org/whl/rocm6.3" }
 resolution-markers = [
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'darwin'",
     "python_full_version < '3.10' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
-    "python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
+    "python_full_version == '3.12.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.11.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version == '3.10.*' and platform_python_implementation != 'CPython' and sys_platform == 'linux'",
     "python_full_version < '3.10' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",

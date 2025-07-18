@@ -40,14 +40,14 @@ dependencies = [
   "nvitop",
   "onnxruntime==1.19.2 ", # Needed by faster_whisper, newer versions don't support python 3.9
   "opentelemetry-api",
-  "opentelemetry-exporter-otlp-proto-http",
+  "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
   "opentelemetry-sdk",
   "packaging",
   "pre-commit",
   "prometheus-async",
   "prometheus-client",
-  "protobuf==5.29.1 ", # Must match bazel protobuf version since it doesn't the codegen
+  "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
   "py-cpuinfo",
   "pyarrow",

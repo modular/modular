@@ -57,10 +57,10 @@ PINS = {
     "nvitop": "nvitop@1.4.0",
     "onnxruntime": "onnxruntime@1.19.2",
     "openai": "openai@1.52.2",
-    "opentelemetry-api": "opentelemetry-api@1.28.2",
-    "opentelemetry-exporter-otlp-proto-http": "opentelemetry-exporter-otlp-proto-http@1.28.2",
-    "opentelemetry-exporter-prometheus": "opentelemetry-exporter-prometheus@0.49b2",
-    "opentelemetry-sdk": "opentelemetry-sdk@1.28.2",
+    "opentelemetry-api": "opentelemetry-api@1.35.0",
+    "opentelemetry-exporter-otlp-proto-http": "opentelemetry-exporter-otlp-proto-http@1.35.0",
+    "opentelemetry-exporter-prometheus": "opentelemetry-exporter-prometheus@0.56b0",
+    "opentelemetry-sdk": "opentelemetry-sdk@1.35.0",
     "optimum": "optimum@1.24.0",
     "packaging": "packaging@24.1",
     "pandas": "pandas@2.3.1",
@@ -71,7 +71,7 @@ PINS = {
     "pre-commit": "pre-commit@4.0.1",
     "prometheus-async": "prometheus-async@22.2.0",
     "prometheus-client": "prometheus-client@0.20.0",
-    "protobuf": "protobuf@5.29.1",
+    "protobuf": "protobuf@6.31.1",
     "psutil": "psutil@7.0.0",
     "py-cpuinfo": "py-cpuinfo@9.0.0",
     "pyarrow": "pyarrow@20.0.0",
@@ -1093,21 +1093,6 @@ def targets():
         wheel = ":_wheel_defusedxml@0.7.1",
     )
 
-    _deprecated_1_2_14_deps = [
-        ":wrapt@1.16.0",
-    ]
-
-    native.alias(
-        name = "_wheel_deprecated@1.2.14",
-        actual = "@pycross_lock_file_wheel_deprecated_1.2.14_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "deprecated@1.2.14",
-        deps = _deprecated_1_2_14_deps,
-        wheel = ":_wheel_deprecated@1.2.14",
-    )
-
     _device_smi_0_4_1_build_deps = [
         ":setuptools",
         ":wheel",
@@ -1651,25 +1636,25 @@ def targets():
         wheel = ":_wheel_gguf@0.17.1",
     )
 
-    _google_api_core_2_19_1_deps = [
+    _google_api_core_2_25_1_deps = [
         ":google-auth@2.29.0",
-        ":googleapis-common-protos@1.63.2",
+        ":googleapis-common-protos@1.70.0",
         ":grpcio-status@1.57.0",
         ":grpcio@1.73.1",
-        ":proto-plus@1.24.0",
-        ":protobuf@5.29.1",
+        ":proto-plus@1.26.1",
+        ":protobuf@6.31.1",
         ":requests@2.32.3",
     ]
 
     native.alias(
-        name = "_wheel_google-api-core@2.19.1",
-        actual = "@pycross_lock_file_wheel_google_api_core_2.19.1_py3_none_any//file",
+        name = "_wheel_google-api-core@2.25.1",
+        actual = "@pycross_lock_file_wheel_google_api_core_2.25.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "google-api-core@2.19.1",
-        deps = _google_api_core_2_19_1_deps,
-        wheel = ":_wheel_google-api-core@2.19.1",
+        name = "google-api-core@2.25.1",
+        deps = _google_api_core_2_25_1_deps,
+        wheel = ":_wheel_google-api-core@2.25.1",
     )
 
     _google_auth_2_29_0_deps = [
@@ -1690,7 +1675,7 @@ def targets():
     )
 
     _google_cloud_bigquery_3_22_0_deps = [
-        ":google-api-core@2.19.1",
+        ":google-api-core@2.25.1",
         ":google-auth@2.29.0",
         ":google-cloud-core@2.4.1",
         ":google-resumable-media@2.7.1",
@@ -1711,7 +1696,7 @@ def targets():
     )
 
     _google_cloud_core_2_4_1_deps = [
-        ":google-api-core@2.19.1",
+        ":google-api-core@2.25.1",
         ":google-auth@2.29.0",
     ]
 
@@ -1767,19 +1752,19 @@ def targets():
         wheel = ":_wheel_google-resumable-media@2.7.1",
     )
 
-    _googleapis_common_protos_1_63_2_deps = [
-        ":protobuf@5.29.1",
+    _googleapis_common_protos_1_70_0_deps = [
+        ":protobuf@6.31.1",
     ]
 
     native.alias(
-        name = "_wheel_googleapis-common-protos@1.63.2",
-        actual = "@pycross_lock_file_wheel_googleapis_common_protos_1.63.2_py2.py3_none_any//file",
+        name = "_wheel_googleapis-common-protos@1.70.0",
+        actual = "@pycross_lock_file_wheel_googleapis_common_protos_1.70.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "googleapis-common-protos@1.63.2",
-        deps = _googleapis_common_protos_1_63_2_deps,
-        wheel = ":_wheel_googleapis-common-protos@1.63.2",
+        name = "googleapis-common-protos@1.70.0",
+        deps = _googleapis_common_protos_1_70_0_deps,
+        wheel = ":_wheel_googleapis-common-protos@1.70.0",
     )
 
     native.alias(
@@ -1845,9 +1830,9 @@ def targets():
     )
 
     _grpcio_status_1_57_0_deps = [
-        ":googleapis-common-protos@1.63.2",
+        ":googleapis-common-protos@1.70.0",
         ":grpcio@1.73.1",
-        ":protobuf@5.29.1",
+        ":protobuf@6.31.1",
     ]
 
     native.alias(
@@ -4046,7 +4031,7 @@ def targets():
         ":flatbuffers@25.2.10",
         ":numpy@2.0.2",
         ":packaging@24.1",
-        ":protobuf@5.29.1",
+        ":protobuf@6.31.1",
         ":sympy@1.13.3",
     ]
 
@@ -4096,121 +4081,121 @@ def targets():
         wheel = ":_wheel_openai@1.52.2",
     )
 
-    _opentelemetry_api_1_28_2_deps = [
-        ":deprecated@1.2.14",
+    _opentelemetry_api_1_35_0_deps = [
         ":importlib-metadata@7.1.0",
-    ]
-
-    native.alias(
-        name = "_wheel_opentelemetry-api@1.28.2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_api_1.28.2_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "opentelemetry-api@1.28.2",
-        deps = _opentelemetry_api_1_28_2_deps,
-        wheel = ":_wheel_opentelemetry-api@1.28.2",
-    )
-
-    _opentelemetry_exporter_otlp_proto_common_1_28_2_deps = [
-        ":opentelemetry-proto@1.28.2",
-    ]
-
-    native.alias(
-        name = "_wheel_opentelemetry-exporter-otlp-proto-common@1.28.2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_common_1.28.2_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "opentelemetry-exporter-otlp-proto-common@1.28.2",
-        deps = _opentelemetry_exporter_otlp_proto_common_1_28_2_deps,
-        wheel = ":_wheel_opentelemetry-exporter-otlp-proto-common@1.28.2",
-    )
-
-    _opentelemetry_exporter_otlp_proto_http_1_28_2_deps = [
-        ":deprecated@1.2.14",
-        ":googleapis-common-protos@1.63.2",
-        ":opentelemetry-api@1.28.2",
-        ":opentelemetry-exporter-otlp-proto-common@1.28.2",
-        ":opentelemetry-proto@1.28.2",
-        ":opentelemetry-sdk@1.28.2",
-        ":requests@2.32.3",
-    ]
-
-    native.alias(
-        name = "_wheel_opentelemetry-exporter-otlp-proto-http@1.28.2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_http_1.28.2_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "opentelemetry-exporter-otlp-proto-http@1.28.2",
-        deps = _opentelemetry_exporter_otlp_proto_http_1_28_2_deps,
-        wheel = ":_wheel_opentelemetry-exporter-otlp-proto-http@1.28.2",
-    )
-
-    _opentelemetry_exporter_prometheus_0_49b2_deps = [
-        ":opentelemetry-api@1.28.2",
-        ":opentelemetry-sdk@1.28.2",
-        ":prometheus-client@0.20.0",
-    ]
-
-    native.alias(
-        name = "_wheel_opentelemetry-exporter-prometheus@0.49b2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_prometheus_0.49b2_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "opentelemetry-exporter-prometheus@0.49b2",
-        deps = _opentelemetry_exporter_prometheus_0_49b2_deps,
-        wheel = ":_wheel_opentelemetry-exporter-prometheus@0.49b2",
-    )
-
-    _opentelemetry_proto_1_28_2_deps = [
-        ":protobuf@5.29.1",
-    ]
-
-    native.alias(
-        name = "_wheel_opentelemetry-proto@1.28.2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_proto_1.28.2_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "opentelemetry-proto@1.28.2",
-        deps = _opentelemetry_proto_1_28_2_deps,
-        wheel = ":_wheel_opentelemetry-proto@1.28.2",
-    )
-
-    _opentelemetry_sdk_1_28_2_deps = [
-        ":opentelemetry-api@1.28.2",
-        ":opentelemetry-semantic-conventions@0.49b2",
         ":typing-extensions@4.12.2",
     ]
 
     native.alias(
-        name = "_wheel_opentelemetry-sdk@1.28.2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_sdk_1.28.2_py3_none_any//file",
+        name = "_wheel_opentelemetry-api@1.35.0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_api_1.35.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "opentelemetry-sdk@1.28.2",
-        deps = _opentelemetry_sdk_1_28_2_deps,
-        wheel = ":_wheel_opentelemetry-sdk@1.28.2",
+        name = "opentelemetry-api@1.35.0",
+        deps = _opentelemetry_api_1_35_0_deps,
+        wheel = ":_wheel_opentelemetry-api@1.35.0",
     )
 
-    _opentelemetry_semantic_conventions_0_49b2_deps = [
-        ":deprecated@1.2.14",
-        ":opentelemetry-api@1.28.2",
+    _opentelemetry_exporter_otlp_proto_common_1_35_0_deps = [
+        ":opentelemetry-proto@1.35.0",
     ]
 
     native.alias(
-        name = "_wheel_opentelemetry-semantic-conventions@0.49b2",
-        actual = "@pycross_lock_file_wheel_opentelemetry_semantic_conventions_0.49b2_py3_none_any//file",
+        name = "_wheel_opentelemetry-exporter-otlp-proto-common@1.35.0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_common_1.35.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "opentelemetry-semantic-conventions@0.49b2",
-        deps = _opentelemetry_semantic_conventions_0_49b2_deps,
-        wheel = ":_wheel_opentelemetry-semantic-conventions@0.49b2",
+        name = "opentelemetry-exporter-otlp-proto-common@1.35.0",
+        deps = _opentelemetry_exporter_otlp_proto_common_1_35_0_deps,
+        wheel = ":_wheel_opentelemetry-exporter-otlp-proto-common@1.35.0",
+    )
+
+    _opentelemetry_exporter_otlp_proto_http_1_35_0_deps = [
+        ":googleapis-common-protos@1.70.0",
+        ":opentelemetry-api@1.35.0",
+        ":opentelemetry-exporter-otlp-proto-common@1.35.0",
+        ":opentelemetry-proto@1.35.0",
+        ":opentelemetry-sdk@1.35.0",
+        ":requests@2.32.3",
+        ":typing-extensions@4.12.2",
+    ]
+
+    native.alias(
+        name = "_wheel_opentelemetry-exporter-otlp-proto-http@1.35.0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_http_1.35.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "opentelemetry-exporter-otlp-proto-http@1.35.0",
+        deps = _opentelemetry_exporter_otlp_proto_http_1_35_0_deps,
+        wheel = ":_wheel_opentelemetry-exporter-otlp-proto-http@1.35.0",
+    )
+
+    _opentelemetry_exporter_prometheus_0_56b0_deps = [
+        ":opentelemetry-api@1.35.0",
+        ":opentelemetry-sdk@1.35.0",
+        ":prometheus-client@0.20.0",
+    ]
+
+    native.alias(
+        name = "_wheel_opentelemetry-exporter-prometheus@0.56b0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_exporter_prometheus_0.56b0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "opentelemetry-exporter-prometheus@0.56b0",
+        deps = _opentelemetry_exporter_prometheus_0_56b0_deps,
+        wheel = ":_wheel_opentelemetry-exporter-prometheus@0.56b0",
+    )
+
+    _opentelemetry_proto_1_35_0_deps = [
+        ":protobuf@6.31.1",
+    ]
+
+    native.alias(
+        name = "_wheel_opentelemetry-proto@1.35.0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_proto_1.35.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "opentelemetry-proto@1.35.0",
+        deps = _opentelemetry_proto_1_35_0_deps,
+        wheel = ":_wheel_opentelemetry-proto@1.35.0",
+    )
+
+    _opentelemetry_sdk_1_35_0_deps = [
+        ":opentelemetry-api@1.35.0",
+        ":opentelemetry-semantic-conventions@0.56b0",
+        ":typing-extensions@4.12.2",
+    ]
+
+    native.alias(
+        name = "_wheel_opentelemetry-sdk@1.35.0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_sdk_1.35.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "opentelemetry-sdk@1.35.0",
+        deps = _opentelemetry_sdk_1_35_0_deps,
+        wheel = ":_wheel_opentelemetry-sdk@1.35.0",
+    )
+
+    _opentelemetry_semantic_conventions_0_56b0_deps = [
+        ":opentelemetry-api@1.35.0",
+        ":typing-extensions@4.12.2",
+    ]
+
+    native.alias(
+        name = "_wheel_opentelemetry-semantic-conventions@0.56b0",
+        actual = "@pycross_lock_file_wheel_opentelemetry_semantic_conventions_0.56b0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "opentelemetry-semantic-conventions@0.56b0",
+        deps = _opentelemetry_semantic_conventions_0_56b0_deps,
+        wheel = ":_wheel_opentelemetry-semantic-conventions@0.56b0",
     )
 
     _optimum_1_24_0_deps = [
@@ -4551,45 +4536,45 @@ def targets():
         wheel = ":_wheel_prompt-toolkit@3.0.47",
     )
 
-    _proto_plus_1_24_0_deps = [
-        ":protobuf@5.29.1",
+    _proto_plus_1_26_1_deps = [
+        ":protobuf@6.31.1",
     ]
 
     native.alias(
-        name = "_wheel_proto-plus@1.24.0",
-        actual = "@pycross_lock_file_wheel_proto_plus_1.24.0_py3_none_any//file",
+        name = "_wheel_proto-plus@1.26.1",
+        actual = "@pycross_lock_file_wheel_proto_plus_1.26.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "proto-plus@1.24.0",
-        deps = _proto_plus_1_24_0_deps,
-        wheel = ":_wheel_proto-plus@1.24.0",
+        name = "proto-plus@1.26.1",
+        deps = _proto_plus_1_26_1_deps,
+        wheel = ":_wheel_proto-plus@1.26.1",
     )
 
     native.alias(
-        name = "_wheel_protobuf@5.29.1",
+        name = "_wheel_protobuf@6.31.1",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64//file",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "protobuf@5.29.1",
-        wheel = ":_wheel_protobuf@5.29.1",
+        name = "protobuf@6.31.1",
+        wheel = ":_wheel_protobuf@6.31.1",
     )
 
     native.alias(
@@ -9347,16 +9332,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_deprecated_1.2.14_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/20/8d/778b7d51b981a96554f29136cd59ca7880bf58094338085bcf2a979a0e6a/Deprecated-1.2.14-py2.py3-none-any.whl",
-        ],
-        sha256 = "6fac8b097794a90302bdbb17b9b815e732d3c4720583ff1b198499d78470466c",
-        downloaded_file_path = "Deprecated-1.2.14-py2.py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_dill_0.3.8_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/c9/7a/cef76fd8438a42f96db64ddaa85280485a9c395e7df3db8158cfec1eee34/dill-0.3.8-py3-none-any.whl",
@@ -10177,12 +10152,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_google_api_core_2.19.1_py3_none_any",
+        name = "pycross_lock_file_wheel_google_api_core_2.25.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/44/99/daa3541e8ecd7d8b7907b714ba92126097a976b5b3dbabdb5febdcf08554/google_api_core-2.19.1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/14/4b/ead00905132820b623732b175d66354e9d3e69fcf2a5dcdab780664e7896/google_api_core-2.25.1-py3-none-any.whl",
         ],
-        sha256 = "f12a9b8309b5e21d92483bbd47ce2c445861ec7d269ef6784ecc0ea8c1fa6125",
-        downloaded_file_path = "google_api_core-2.19.1-py3-none-any.whl",
+        sha256 = "8a2a56c1fef82987a524371f99f3bd0143702fecc670c72e600c1cda6bf8dbb7",
+        downloaded_file_path = "google_api_core-2.25.1-py3-none-any.whl",
     )
 
     maybe(
@@ -10377,12 +10352,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_googleapis_common_protos_1.63.2_py2.py3_none_any",
+        name = "pycross_lock_file_wheel_googleapis_common_protos_1.70.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/02/48/87422ff1bddcae677fb6f58c97f5cfc613304a5e8ce2c3662760199c0a84/googleapis_common_protos-1.63.2-py2.py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/86/f1/62a193f0227cf15a920390abe675f386dec35f7ae3ffe6da582d3ade42c7/googleapis_common_protos-1.70.0-py3-none-any.whl",
         ],
-        sha256 = "27a2499c7e8aff199665b22741997e485eccc8645aa9176c7c988e6fae507945",
-        downloaded_file_path = "googleapis_common_protos-1.63.2-py2.py3-none-any.whl",
+        sha256 = "b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8",
+        downloaded_file_path = "googleapis_common_protos-1.70.0-py3-none-any.whl",
     )
 
     maybe(
@@ -13747,72 +13722,72 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_api_1.28.2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_api_1.35.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/4d/58/b17393cdfc149e14ee84c662abf921993dcce8058628359ef1f49e2abb97/opentelemetry_api-1.28.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/1d/5a/3f8d078dbf55d18442f6a2ecedf6786d81d7245844b2b20ce2b8ad6f0307/opentelemetry_api-1.35.0-py3-none-any.whl",
         ],
-        sha256 = "6fcec89e265beb258fe6b1acaaa3c8c705a934bd977b9f534a2b7c0d2d4275a6",
-        downloaded_file_path = "opentelemetry_api-1.28.2-py3-none-any.whl",
+        sha256 = "c4ea7e258a244858daf18474625e9cc0149b8ee354f37843415771a40c25ee06",
+        downloaded_file_path = "opentelemetry_api-1.35.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_common_1.28.2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_common_1.35.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/2a/4d/769f3b1b1c6af5e603da50349ba31af757897540a75d666de22d39461055/opentelemetry_exporter_otlp_proto_common-1.28.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/5a/2c/e31dd3c719bff87fa77391eb7f38b1430d22868c52312cba8aad60f280e5/opentelemetry_exporter_otlp_proto_common-1.35.0-py3-none-any.whl",
         ],
-        sha256 = "545b1943b574f666c35b3d6cc67cb0b111060727e93a1e2866e346b33bff2a12",
-        downloaded_file_path = "opentelemetry_exporter_otlp_proto_common-1.28.2-py3-none-any.whl",
+        sha256 = "863465de697ae81279ede660f3918680b4480ef5f69dcdac04f30722ed7b74cc",
+        downloaded_file_path = "opentelemetry_exporter_otlp_proto_common-1.35.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_http_1.28.2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_exporter_otlp_proto_http_1.35.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/19/23/802b889cf8bf3e235f30fbcbaa2b3fd484fe8c76b5b4db00f00c0e9af20f/opentelemetry_exporter_otlp_proto_http-1.28.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/d4/71/f118cd90dc26797077931dd598bde5e0cc652519db166593f962f8fcd022/opentelemetry_exporter_otlp_proto_http-1.35.0-py3-none-any.whl",
         ],
-        sha256 = "af921c18212a56ef4be68458ba475791c0517ebfd8a2ff04669c9cd477d90ff2",
-        downloaded_file_path = "opentelemetry_exporter_otlp_proto_http-1.28.2-py3-none-any.whl",
+        sha256 = "9a001e3df3c7f160fb31056a28ed7faa2de7df68877ae909516102ae36a54e1d",
+        downloaded_file_path = "opentelemetry_exporter_otlp_proto_http-1.35.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_exporter_prometheus_0.49b2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_exporter_prometheus_0.56b0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/aa/c5/cda7786ed3c73c20b2a57a16a1367f87c5389fa9bad33b69a052dbb02d21/opentelemetry_exporter_prometheus-0.49b2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/de/a4/813a192c391c252cacb8d95e606a9917036ca94b477f2a8fc6748d86692d/opentelemetry_exporter_prometheus-0.56b0-py3-none-any.whl",
         ],
-        sha256 = "307594007ee20ec3a51c42548a4dbd66e46701f8523a7780d5e12a8f986a7783",
-        downloaded_file_path = "opentelemetry_exporter_prometheus-0.49b2-py3-none-any.whl",
+        sha256 = "0a7d8952e2938f830deb5000505eecf20416ef25fdb591753b9b0cb91d9560ea",
+        downloaded_file_path = "opentelemetry_exporter_prometheus-0.56b0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_proto_1.28.2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_proto_1.35.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/1d/12/646f48d6d698a6df0437a22b591387440dc4888c8752d1a1300f730da710/opentelemetry_proto-1.28.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/00/a7/3f05de580da7e8a8b8dff041d3d07a20bf3bb62d3bcc027f8fd669a73ff4/opentelemetry_proto-1.35.0-py3-none-any.whl",
         ],
-        sha256 = "0837498f59db55086462915e5898d0b1a18c1392f6db4d7e937143072a72370c",
-        downloaded_file_path = "opentelemetry_proto-1.28.2-py3-none-any.whl",
+        sha256 = "98fffa803164499f562718384e703be8d7dfbe680192279a0429cb150a2f8809",
+        downloaded_file_path = "opentelemetry_proto-1.35.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_sdk_1.28.2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_sdk_1.35.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/da/8b/4f2b418496c08016d4384f9b1c4725a8af7faafa248d624be4bb95993ce1/opentelemetry_sdk-1.28.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/01/4f/8e32b757ef3b660511b638ab52d1ed9259b666bdeeceba51a082ce3aea95/opentelemetry_sdk-1.35.0-py3-none-any.whl",
         ],
-        sha256 = "93336c129556f1e3ccd21442b94d3521759541521861b2214c499571b85cb71b",
-        downloaded_file_path = "opentelemetry_sdk-1.28.2-py3-none-any.whl",
+        sha256 = "223d9e5f5678518f4842311bb73966e0b6db5d1e0b74e35074c052cd2487f800",
+        downloaded_file_path = "opentelemetry_sdk-1.35.0-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_opentelemetry_semantic_conventions_0.49b2_py3_none_any",
+        name = "pycross_lock_file_wheel_opentelemetry_semantic_conventions_0.56b0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/b1/be/6661c8f76708bb3ba38c90be8fa8d7ffe17ccbc5cbbc229334f5535f6448/opentelemetry_semantic_conventions-0.49b2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/c7/3f/e80c1b017066a9d999efffe88d1cce66116dcf5cb7f80c41040a83b6e03b/opentelemetry_semantic_conventions-0.56b0-py3-none-any.whl",
         ],
-        sha256 = "51e7e1d0daa958782b6c2a8ed05e5f0e7dd0716fc327ac058777b8659649ee54",
-        downloaded_file_path = "opentelemetry_semantic_conventions-0.49b2-py3-none-any.whl",
+        sha256 = "df44492868fd6b482511cc43a942e7194be64e94945f572db24df2e279a001a2",
+        downloaded_file_path = "opentelemetry_semantic_conventions-0.56b0-py3-none-any.whl",
     )
 
     maybe(
@@ -14327,42 +14302,42 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_proto_plus_1.24.0_py3_none_any",
+        name = "pycross_lock_file_wheel_proto_plus_1.26.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/7c/6f/db31f0711c0402aa477257205ce7d29e86a75cb52cd19f7afb585f75cda0/proto_plus-1.24.0-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/4e/6d/280c4c2ce28b1593a19ad5239c8b826871fc6ec275c21afc8e1820108039/proto_plus-1.26.1-py3-none-any.whl",
         ],
-        sha256 = "402576830425e5f6ce4c2a6702400ac79897dab0b4343821aa5188b0fab81a12",
-        downloaded_file_path = "proto_plus-1.24.0-py3-none-any.whl",
+        sha256 = "13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66",
+        downloaded_file_path = "proto_plus-1.26.1-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_macosx_10_9_universal2",
+        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_macosx_10_9_universal2",
         urls = [
-            "https://files.pythonhosted.org/packages/e5/39/44239fb1c6ec557e1731d996a5de89a9eb1ada7a92491fcf9c5d714052ed/protobuf-5.29.1-cp38-abi3-macosx_10_9_universal2.whl",
+            "https://files.pythonhosted.org/packages/6a/c9/b9689a2a250264a84e66c46d8862ba788ee7a641cdca39bccf64f59284b7/protobuf-6.31.1-cp39-abi3-macosx_10_9_universal2.whl",
         ],
-        sha256 = "d473655e29c0c4bbf8b69e9a8fb54645bc289dead6d753b952e7aa660254ae18",
-        downloaded_file_path = "protobuf-5.29.1-cp38-abi3-macosx_10_9_universal2.whl",
+        sha256 = "6f1227473dc43d44ed644425268eb7c2e488ae245d51c6866d19fe158e207402",
+        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-macosx_10_9_universal2.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/fb/4a/ec56f101d38d4bef2959a9750209809242d86cf8b897db00f2f98bfa360e/protobuf-5.29.1-cp38-abi3-manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/76/a1/7a5a94032c83375e4fe7e7f56e3976ea6ac90c5e85fac8576409e25c39c3/protobuf-6.31.1-cp39-abi3-manylinux2014_aarch64.whl",
         ],
-        sha256 = "b5ba1d0e4c8a40ae0496d0e2ecfdbb82e1776928a205106d14ad6985a09ec155",
-        downloaded_file_path = "protobuf-5.29.1-cp38-abi3-manylinux2014_aarch64.whl",
+        sha256 = "a40fc12b84c154884d7d4c4ebd675d5b3b5283e155f324049ae396b95ddebc39",
+        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_protobuf_5.29.1_cp38_abi3_manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_protobuf_6.31.1_cp39_abi3_manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/04/52/c97c58a33b3d6c89a8138788576d372a90a6556f354799971c6b4d16d871/protobuf-5.29.1-cp38-abi3-manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/fa/b1/b59d405d64d31999244643d88c45c8241c58f17cc887e73bcb90602327f8/protobuf-6.31.1-cp39-abi3-manylinux2014_x86_64.whl",
         ],
-        sha256 = "8ee1461b3af56145aca2800e6a3e2f928108c749ba8feccc6f5dd0062c410c0d",
-        downloaded_file_path = "protobuf-5.29.1-cp38-abi3-manylinux2014_x86_64.whl",
+        sha256 = "4ee898bf66f7a8b0bd21bce523814e6fbd8c6add948045ce958b73af7e8878c6",
+        downloaded_file_path = "protobuf-6.31.1-cp39-abi3-manylinux2014_x86_64.whl",
     )
 
     maybe(

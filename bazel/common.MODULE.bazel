@@ -1,15 +1,15 @@
 """Define bazel dependencies common to the internal and external repos."""
 
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "abseil-cpp", version = "20250127.0")
+bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.8")
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
-bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "29.1")
+bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_mojo", version = "0.4.1")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
@@ -102,12 +102,10 @@ single_version_override(
     module_name = "grpc",
     patch_strip = 1,
     patches = [
-        # TODO: Drop when we update grpc again
-        "//bazel/public-patches:grpc.patch",
-        # TODO: Drop once https://github.com/grpc/grpc/commit/ed7916161a405b0e01aa7c39494c7dd536264ea4 is in a release
-        "//bazel/public-patches:grpc-providers.patch",
+        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        "//bazel/public-patches:grpc-no-macos-x86.patch",
     ],
-    version = "1.68.0",
+    version = "1.73.1",
 )
 
 single_version_override(
