@@ -2606,6 +2606,22 @@ struct CPython(Copyable, Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/dict.html
     # ===-------------------------------------------------------------------===#
 
+    fn PyDict_Type(self) -> PyTypeObjectPtr:
+        """This instance of `PyTypeObject` represents the Python dictionary type.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
+        """
+
+        # PyTypeObject PyDict_Type
+        return self.lib.get_symbol[PyTypeObject]("PyDict_Type")
+
+    fn PyDict_CheckExact(self, obj: PyObjectPtr) -> Bool:
+        """Return true if `obj` is a `dict` object.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_CheckExact).
+        """
+        return self.Py_TYPE(obj) == self.PyDict_Type()
+
     fn PyDict_New(self) -> PyObjectPtr:
         """Return a new empty dictionary, or `NULL` on failure.
 
@@ -2659,22 +2675,6 @@ struct CPython(Copyable, Defaultable, Movable):
         )
         self.log("PyDict_GetItemWithError, key: ", key)
         return r
-
-    fn PyDict_CheckExact(self, obj: PyObjectPtr) -> Bool:
-        """Return true if `obj` is a `dict` object.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_CheckExact).
-        """
-        return self.Py_TYPE(obj) == self.PyDict_Type()
-
-    fn PyDict_Type(self) -> PyTypeObjectPtr:
-        """This instance of `PyTypeObject` represents the Python dictionary type.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
-        """
-
-        # PyTypeObject PyDict_Type
-        return self.lib.get_symbol[PyTypeObject]("PyDict_Type")
 
     fn PyDict_Next(
         self,
