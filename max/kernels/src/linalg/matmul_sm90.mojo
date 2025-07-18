@@ -15,10 +15,9 @@ from math import ceildiv
 from sys import alignof, simdwidthof, sizeof
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, _make_tuple
+from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
-    block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
@@ -31,9 +30,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import _compile_code_asm
-from gpu.host import get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (
     block_dim,
@@ -51,17 +48,9 @@ from gpu.memory import (
     fence_mbarrier_init,
     tma_store_fence,
 )
-from gpu.mma import (
-    WGMMADescriptor,
-    st_matrix,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
+from gpu.mma import st_matrix
 from gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import zipped_divide
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -74,7 +63,6 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     st_matrix_n_layout,
     tile_layout_k_major,
-    wgmma_c_layout,
 )
 from layout.tma_async import (
     PipelineState,
@@ -101,9 +89,6 @@ from .utils_gpu import (
 
 from .matmul_loadop_sm90 import async_load_AB
 from logger import Logger
-from pathlib import Path
-
-alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
 
 @always_inline
