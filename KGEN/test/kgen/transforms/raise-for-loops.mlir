@@ -549,3 +549,32 @@ kgen.func @donnot_crash_with_block_argument_cond() {
   }
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @loop_with_lit_try
+kgen.func @loop_with_lit_try() {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx10 = index.constant 10
+  // CHECK: hlcf.loop (%arg0 = %idx0 : index)
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %1 = index.cmp sgt(%arg0, %idx10)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      lit.try {
+        lit.try.raise
+      }
+      except () {
+        lit.try.yield
+      } else () {
+        lit.try.yield
+      }
+      hlcf.break
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  kgen.return
+}

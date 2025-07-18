@@ -10,6 +10,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Dominance.h"
@@ -364,6 +365,18 @@ static bool hasComplexExitLogic(LoopOp loop, IfOp ifOp) {
 
   // Currently do not support complex yield block.
   if (!yieldBlock->without_terminator().empty())
+    return true;
+
+  // Loops that have try-except operations (including nested loops) cannot be
+  // transformed into SESE loops as it's an early exit.
+  // NOTE: that code assumes `lit.try` operation without a `lit.try.raise` was
+  // simplified before.
+  if (ifOp->walk([&](Operation *op) {
+            if (isa<LIT::TryOp>(op))
+              return WalkResult::interrupt();
+            return WalkResult::advance();
+          })
+          .wasInterrupted())
     return true;
 
   // Break block can contain ops that do not depend on values internal to the
