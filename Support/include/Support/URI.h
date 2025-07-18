@@ -8,6 +8,7 @@
 #define SUPPORT_URI_H
 
 #include "Support/ErrorOr.h"
+#include "llvm/ADT/StringRef.h"
 #include <filesystem>
 
 namespace M {
