@@ -14,6 +14,7 @@ import traceback
 # Standard library
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TypeVar, Union
@@ -63,6 +64,34 @@ ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
     "q4_0": torch.float32,
     "q6_k": torch.float32,
 }
+
+
+@contextmanager
+def maybe_log_hf_downloads(enable_logging: bool):
+    """Context manager that conditionally logs HuggingFace file downloads."""
+    if not enable_logging:
+        yield
+        return
+
+    original_hf_hub_download = huggingface_hub.hf_hub_download
+
+    def logged_hf_hub_download(*args, **kwargs):
+        repo_id = kwargs.get("repo_id") or (
+            args[0] if len(args) > 0 else "unknown"
+        )
+        filename = kwargs.get("filename") or (
+            args[1] if len(args) > 1 else "unknown"
+        )
+        print(f"Accessing {filename} from {repo_id}")
+        result = original_hf_hub_download(*args, **kwargs)
+        print(f"-> Located at: {result}\n")
+        return result
+
+    huggingface_hub.hf_hub_download = logged_hf_hub_download
+    try:
+        yield
+    finally:
+        huggingface_hub.hf_hub_download = original_hf_hub_download
 
 
 @dataclass
@@ -128,14 +157,20 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Instantiate a MAX pipeline for the given encoding/device."""
         raise NotImplementedError
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device | str
+        self,
+        *,
+        encoding: str,
+        device: torch.device | str,
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
@@ -211,7 +246,10 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
@@ -237,7 +275,9 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
+
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             model=pipeline._pipeline_model,
@@ -246,9 +286,13 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self,
+        *,
+        encoding: str,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             self.hf_repo_id,
             revision=revision,
@@ -267,6 +311,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
             trust_remote_code=True,
         )
+
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
@@ -294,7 +339,10 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         }
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
@@ -325,7 +373,9 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             trust_remote_code=True,
             engine=PipelineEngine.MAX,
         )
+
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             model=pipeline._pipeline_model,
@@ -334,10 +384,14 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self,
+        *,
+        encoding: str,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+
         processor = transformers.AutoProcessor.from_pretrained(
             hf_repo_id, revision=revision
         )
@@ -351,6 +405,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             device_map=device,
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
+
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
@@ -367,7 +422,10 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         }
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
         for device_spec in device_specs:
@@ -381,6 +439,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             max_length=8192,
         )
         hf_repo_lock.apply_to_config(config)
+
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -391,10 +450,14 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self,
+        *,
+        encoding: str,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistral-community/pixtral-12b"
         revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+
         processor = transformers.AutoProcessor.from_pretrained(
             hf_repo_id, revision=revision
         )
@@ -408,6 +471,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             device_map=device,
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
+
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
@@ -445,7 +509,10 @@ class GenericOracle(PipelineOracle):
         return None
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
@@ -459,9 +526,11 @@ class GenericOracle(PipelineOracle):
             **self.config_params,
         )
         hf_repo_lock.apply_to_config(config)
+
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
+
         assert isinstance(
             pipeline,
             (pipelines.TextGenerationPipeline, pipelines.EmbeddingsPipeline),
@@ -473,9 +542,13 @@ class GenericOracle(PipelineOracle):
         )
 
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self,
+        *,
+        encoding: str,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         trust_remote_code = self.config_params.get("trust_remote_code", False)
+
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
             trust_remote_code=trust_remote_code,
@@ -516,6 +589,7 @@ class GenericOracle(PipelineOracle):
                 trust_remote_code=trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
             )
+
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
@@ -943,6 +1017,13 @@ def _detect_hf_flakes(
     default=1,
     help="The maximum batch size to use when evaluating the model.",
 )
+@click.option(
+    "--log-hf-downloads",
+    "log_hf_downloads",
+    is_flag=True,
+    default=False,
+    help="Log HuggingFace file downloads for MAX and Torch models.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -951,6 +1032,7 @@ def main(
     output_path: Path,
     print_output: bool,
     max_batch_size: int,
+    log_hf_downloads: bool,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
 
@@ -967,6 +1049,7 @@ def main(
             output_path=output_path,
             print_output=print_output,
             max_batch_size=max_batch_size,
+            log_hf_downloads=log_hf_downloads,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -982,6 +1065,7 @@ def generate_llm_logits(
     print_output: bool,
     max_batch_size: int = 1,
     reference: list[ModelOutput] | None = None,
+    log_hf_downloads: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -1012,10 +1096,13 @@ def generate_llm_logits(
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
     with github_log_group(title):
         if framework_name == "max":
-            max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
-                encoding=encoding_name,
-                device_specs=device_specs,
-            )
+            with maybe_log_hf_downloads(log_hf_downloads):
+                max_pipeline_and_tokenizer = (
+                    pipeline_oracle.create_max_pipeline(
+                        encoding=encoding_name,
+                        device_specs=device_specs,
+                    )
+                )
             print(f"Running {pipeline_name} model on MAX")
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 results = evaluate.run_model(
@@ -1055,11 +1142,13 @@ def generate_llm_logits(
             else:
                 device = torch_device
 
-            torch_pipeline_and_tokenizer = (
-                pipeline_oracle.create_torch_pipeline(
-                    encoding=encoding_name, device=device
+            with maybe_log_hf_downloads(log_hf_downloads):
+                torch_pipeline_and_tokenizer = (
+                    pipeline_oracle.create_torch_pipeline(
+                        encoding=encoding_name,
+                        device=device,
+                    )
                 )
-            )
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 results = pipeline_oracle.run_torch_text_generation(
                     torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
