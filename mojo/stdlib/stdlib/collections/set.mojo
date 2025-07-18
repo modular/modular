@@ -101,6 +101,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
 
+        Note that this method is deprecated, as well as the `Copyable` trait
+        on `Set`. Use the `my_set.copy()` method instead or move the set with `my_set^`.
+
         Args:
             other: The existing Set instance to copy from.
         """
