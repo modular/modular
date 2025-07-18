@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import pixtral_arch
+from .model import PixtralModel
 
-__all__ = ["pixtral_arch"]
+__all__ = ["PixtralModel", "pixtral_arch"]

@@ -10,17 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Union
+from collections.abc import Sequence
+from typing import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import (
-    EmbeddingV1,
-    LayerNormV1,
-    LinearV1,
-    RMSNormV1,
+    Embedding,
+    Layer,
+    LayerList,
+    Linear,
+    Module,
+    ReturnLogits,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -28,11 +31,9 @@ from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
 )
-from max.nn.layer import Layer
 
 
-@dataclass
-class Transformer(Layer):
+class Transformer(Module):
     """Transformer model consisting for TransformerBlock layers.
 
     The differences between this transformer and the transformer in nn:
@@ -45,25 +46,50 @@ class Transformer(Layer):
     eliminate the need for this class.
     """
 
-    dim: int
-    n_heads: int
-    layers: list[TransformerBlock]
-    norm: Union[RMSNormV1, LayerNormV1]
-    output: LinearV1
-    embedding: EmbeddingV1
-    kv_params: KVCacheParams
-    kv_collection_constructor: Union[
-        FetchContinuousBatchingKVCacheCollection, FetchPagedKVCacheCollection
-    ]
-    all_logits: bool = False
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        layers: list[TransformerBlock],
+        norm: Layer,
+        output: Linear,
+        embedding: Embedding,
+        kv_params: KVCacheParams,
+        kv_collection_constructor: (
+            FetchContinuousBatchingKVCacheCollection
+            | FetchPagedKVCacheCollection
+        ),
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        embedding_multiplier: float = 1.0,
+        logits_postprocessor: Callable[[TensorValue], TensorValue]
+        | None = None,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.layers = LayerList(layers)
+        self.norm = norm
+        self.lm_head = output
+        self.embed_tokens = embedding
+        self.kv_params = kv_params
+        self.kv_collection_constructor = kv_collection_constructor
+        self.embedding_multiplier = embedding_multiplier
+        self.logits_postprocessor = logits_postprocessor
+        self.return_logits = return_logits
+
+    def _apply_logits_postprocessor(
+        self, output: tuple[TensorValue, ...]
+    ) -> tuple[TensorValue, ...]:
+        if self.logits_postprocessor is None:
+            return output
+        return tuple(self.logits_postprocessor(elem) for elem in output)
 
     def __call__(
         self,
         embeds: TensorValue,
-        kv_cache_inputs: tuple[
-            TensorValue, TensorValue, TensorValue, TensorValue
-        ],
-        **kwargs,
+        kv_cache_inputs: Sequence[TensorValue],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         """Transformer model consisting of TransformerBlock layers.
 
@@ -75,8 +101,6 @@ class Transformer(Layer):
                 continuous attention, (blocks, cache_lengths, lookup_table, max_lengths).
         """
         h = embeds
-
-        # Construct a kv cache for use downstream.
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
         for idx, layer in enumerate(self.layers):
@@ -84,50 +108,56 @@ class Transformer(Layer):
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                **kwargs,
+                input_row_offsets,
             )
 
-        if self.all_logits:
-            # When echo is enabled, the logits of the input tokens are
-            # returned.
-            logits = ops.cast(self.output(self.norm(h)), DType.float32)
-            if "input_row_offsets" in kwargs:
-                # For ragged tensors gather the last tokens from packed dim 0.
-                input_row_offsets: TensorValueLike = kwargs["input_row_offsets"]
-                last_token_indices = input_row_offsets[1:] - 1  # type: ignore
-                last_token_logits = ops.gather(
-                    logits, last_token_indices, axis=0
-                )
-            else:
-                # For padded tensors, use `gather_nd`.
-                # Unsqueeze since `gather_nd` expects a static last dim.
-                valid_lengths: TensorValueLike = kwargs["valid_lengths"]
-                last_token_logits = ops.gather_nd(
+        # Retrieve a variable number of tokens
+        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
+        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        logits = None
+        offsets = None
+
+        if self.return_logits == ReturnLogits.VARIABLE:
+            return_n_logits_range = ops.range(
+                return_n_logits[0],
+                0,
+                -1,
+                out_dim="return_n_logits_range",
+                device=h.device,
+                dtype=DType.int64,
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            last_tokens = ops.gather(h, last_indices, axis=0)
+            logits = ops.cast(
+                self.lm_head(self.norm(last_tokens)), DType.float32
+            )
+            offsets = ops.range(
+                0,
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                device=h.device,
+                dtype=DType.int64,
+            )
+        elif self.return_logits == ReturnLogits.ALL:
+            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
+            offsets = input_row_offsets
+
+        if logits:
+            last_logits, logits = self._apply_logits_postprocessor(
+                (
+                    last_logits,
                     logits,
-                    indices=ops.unsqueeze(valid_lengths - 1, -1),  # type: ignore
-                    batch_dims=1,
                 )
-            return (last_token_logits, logits)
-        else:
-            # Otherwise, only return the logits for the last non-pad token
-            # (right-padded).
-            if "input_row_offsets" in kwargs:
-                # For ragged tensors gather the last tokens from packed dim 0.
-                input_row_offsets = kwargs["input_row_offsets"]
-                last_token_indices = input_row_offsets[1:] - 1  # type: ignore
-                # Should be: last_token = h[last_token_indices]
-                last_token = ops.gather(h, last_token_indices, axis=0)
-            else:
-                # For padded tensors, use `gather_nd`.
-                # Unsqueeze since `gather_nd` expects a static last dim.
-                valid_lengths = kwargs["valid_lengths"]
-                last_token = ops.gather_nd(
-                    h,
-                    indices=ops.unsqueeze(valid_lengths - 1, -1),  # type: ignore
-                    batch_dims=1,
-                )
-
-            # Always return float32 logits, no matter the activation type
-            return (
-                ops.cast(self.output(self.norm(last_token)), DType.float32),
             )
+        else:
+            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
+
+        if offsets is not None:
+            assert logits is not None
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)

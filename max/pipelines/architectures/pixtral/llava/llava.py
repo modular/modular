@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.layer import Layer
+from max.graph import TensorType, TensorValue, TensorValueLike, ops
+from max.nn.layer import Layer, Module
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
 )
@@ -23,8 +23,7 @@ from .llava_decoder import Transformer
 from .llava_projector import LlavaMultiModalConnector
 
 
-@dataclass
-class LlavaConditionalGeneration(Layer):
+class LlavaConditionalGeneration(Module):
     """The LLAVA model which consists of a vision encoder and a language model.
 
     image_token_index: a specific token index used to denote images in input_ids.
@@ -33,22 +32,29 @@ class LlavaConditionalGeneration(Layer):
     vision_encoder: VisionEncoder
     multi_modal_projector: LlavaMultiModalConnector
     language_model: Transformer
-    vocab_size: int
     image_token_index: int = 10
-    vision_feature_layer: int = -1
-    vision_feature_select_strategy: str = "full"
-    image_seq_length: int = 1
+
+    def __init__(
+        self,
+        vision_encoder: VisionEncoder,
+        multi_modal_projector: LlavaMultiModalConnector,
+        language_model: Transformer,
+        image_token_index: int,
+    ) -> None:
+        self.vision_encoder = vision_encoder
+        self.multi_modal_projector = multi_modal_projector
+        self.language_model = language_model
+        self.image_token_index = image_token_index
 
     # TODO: change pixel_values type to List[TensorValue] to support multiple images.
     def __call__(
         self,
-        input_ids: TensorValueLike,
-        pixel_values: TensorValueLike,
-        attention_mask: TensorValueLike,
-        kv_cache_inputs: tuple[
-            TensorValue, TensorValue, TensorValue, TensorValue
-        ],
-        **kwargs,
+        input_ids: TensorValue,
+        pixel_values: TensorValue,
+        attention_mask: TensorValue,
+        kv_cache_inputs: Sequence[TensorValue],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         """
         Args:
@@ -66,32 +72,55 @@ class LlavaConditionalGeneration(Layer):
         """
         # inputs_embeds shape (total_sequence_length=text_and_image_tokens_length for all seqs,
         #   language_model_hidden_dim)
-        inputs_embeds = self.language_model.embedding(input_ids)
+        inputs_embeds: TensorValue = self.language_model.embed_tokens(input_ids)
 
-        # Replace image place-holders in inputs_embeds with image embeddings.
-        # Obtain image embeddings from the vision encoder and project it to text embeddings space.
-        # Output shape = (num_images, num_patches_in_image, language_model_hidden_dim)
-        # TODO(AIPIPE-320): If input pixel_values is a list of images, don't wrap it in a list.
-        image_embeds = self.multi_modal_projector(
-            self.vision_encoder(
-                imgs=[pixel_values], attention_mask=attention_mask
+        # If image tokens exist, replace place-holder image tokens by patch embeddings from vision encoder
+        def img_then_fn():
+            # Replace image place-holders in inputs_embeds with image embeddings.
+            # Obtain image embeddings from the vision encoder and project it to text embeddings space.
+            # Output shape = (num_images, num_patches_in_image, language_model_hidden_dim)
+            # TODO(AIPIPE-320): If input pixel_values is a list of images, don't wrap it in a list.
+            image_embeds = self.multi_modal_projector(
+                self.vision_encoder(
+                    imgs=[pixel_values], attention_mask=attention_mask
+                )
             )
-        )
-        image_embeds = ops.cast(image_embeds, inputs_embeds.dtype)
-        special_image_mask = ops.broadcast_to(
-            ops.unsqueeze((input_ids == self.image_token_index), -1),
-            inputs_embeds.shape,
-        )
-        inputs_embeds = ops.masked_scatter(
-            inputs_embeds,
-            special_image_mask,
-            image_embeds,
-            out_dim="unmasked_inputs",
-        )
+            image_embeds = ops.cast(image_embeds, inputs_embeds.dtype)
+            special_image_mask = ops.broadcast_to(
+                ops.unsqueeze((input_ids == self.image_token_index), -1),
+                inputs_embeds.shape,
+            )
+            return ops.masked_scatter(
+                inputs_embeds,
+                special_image_mask,
+                image_embeds,
+                out_dim="unmasked_inputs",
+            )
 
-        logits = self.language_model(inputs_embeds, kv_cache_inputs, **kwargs)
+        def else_fn():
+            return inputs_embeds
 
-        return logits
+        # Create a runtime condition by computing the total number of elements in pixel_values
+        # This ensures the condition is evaluated at execution time, not compilation time
+        inputs_embeds = ops.cond(
+            TensorValue(pixel_values.shape[0]) > 0,
+            [
+                TensorType(
+                    inputs_embeds.dtype,
+                    inputs_embeds.shape,
+                    device=inputs_embeds.device,
+                )
+            ],
+            img_then_fn,
+            else_fn,
+        )[0]
+
+        return self.language_model(
+            embeds=inputs_embeds,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            input_row_offsets=input_row_offsets,
+        )
 
 
 @dataclass
@@ -166,7 +195,7 @@ class LlavaConditionalGenerationTextOnly(Layer):
         """
         # inputs_embeds shape (total_sequence_length=text_and_image_tokens_length for all seqs,
         #  language_model_hidden_dim)
-        inputs_embeds = self.language_model.embedding(input_ids)
+        inputs_embeds = self.language_model.embed_tokens(input_ids)
 
         image_embeds = ops.cast(image_embeds, inputs_embeds.dtype)
         special_image_mask = ops.broadcast_to(
