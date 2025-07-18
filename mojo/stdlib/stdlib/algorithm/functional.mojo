@@ -22,7 +22,7 @@ from algorithm import map
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from os import abort
-from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
+from sys import is_nvidia_gpu, simdwidthof
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -38,7 +38,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext
-from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
+from gpu.host.info import is_cpu, is_gpu
 from runtime import tracing
 from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

@@ -26,7 +26,6 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
-from os import abort
 from os.atomic import Consistency
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
@@ -34,7 +33,6 @@ from sys.info import _is_sm_9x, alignof, bitwidthof, CompilationTarget
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 from memory.unsafe import bitcast
 
-from .host.info import H100, Info
 from .memory import AddressSpace, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
