@@ -23,6 +23,9 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
+from max.interfaces.pipeline_variants.audio_generation import (
+    AudioGenerationMetadata,
+)
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
@@ -334,12 +337,11 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
     async def _collect_audio_metadata(self, response, context):  # noqa: ANN001
         # Collect metadata about generated audio like duration, sample rate etc.
-        audio_metadata = {}
-        if hasattr(response, "sample_rate"):
-            audio_metadata["sample_rate"] = response.sample_rate
-        if hasattr(response, "duration"):
-            audio_metadata["duration"] = response.duration
-        return audio_metadata
+        sample_rate = getattr(response, "sample_rate", None)
+        duration = getattr(response, "duration", None)
+        return AudioGenerationMetadata(
+            sample_rate=sample_rate, duration=duration
+        )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
@@ -398,7 +400,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
                 audio_data=np.array([], dtype=np.float32),
-                metadata={},
+                metadata=AudioGenerationMetadata(),
                 is_done=True,
             )
 
