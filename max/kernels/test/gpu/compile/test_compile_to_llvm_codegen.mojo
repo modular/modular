@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import thread_idx
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace, external_memory
 
@@ -29,7 +29,7 @@ fn test_array_offset():
         output[] = p[idx]
 
     # CHECK: getelementptr inbounds float, ptr addrspace(3) %1, i32 %4
-    print(_compile_code_asm[kernel, emission_kind="llvm"]())
+    print(_compile_code[kernel, emission_kind="llvm"]())
 
 
 # CHECK-LABEL: test_case_thread_id_nvidia
@@ -41,7 +41,7 @@ fn test_case_thread_id_nvidia():
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel, emission_kind="llvm", target = get_gpu_target["sm_80"]()
         ]()
     )
@@ -56,7 +56,7 @@ fn test_case_thread_id_mi300x():
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel, emission_kind="llvm", target = get_gpu_target["mi300x"]()
         ]()
     )
@@ -80,7 +80,7 @@ fn test_dynamic_shared_mem():
         ]()
         output[] = dynamic_sram_ptr_1[0] + dynamic_sram_ptr_2[1]
 
-    print(_compile_code_asm[kernel, emission_kind="llvm"]())
+    print(_compile_code[kernel, emission_kind="llvm"]())
 
 
 fn main():

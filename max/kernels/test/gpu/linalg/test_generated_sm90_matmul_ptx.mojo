@@ -32,7 +32,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
@@ -281,10 +281,10 @@ fn compile_sm90_matmul_ptx[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ]
 
-        var asm = _compile_code_asm[
+        var asm = _compile_code[
             kernel,
             target = get_gpu_target["sm_90"](),
-        ]()
+        ]().asm
         assert_true("ld.local" not in asm and "st.local" not in asm)
     else:
         alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
@@ -315,10 +315,10 @@ fn compile_sm90_matmul_ptx[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             hilbert_swizzle=hilbert_swizzle,
         ]
-        var asm = _compile_code_asm[
+        var asm = _compile_code[
             kernel,
             target = get_gpu_target["sm_90"](),
-        ]()
+        ]().asm
         assert_true("ld.local" not in asm and "st.local" not in asm)
 
 

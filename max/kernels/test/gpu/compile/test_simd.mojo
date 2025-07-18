@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from testing import assert_true
 
@@ -52,9 +52,9 @@ def test_operation[
     pairwise = scalar + "x2 "
 
     alias target = get_gpu_target[target_arch]()
-    assert_true(scalar in _compile_code_asm[op_fn[width=1], target=target]())
-    assert_true(pairwise in _compile_code_asm[op_fn[width=2], target=target]())
-    assert_true(pairwise in _compile_code_asm[op_fn[width=8], target=target]())
+    assert_true(scalar in _compile_code[op_fn[width=1], target=target]())
+    assert_true(pairwise in _compile_code[op_fn[width=2], target=target]())
+    assert_true(pairwise in _compile_code[op_fn[width=8], target=target]())
 
 
 def test_add[dtype: DType, target_arch: StaticString]():
@@ -100,13 +100,13 @@ def test_fma[dtype: DType]():
 
     @parameter
     if dtype is DType.bfloat16:
-        assert_true("fma.rn.bf16 " in _compile_code_asm[fma[width=1]]())
-        assert_true("fma.rn.bf16x2 " in _compile_code_asm[fma[width=2]]())
-        assert_true("fma.rn.bf16x2 " in _compile_code_asm[fma[width=8]]())
+        assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
+        assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
     else:
-        assert_true("fma.rn.f16 " in _compile_code_asm[fma[width=1]]())
-        assert_true("fma.rn.f16x2 " in _compile_code_asm[fma[width=2]]())
-        assert_true("fma.rn.f16x2 " in _compile_code_asm[fma[width=8]]())
+        assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]())
 
 
 def test_cast():
@@ -117,25 +117,25 @@ def test_cast():
 
     assert_true(
         "cvt.rn.f16x2.f32"
-        in _compile_code_asm[
+        in _compile_code[
             cast[src_type = DType.float32, dst_type = DType.float16, width=4]
         ]()
     )
     assert_true(
         "cvt.rn.bf16x2.f32"
-        in _compile_code_asm[
+        in _compile_code[
             cast[src_type = DType.float32, dst_type = DType.bfloat16, width=4]
         ]()
     )
     assert_true(
         "cvt.f32.bf16"
-        in _compile_code_asm[
+        in _compile_code[
             cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
         ]()
     )
     assert_true(
         "cvt.f32.bf16"
-        in _compile_code_asm[
+        in _compile_code[
             cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
         ]()
     )

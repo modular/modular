@@ -44,7 +44,6 @@ from builtin.device_passable import DevicePassable
 from compile.compile import Info
 from gpu.host.compile import (
     _compile_code,
-    _compile_code_asm,
     _cross_compilation,
     get_gpu_target,
     _ptxas_compile,
@@ -1778,11 +1777,11 @@ struct DeviceFunction[
             @parameter
             if Self._emission_kind == "asm":
                 return self._func_impl.asm
-            return _compile_code_asm[
+            return _compile_code[
                 func,
                 emission_kind="asm",
                 target=target,
-            ]()
+            ]().asm
 
         @parameter
         if _ptxas_info_verbose:
@@ -1845,11 +1844,11 @@ struct DeviceFunction[
 
         @parameter
         if do_dump_llvm:
-            var llvm = _compile_code_asm[
+            var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
                 target=target,
-            ]()
+            ]().asm
 
             @parameter
             if dump_llvm_val.isa[fn () capturing -> Path]():

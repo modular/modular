@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.memory import CacheEviction, CacheOperation, load
 from testing import assert_equal, assert_true
 
@@ -39,35 +39,35 @@ fn load_value[
 def test_load():
     assert_true(
         "ld.global "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[width=1, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v2.u32 "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[width=2, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v4.u32 "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[width=4, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::256B.v4.u32 "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[width=4, prefetch_size=256], emission_kind="asm"
         ]()
     )
 
     assert_equal(
         String(
-            _compile_code_asm[
+            _compile_code[
                 load_value[width=64, prefetch_size=128], emission_kind="asm"
             ]()
         ).count("ld.global.L2::128B.v4.u32 "),
@@ -76,7 +76,7 @@ def test_load():
 
     assert_true(
         "ld.global.lu.v2.u32 "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[
                 dtype = DType.uint32,
                 width=2,
@@ -89,7 +89,7 @@ def test_load():
 
     assert_true(
         "ld.global.nc.v2.u32 "
-        in _compile_code_asm[
+        in _compile_code[
             load_value[dtype = DType.uint32, width=2, read_only=True],
             emission_kind="asm",
         ]()

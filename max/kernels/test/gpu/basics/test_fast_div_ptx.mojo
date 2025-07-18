@@ -15,7 +15,7 @@ from utils.fast_div import FastDiv
 from gpu.host import get_gpu_target
 from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout, IntTuple
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from testing import assert_true
 from python import Python
 
@@ -64,14 +64,14 @@ def main():
     alias kernel_fast_div_4 = fast_div_kernel[type, layout, 4]
     alias kernel_fast_div_3 = fast_div_kernel[type, layout, 3]
 
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         kernel_fast_div_4,
         target = get_gpu_target["sm_90"](),
-    ]()
+    ]().asm
     assert_true(contains_power_of_2_sequence(asm))
 
-    asm = _compile_code_asm[
+    asm = _compile_code[
         kernel_fast_div_3,
         target = get_gpu_target["sm_90"](),
-    ]()
+    ]().asm
     assert_true(contains_fastdiv_div_sequence(asm))

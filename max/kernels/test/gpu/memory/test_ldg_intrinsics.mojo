@@ -13,7 +13,7 @@
 
 
 from gpu import thread_idx
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.intrinsics import ldg
 from testing import *
@@ -57,17 +57,17 @@ fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
 
 
 def test_register_intrinsics_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         register_intrinsics, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_register_intrinsics(asm)
 
 
 def test_register_intrinsics_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         register_intrinsics,
         target = get_gpu_target["sm_90"](),
-    ]()
+    ]().asm
     _verify_register_intrinsics(asm)
 
 
