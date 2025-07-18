@@ -99,8 +99,8 @@ class KVCacheAwareContext(Protocol):
         ...
 
     @property
-    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
-        """An optional xgr Grammar Matcher provided when using structured output."""
+    def matcher(self) -> Optional[llguidance.LLMatcher]:  # type: ignore
+        """An optional Grammar Matcher provided when using structured output."""
         ...
 
     @property
@@ -108,7 +108,7 @@ class KVCacheAwareContext(Protocol):
         """A json schema to use during constrained decoding."""
         ...
 
-    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
+    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:  # type: ignore
         """Set a grammar matcher for use during constrained decoding."""
         ...
 

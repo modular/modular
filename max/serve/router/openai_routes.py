@@ -719,7 +719,7 @@ def _create_response_format(
         return None
 
     response_type = response_format.type
-    # We don't have XGrammar grammar for generic JSON output.
+    # We don't have llguidance grammar for generic JSON output.
     # Only json_schema is supported for structured output.
     if response_type == "json_object":
         raise ValueError(

@@ -705,7 +705,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     context.set_matcher(matcher)
                 except Exception as e:
                     msg = f"Json schema provided in request cannot be compiled to valid grammar. \
-                    Please update your json schema to produce valid structured output. From XGrammar: {e}"
+                    Please update your json schema to produce valid structured output. From llguidance: {e}"
                     logger.warning(msg)
                     # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
                     context.json_schema = None  # type: ignore

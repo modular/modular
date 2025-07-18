@@ -137,7 +137,6 @@ amd = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]",
@@ -168,7 +167,6 @@ nvidia = [
   "torchvision==0.22.0",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]",
