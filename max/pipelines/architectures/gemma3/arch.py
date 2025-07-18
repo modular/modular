@@ -16,7 +16,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -51,7 +50,6 @@ gemma3_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

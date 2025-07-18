@@ -351,9 +351,10 @@ class MAXModelConfig(MAXModelConfigBase):
                 default_encoding=default_encoding,
             )
 
-    def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
+    def validate_and_resolve_rope_type(self) -> None:
         if self.rope_type is None:
-            self.rope_type = arch_rope_type
+            # Default to RopeType.none when no rope_type is explicitly configured
+            self.rope_type = RopeType.none
 
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,

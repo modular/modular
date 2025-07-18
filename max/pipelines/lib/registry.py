@@ -24,10 +24,7 @@ from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import (
-    EmbeddingsGenerator,
-    PipelineTokenizer,
-)
+from max.pipelines.core import EmbeddingsGenerator, PipelineTokenizer
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -40,7 +37,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineEngine, RopeType, SupportedEncoding
+from .config_enums import PipelineEngine, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import DEFAULT_MAX_SEQ_LEN as HF_DEFAULT_MAX_SEQ_LEN
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
@@ -106,7 +103,6 @@ class SupportedArchitecture:
         tokenizer: Callable[..., PipelineTokenizer],
         default_weights_format: WeightsFormat,
         multi_gpu_supported: bool = False,
-        rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
@@ -159,7 +155,6 @@ class SupportedArchitecture:
                 preprocessing model inputs.
             default_weights_format: The weights format expected by the `pipeline_model`.
             multi_gpu_supported: Whether the architecture supports multi-GPU execution.
-            rope_type: The type of RoPE (Rotary Position Embedding) used by the model.
             weight_adapters: A dictionary of weight format adapters for converting
                 checkpoints from different formats to the default format.
         """
@@ -171,7 +166,6 @@ class SupportedArchitecture:
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
         self.multi_gpu_supported = multi_gpu_supported
-        self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
@@ -185,7 +179,6 @@ class SupportedArchitecture:
                 "pipeline_model",
                 "tokenizer",
                 "default_weights_format",
-                "rope_type",
                 "weight_adapters",
                 "task",
             ]:
