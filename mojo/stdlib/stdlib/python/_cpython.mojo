@@ -1021,6 +1021,25 @@ alias PyFloat_AsDouble = ExternalFunction[
     fn (PyObjectPtr) -> c_double,
 ]
 
+# Unicode Objects and Codecs
+alias PyUnicode_DecodeUTF8 = ExternalFunction[
+    "PyUnicode_DecodeUTF8",
+    # PyObject *PyUnicode_DecodeUTF8(const char *str, Py_ssize_t size, const char *errors)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        Py_ssize_t,
+        UnsafePointer[c_char, mut=False],
+    ) -> PyObjectPtr,
+]
+alias PyUnicode_AsUTF8AndSize = ExternalFunction[
+    "PyUnicode_AsUTF8AndSize",
+    # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
+    fn (
+        PyObjectPtr,
+        UnsafePointer[Py_ssize_t],
+    ) -> UnsafePointer[c_char, mut=False],
+]
+
 # Module Objects
 alias PyModule_GetDict = ExternalFunction[
     "PyModule_GetDict",
@@ -1041,6 +1060,13 @@ alias PyModule_AddObjectRef = ExternalFunction[
     "PyModule_AddObjectRef",
     # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
     fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
+]
+
+# Slice Objects
+alias PySlice_New = ExternalFunction[
+    "PySlice_New",
+    # PyObject *PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
 # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
@@ -1256,11 +1282,16 @@ struct CPython(Copyable, Defaultable, Movable):
     # Floating-Point Objects
     var _PyFloat_FromDouble: PyFloat_FromDouble.type
     var _PyFloat_AsDouble: PyFloat_AsDouble.type
+    # Unicode Objects and Codecs
+    var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
+    var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
     var _PyModule_AddFunctions: PyModule_AddFunctions.type
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
+    # Slice Objects
+    var _PySlice_New: PySlice_New.type
 
     var PyList_SetItem_func: PyList_SetItem.type
 
@@ -1417,6 +1448,8 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
+        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
 
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
@@ -1425,6 +1458,8 @@ struct CPython(Copyable, Defaultable, Movable):
             self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
         else:
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
+
+        self._PySlice_New = PySlice_New.load(self.lib)
 
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
@@ -2366,6 +2401,52 @@ struct CPython(Copyable, Defaultable, Movable):
         return self._PyFloat_AsDouble(pyfloat)
 
     # ===-------------------------------------------------------------------===#
+    # Unicode Objects and Codecs
+    # ref: https://docs.python.org/3/c-api/unicode.html
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the signature to take str, size, and errors as args
+    fn PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
+        """Create a Unicode object by decoding size bytes of the UTF-8 encoded
+        string slice `s`. Return `NULL` if an exception was raised by the codec.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
+        """
+        var r = self._PyUnicode_DecodeUTF8(
+            s.unsafe_ptr().bitcast[c_char](),
+            Py_ssize_t(s.byte_length()),
+            "strict".unsafe_cstr_ptr(),
+        )
+        self.log(
+            r,
+            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
+            self._Py_REFCNT(r),
+            ", str:",
+            s,
+        )
+        self._inc_total_rc()
+        return r
+
+    # TODO: fix signature to take unicode and size as args
+    fn PyUnicode_AsUTF8AndSize(
+        self, obj: PyObjectPtr
+    ) -> StringSlice[MutableAnyOrigin]:
+        """Return a pointer to the UTF-8 encoding of the Unicode object, and
+        store the size of the encoded representation (in bytes) in `size`.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize
+        """
+        var length = Py_ssize_t(0)
+        var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
+        return StringSlice[MutableAnyOrigin](
+            ptr=ptr.bitcast[Byte](), length=length
+        )
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2432,6 +2513,39 @@ struct CPython(Copyable, Defaultable, Movable):
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
         return self._PyModule_AddObjectRef(module, name, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Slice Objects
+    # ref: https://docs.python.org/3/c-api/slice.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PySlice_New(
+        self,
+        start: PyObjectPtr,
+        stop: PyObjectPtr,
+        step: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Return a new slice object with the given values.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/slice.html#c.PySlice_New
+        """
+        var r = self._PySlice_New(start, stop, step)
+        self.log(
+            r,
+            " NEWREF PySlice_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", start:",
+            start,
+            ", stop:",
+            stop,
+            ", step:",
+            step,
+        )
+        self._inc_total_rc()
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Set operations
@@ -2689,71 +2803,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return self.PyList_SetItem_func(list_obj, index, value)
 
     # ===-------------------------------------------------------------------===#
-    # Unicode Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyUnicode_DecodeUTF8(self, strslice: StringSlice) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8).
-        """
-        var r = self.lib.call["PyUnicode_DecodeUTF8", PyObjectPtr](
-            strslice.unsafe_ptr().bitcast[Int8](),
-            strslice.byte_length(),
-            "strict".unsafe_cstr_ptr(),
-        )
-
-        self.log(
-            r,
-            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
-            self._Py_REFCNT(r),
-            ", str:",
-            strslice,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PySlice_FromSlice(self, slice: Slice) -> PyObjectPtr:
-        # Convert Mojo Slice to Python slice parameters
-        # Note: Deliberately avoid using `span.indices()` here and instead pass
-        # the Slice parameters directly to Python. Python's C implementation
-        # already handles such conditions, allowing Python to apply its own slice
-        # handling.
-        var py_start = self.Py_None()
-        var py_stop = self.Py_None()
-        var py_step = self.Py_None()
-
-        if slice.start:
-            py_start = self.PyLong_FromSsize_t(c_ssize_t(slice.start.value()))
-        if slice.end:
-            py_stop = self.PyLong_FromSsize_t(c_ssize_t(slice.end.value()))
-        if slice.end:
-            py_step = self.PyLong_FromSsize_t(c_ssize_t(slice.step.value()))
-
-        var py_slice = self.PySlice_New(py_start, py_stop, py_step)
-
-        if py_start != self.Py_None():
-            self.Py_DecRef(py_start)
-        if py_stop != self.Py_None():
-            self.Py_DecRef(py_stop)
-        self.Py_DecRef(py_step)
-
-        return py_slice
-
-    fn PyUnicode_AsUTF8AndSize(
-        self, py_object: PyObjectPtr
-    ) -> StringSlice[MutableAnyOrigin]:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
-        """
-
-        var length = Py_ssize_t(0)
-        var ptr = self.lib.call[
-            "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
-        ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
-        return StringSlice[MutableAnyOrigin](ptr=ptr, length=length)
-
-    # ===-------------------------------------------------------------------===#
     # Python Error types
     # ===-------------------------------------------------------------------===#
 
@@ -2777,33 +2826,6 @@ struct CPython(Copyable, Defaultable, Movable):
             )
 
         return ptr[]
-
-    # ===-------------------------------------------------------------------===#
-    # Python Slice Creation
-    # ===-------------------------------------------------------------------===#
-
-    fn PySlice_New(
-        self, start: PyObjectPtr, stop: PyObjectPtr, step: PyObjectPtr
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/slice.html#c.PySlice_New).
-        """
-        var r = self.lib.call["PySlice_New", PyObjectPtr](start, stop, step)
-
-        self.log(
-            r,
-            " NEWREF PySlice_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", start:",
-            start,
-            ", stop:",
-            stop,
-            ", step:",
-            step,
-        )
-
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Capsules
