@@ -24,14 +24,15 @@ from typing import Any
 
 import numpy as np
 import zmq
-from max.interfaces import AudioGenerationResponse, EngineResult
-from max.interfaces.pipeline_variants.audio_generation import (
+from max.interfaces import (
     AudioGenerationMetadata,
+    AudioGenerationResponse,
+    AudioGeneratorOutput,
+    EngineResult,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerator,
-    AudioGeneratorOutput,
     TTSContext,
     msgpack_numpy_decoder,
 )

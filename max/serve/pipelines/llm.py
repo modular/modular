@@ -23,12 +23,9 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
-from max.interfaces.pipeline_variants.audio_generation import (
-    AudioGenerationMetadata,
-)
+from max.interfaces import AudioGenerationMetadata, AudioGeneratorOutput
 from max.pipelines.core import (
     AudioGenerationRequest,
-    AudioGeneratorOutput,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
