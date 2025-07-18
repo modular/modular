@@ -20,7 +20,7 @@ from python import PythonObject
 """
 
 from os import abort
-from sys.ffi import c_ssize_t
+from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
@@ -288,9 +288,8 @@ struct PythonObject(
         Args:
             none: None.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.Py_None()
-        cpython.Py_IncRef(self._obj_ptr)
+        var cpy = Python().cpython()
+        self = Self(from_borrowed_ptr=cpy.Py_None())
 
     @implicit
     fn __init__(out self, value: Bool):
@@ -299,21 +298,21 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyBool_FromLong(Int(value))
+        var cpy = Python().cpython()
+        self = Self(from_owned_ptr=cpy.PyBool_FromLong(c_long(Int(value))))
 
     @implicit
-    fn __init__(out self, integer: Int):
+    fn __init__(out self, value: Int):
         """Initialize the object with an integer value.
 
         Args:
-            integer: The integer value.
+            value: The integer value.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyLong_FromSsize_t(integer)
+        var cpy = Python().cpython()
+        self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
 
     @implicit
-    fn __init__[dtype: DType](out self, value: SIMD[dtype, 1]):
+    fn __init__[dtype: DType](out self, value: Scalar[dtype]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
@@ -324,38 +323,21 @@ struct PythonObject(
         Args:
             value: The scalar value.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
 
         @parameter
         if dtype is DType.bool:
-            self._obj_ptr = cpython.PyBool_FromLong(Int(value))
+            var val = c_long(Int(value))
+            self = Self(from_owned_ptr=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var uint_val = value.cast[DType.index]().value
-            self._obj_ptr = cpython.PyLong_FromSize_t(uint_val)
+            var val = c_size_t(value.cast[DType.index]().value)
+            self = Self(from_owned_ptr=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var int_val = value.cast[DType.index]().value
-            self._obj_ptr = cpython.PyLong_FromSsize_t(int_val)
+            var val = c_ssize_t(value.cast[DType.index]().value)
+            self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(val))
         else:
-            var fp_val = value.cast[DType.float64]()
-            self._obj_ptr = cpython.PyFloat_FromDouble(fp_val)
-
-    @implicit
-    fn __init__(out self, value: StringLiteral) raises:
-        """Initialize the object from a string literal.
-
-        Args:
-            value: The string value.
-        """
-        self = PythonObject(value.as_string_slice())
-
-    @implicit
-    fn __init__(out self, value: String) raises:
-        """Initialize the object from a string.
-
-        Args:
-            value: The string value.
-        """
-        self = PythonObject(value.as_string_slice())
+            var val = c_double(value.cast[DType.float64]())
+            self = Self(from_owned_ptr=cpy.PyFloat_FromDouble(val))
 
     @implicit
     fn __init__(out self, string: StringSlice) raises:
@@ -367,10 +349,29 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyUnicode_DecodeUTF8(string)
-        if not self._obj_ptr:
-            raise cpython.get_error()
+        var cpy = Python().cpython()
+        var unicode = cpy.PyUnicode_DecodeUTF8(string)
+        if not unicode:
+            raise cpy.get_error()
+        self = Self(from_owned_ptr=unicode)
+
+    @implicit
+    fn __init__(out self, value: StringLiteral) raises:
+        """Initialize the object from a string literal.
+
+        Args:
+            value: The string literal value.
+        """
+        self = Self(value.as_string_slice())
+
+    @implicit
+    fn __init__(out self, value: String) raises:
+        """Initialize the object from a string.
+
+        Args:
+            value: The string value.
+        """
+        self = Self(value.as_string_slice())
 
     @implicit
     fn __init__(out self, slice: Slice):
@@ -379,7 +380,7 @@ struct PythonObject(
         Args:
             slice: The dictionary value.
         """
-        self._obj_ptr = _slice_to_py_object_ptr(slice)
+        self = Self(from_owned_ptr=_slice_to_py_object_ptr(slice))
 
     @always_inline
     fn __init__[
@@ -397,7 +398,7 @@ struct PythonObject(
         Returns:
             The constructed Python list.
         """
-        return Python._list(values)
+        self = Python._list(values)
 
     @always_inline
     fn __init__[
@@ -467,9 +468,7 @@ struct PythonObject(
         Args:
             existing: The value to copy.
         """
-        self._obj_ptr = existing._obj_ptr
-        var cpython = Python().cpython()
-        cpython.Py_IncRef(self._obj_ptr)
+        self = Self(from_borrowed_ptr=existing._obj_ptr)
 
     fn __del__(owned self):
         """Destroy the object.
