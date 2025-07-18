@@ -14,6 +14,9 @@ from unittest.mock import Mock
 import numpy as np
 import torch
 from max.interfaces import SamplingParams
+from max.interfaces.pipeline_variants.audio_generation import (
+    AudioGenerationMetadata,
+)
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
@@ -77,7 +80,7 @@ def test_pipeline_receives_sampling_params() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
-            metadata={"sample_rate": 44100},
+            metadata=AudioGenerationMetadata(sample_rate=44100),
             is_done=True,
         ),
     ]
@@ -104,7 +107,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
-            metadata={"sample_rate": 22050},
+            metadata=AudioGenerationMetadata(sample_rate=22050),
             is_done=True,
         ),
     ]
@@ -163,7 +166,7 @@ def test_multiple_requests_different_sampling_params() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
-            metadata={"test": True},
+            metadata=AudioGenerationMetadata(),
             is_done=True,
         ),
     ]

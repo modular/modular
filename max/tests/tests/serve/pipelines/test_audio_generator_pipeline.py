@@ -11,6 +11,9 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from max.interfaces.pipeline_variants.audio_generation import (
+    AudioGenerationMetadata,
+)
 from max.pipelines.core import AudioGenerationRequest, AudioGeneratorOutput
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
@@ -59,17 +62,19 @@ def test_generate_full_audio_multiple_chunks() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk1_audio,
-            metadata={"sample_rate": 44100, "duration": 0.1},
+            metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.1),
             is_done=False,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
-            metadata={"sample_rate": 44100, "duration": 0.2},
+            metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.2),
             is_done=False,
         ),
         AudioGeneratorOutput(
             audio_data=chunk3_audio,
-            metadata={"sample_rate": 44100, "duration": 0.3, "final": True},
+            metadata=AudioGenerationMetadata(
+                sample_rate=44100, duration=0.3, final_chunk=True
+            ),
             is_done=True,
         ),
     ]
@@ -94,7 +99,7 @@ def test_generate_full_audio_multiple_chunks() -> None:
     assert result.metadata == {
         "sample_rate": 44100,
         "duration": 0.3,
-        "final": True,
+        "final_chunk": True,
     }
 
 
@@ -107,7 +112,7 @@ def test_generate_full_audio_single_chunk() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
-            metadata={"sample_rate": 22050, "duration": 0.5},
+            metadata=AudioGenerationMetadata(sample_rate=22050, duration=0.5),
             is_done=True,
         ),
     ]
@@ -150,7 +155,7 @@ def test_generate_full_audio_last_chunk_not_done() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk_audio,
-            metadata={"sample_rate": 44100},
+            metadata=AudioGenerationMetadata(sample_rate=44100),
             is_done=False,  # This should cause the assertion to fail
         ),
     ]
@@ -175,17 +180,17 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk1_audio,
-            metadata={"chunk": 1},
+            metadata=AudioGenerationMetadata(chunk_id=1),
             is_done=False,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
-            metadata={"chunk": 2},
+            metadata=AudioGenerationMetadata(chunk_id=2),
             is_done=False,
         ),
         AudioGeneratorOutput(
             audio_data=chunk3_audio,
-            metadata={"chunk": 3, "final": True},
+            metadata=AudioGenerationMetadata(chunk_id=3, final_chunk=True),
             is_done=True,
         ),
     ]
@@ -207,7 +212,7 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
     np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk.
-    assert result.metadata == {"chunk": 3, "final": True}
+    assert result.metadata == {"chunk_id": 3, "final_chunk": True}
 
 
 def test_generate_full_audio_preserves_chunk_objects() -> None:
@@ -220,16 +225,18 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
     chunks = [
         AudioGeneratorOutput(
             audio_data=chunk1_audio,
-            metadata={"chunk_id": 1, "timestamp": "2024-01-01"},
+            metadata=AudioGenerationMetadata(
+                chunk_id=1, timestamp="2024-01-01"
+            ),
             is_done=False,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
-            metadata={
-                "chunk_id": 2,
-                "timestamp": "2024-01-02",
-                "final_chunk": True,
-            },
+            metadata=AudioGenerationMetadata(
+                chunk_id=2,
+                timestamp="2024-01-02",
+                final_chunk=True,
+            ),
             is_done=True,
         ),
     ]
