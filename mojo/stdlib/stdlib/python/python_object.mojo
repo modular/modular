@@ -195,47 +195,39 @@ struct PythonObject(
         """Initialize this object from an owned reference-counted Python object
         pointer.
 
-        Ownership of the reference will be assumed by `PythonObject`.
+        For example, this function should be used to construct a `PythonObject`
+        from the pointer returned by "New reference"-type objects from the
+        CPython API.
 
         Args:
-            from_owned_ptr: The `PyObjectPtr` to take ownership of.
+            from_owned_ptr: An owned pointer to a Python object.
+
+        References:
+        - https://docs.python.org/3/glossary.html#term-strong-reference
         """
         self._obj_ptr = from_owned_ptr
 
     fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
-        """Initialize this object from a read-only reference-counted Python
+        """Initialize this object from a borrowed reference-counted Python
         object pointer.
 
-        The reference count of the pointee object will be incremented, and
-        ownership of the additional reference count will be assumed by the
-        initialized `PythonObject`.
-
-        The CPython API documentation indicates the ownership semantics of the
-        returned object on any function that returns a `PyObject*` value. The
-        two possible annotations are:
-
-        * "Return value: New reference."
-        * "Return value: Borrowed reference.
-
-        This function should be used to construct a `PythonObject` from the
-        pointer returned by 'Borrowed reference'-type objects.
+        For example, this function should be used to construct a `PythonObject`
+        from the pointer returned by "Borrowed reference"-type objects from the
+        CPython API.
 
         Args:
-            from_borrowed_ptr: A read-only reference counted pointer to a Python
-                object.
+            from_borrowed_ptr: A borrowed pointer to a Python object.
 
-        Returns:
-            An owned PythonObject pointer.
+        References:
+        - https://docs.python.org/3/glossary.html#term-borrowed-reference
         """
-        var cpython = Python().cpython()
-
+        var cpy = Python().cpython()
         # SAFETY:
-        #   We were passed a Python 'read-only reference', so for it to be
+        #   We were passed a Python "borrowed reference", so for it to be
         #   safe to store this reference, we must increment the reference
-        #   count to convert this to a 'strong reference'.
-        cpython.Py_IncRef(from_borrowed_ptr)
-
-        self = PythonObject(from_owned_ptr=from_borrowed_ptr)
+        #   count to convert this to a "strong reference".
+        cpy.Py_IncRef(from_borrowed_ptr)
+        self._obj_ptr = from_borrowed_ptr
 
     @always_inline
     fn __init__[T: Movable](out self, *, var alloc: T) raises:
