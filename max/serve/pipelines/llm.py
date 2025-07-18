@@ -387,6 +387,8 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         """Generates complete audio for the provided request."""
         audio_chunks: list[AudioGeneratorOutput] = []
         async for chunk in self.next_chunk(request):
+            if not chunk.audio_data.size:
+                continue
             audio_chunks.append(chunk)
 
         # We import torch here so that only folks that use the
