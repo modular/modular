@@ -360,9 +360,7 @@ class PipelineConfig(MAXConfig):
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
-                msg = (
-                    "Custom module spec contains too many colons: {module_spec}"
-                )
+                msg = f"Custom module spec contains too many colons: {module_spec}"
                 raise ValueError(msg)
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
