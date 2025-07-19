@@ -492,8 +492,8 @@ def load_decode_scheduler(
         max_batch_size_tg=pipeline_config.max_batch_size
         if pipeline_config.max_batch_size is not None
         else 1,
-        max_forward_steps_tg=pipeline_config.max_new_tokens
-        if pipeline_config.max_new_tokens != -1
+        max_forward_steps_tg=pipeline_config.max_num_steps
+        if pipeline_config.max_num_steps != -1
         else 1,
     )
 
