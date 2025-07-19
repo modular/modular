@@ -8,7 +8,7 @@ import json
 from max.serve.router.json_utils import parse_json_from_text
 
 
-def test_json_parsing():
+def test_json_parsing() -> None:
     text = """
     {
         "name": "John",
@@ -35,7 +35,7 @@ def test_json_parsing():
     ]
 
 
-def test_large_json_object():
+def test_large_json_object() -> None:
     """Test parsing a very large JSON object."""
     # Construct a large JSON object with 10,000 key-value pairs
     large_dict = {f"key_{i}": i for i in range(10000)}
@@ -50,6 +50,6 @@ def test_large_json_object():
     assert result[0] == large_dict
 
 
-def test_no_json_in_text():
+def test_no_json_in_text() -> None:
     text = "foobar"
     assert parse_json_from_text(text) == []

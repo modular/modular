@@ -297,7 +297,7 @@ def test_linear_shard_non_divisible_output_dim() -> None:
 def test_linear_columnwise_bias_only_on_device_0(
     strategy_name,  # noqa: ANN001
     strategy_factory,  # noqa: ANN001
-):
+) -> None:
     """Test that bias is only present on device 0 for columnwise sharding strategies.
 
     This test verifies the fix for the issue where bias was being replicated
@@ -334,7 +334,7 @@ def test_linear_columnwise_bias_only_on_device_0(
                 )
 
 
-def test_linear_rowwise_bias_sharding_preserved():
+def test_linear_rowwise_bias_sharding_preserved() -> None:
     """Test that rowwise sharding still shards bias normally.
 
     This ensures that the fix for columnwise sharding doesn't break
@@ -369,7 +369,7 @@ def test_linear_rowwise_bias_sharding_preserved():
             assert tuple(int(d) for d in sharded.weight.shape) == (256, 4096)
 
 
-def test_weight_scale_sharding_with_head_aware_columnwise():
+def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
     """Tests that weight_scale is replicated with head_aware_columnwise
     strategy.
     """

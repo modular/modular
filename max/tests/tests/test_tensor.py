@@ -17,7 +17,7 @@ from max.graph import DeviceRef
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
 
-def test_tensor_basic():
+def test_tensor_basic() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -35,7 +35,7 @@ def test_tensor_basic():
     assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
 
 
-def test_tensor_with_intermediate():
+def test_tensor_with_intermediate() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -53,7 +53,7 @@ def test_tensor_with_intermediate():
     assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
 
 
-def test_compilation_failure():
+def test_compilation_failure() -> None:
     a_data = DriverTensor.zeros([5, 5], DType.float8_e4m3fn, CPU())
     b_data = DriverTensor.zeros([5, 5], DType.float32, CPU())
     a = Tensor(storage=a_data)

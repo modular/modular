@@ -46,7 +46,7 @@ def test_version_endpoint_exists(app) -> None:  # noqa: ANN001
         assert response.json()["version"]
 
 
-def test_health_endpoint_exists(app):  # noqa: ANN001
+def test_health_endpoint_exists(app) -> None:  # noqa: ANN001
     with TestClient(app) as client:
         response = client.get("/health")
         assert response.status_code == 200
