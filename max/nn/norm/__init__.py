@@ -16,10 +16,10 @@ from .layer_norm import LayerNorm, LayerNormV1
 from .rms_norm import DistributedRMSNorm, RMSNorm, RMSNormV1
 
 __all__ = [
-    "GroupNorm",
-    "LayerNormV1",
-    "LayerNorm",
-    "RMSNormV1",
-    "RMSNorm",
     "DistributedRMSNorm",
+    "GroupNorm",
+    "LayerNorm",
+    "LayerNormV1",
+    "RMSNorm",
+    "RMSNormV1",
 ]

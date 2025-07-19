@@ -21,10 +21,10 @@ from .collate_batch import (
 from .max_tokens_to_generate import max_tokens_to_generate
 
 __all__ = [
+    "PaddingDirection",
+    "batch_padded_tokens_and_mask",
     "causal_attention_mask",
     "causal_attention_mask_with_alibi",
     "collate_batch",
-    "batch_padded_tokens_and_mask",
-    "PaddingDirection",
     "max_tokens_to_generate",
 ]

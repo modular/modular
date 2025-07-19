@@ -71,6 +71,7 @@ extend-select = [
   "UP", # Type annotations should not use Union, Optional, etc
   "ANN", # Require function type annotations
   "T10", # Checks for the presence of debugger calls and imports.
+  "RUF022", # `__all__` is not sorted
 ]
 
 [tool.ruff.lint.pydocstyle]

@@ -31,14 +31,14 @@ from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
 __all__ = [
-    "Scheduler",
-    "load_scheduler",
-    "EmbeddingsScheduler",
-    "EmbeddingsSchedulerConfig",
     "AudioGenerationScheduler",
     "AudioGenerationSchedulerConfig",
+    "EmbeddingsScheduler",
+    "EmbeddingsSchedulerConfig",
     "PrefillRequest",
     "PrefillResponse",
+    "Scheduler",
+    "load_scheduler",
 ]
 
 

@@ -43,6 +43,7 @@ __all__ = [
     "EmbeddingsGenerator",
     "PipelineTokenizer",
     "PipelinesFactory",
+    "TTSContext",
     "TextAndVisionContext",
     "TextContext",
     "TokenGeneratorContext",
@@ -51,7 +52,6 @@ __all__ = [
     "TokenGeneratorRequestMessage",
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
-    "TTSContext",
-    "msgpack_numpy_encoder",
     "msgpack_numpy_decoder",
+    "msgpack_numpy_encoder",
 ]

@@ -21,7 +21,7 @@ from .transformer import ReturnLogits, Transformer, TransformerBlock
 __all__ = [
     "DistributedTransformer",
     "DistributedTransformerBlock",
+    "ReturnLogits",
     "Transformer",
     "TransformerBlock",
-    "ReturnLogits",
 ]
