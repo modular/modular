@@ -23,4 +23,4 @@ from ._misc import (
 )
 
 # Remove from the namespace so that it's not visible to users.
-del _misc  # type: ignore # noqa: F821
+del _misc  # type: ignore
