@@ -17,7 +17,7 @@ These APIs are imported automatically, just like builtins.
 
 
 from os import abort
-from sys import sizeof
+from sys import sizeof, bitwidthof
 from sys.intrinsics import _type_is_eq
 
 from memory import Pointer, memcpy
@@ -83,6 +83,25 @@ struct _ListIter[
             return self.index
 
 
+@always_inline
+fn _get_bitwidth_uint_dtype[bitwidth: Int]() -> DType:
+    @parameter
+    if bitwidth == 8:
+        return DType.uint8
+    elif bitwidth == 16:
+        return DType.uint16
+    elif bitwidth == 32:
+        return DType.uint32
+    elif bitwidth == 64:
+        return DType.uint64
+    elif bitwidth == 128:
+        return DType.uint128
+    elif bitwidth == 256:
+        return DType.uint256
+    else:
+        return DType.invalid
+
+
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
@@ -97,6 +116,26 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         It supports pushing and popping from the back resizing the underlying
         storage as needed.  When it is deallocated, it frees its memory.
     """
+
+    # Aliases
+    alias _bitwidth = bitwidthof[T]()
+    # 256 is the current biggest uint DType bitwidth
+    alias _simd_size = (Self._bitwidth // 257) + 1
+    alias _simd_dtype = DType.get_dtype[T, Self._simd_size]()
+    alias _is_simd = Self._simd_dtype is not DType.invalid
+    alias _bitwidth_dtype = _get_bitwidth_uint_dtype[Self._bitwidth]() if (
+        hint_trivial_type
+    ) else DType.invalid
+    alias _processed_dtype = Self._simd_dtype if (
+        Self._is_simd
+    ) else Self._bitwidth_dtype
+    # let's limit optimizations to Span[Scalar[dtype]] to simplify for now
+    alias _span_dtype = Self._simd_dtype if (
+        Self._simd_size == 1
+    ) else DType.invalid
+    alias _can_use_span = Self._span_dtype is not DType.invalid
+    alias _SIMD = SIMD[Self._span_dtype, 1]
+    alias _dtype_Span = Span[Self._SIMD, _]
 
     # Fields
     var data: UnsafePointer[T]
@@ -1123,18 +1162,15 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         var length = self._len
         return self.unsafe_ptr() + length
 
-    fn _cast_hint_trivial_type[
-        hint_trivial_type: Bool
-    ](var self) -> List[T, hint_trivial_type]:
-        var result = List[T, hint_trivial_type]()
-        result.data = self.data
-        result._len = self._len
-        result.capacity = self.capacity
-
-        # We stole the elements, don't destroy them.
-        __disable_del self
-
-        return result^
+    @always_inline
+    fn _as_dtype_span(ref self) -> Self._dtype_Span[__origin_of(self)]:
+        constrained[
+            Self._is_simd or hint_trivial_type, "Type must be trivial"
+        ]()
+        constrained[Self._can_use_span, "Data must fit in 256 bits"]()
+        return Self._dtype_Span[__origin_of(self)](
+            ptr=self.unsafe_ptr().bitcast[Self._SIMD](), length=len(self)
+        )
 
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:
