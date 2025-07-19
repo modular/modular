@@ -33,7 +33,7 @@ class MojoSource:
         in the source file."""
         with open(self.path) as source:
             i = 1
-            for line in source.readlines():
+            for line in source:
                 if text in line:
                     yield i
                 i += 1
