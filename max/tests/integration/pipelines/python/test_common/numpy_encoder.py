@@ -30,7 +30,7 @@ class NumpyDecoder(JSONDecoder):
             self,
             object_hook=self.object_hook,
             *args,  # noqa: B026
-            **kwargs,  # noqa: B026
+            **kwargs,
         )
 
     def object_hook(self, dct):  # noqa: ANN001
