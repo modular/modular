@@ -1040,6 +1040,79 @@ alias PyUnicode_AsUTF8AndSize = ExternalFunction[
     ) -> UnsafePointer[c_char, mut=False],
 ]
 
+# Tuple Objects
+alias PyTuple_New = ExternalFunction[
+    "PyTuple_New",
+    # PyObject *PyTuple_New(Py_ssize_t len)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyTuple_GetItem = ExternalFunction[
+    "PyTuple_GetItem",
+    # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
+    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyTuple_SetItem = ExternalFunction[
+    "PyTuple_SetItem",
+    # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
+    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
+]
+
+# List Objects
+alias PyList_New = ExternalFunction[
+    "PyList_New",
+    # PyObject *PyList_New(Py_ssize_t len)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyList_GetItem = ExternalFunction[
+    "PyList_GetItem",
+    # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
+    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyList_SetItem = ExternalFunction[
+    "PyList_SetItem",
+    # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
+    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
+]
+
+# Dictionary Objects
+alias PyDict_New = ExternalFunction[
+    "PyDict_New",
+    # PyObject *PyDict_New()
+    fn () -> PyObjectPtr,
+]
+alias PyDict_SetItem = ExternalFunction[
+    "PyDict_SetItem",
+    # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
+]
+alias PyDict_GetItemWithError = ExternalFunction[
+    "PyDict_GetItemWithError",
+    # PyObject *PyDict_GetItemWithError(PyObject *p, PyObject *key)
+    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+alias PyDict_Next = ExternalFunction[
+    "PyDict_Next",
+    # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
+    fn (
+        PyObjectPtr,
+        UnsafePointer[Py_ssize_t],
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+    ) -> c_int,
+]
+
+# Set Objects
+alias PySet_New = ExternalFunction[
+    "PySet_New",
+    # PyObject *PySet_New(PyObject *iterable)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PySet_Add = ExternalFunction[
+    "PySet_Add",
+    # int PySet_Add(PyObject *set, PyObject *key)
+    fn (PyObjectPtr, PyObjectPtr) -> c_int,
+]
+
 # Module Objects
 alias PyModule_GetDict = ExternalFunction[
     "PyModule_GetDict",
@@ -1067,12 +1140,6 @@ alias PySlice_New = ExternalFunction[
     "PySlice_New",
     # PyObject *PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
     fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
-]
-
-# int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
-alias PyList_SetItem = ExternalFunction[
-    "PyList_SetItem",
-    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
 # Object Implementation Support
@@ -1285,6 +1352,23 @@ struct CPython(Copyable, Defaultable, Movable):
     # Unicode Objects and Codecs
     var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
     var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
+    # Tuple Objects
+    var _PyTuple_New: PyTuple_New.type
+    var _PyTuple_GetItem: PyTuple_GetItem.type
+    var _PyTuple_SetItem: PyTuple_SetItem.type
+    # List Objects
+    var _PyList_New: PyList_New.type
+    var _PyList_GetItem: PyList_GetItem.type
+    var _PyList_SetItem: PyList_SetItem.type
+    # Dictionary Objects
+    var _PyDict_Type: PyTypeObjectPtr
+    var _PyDict_New: PyDict_New.type
+    var _PyDict_SetItem: PyDict_SetItem.type
+    var _PyDict_GetItemWithError: PyDict_GetItemWithError.type
+    var _PyDict_Next: PyDict_Next.type
+    # Set Objects
+    var _PySet_New: PySet_New.type
+    var _PySet_Add: PySet_Add.type
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
@@ -1292,9 +1376,6 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
     # Slice Objects
     var _PySlice_New: PySlice_New.type
-
-    var PyList_SetItem_func: PyList_SetItem.type
-
     # Object Implementation Support
     # Common Object Structures
     var _Py_Is: Py_Is.type
@@ -1448,8 +1529,29 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+
         self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
         self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
+
+        self._PyTuple_New = PyTuple_New.load(self.lib)
+        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib)
+        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib)
+
+        self._PyList_New = PyList_New.load(self.lib)
+        self._PyList_GetItem = PyList_GetItem.load(self.lib)
+        self._PyList_SetItem = PyList_SetItem.load(self.lib)
+
+        self._PyDict_Type = PyTypeObjectPtr(
+            # PyTypeObject PyDict_Type
+            self.lib.get_symbol[PyTypeObject]("PyDict_Type")
+        )
+        self._PyDict_New = PyDict_New.load(self.lib)
+        self._PyDict_SetItem = PyDict_SetItem.load(self.lib)
+        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(self.lib)
+        self._PyDict_Next = PyDict_Next.load(self.lib)
+
+        self._PySet_New = PySet_New.load(self.lib)
+        self._PySet_Add = PySet_Add.load(self.lib)
 
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
@@ -1460,8 +1562,6 @@ struct CPython(Copyable, Defaultable, Movable):
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
 
         self._PySlice_New = PySlice_New.load(self.lib)
-
-        self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
         if self.version.minor >= 10:
             self._Py_Is = Py_Is.load(self.lib)
@@ -1559,6 +1659,27 @@ struct CPython(Copyable, Defaultable, Movable):
             return self.unsafe_get_error()
         return Error("internal error: expected CPython exception not found")
 
+    fn get_error_global(
+        self,
+        global_name: StringSlice,
+    ) -> PyObjectPtr:
+        """Get a Python read-only reference to the specified global exception
+        object.
+        """
+
+        # Get pointer to the immortal `global_name` PyObject struct
+        # instance.
+        var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
+
+        if not ptr:
+            abort(
+                "error: unable to get pointer to CPython `"
+                + String(global_name)
+                + "` global"
+            )
+
+        return ptr[]
+
     # ===-------------------------------------------------------------------===#
     # Logging
     # ===-------------------------------------------------------------------===#
@@ -1584,6 +1705,11 @@ struct CPython(Copyable, Defaultable, Movable):
             print(args[i], sep="", end="", flush=False)
 
         print(flush=True)
+
+    # ===-------------------------------------------------------------------===#
+    # Python/C API
+    # ref: https://docs.python.org/3/c-api/index.html
+    # ===-------------------------------------------------------------------===#
 
     # ===-------------------------------------------------------------------===#
     # The Very High Level Layer
@@ -1908,6 +2034,17 @@ struct CPython(Copyable, Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
         return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+
+    # ===-------------------------------------------------------------------===#
+    # Reflection
+    # ref: https://docs.python.org/3/c-api/reflection.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
+        """
+        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
 
     # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
@@ -2451,6 +2588,235 @@ struct CPython(Copyable, Defaultable, Movable):
         )
 
     # ===-------------------------------------------------------------------===#
+    # Tuple Objects
+    # ref: https://docs.python.org/3/c-api/tuple.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new tuple object of size `length`, or `NULL` with an
+        exception set on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New
+        """
+        var r = self._PyTuple_New(length)
+        self.log(
+            r,
+            " NEWREF PyTuple_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", tuple size:",
+            length,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyTuple_GetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `pos` in the tuple `tuple`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem
+        """
+        return self._PyTuple_GetItem(tuple, pos)
+
+    fn PyTuple_SetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Insert a reference to object `value` at position `pos` of the tuple
+        `tuple`.
+
+        This function "steals" a reference to `value` and discards a reference
+        to an item already in the tuple at the affected position.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem
+        """
+        self._dec_total_rc()
+        return self._PyTuple_SetItem(tuple, pos, value)
+
+    # ===-------------------------------------------------------------------===#
+    # List Objects
+    # ref: https://docs.python.org/3/c-api/list.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new list of length `length` on success, or `NULL` on
+        failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_New
+        """
+        var r = self._PyList_New(length)
+        self.log(
+            r,
+            " NEWREF PyList_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", list size:",
+            length,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyList_GetItem(
+        self,
+        list: PyObjectPtr,
+        index: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `index` in the list `list`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_GetItem
+        """
+        return self._PyList_GetItem(list, index)
+
+    fn PyList_SetItem(
+        self,
+        list: PyObjectPtr,
+        index: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Set the item at index `index` in `list` to `value`.
+
+        This function "steals" a reference to `value` and discards a reference
+        to an item already in the list at the affected position.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_SetItem
+        """
+        self._dec_total_rc()
+        return self._PyList_SetItem(list, index, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Dictionary Objects
+    # ref: https://docs.python.org/3/c-api/dict.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyDict_Type(self) -> PyTypeObjectPtr:
+        """This instance of `PyTypeObject` represents the Python dictionary type.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_Type
+        """
+        return self._PyDict_Type
+
+    fn PyDict_New(self) -> PyObjectPtr:
+        """Return a new empty dictionary, or `NULL` on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_New
+        """
+        var r = self._PyDict_New()
+        self.log(r, " NEWREF PyDict_New, refcnt:", self._Py_REFCNT(r))
+        self._inc_total_rc()
+        return r
+
+    fn PyDict_SetItem(
+        self,
+        dict: PyObjectPtr,
+        key: PyObjectPtr,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Insert `value` into the dictionary `dict` with a key of `key`.
+
+        This function *does not* steal a reference to `value`.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem
+        """
+        var r = self._PyDict_SetItem(dict, key, value)
+        self.log("PyDict_SetItem, key: ", key, " value: ", value)
+        return r
+
+    fn PyDict_GetItemWithError(
+        self,
+        dict: PyObjectPtr,
+        key: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Return the object from dictionary `dict` which has a key `key`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError
+        """
+        var r = self._PyDict_GetItemWithError(dict, key)
+        self.log("PyDict_GetItemWithError, key: ", key)
+        return r
+
+    fn PyDict_Next(
+        self,
+        dict: PyObjectPtr,
+        pos: UnsafePointer[Py_ssize_t],
+        key: UnsafePointer[PyObjectPtr],
+        value: UnsafePointer[PyObjectPtr],
+    ) -> c_int:
+        """Iterate over all key-value pairs in the dictionary `dict`.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
+        """
+        var r = self._PyDict_Next(dict, pos, key, value)
+        self.log(
+            "PyDict_Next",
+            dict,
+            "refcnt:",
+            self._Py_REFCNT(dict),
+            " key: ",
+            key[],
+            ", refcnt(key):",
+            self._Py_REFCNT(key[]),
+            " value: ",
+            value[],
+            ", refcnt(value):",
+            self._Py_REFCNT(value[]),
+        )
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Set Objects
+    # ref: https://docs.python.org/3/c-api/set.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PySet_New(self, iterable: PyObjectPtr) -> PyObjectPtr:
+        """Return a new `set` containing objects returned by the `iterable`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/set.html#c.PySet_New
+        """
+        var r = self._PySet_New(iterable)
+        self.log(r, " NEWREF PySet_New, refcnt:", self._Py_REFCNT(r))
+        self._inc_total_rc()
+        return r
+
+    fn PySet_Add(self, set: PyObjectPtr, key: PyObjectPtr) -> c_int:
+        """Add `key` to a `set` instance.
+
+        References:
+        - https://docs.python.org/3/c-api/set.html#c.PySet_Add
+        """
+        var r = self._PySet_Add(set, key)
+        self.log(set, " PySet_Add, key: ", key)
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Module Objects
     # ref: https://docs.python.org/3/c-api/module.html
     # ===-------------------------------------------------------------------===#
@@ -2552,286 +2918,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
-    # Python Set operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PySet_New(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_New).
-        """
-
-        var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
-        self.log(r, " NEWREF PySet_New, refcnt:", self._Py_REFCNT(r))
-        self._inc_total_rc()
-        return r
-
-    # int PySet_Add(PyObject *set, PyObject *key)
-    fn PySet_Add(self, set: PyObjectPtr, element: PyObjectPtr) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_Add).
-        """
-
-        var r = self.lib.call["PySet_Add", c_int](set, element)
-        self.log(set, " PySet_Add, element: ", element)
-        return r
-
-    # ===-------------------------------------------------------------------===#
-    # Dictionary Objects
-    # ref: https://docs.python.org/3/c-api/dict.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyDict_New(self) -> PyObjectPtr:
-        """Return a new empty dictionary, or `NULL` on failure.
-
-        Note:
-            Return value: New reference.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_New).
-        """
-
-        # PyObject *PyDict_New()
-        var r = self.lib.call["PyDict_New", PyObjectPtr]()
-        self.log(r, " NEWREF PyDict_New, refcnt:", self._Py_REFCNT(r))
-        self._inc_total_rc()
-        return r
-
-    fn PyDict_SetItem(
-        self,
-        dict_obj: PyObjectPtr,
-        key: PyObjectPtr,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Insert `value` into the dictionary `dict_obj` with a key of `key`.
-
-        Note:
-            This function does not steal a reference to `value`.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem).
-        """
-
-        # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
-        var r = self.lib.call["PyDict_SetItem", c_int](dict_obj, key, value)
-        self.log("PyDict_SetItem, key: ", key, " value: ", value)
-        return r
-
-    fn PyDict_GetItemWithError(
-        self,
-        dict_obj: PyObjectPtr,
-        key: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """Return the object from dictionary `dict_obj` which has a key `key`.
-
-        Note:
-            Return value: Borrowed reference.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError).
-        """
-
-        # PyObject *PyDict_GetItemWithError(PyObject *p, PyObject *key)
-        var r = self.lib.call["PyDict_GetItemWithError", PyObjectPtr](
-            dict_obj, key
-        )
-        self.log("PyDict_GetItemWithError, key: ", key)
-        return r
-
-    fn PyDict_CheckExact(self, obj: PyObjectPtr) -> Bool:
-        """Return true if `obj` is a `dict` object.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_CheckExact).
-        """
-        return self.Py_TYPE(obj) == self.PyDict_Type()
-
-    fn PyDict_Type(self) -> PyTypeObjectPtr:
-        """This instance of `PyTypeObject` represents the Python dictionary type.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
-        """
-
-        # PyTypeObject PyDict_Type
-        return self.lib.get_symbol[PyTypeObject]("PyDict_Type")
-
-    fn PyDict_Next(
-        self,
-        dict_obj: PyObjectPtr,
-        pos: UnsafePointer[Py_ssize_t],
-        key: UnsafePointer[PyObjectPtr],
-        value: UnsafePointer[PyObjectPtr],
-    ) -> c_int:
-        """Iterate over all key-value pairs in the dictionary `dict_obj`.
-
-        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Next).
-        """
-
-        # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
-        var r = self.lib.call["PyDict_Next", c_int](dict_obj, pos, key, value)
-        self.log(
-            "PyDict_Next",
-            dict_obj,
-            "refcnt:",
-            self._Py_REFCNT(dict_obj),
-            " key: ",
-            key[],
-            ", refcnt(key):",
-            self._Py_REFCNT(key[]),
-            " value: ",
-            value[],
-            ", refcnt(value):",
-            self._Py_REFCNT(value[]),
-        )
-        return r
-
-    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
-        """
-        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn PyObject_Free(self, p: OpaquePointer):
-        """[Reference](
-        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
-        """
-        self.lib.call["PyObject_Free"](p)
-
-    # ===-------------------------------------------------------------------===#
-    # Tuple Objects
-    # ref: https://docs.python.org/3/c-api/tuple.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new tuple object of size `length`, or `NULL` with an exception set on failure.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
-        """
-
-        # PyObject *PyTuple_New(Py_ssize_t len)
-        var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
-
-        self.log(
-            r,
-            " NEWREF PyTuple_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", tuple size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyTuple_GetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `pos` in the tuple pointed to by `tuple`.
-
-        Returns borrowed reference.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
-        """
-
-        # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
-        return self.lib.call["PyTuple_GetItem", PyObjectPtr](tuple, pos)
-
-    fn PyTuple_SetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Insert a reference to object `value` at position `pos` of the tuple pointed to by `tuple`.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
-        """
-
-        # PyTuple_SetItem steals the reference - the value object will be
-        # destroyed along with the tuple
-        self._dec_total_rc()
-
-        # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
-        return self.lib.call["PyTuple_SetItem", c_int](tuple, pos, value)
-
-    # ===-------------------------------------------------------------------===#
-    # List Objects
-    # ref: https://docs.python.org/3/c-api/list.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new list of length `length` on success, or `NULL` on failure.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_New).
-        """
-
-        # PyObject *PyList_New(Py_ssize_t len)
-        var r = self.lib.call["PyList_New", PyObjectPtr](length)
-
-        self.log(
-            r,
-            " NEWREF PyList_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", list size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyList_GetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `index` in the list pointed to by `list_obj`.
-
-        Returns a borrowed reference instead of a strong reference.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
-        """
-
-        # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
-        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
-
-    fn PyList_SetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Set the item at index `index` in list to `value`.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
-        """
-
-        # PyList_SetItem steals the reference - the element object will be
-        # destroyed along with the list
-        self._dec_total_rc()
-        return self.PyList_SetItem_func(list_obj, index, value)
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error types
-    # ===-------------------------------------------------------------------===#
-
-    fn get_error_global(
-        self,
-        global_name: StringSlice,
-    ) -> PyObjectPtr:
-        """Get a Python read-only reference to the specified global exception
-        object.
-        """
-
-        # Get pointer to the immortal `global_name` PyObject struct
-        # instance.
-        var ptr = self.lib.get_symbol[PyObjectPtr](global_name)
-
-        if not ptr:
-            abort(
-                "error: unable to get pointer to CPython `"
-                + String(global_name)
-                + "` global"
-            )
-
-        return ptr[]
-
-    # ===-------------------------------------------------------------------===#
     # Capsules
     # ref: https://docs.python.org/3/c-api/capsule.html
     # ===-------------------------------------------------------------------===#
@@ -2878,6 +2964,17 @@ struct CPython(Copyable, Defaultable, Movable):
         if self.PyErr_Occurred():
             raise self.get_error()
         return ptr
+
+    # ===-------------------------------------------------------------------===#
+    # Memory Management
+    # ref: https://docs.python.org/3/c-api/memory.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_Free(self, p: OpaquePointer):
+        """[Reference](
+        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
+        """
+        self.lib.call["PyObject_Free"](p)
 
     # ===-------------------------------------------------------------------===#
     # Object Implementation Support

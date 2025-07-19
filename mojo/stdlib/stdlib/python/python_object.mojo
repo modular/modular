@@ -363,7 +363,7 @@ struct PythonObject(
             The constructed Python set.
         """
         var cpython = Python().cpython()
-        var obj_ptr = cpython.PySet_New()
+        var obj_ptr = cpython.PySet_New({})
         if not obj_ptr:
             raise cpython.get_error()
 

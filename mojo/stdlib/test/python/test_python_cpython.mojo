@@ -100,6 +100,7 @@ def test_object_protocol_api(python: Python):
     var n = cpy.PyLong_FromSsize_t(42)
     var z = cpy.PyLong_FromSsize_t(0)
     var l = cpy.PyList_New(1)
+    cpy.Py_IncRef(z)
     _ = cpy.PyList_SetItem(l, 0, z)
 
     assert_equal(cpy.PyObject_HasAttrString(n, "__hash__"), 1)
@@ -152,6 +153,7 @@ def test_iterator_protocol_api(python: Python):
 
     var n = cpy.PyLong_FromSsize_t(42)
     var l = cpy.PyList_New(1)
+    cpy.Py_IncRef(n)
     _ = cpy.PyList_SetItem(l, 0, n)
 
     var it = cpy.PyObject_GetIter(l)
@@ -212,6 +214,75 @@ def test_unicode_object_api(python: Python):
     assert_equal(res, str)
 
 
+def test_tuple_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    var t = cpy.PyTuple_New(1)
+    assert_true(t)
+
+    # PyTuple_SetItem steals a reference to the object
+    cpy.Py_IncRef(n)
+    assert_equal(cpy.PyTuple_SetItem(t, 0, n), 0)
+    assert_equal(cpy.PyTuple_GetItem(t, 0), n)
+
+
+def test_list_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    var l = cpy.PyList_New(1)
+    assert_true(l)
+
+    # PyList_SetItem steals a reference to the object
+    cpy.Py_IncRef(n)
+    assert_equal(cpy.PyList_SetItem(l, 0, n), 0)
+    assert_equal(cpy.PyList_GetItem(l, 0), n)
+
+
+def test_dictionary_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var d = cpy.PyDict_New()
+    var b = cpy.PyBool_FromLong(0)
+
+    assert_equal(cpy.PyDict_SetItem(d, b, b), 0)
+    assert_equal(cpy.PyDict_GetItemWithError(d, b), b)
+
+    var key = PyObjectPtr()
+    var value = PyObjectPtr()
+    var pos: Py_ssize_t = 0
+
+    var succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_equal(pos, 1)
+    assert_equal(key, b)
+    assert_equal(value, b)
+    assert_true(succ)
+
+    succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_false(succ)
+
+
+def test_set_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var s = cpy.PySet_New({})
+    assert_true(s)
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    assert_equal(cpy.PySet_Add(s, n), 0)
+
+
 def test_module_object_api(python: Python):
     var cpy = python.cpython()
 
@@ -240,42 +311,6 @@ def test_slice_object_api(python: Python):
 
     var n = cpy.PyLong_FromSsize_t(42)
     assert_true(cpy.PySlice_New(n, n, n))
-
-
-def test_PyDict(mut python: Python):
-    var cpy = python.cpython()
-
-    var d = cpy.PyDict_New()
-    var b = cpy.PyBool_FromLong(0)
-
-    assert_true(cpy.PyDict_CheckExact(d))
-    assert_false(cpy.PyDict_CheckExact(b))
-
-    assert_equal(cpy.PyDict_SetItem(d, b, b), 0)
-    assert_equal(cpy.PyDict_GetItemWithError(d, b), b)
-
-    var key = PyObjectPtr()
-    var value = PyObjectPtr()
-    var pos: Py_ssize_t = 0
-
-    var succ = cpy.PyDict_Next(
-        d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
-    )
-    assert_equal(pos, 1)
-    assert_equal(key, b)
-    assert_equal(value, b)
-    assert_true(succ)
-
-    succ = cpy.PyDict_Next(
-        d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
-    )
-    assert_false(succ)
 
 
 fn destructor(capsule: PyObjectPtr) -> None:
@@ -375,13 +410,24 @@ def main():
     # Unicode Objects and Codecs
     test_unicode_object_api(python)
 
+    # Tuple Objects
+    test_tuple_object_api(python)
+
+    # List Objects
+    test_list_object_api(python)
+
+    # Dictionary Objects
+    test_dictionary_object_api(python)
+
+    # Set Objects
+    test_set_object_api(python)
+
     # Module Objects
     test_module_object_api(python)
 
     # Slice Objects
     test_slice_object_api(python)
 
-    test_PyDict(python)
     test_PyCapsule(python)
 
     # Object Implementation Support
