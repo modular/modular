@@ -1,8 +1,8 @@
 # Introduction to Mojo tutorial solution
 
-This directory contains a complete solution for the [Introduction to
-Mojo](https://docs.modular.com/mojo/manual/basics) tutorial project, which is an
-implementation of [Conway's Game of
+This directory contains a complete solution for the
+[Get started with Mojo](https://docs.modular.com/mojo/manual/get-started)
+tutorial project, which is an implementation of [Conway's Game of
 Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life) cellular
 automation.
 
