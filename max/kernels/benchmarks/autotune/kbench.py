@@ -219,7 +219,7 @@ class KbenchCache:
         if not self.is_active:
             return None
         # TODO: revise the following conflict.
-        if obj_path in self.data.keys():
+        if obj_path in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
         self.data[key] = str(obj_path)
         return obj_path
@@ -478,7 +478,7 @@ class Spec:
             if IFS in p:
                 name, val = p.split(IFS)
 
-            if name not in d.keys():
+            if name not in d:
                 d[name] = []
 
             # This supports list of params per one definition
@@ -554,13 +554,13 @@ class Spec:
         """
         obj = yaml.safe_load(yaml_str)
 
-        if "name" not in obj.keys():
+        if "name" not in obj:
             logging.warning("Field [name] is not set in YAML")
-        if "file" not in obj.keys():
+        if "file" not in obj:
             logging.warning("Field [file] is not set in YAML")
 
         params: list[list[ParamSpace]] = []
-        if "params" in obj.keys():
+        if "params" in obj:
             for cfg in obj["params"]:
                 e: list[ParamSpace] = []
                 for k, v in cfg.items():
@@ -669,7 +669,7 @@ class Spec:
             elif ":" in f:
                 name, val = f.split(":")
 
-            if name not in filters.keys():
+            if name not in filters:
                 filters[name] = []
             filters[name].append(val)
 
@@ -866,7 +866,7 @@ class Scheduler:
                 unique_build_paths[bin_name] = bin_path
             else:
                 # Neither found in the cache, nor exists in the unique_build_items
-                if bin_name not in unique_build_items.keys():
+                if bin_name not in unique_build_items:
                     unique_build_items[bin_name] = i
                     debug_msg += [f"Added to schedule (ref_idx=[{i}])"]
                 else:

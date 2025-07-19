@@ -215,7 +215,7 @@ class KbenchPKL:
     def load(path) -> dict:  # noqa: ANN001
         f = load_pickle(path)
         for k in ["merged_df", "build_df"]:
-            assert k in f.keys()
+            assert k in f
         return f
 
 
@@ -314,11 +314,7 @@ def profile_results(
 
 def identical_pivot_values(x, y, pivots) -> bool:  # noqa: ANN001
     for p in pivots:
-        if (
-            (p not in x.keys())
-            or (p not in y.keys())
-            or (x.get(p, None) != y.get(p, None))
-        ):
+        if (p not in x) or (p not in y) or (x.get(p, None) != y.get(p, None)):
             print(f"ERROR: FAILED assert on pivot {p}: [{x[p]}] vs. [{y[p]}]")
             return False
     return True

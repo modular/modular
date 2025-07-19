@@ -218,13 +218,10 @@ class TokenGenerationScheduler(Scheduler):
             return True
 
         # If there are less than 10% free blocks, prioritize TG over CE
-        if (
+        return not (
             self.paged_manager is not None
             and self.paged_manager.free_blocks_pct < 0.1
-        ):
-            return False
-
-        return True
+        )
 
     @traced
     def _maybe_chunk_prefill_request(

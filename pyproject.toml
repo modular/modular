@@ -74,6 +74,8 @@ extend-select = [
   "D", # Pydocstyle lints
   "UP", # Type annotations should not use Union, Optional, etc
   "ANN", # Require function type annotations
+  "SIM103", # Return condition directly instead of using if/else
+  "SIM118", # Use `key in dict` instead of `key in dict.keys()`
   "T10", # Checks for the presence of debugger calls and imports.
   "B", # Bugbear lints
   "RUF022", # `__all__` is not sorted

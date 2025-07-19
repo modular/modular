@@ -35,7 +35,7 @@ class RandomTokenGenerator:
         self, batch: dict[str, RandomTokenGeneratorContext]
     ) -> dict[str, str]:
         # Generate random values for each request including 0
-        results = {rid: random.randint(0, 10) for rid in batch.keys()}
+        results = {rid: random.randint(0, 10) for rid in batch}
         # Requests which produced 0 are "completed" and not returned
         return {rid: str(rvalue) for rid, rvalue in results.items() if rvalue}
 

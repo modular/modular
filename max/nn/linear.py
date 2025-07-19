@@ -1052,7 +1052,7 @@ class MLP(Module):
         )
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
-        assert activation_function in _ACTIVATION_FUNCTIONS.keys()
+        assert activation_function in _ACTIVATION_FUNCTIONS
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
 
     def __call__(self, x: TensorValueLike) -> TensorValue:

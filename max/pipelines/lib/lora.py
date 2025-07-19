@@ -62,13 +62,11 @@ def is_lora_kind(key: str) -> bool:
     """
     Whether the key is a lora kind
     """
-    if (
+    return bool(
         LoRAType.A.value in key
         or LoRAType.B.value in key
         or LoRAType.BIAS.value in key
-    ):
-        return True
-    return False
+    )
 
 
 class LoRAModel:

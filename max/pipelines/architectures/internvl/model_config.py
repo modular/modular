@@ -92,7 +92,7 @@ class VisionConfig:
         # InternVL o_proj_bias is not in the config, check checkpoint.
         # Check for the presence of the o_proj.bias key dynamically across all layers
         o_proj_bias = any(
-            key.endswith(".attn.o_proj.bias") for key in state_dict.keys()
+            key.endswith(".attn.o_proj.bias") for key in state_dict
         )
 
         return VisionConfig(
