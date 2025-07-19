@@ -10,28 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This module includes the exit functions."""
-
-
-from sys.ffi.c import _libc as libc
-from sys.ffi import c_int
-
-
-fn exit():
-    """Exits from Mojo. Unlike the Python implementation this does not raise an
-    exception to exit.
-    """
-    exit(0)
-
-
-fn exit[intable: Intable](code: intable):
-    """Exits from Mojo. Unlike the Python implementation this does not raise an
-    exception to exit.
-
-    Parameters:
-        intable: The type of the exit code.
-
-    Args:
-        code: The exit code.
-    """
-    libc.exit(c_int(Int(code)))
+"""Implements a foreign functions interface (FFI) for the C language."""

@@ -13,9 +13,9 @@
 """Implements the subprocess package."""
 
 
-import sys._libc as libc
+import sys.ffi.c._libc as libc
 from sys import external_call
-from sys._libc import FILE_ptr, pclose, popen
+from sys.ffi.c._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import os_is_windows
 

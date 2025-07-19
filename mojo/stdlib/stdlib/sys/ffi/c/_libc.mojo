@@ -19,7 +19,7 @@ functionality in the rest of the Mojo standard library.
 
 from sys import os_is_windows
 from sys.ffi import c_char, c_int, c_size_t
-
+from sys.ffi.c.types import C
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -219,3 +219,57 @@ fn dlsym[
     result_type
 ]:
     return external_call["dlsym", UnsafePointer[result_type]](handle, name)
+
+
+# ===-----------------------------------------------------------------------===#
+# errno.h — error number
+# ===-----------------------------------------------------------------------===#
+
+
+fn get_errno() -> C.int:
+    """Get a copy of the current value of the `errno` global variable for
+    the current thread.
+
+    Returns:
+        A copy of the current value of `errno` for the current thread.
+    """
+
+    @parameter
+    if os_is_windows():
+        var errno = InlineArray[C.int, 1](0)
+        _ = external_call["_get_errno", C.void](errno.unsafe_ptr())
+        return errno[0]
+    else:
+        alias loc = "__error" if os_is_macos() else "__errno_location"
+        return external_call[loc, UnsafePointer[C.int]]()[]
+
+
+fn set_errno(errno: C.int):
+    """Set the `errno` global variable for the current thread.
+
+    Args:
+        errno: The value to set `errno` to.
+    """
+
+    @parameter
+    if os_is_windows():
+        _ = external_call["_set_errno", C.int](errno)
+    else:
+        alias loc = "__error" if os_is_macos() else "__errno_location"
+        _ = external_call[loc, UnsafePointer[C.int]]()[0] = errno
+
+
+fn strerror(errnum: C.int) -> UnsafePointer[C.char]:
+    """Libc POSIX `strerror` function.
+
+    Args:
+        errnum: The number of the error.
+
+    Returns:
+        A Pointer to the error message.
+
+    Notes:
+        [Reference](https://man7.org/linux/man-pages/man3/strerror.3p.html).
+        Fn signature: `char *strerror(int errnum)`.
+    """
+    return external_call["strerror", UnsafePointer[C.char]](errnum)

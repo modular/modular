@@ -15,11 +15,11 @@
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
 from pathlib import DIR_SEPARATOR, Path
-from sys._libc import dlclose, dlerror, dlopen, dlsym
+from sys.ffi.c._libc import dlclose, dlerror, dlopen, dlsym
 
 
-from .info import is_64bit, os_is_linux, os_is_macos, os_is_windows
-from .intrinsics import _mlirtype_is_eq
+from sys.info import is_64bit, os_is_linux, os_is_macos, os_is_windows
+from sys.intrinsics import _mlirtype_is_eq
 
 # ===-----------------------------------------------------------------------===#
 # Primitive C type aliases
