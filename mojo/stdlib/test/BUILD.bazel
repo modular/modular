@@ -167,6 +167,7 @@ _FILECHECK_TESTS = [
     "buffer/test_partial_load_store.mojo",
     "buffer/test_strsv.mojo",
     "builtin/test_debug_assert.mojo",
+    "builtin/test_debug_assert_compile_time.mojo",
     "builtin/test_debug_assert_default_error.mojo",
     "builtin/test_debug_assert_mode_all.mojo",
     "builtin/test_debug_assert_mode_all_error.mojo",

@@ -23,6 +23,7 @@ from sys.intrinsics import block_idx, thread_idx, assume
 from sys.param_env import env_get_string
 from utils.write import _WriteBufferHeap
 from builtin.io import _printf
+from sys import is_compile_time
 
 from builtin._location import __call_location, _SourceLocation
 
@@ -395,6 +396,14 @@ fn _debug_assert_msg(message: UnsafePointer[Byte], loc: _SourceLocation):
     an indirect recursion of @always_inline functions is possible (e.g. because
     abort's implementation could use debug_assert)
     """
+
+    if is_compile_time():
+        print("At: ", loc, ": Assert Error: ", message, sep="")
+
+        @parameter
+        if ASSERT_MODE != "warn":
+            abort()
+        return
 
     # TODO(KERN-1738): Fix _printf elaborator error on AMDGPU target.
     @parameter
