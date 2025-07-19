@@ -157,7 +157,7 @@ class ValidatorBase(ABC):
         self,
         target,  # noqa: ANN001
         reference,  # noqa: ANN001
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> ValidationResultCollection:
         """Performs the validation with the given metric.
 
@@ -321,7 +321,7 @@ class MultiValidator(ValidatorBase):
         self,
         target,  # noqa: ANN001
         reference,  # noqa: ANN001
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> ValidationResultCollection:
         overall_result = ValidationResultCollection()
         for validator in self._validators:
@@ -415,7 +415,7 @@ class ToleranceValidator(ValidatorBase):
         self,
         target,  # noqa: ANN001
         reference,  # noqa: ANN001
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> ValidationResultCollection:
         isoff = np.logical_not(
             _is_close(
@@ -508,7 +508,7 @@ class DistanceValidatorBase(ValidatorBase, ABC):
         self,
         target,  # noqa: ANN001
         reference,  # noqa: ANN001
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
         isoff = distance > self._threshold

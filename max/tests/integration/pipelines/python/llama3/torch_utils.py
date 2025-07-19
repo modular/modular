@@ -38,7 +38,7 @@ class TorchVisionAttention(nn.Module):
         self,
         attn_weight,  # noqa: ANN001
         hidden_size: int,
-        attention_heads: int,  # noqa: ANN001
+        attention_heads: int,
     ) -> None:
         super().__init__()
 

@@ -28,7 +28,7 @@ def default_image_text_processor(
     data_processor,  # noqa: ANN001
     image,  # noqa: ANN001
     prompt: str,
-    device: torch.device,  # noqa: ANN001
+    device: torch.device,
 ) -> dict[str, torch.Tensor]:
     """Default image+text processing for most vision-language models."""
     return data_processor(images=image, text=prompt, return_tensors="pt").to(
