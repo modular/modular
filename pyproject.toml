@@ -70,6 +70,7 @@ ignore = [
 ]
 extend-select = [
   "I", # Import sorting lints
+  "RUF013", # Implicit optionals are disallowed
   "D", # Pydocstyle lints
   "UP", # Type annotations should not use Union, Optional, etc
   "ANN", # Require function type annotations
