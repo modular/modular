@@ -91,6 +91,9 @@ fn warp_split_k_reduction[
     c_reg_tile: LayoutTensor[
         c_type, c_layout, address_space = AddressSpace.LOCAL, **_
     ],
+    smem: UnsafePointer[
+        Scalar[c_type], address_space = AddressSpace.SHARED, **_
+    ],
 ):
     alias red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
 
@@ -99,12 +102,6 @@ fn warp_split_k_reduction[
 
     var i_red = num_warp_k_partitions // 2
     var tid = thread_idx.x
-
-    var smem = external_memory[
-        Scalar[c_type],
-        address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[c_type, c_frag_size]](),
-    ]()
 
     while i_red > 0:
         barrier()
@@ -136,6 +133,33 @@ fn warp_split_k_reduction[
                     __type_of(c_reg_tile_vectorized[0, i])
                 ](red_tb_thread_tile[0, i])
         i_red //= 2
+
+
+@always_inline
+fn warp_split_k_reduction[
+    c_type: DType,
+    c_layout: Layout, //,
+    BM: Int,
+    BN: Int,
+    num_threads_per_warp_k_part: Int,
+    num_warp_k_partitions: Int,
+](
+    warp_k_part_id: Int,
+    c_reg_tile: LayoutTensor[
+        c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+    ],
+):
+    alias c_frag_size = c_layout.shape[1].value()
+
+    var smem = external_memory[
+        Scalar[c_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[c_type, c_frag_size]](),
+    ]()
+
+    warp_split_k_reduction[
+        BM, BN, num_threads_per_warp_k_part, num_warp_k_partitions
+    ](warp_k_part_id, c_reg_tile, smem)
 
 
 @always_inline
@@ -667,7 +691,7 @@ fn multistage_gemm_kernel[
     c_linear_idx_type: DType,
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, **_],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
