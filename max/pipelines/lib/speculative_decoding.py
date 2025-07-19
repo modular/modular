@@ -403,7 +403,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         merged_draft_offsets: Optional[Tensor] = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
-        for i, context in enumerate(batch):
+        for i, context in enumerate(batch):  # noqa: B007
             if not model.kv_manager.contains(context.cache_seq_id):
                 model.kv_manager.external_claim([context.cache_seq_id])
 
@@ -571,7 +571,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
 
         # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
-        for i, context in enumerate(batch):
+        for i, context in enumerate(batch):  # noqa: B007
             context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
         return (
             num_steps,
@@ -804,7 +804,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
             # TODO: This resets the context object for a new sequence.
             # We may want to make this more explicit
-            for i, (token, log_probs) in enumerate(
+            for i, (token, log_probs) in enumerate(  # noqa: B007
                 context.outstanding_completion_tokens()
             ):
                 # Break early if beyond max length

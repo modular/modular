@@ -539,7 +539,7 @@ async def replay_recording(
     notifier.adjust_total_tasks(len(recording))
     try:
         async with TaskGroup() as task_group:
-            for i in range(concurrency):
+            for i in range(concurrency):  # noqa: B007
                 task_group.create_task(worker())
     finally:
         if unwind_on_error:

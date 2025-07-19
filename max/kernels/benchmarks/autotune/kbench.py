@@ -274,7 +274,7 @@ class SpecInstance:
         self,
         *,
         output_dir: Path,
-        build_opts: list[str] = [],
+        build_opts: list[str] = [],  # noqa: B006
         dryrun: bool = False,
         idx: int = -1,
         enable_logging: bool = True,
@@ -320,8 +320,8 @@ class SpecInstance:
         binary_path: Path,
         output_file: Path,
         dryrun: bool = False,
-        exec_prefix: list[str] = [],
-        exec_suffix: list[str] = [],
+        exec_prefix: list[str] = [],  # noqa: B006
+        exec_suffix: list[str] = [],  # noqa: B006
     ) -> ProcessOutput:
         vars = self._get_vars
         cmd = []
@@ -443,7 +443,7 @@ class Spec:
             logging.info(f"Loading yaml [{file}]" + LINE)
             return Spec.loads(file.read_text())
         except Exception:
-            raise ValueError(f"Could not load spec from {file}")
+            raise ValueError(f"Could not load spec from {file}")  # noqa: B904
 
     @staticmethod
     def load_yaml_list(yaml_path_list: list[str]) -> Spec:
@@ -1034,10 +1034,10 @@ def run(
     mode=KBENCH_MODE.RUN,  # noqa: ANN001
     param_list=None,  # noqa: ANN001
     filter_list=None,  # noqa: ANN001
-    build_opts: list[str] = [],
+    build_opts: list[str] = [],  # noqa: B006
     profile: str = "",
-    exec_prefix: list[str] = [],
-    exec_suffix: list[str] = [],
+    exec_prefix: list[str] = [],  # noqa: B006
+    exec_suffix: list[str] = [],  # noqa: B006
     dryrun: bool = False,
     verbose=False,  # noqa: ANN001
     output_dir=None,  # noqa: ANN001

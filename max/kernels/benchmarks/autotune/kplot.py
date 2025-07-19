@@ -254,7 +254,7 @@ def parse_and_plot(
     key_col: str,
     target_col: str = "1",
     compare: bool = False,
-    pivots: list[str] = [],
+    pivots: list[str] = [],  # noqa: B006
     cfg: PlotConfig = PlotConfig(),
     force: bool = False,
 ) -> None:

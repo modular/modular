@@ -181,7 +181,7 @@ def _hf_tqdm_using_threading_only_lock():
     if hasattr(hf_tqdm, "_lock"):
         yield
         return
-    setattr(hf_tqdm, "_lock", _ThreadingOnlyTqdmLock())
+    setattr(hf_tqdm, "_lock", _ThreadingOnlyTqdmLock())  # noqa: B010
     try:
         yield
     finally:
@@ -304,7 +304,7 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
             )
             time.sleep(delay_in_seconds)
 
-    assert False, (
+    assert False, (  # noqa: B011
         "This should never be reached due to the raise in the last attempt"
     )
 

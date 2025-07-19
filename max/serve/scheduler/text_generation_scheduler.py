@@ -109,7 +109,7 @@ class GenericSchedulerOutput(Generic[T]):
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
-        batch_inputs: dict[str, T] = {},
+        batch_inputs: dict[str, T] = {},  # noqa: B006
         input_tokens: int | None = None,
         cached_tokens: int | None = None,
     ) -> None:

@@ -99,7 +99,7 @@ class Layer:
         # Check `__dict__` instead of `hasattr` because `hasattr` passes on
         # subclasses that don't implement the method.
         if "__call__" in cls.__dict__:
-            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))
+            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))  # noqa: B010
 
     def __call__(self, *args, **kwargs):
         """Defines the forward function of this layer.
@@ -541,7 +541,7 @@ def recursive_named_layers(
 
         yield (name, layer)
         prefix = f"{name}." if name else ""
-        for local_name, layer in layer.sublayers.items():
+        for local_name, layer in layer.sublayers.items():  # noqa: B020
             queue.append((f"{prefix}{local_name}", layer))
 
 

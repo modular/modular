@@ -46,4 +46,4 @@ def test_logical_not__invalid_dtype(
             logical_not(x)
 
         with pytest.raises(ValueError):
-            ~x
+            ~x  # noqa: B018

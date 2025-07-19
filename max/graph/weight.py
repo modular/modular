@@ -531,7 +531,7 @@ def _add_weight_to_graph(weight: Weight):
     try:
         current_graph = graph.Graph.current
     except LookupError:
-        raise ValueError(
+        raise ValueError(  # noqa: B904
             "Cannot operate on a `max.graph.Weight` when there is no parent graph."
         )
 

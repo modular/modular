@@ -135,7 +135,7 @@ def _repack_then_matmul(
                 )
             return qmatmul_out
         else:
-            assert False
+            assert False  # noqa: B011
 
     return impl
 

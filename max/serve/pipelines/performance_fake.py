@@ -217,7 +217,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             self._record_batch_info(batch.values(), num_steps)
 
         response = {}
-        for step in range(num_steps):
+        for step in range(num_steps):  # noqa: B007
             context_lengths = [x.context_len for x in batch.values()]
             if sum(context_lengths) == 0:
                 self.logger.debug(

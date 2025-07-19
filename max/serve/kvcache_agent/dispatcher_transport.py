@@ -362,7 +362,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
 
             # Then, check DEALER sockets for replies to our requests
             with self._lock:
-                for destination_address, dealer_socket in list(
+                for destination_address, dealer_socket in list(  # noqa: B007
                     self._dealer_connections.items()
                 ):
                     try:

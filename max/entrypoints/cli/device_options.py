@@ -133,7 +133,7 @@ class DevicesOptionType(click.ParamType):
             gpu_ids = value.removeprefix("gpu:").split(",")
             return [int(part) for part in gpu_ids]
         except ValueError:
-            raise ValueError(
+            raise ValueError(  # noqa: B904
                 f"'{value}' is not a valid device list. Use format 'cpu', 'gpu', or 'gpu:0,1'."
             )
 

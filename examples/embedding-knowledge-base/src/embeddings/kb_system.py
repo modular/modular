@@ -53,12 +53,12 @@ class SmartKnowledgeBase:
                 )
             except Exception as e:
                 if attempt == max_retries - 1:
-                    raise Exception(
+                    raise Exception(  # noqa: B904
                         f"Failed to get embeddings after {max_retries} attempts: {e}"
                     )
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
 
-    @lru_cache(maxsize=1000)
+    @lru_cache(maxsize=1000)  # noqa: B019
     def _get_embedding_cached(self, text: str) -> np.ndarray:
         """Cached version for single text embedding."""
         return self._get_embedding([text])[0]

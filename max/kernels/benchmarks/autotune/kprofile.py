@@ -66,7 +66,7 @@ def specs_to_df(specs):  # noqa: ANN001
     return df
 
 
-def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):  # noqa: ANN001
+def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):  # noqa: ANN001, B006
     df = specs_to_df(x_labels)
     valid_columns = []
     for c in list(df.columns):
@@ -116,7 +116,7 @@ def replace_vals_snippet(p_spec, snippet_path) -> str:  # noqa: ANN001
 
 def find_common_params(subset):  # noqa: ANN001
     spec_list = []
-    for index, row in subset.iterrows():
+    for index, row in subset.iterrows():  # noqa: B007
         p = spec_to_dict(row["spec"])
         spec_list.append(pd.DataFrame([p]))
     merged_specs = pd.concat(spec_list, axis=0, ignore_index=True)
@@ -131,7 +131,7 @@ def find_common_params(subset):  # noqa: ANN001
 
 def df_to_console_table(
     df,  # noqa: ANN001
-    col_style={},  # noqa: ANN001
+    col_style={},  # noqa: ANN001, B006
     header_style="bold blue",  # noqa: ANN001
     index=False,  # noqa: ANN001
 ) -> None:
@@ -234,7 +234,7 @@ def profile_results(
     head=-1,  # noqa: ANN001
     tail=-1,  # noqa: ANN001
     metric: str = "met (ms)",
-    pivots: list[str] = [],
+    pivots: list[str] = [],  # noqa: B006
     verbose=False,  # noqa: ANN001
 ) -> Optional[TuningSpec]:
     try:
@@ -327,7 +327,7 @@ def identical_pivot_values(x, y, pivots) -> bool:  # noqa: ANN001
 def diff_baseline(
     files,  # noqa: ANN001
     metric: str,
-    pivots: list = [],
+    pivots: list = [],  # noqa: B006
     head: int = -1,
     verbose: bool = False,
 ) -> None:
@@ -458,7 +458,7 @@ class ComplexParamList(click.Option):
             ):
                 return [value]
             else:
-                raise click.BadParameter(value)
+                raise click.BadParameter(value)  # noqa: B904
 
 
 def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png"):

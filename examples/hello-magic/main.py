@@ -42,6 +42,6 @@ def zero():
             return {"message": f"answer is {output}"}
 
     except subprocess.SubprocessError:
-        raise HTTPException(
+        raise HTTPException(  # noqa: B904
             status_code=500, detail="Failed to execute subprocess"
         )

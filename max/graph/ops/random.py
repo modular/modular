@@ -46,7 +46,7 @@ def _next_seed():
     try:
         seed = SEEDS[graph]
     except LookupError:
-        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")
+        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
     SEEDS[graph] = _rotate_seed(seed)
     return seed
 

@@ -85,4 +85,4 @@ def test_initialize_sdist():
     with pytest.raises(
         NotImplementedError, match="Tags are only supported for wheels."
     ):
-        download.tags
+        download.tags  # noqa: B018

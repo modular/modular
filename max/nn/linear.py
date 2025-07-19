@@ -755,7 +755,7 @@ class GPTQLinearV1(QLinearV1):
         if isinstance(weights, Weights) and weights.qweight.exists():
             orig_quantized_weights = [weights.qweight, weights.scales]
             quantized_weights = []
-            for idx, qw in enumerate(orig_quantized_weights):
+            for idx, qw in enumerate(orig_quantized_weights):  # noqa: B007
                 orig = qw.allocate()
                 # TODO(AITLIB-135): allocate_as_bytes is only available for
                 # safetensors. This isn't a problem right now because gptq is

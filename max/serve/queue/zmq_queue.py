@@ -260,7 +260,7 @@ class ZmqPullSocket(Generic[T]):
             msg = self.pull_socket.recv(**kwargs)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
 
             logger.exception(
                 f"Failed to receive message on ZMQ socket for unknown reason: {e}"
@@ -369,7 +369,7 @@ class ZmqRouterSocket(Generic[T]):
             )
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive multipart message: {e}")
             raise
 
@@ -444,7 +444,7 @@ class ZmqDealerSocket(Generic[T]):
             message = self.dealer_socket.recv(flags=flags)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive message: {e}")
             raise
 

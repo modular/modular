@@ -38,4 +38,4 @@ def install_if_missing(name: str) -> None:
         subprocess.check_call([python, "-m", "pip", "install", name])
         return
     except:
-        raise ImportError(f"{name} not found" + FIX)
+        raise ImportError(f"{name} not found" + FIX)  # noqa: B904

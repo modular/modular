@@ -530,7 +530,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_copy_engine.wait_for_completion()
 
         max_seq_len = -1
-        for batch_idx, ctx in enumerate(batch):
+        for batch_idx, ctx in enumerate(batch):  # noqa: B007
             seq_id = ctx.cache_seq_id
 
             # Allocate blocks for request if we need more.

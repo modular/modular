@@ -22,7 +22,7 @@ def test_get_name() -> None:
     person = def_method.Person()
     assert person.get_name() == "John Smith"
 
-    setattr(sys.modules[__name__], "deny_name", True)
+    setattr(sys.modules[__name__], "deny_name", True)  # noqa: B010
     try:
         with pytest.raises(Exception) as cm:
             person.get_name()

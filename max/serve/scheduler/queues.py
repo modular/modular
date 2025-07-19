@@ -227,7 +227,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                     if not self.is_worker_healthy():
                         logger.error("Model worker process is not healthy")
                         self.worker_pc.set_canceled()
-                        raise Exception("Worker failed!")
+                        raise Exception("Worker failed!")  # noqa: B904
                     await asyncio.sleep(0)
 
         except asyncio.CancelledError:

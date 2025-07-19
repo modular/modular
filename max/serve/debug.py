@@ -85,7 +85,7 @@ class ProfileSession:
         )
 
 
-PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())
+PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())  # noqa: B039
 
 
 def profile_in_session():

@@ -20,7 +20,7 @@ import pytest
 
 
 def _test_takes_zero_returns(fut: Callable[[], str]):
-    setattr(sys.modules[__name__], "s", "just a python string")
+    setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     result = fut()
     assert result == "just another python string"
 
@@ -62,7 +62,7 @@ def test_takes_three_returns():
 
 def test_takes_zero_raises_returns():
     dummy = def_staticmethod.Dummy
-    setattr(sys.modules[__name__], "s", "a special python string")
+    setattr(sys.modules[__name__], "s", "a special python string")  # noqa: B010
     with pytest.raises(Exception) as cm:
         dummy.takes_zero_raises_returns()
     assert cm.value.args == ("`s` must be 'just a python string'",)
@@ -98,10 +98,10 @@ def test_takes_three_raises_returns():
 
 
 def _test_takes_zero(fut: Callable[[], None]):
-    setattr(sys.modules[__name__], "s", "just a python string")
+    setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     fut()
     assert (
-        getattr(sys.modules[__name__], "s")
+        getattr(sys.modules[__name__], "s")  # noqa: B009
         == "Hark! A mojo function calling into Python, called from Python!"
     )
 
@@ -146,7 +146,7 @@ def test_takes_three():
 
 def test_takes_zero_raises():
     dummy = def_staticmethod.Dummy
-    setattr(sys.modules[__name__], "s", "a special python string")
+    setattr(sys.modules[__name__], "s", "a special python string")  # noqa: B010
     with pytest.raises(Exception) as cm:
         dummy.takes_zero_raises()
     assert cm.value.args == ("`s` must be 'just a python string'",)

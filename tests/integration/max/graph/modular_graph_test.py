@@ -102,7 +102,7 @@ def shapes(
     return tuple(draw_dim(dim) for dim in tensor_type.shape)
 
 
-def arrays(tensor_type: TensorType, static_dims={}, **kwargs):  # noqa: ANN001
+def arrays(tensor_type: TensorType, static_dims={}, **kwargs):  # noqa: ANN001, B006
     if tensor_type.dtype == DType.bfloat16:
         tensor_type = TensorType(
             DType.float32, tensor_type.shape, device=tensor_type.device
@@ -148,7 +148,7 @@ def given_input_types(
 
         # Move things to the right device
         input_arrays[i] = input_arrays[i].map(
-            lambda t: t.to(input_type.device.to_device())
+            lambda t: t.to(input_type.device.to_device())  # noqa: B023
         )
 
     return given(st.tuples(*input_arrays))
