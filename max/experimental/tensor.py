@@ -129,7 +129,7 @@ class Tensor(graph.TensorValue):
         """Force the tensor to realize if it is not already."""
         return await self
 
-    def _sync_realize(self):
+    def _sync_realize(self) -> None:
         if not self.real:
             asyncio.run(self.realize)
 
@@ -260,7 +260,7 @@ class ComputeGraph:
         for source in sources:
             self.add_source(source)
 
-    async def evaluate(self, tensor: Tensor):
+    async def evaluate(self, tensor: Tensor) -> None:
         """Realize the input tensor object.
 
         It is currently undefined to operate on tensors during evaluation.
@@ -316,7 +316,7 @@ class ComputeGraph:
             seed=seed.item(),
         )
 
-    def add_source(self, tensor: Tensor):
+    def add_source(self, tensor: Tensor) -> None:
         op = _core.Operation._from_cmlir(self.graph._mlir_op)
         assert isinstance(op, mo.GraphOp)
         block = op.regions[0].front
