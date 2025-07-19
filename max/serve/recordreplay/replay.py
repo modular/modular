@@ -217,7 +217,7 @@ def _format_big_duration(seconds: float) -> str:
         pieces.append(f"{minutes:02d}m")
     elif minutes:
         pieces.append(f"{minutes}m")
-    pieces.append(f"{int(math.floor(seconds)):02d}s")
+    pieces.append(f"{math.floor(seconds):02d}s")
     return "".join(pieces)
 
 

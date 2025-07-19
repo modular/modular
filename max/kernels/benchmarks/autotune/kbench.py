@@ -829,7 +829,7 @@ class Scheduler:
         return output_dir
 
     def get_chunksize(self, num_elements: int) -> int:
-        elements_per_cpu = int(math.ceil(num_elements / self.num_cpu))
+        elements_per_cpu = math.ceil(num_elements / self.num_cpu)
         return min(elements_per_cpu, self.CHUNKSIZE)
 
     def mk_output_dirs(self) -> None:
