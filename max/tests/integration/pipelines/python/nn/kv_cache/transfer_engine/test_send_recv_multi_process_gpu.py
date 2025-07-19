@@ -3,31 +3,34 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import multiprocessing as mp
+import os
+import re
 import time
 
 import numpy as np
+import pytest
 from common import get_unique_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import (
-    KVTransferEngine,
-    KVTransferEngineMetadata,
-    XferReqData,
-)
+from max.nn.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(
-    sender_md_queue,  # noqa: ANN001
-    receiver_md_queue,  # noqa: ANN001
-    xfer_queue,  # noqa: ANN001
-    total_num_pages,  # noqa: ANN001
-    src_idxs,  # noqa: ANN001
-    dst_idxs,  # noqa: ANN001
-    total_bytes,  # noqa: ANN001
-    GB,  # noqa: ANN001
+    sender_md_queue: mp.Queue,
+    receiver_md_queue: mp.Queue,
+    xfer_queue: mp.Queue,
+    total_num_pages: int,
+    src_idxs: list[int],
+    dst_idxs: list[int],
+    total_bytes: int,
+    GB: float,
 ) -> None:
+    # Enabling UCX debug logging only for sender
+    os.environ["UCX_LOG_LEVEL"] = "trace"
+
     device = Accelerator(1)
 
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
@@ -51,10 +54,13 @@ def transfer_routine_sender(
     t1 = time.time()
     bw = total_bytes / (t1 - t0) / GB
     ms = (t1 - t0) * 1000
+
+    # This print statement is consumed by capfd. Unfortunately, we can't serialize
+    # the capfd object into child to call capfd.disabled().
     print(
-        f"Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)",
-        flush=True,
+        f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
+
     # Check that the transfer speed is at least 1 GB/s
     # We found that CUDA_COPY yields ~.3GB/s while CUDA_IPC yields 100+GB/s
     # Note that CUDA_IPC requires memory to be allocated via `cuMemAlloc` and not
@@ -71,11 +77,11 @@ def transfer_routine_sender(
 
 
 def transfer_routine_receiver(
-    sender_md_queue,  # noqa: ANN001
-    receiver_md_queue,  # noqa: ANN001
-    xfer_queue,  # noqa: ANN001
-    total_num_pages,  # noqa: ANN001
-    total_bytes,  # noqa: ANN001
+    sender_md_queue: mp.Queue,
+    receiver_md_queue: mp.Queue,
+    xfer_queue: mp.Queue,
+    total_num_pages: int,
+    total_bytes: int,
 ) -> None:
     device = Accelerator(0)
 
@@ -105,12 +111,12 @@ def transfer_routine_receiver(
     engine.cleanup()
 
 
-def test_send_recv_basic() -> None:
+def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
-    sender_md_queue: mp.Queue[KVTransferEngineMetadata] = ctx.Queue()
-    receiver_md_queue: mp.Queue[KVTransferEngineMetadata] = ctx.Queue()
-    xfer_queue: mp.Queue[XferReqData] = ctx.Queue()
+    sender_md_queue: mp.Queue = ctx.Queue()
+    receiver_md_queue: mp.Queue = ctx.Queue()
+    xfer_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -155,3 +161,28 @@ def test_send_recv_basic() -> None:
     assert receiver_proc.exitcode == 0, (
         f"Receiver process failed with exit code {receiver_proc.exitcode}"
     )
+
+    out, err = capfd.readouterr()
+
+    # Let some print statements actually be printed
+    with capfd.disabled():
+        print()
+        print("-" * 80)
+        for line in out.split("\n"):
+            if "[Sender]" in line:
+                print(line)
+        print("-" * 80)
+
+    # Check stdout
+    assert re.search(r"Transferring .* GB took .* ms \(.* GB/s\)", out)
+    assert "UCX  DEBUG register host memory on: cma, cuda_cpy, self, tcp" in out
+    assert "UCX  DEBUG register cuda memory on: cuda_cpy, cuda_ipc" in out
+    assert "UCX  DEBUG register cuda-managed memory on: cuda_cpy" in out
+    assert "UCX  DEBUG no memory domain supports registering rocm memory" in out
+
+    # Check stderr
+    assert (
+        "Discovered and loaded plugin 'ucx' from AsyncRT/libplugin_ucx.so"
+        in err
+    )
+    assert "Loading remote metadata for agent: engine_2" in err
