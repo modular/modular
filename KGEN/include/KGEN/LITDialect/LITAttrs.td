@@ -29,6 +29,18 @@ class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
+/// An array of DenseResourceElementsAttr's typically used on a
+/// lit.package op to store the extern LLVM bitcode.
+def LIT_DenseResourceElementsArrayAttr : ArrayOfAttr<LITDialect,
+    "DenseResourceElementsArray", "dense_resource_elements_array",
+    "DenseResourceElementsAttr"> {
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "DenseResourceElementsAttr":$bitcode), [{
+      return get(bitcode.getContext(), bitcode);
+    }]>
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // SymbolAttr
 //===----------------------------------------------------------------------===//

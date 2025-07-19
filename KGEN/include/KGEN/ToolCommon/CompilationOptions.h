@@ -13,6 +13,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/TargetParser/Host.h"
@@ -113,7 +114,16 @@ public:
 
   std::string saveTempsPrefix = "";
   std::string searchPaths = "";
+
+  // External LLVM bitcode modules to link during compilation.
+  // These two fields represent the same data in different forms:
+  // - bitcodeLibs: File paths to external bitcode libraries specified via
+  // command line.
+  // - packageBitcodeModules: In-memory bitcode modules extracted from imported
+  // packages.
+  // Both are processed identically during LLVM lowering and linking.
   SmallVector<std::string> bitcodeLibs = {};
+  SmallVector<DenseResourceElementsAttr> packageBitcodeModules = {};
 
   bool verboseOutput = false;
 

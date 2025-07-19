@@ -18,7 +18,6 @@ lit_tests(
         "@mojo//:_mlir",
         "@mojo//:stdlib",
     ],
-    tags = ["gpu"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -29,6 +28,7 @@ lit_tests(
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
         "//KGEN/tools/mojo",
+        "@llvm-project//llvm:llvm-as",
         "@llvm-project//llvm:llvm-nm",
         "@llvm-project//llvm:llvm-objdump",
     ],

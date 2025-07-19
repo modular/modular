@@ -92,6 +92,10 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
+def DenseResourceElementsArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"DenseResourceElementsAttr">:$value
+)>;
+
 def SymbolAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$value
 )>;
@@ -214,6 +218,7 @@ def RefPackAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
+    DenseResourceElementsArrayAttr,
     SymbolAttr,
     PogMetadataAttr,
     PogListAttr,

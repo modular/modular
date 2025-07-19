@@ -6,5 +6,5 @@
 
 
 @export("my_add_one")
-fn my_add_one(x: Int32) -> Int32:
-    return x + 1
+fn my_add_one(x: UnsafePointer[Int32]):
+    x[] += 1

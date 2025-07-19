@@ -25,6 +25,12 @@ def kgenModule : Flag<["-"], "kgenModule">, Group<CompilationOptionGroup>,
   Index<2>,
   HelpText<"Export as a KGEN module.">;
 
+defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
+  CompilationOptionGroup, Index<3>, MetaVarName<"LIBS">,
+  HelpText<
+    "External bitcode libraries to package into the generated package."
+  >>;
+
 //===----------------------------------------------------------------------===//
 // Output Options
 //===----------------------------------------------------------------------===//
