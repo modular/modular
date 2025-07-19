@@ -36,7 +36,7 @@ def are_vsix_equal(lhs: Path, rhs: Path) -> bool:
         # Ignore [Content_Types].xml, which can differ for a released vsix, but
         # isn't actually relevant for this check.
         filtered_names = [
-            name for name in lhs_info.keys() if name != "[Content_Types].xml"
+            name for name in lhs_info if name != "[Content_Types].xml"
         ]
 
         # Compare the 32-bit CRCs of the archive files to see if they are the same.
