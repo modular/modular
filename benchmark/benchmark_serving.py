@@ -1157,7 +1157,7 @@ def main(args: argparse.Namespace) -> None:
 
         # Save to file
         base_model_id = model_id.split("/")[-1]
-        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}.json"  # noqa
+        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
         if args.result_filename:
             file_name = args.result_filename
         if args.result_dir:
@@ -1220,7 +1220,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer",
         type=str,
-        help=(  # noqa: E501
+        help=(
             "Name or path of the tokenizer, if not using the default tokenizer."
         ),
     )

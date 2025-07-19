@@ -28,7 +28,7 @@ def test_hann_window_valid_inputs(
     graph_builder,  # noqa: ANN001
     window_length: int,
     periodic: bool,
-    dtype: DType,  # noqa: ANN001
+    dtype: DType,
 ) -> None:
     """Test hann_window with valid inputs using property-based testing."""
     with graph_builder(input_types=[]) as graph:
@@ -57,7 +57,7 @@ def test_hann_window_specific_cases(
     graph_builder,  # noqa: ANN001
     window_length: int,
     periodic: bool,
-    dtype: DType,  # noqa: ANN001
+    dtype: DType,
 ) -> None:
     """Test hann_window with specific parameter combinations."""
     with graph_builder(input_types=[]) as graph:
@@ -81,7 +81,7 @@ def test_hann_window_specific_cases(
 @given(window_length=st.integers(max_value=-1))
 def test_hann_window_negative_length_raises(
     graph_builder,  # noqa: ANN001
-    window_length: int,  # noqa: ANN001
+    window_length: int,
 ) -> None:
     """Test that negative window_length raises ValueError."""
     with pytest.raises(ValueError):
@@ -135,7 +135,7 @@ def test_hann_window_non_integer_length_error_message(graph_builder) -> None:  #
 @pytest.mark.parametrize("device", [DeviceRef.CPU(), DeviceRef.GPU()])
 def test_hann_window_different_devices(
     graph_builder,  # noqa: ANN001
-    device: DeviceRef,  # noqa: ANN001
+    device: DeviceRef,
 ) -> None:
     """Test hann_window works with different devices."""
     with graph_builder(input_types=[]) as graph:
@@ -202,7 +202,7 @@ def test_hann_window_supported_dtypes(graph_builder, dtype: DType) -> None:  # n
 def test_hann_window_graph_invariants(
     graph_builder,  # noqa: ANN001
     window_length: int,
-    periodic: bool,  # noqa: ANN001
+    periodic: bool,
 ) -> None:
     """Test that hann_window maintains graph construction invariants."""
     with graph_builder(input_types=[]) as graph:

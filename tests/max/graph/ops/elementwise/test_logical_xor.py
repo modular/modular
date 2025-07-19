@@ -32,7 +32,7 @@ def test_logical_xor__same_type(graph_builder, tensor_type: TensorType) -> None:
 @given(tensor_type=...)
 def test_logical_xor__invalid_dtype(
     graph_builder,  # noqa: ANN001
-    tensor_type: TensorType,  # noqa: ANN001
+    tensor_type: TensorType,
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
@@ -61,7 +61,7 @@ def test_logical_xor__broadcast(graph_builder, shapes: list[Shape]) -> None:  # 
 def test_logical_xor__invalid_broadcast(
     graph_builder,  # noqa: ANN001
     s1: Shape,
-    s2: Shape,  # noqa: ANN001
+    s2: Shape,
 ) -> None:
     try:
         broadcast_shapes(s1, s2)
@@ -87,7 +87,7 @@ def test_logical_xor__invalid_broadcast(
 def test_logical_xor__python_bool(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    b: bool,  # noqa: ANN001
+    b: bool,
 ) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
         (x,) = graph.inputs

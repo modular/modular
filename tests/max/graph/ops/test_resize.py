@@ -93,7 +93,7 @@ def test_resize_basic_downscale(graph_builder) -> None:  # noqa: ANN001
 def test_resize_error_size_wrong_length(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    resize_shape: Shape,  # noqa: ANN001
+    resize_shape: Shape,
 ) -> None:
     """Test error when size has wrong number of elements."""
     assume(input_type.rank != resize_shape.rank)

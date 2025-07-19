@@ -72,6 +72,7 @@ extend-select = [
   "ANN", # Require function type annotations
   "T10", # Checks for the presence of debugger calls and imports.
   "RUF022", # `__all__` is not sorted
+  "RUF100", # Unused noqa comment
 ]
 
 [tool.ruff.lint.pydocstyle]

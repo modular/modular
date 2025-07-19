@@ -210,7 +210,7 @@ static_tensor_type = tensor_types(
 def test_slice_static_dims(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    rand: random.Random,  # noqa: ANN001
+    rand: random.Random,
 ) -> None:
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
@@ -298,7 +298,7 @@ def test_slice_static_dims(
 def test_slice_symbolic_tensor(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    indices: list[slice],  # noqa: ANN001
+    indices: list[slice],
 ) -> None:
     """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
     # NOTE: the `Graph` constructor verifies the staged graph op.
@@ -321,7 +321,7 @@ def test_slice_symbolic_tensor(
 def test_slice_dim_overflow(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    indices: list[slice],  # noqa: ANN001
+    indices: list[slice],
 ) -> None:
     """Tests cases that would overflow an int64 slice index."""
     with pytest.raises(
@@ -582,7 +582,7 @@ reasonable_static_tensor_type = tensor_types(
 def test_slice_out_of_bounds(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    rand: random.Random,  # noqa: ANN001
+    rand: random.Random,
 ) -> None:
     """Test that out-of-bounds slice indices raise appropriate errors."""
     # Pick a random dimension to make out of bounds

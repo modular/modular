@@ -601,7 +601,7 @@ class Graph:
         op,  # noqa: ANN001
         *args,
         _ip: Optional[mlir.InsertionPoint] = None,
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):  # noqa: ANN001

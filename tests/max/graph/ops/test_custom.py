@@ -591,7 +591,7 @@ class TestCustomPropertyBased:
         self,
         graph_builder,  # noqa: ANN001
         input_type: TensorType,
-        num_outputs: int,  # noqa: ANN001
+        num_outputs: int,
     ) -> None:
         """Property test: custom operations should handle multiple outputs consistently."""
         # Generate multiple output types
@@ -628,7 +628,7 @@ class TestCustomPropertyBased:
         self,
         graph_builder,  # noqa: ANN001
         input_types: list[TensorType],
-        kernel_name: str,  # noqa: ANN001
+        kernel_name: str,
     ) -> None:
         """Property test: custom operations should handle multiple inputs consistently."""
         # Use first input's properties for output
@@ -660,7 +660,7 @@ class TestCustomPropertyBased:
         self,
         graph_builder,  # noqa: ANN001
         base_type: TensorType,
-        target_dtype: DType,  # noqa: ANN001
+        target_dtype: DType,
     ) -> None:
         """Property test: custom operations should handle different dtype combinations."""
 
@@ -772,7 +772,7 @@ class TestInplaceCustomPropertyBased:
     def test_inplace_custom__property__multiple_buffer_inputs(
         self,
         graph_builder,  # noqa: ANN001
-        buffer_types_list: list[BufferType],  # noqa: ANN001
+        buffer_types_list: list[BufferType],
     ) -> None:
         """Property test: inplace custom operations should handle multiple buffer inputs."""
         with graph_builder(input_types=buffer_types_list) as graph:
@@ -798,7 +798,7 @@ class TestInplaceCustomPropertyBased:
         self,
         graph_builder,  # noqa: ANN001
         buffer_type: BufferType,
-        num_outputs: int,  # noqa: ANN001
+        num_outputs: int,
     ) -> None:
         """Property test: inplace custom operations should handle output types consistently."""
         # Generate tensor output types (inplace ops can produce tensor outputs)
@@ -842,7 +842,7 @@ class TestInplaceCustomPropertyBased:
     def test_inplace_custom__property__tensor_input_rejection(
         self,
         graph_builder,  # noqa: ANN001
-        tensor_type: TensorType,  # noqa: ANN001
+        tensor_type: TensorType,
     ) -> None:
         """Property test: inplace custom operations should consistently reject tensor inputs."""
         with graph_builder(input_types=[tensor_type]) as graph:
@@ -952,7 +952,7 @@ class TestCustomShapePropertyBased:
         graph_builder,  # noqa: ANN001
         input_shape,  # noqa: ANN001
         output_shape,  # noqa: ANN001
-        dtype: DType,  # noqa: ANN001
+        dtype: DType,
     ) -> None:
         """Property test: custom operations should handle arbitrary shape transformations."""
 
@@ -984,7 +984,7 @@ class TestCustomShapePropertyBased:
         self,
         graph_builder,  # noqa: ANN001
         base_shape,  # noqa: ANN001
-        dtype: DType,  # noqa: ANN001
+        dtype: DType,
     ) -> None:
         """Property test: custom operations should handle rank-preserving transformations."""
 

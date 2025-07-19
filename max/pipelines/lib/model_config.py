@@ -692,7 +692,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):
                     msg = (
-                        f"weight_path: '{path_str}' does not exist locally or in cache,"  # noqa: E501
+                        f"weight_path: '{path_str}' does not exist locally or in cache,"
                         f" and '{repo.repo_id}/{path_str}' does"
                         " not exist on HuggingFace."
                     )

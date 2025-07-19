@@ -35,7 +35,7 @@ def test_repeat_interleave(
     graph_builder,  # noqa: ANN001
     type: TensorType,
     repeats: int,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     dim = type.shape[axis]
     assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
@@ -82,7 +82,7 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:  # 
 def test_repeat_interleave__no_axis(
     graph_builder,  # noqa: ANN001
     type: TensorType,
-    repeats: int,  # noqa: ANN001
+    repeats: int,
 ) -> None:
     static_product = reduce(operator.mul, type.shape.static_dims, repeats)
     assume(static_product < 2**63)
@@ -104,7 +104,7 @@ def test_repeat_interleave__nonpositive_repeats(
     graph_builder,  # noqa: ANN001
     type: TensorType,
     repeats: int,
-    axis: Optional[int],  # noqa: ANN001
+    axis: Optional[int],
 ) -> None:
     assume(repeats <= 0)
     with graph_builder(input_types=[type]) as graph:
@@ -121,7 +121,7 @@ def test_repeat_interleave__axis_out_of_bounds(
     graph_builder,  # noqa: ANN001
     type: TensorType,
     repeats: int,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assume(not -type.rank <= axis < type.rank)
     with graph_builder(input_types=[type]) as graph:

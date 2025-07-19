@@ -329,7 +329,7 @@ def diff_baseline(
     metric: str,
     pivots: list = [],
     head: int = -1,
-    verbose: bool = False,  # noqa: ANN001
+    verbose: bool = False,
 ) -> None:
     base_pkl = KbenchPKL(files[0], metric=metric)
     metric = base_pkl.metric
@@ -492,7 +492,7 @@ def correlation_analysis(
     files,  # noqa: ANN001
     output_path,  # noqa: ANN001
     metric: str = "met (ms)",
-    verbose: bool = False,  # noqa: ANN001
+    verbose: bool = False,
 ):
     pkl_list = []
     for pkl in files:

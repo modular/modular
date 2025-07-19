@@ -18,7 +18,7 @@ from collections.abc import Iterable
 
 from max.mlir.dialects import mo
 
-from ..graph import Graph  # noqa
+from ..graph import Graph
 from ..type import TensorType, _ChainType
 from ..value import BufferValue, TensorValue
 from .concat import concat

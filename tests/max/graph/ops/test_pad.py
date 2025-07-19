@@ -49,7 +49,7 @@ def paddings_for(input_types, low=0, high=16):  # noqa: ANN001
 def test_negative_paddings(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    paddings: list[int],  # noqa: ANN001
+    paddings: list[int],
 ) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
@@ -76,7 +76,7 @@ def test_no_padding(graph_builder, input_type: TensorType) -> None:  # noqa: ANN
 def test_positive_paddings(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    paddings: list[int],  # noqa: ANN001
+    paddings: list[int],
 ) -> None:
     """Test random paddings."""
 
