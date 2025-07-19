@@ -66,10 +66,11 @@ ignore = [
   "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
 ]
 extend-select = [
-  "I",
-  "D",
-  "UP",
-  "ANN",
+  "I", # Import sorting lints
+  "D", # Pydocstyle lints
+  "UP", # Type annotations should not use Union, Optional, etc
+  "ANN", # Require function type annotations
+  "T10", # Checks for the presence of debugger calls and imports.
 ]
 
 [tool.ruff.lint.pydocstyle]
