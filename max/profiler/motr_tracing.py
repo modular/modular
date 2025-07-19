@@ -437,7 +437,7 @@ def _patch_uvloop_policy() -> None:
     # Replace uvloop.EventLoopPolicy with our MOTR-aware hybrid.
     # This affects uvloop.run() and uvloop.install() calls.
     setattr(_uv, "EventLoopPolicy", _MotrUvloopPolicy)  # noqa: B010
-    _uv._MOTR_PATCHED = True  # Mark as patched for idempotency  # noqa: B010
+    _uv._MOTR_PATCHED = True  # Mark as patched for idempotency
 
     # If the current global policy is already a uvloop policy, replace it
     # with our MOTR-aware version. This handles the case where uvloop was
