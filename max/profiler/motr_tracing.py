@@ -29,7 +29,8 @@ _FuncType = TypeVar("_FuncType", bound=Callable)
 
 # Context variable to store only the user portion of async trace stack
 _async_user_stack: ContextVar[list[int]] = ContextVar(
-    "_async_user_stack", default=[]
+    "_async_user_stack",
+    default=[],  # noqa: B039
 )
 
 
@@ -336,7 +337,7 @@ def _motr_task_factory(loop: asyncio.AbstractEventLoop, coro, *args, **kwargs): 
     # Always sync C++ stack with inherited context
     set_motr_thread_local_stack(_async_user_stack.get())
 
-    return asyncio.Task(coro, loop=loop, *args, **kwargs)
+    return asyncio.Task(coro, loop=loop, *args, **kwargs)  # noqa: B026
 
 
 class _MotrEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
@@ -435,8 +436,8 @@ def _patch_uvloop_policy() -> None:
 
     # Replace uvloop.EventLoopPolicy with our MOTR-aware hybrid.
     # This affects uvloop.run() and uvloop.install() calls.
-    setattr(_uv, "EventLoopPolicy", _MotrUvloopPolicy)
-    setattr(_uv, "_MOTR_PATCHED", True)  # Mark as patched for idempotency
+    setattr(_uv, "EventLoopPolicy", _MotrUvloopPolicy)  # noqa: B010
+    _uv._MOTR_PATCHED = True  # Mark as patched for idempotency  # noqa: B010
 
     # If the current global policy is already a uvloop policy, replace it
     # with our MOTR-aware version. This handles the case where uvloop was

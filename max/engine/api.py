@@ -484,7 +484,7 @@ class InferenceSession:
                 precision = SplitKReductionPrecision[precision]
             except:
                 msg = f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
-                raise TypeError(msg)
+                raise TypeError(msg)  # noqa: B904
 
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
 
@@ -495,7 +495,7 @@ class InferenceSession:
                 level = LogLevel[level]
             except:
                 msg = f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
-                raise TypeError(msg)
+                raise TypeError(msg)  # noqa: B904
 
         self._set_mojo_define("LOGGING_LEVEL", level)
 
@@ -506,7 +506,7 @@ class InferenceSession:
                 level = AssertLevel[level]
             except:
                 msg = f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
-                raise TypeError(msg)
+                raise TypeError(msg)  # noqa: B904
 
         self._set_mojo_define("ASSERT", level)
 
