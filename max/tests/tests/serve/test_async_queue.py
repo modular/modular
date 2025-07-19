@@ -62,7 +62,7 @@ async def test_shutdown() -> None:
     N = 10
     async with AsyncioTelemetryController() as atc:
         client = atc.Client(Settings().metric_level)
-        for i in range(N):
+        for i in range(N):  # noqa: B007
             client.send_measurement(spy, level=MetricLevel.BASIC)
         # we haven't waited long enough for everything to run
         assert spy.commit.call_count < N

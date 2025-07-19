@@ -39,7 +39,7 @@ def test_heartbeat() -> None:
 def run_a_bit(pc: process_control.ProcessControl, pause_s: float) -> None:
     pc.set_started()
     try:
-        for i in range(3):
+        for i in range(3):  # noqa: B007
             pc.beat()
             if pc.is_canceled():
                 break

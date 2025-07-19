@@ -158,7 +158,7 @@ def test_one_dimensional_tensor() -> None:
     for i in range(10):
         tensor[i] = i
 
-    for i in range(i):
+    for i in range(i):  # noqa: B020
         assert tensor[i].item() == i
 
 
