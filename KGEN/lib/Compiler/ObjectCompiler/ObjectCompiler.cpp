@@ -26,6 +26,7 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Telemetry.h"
 
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVM/ROCDL/Utils.h"
@@ -719,7 +720,8 @@ public:
     if (!libs.empty()) {
       // Filter out bitcode files that are not for the target triple.
       llvm::erase_if(libs, [&](const std::unique_ptr<llvm::Module> &lib) {
-        return lib->getTargetTriple() != llvmModule.getTargetTriple();
+        return lib->getTargetTriple() != llvmModule.getTargetTriple() ||
+               lib->getDataLayout() != llvmModule.getDataLayout();
       });
       if (!libs.empty())
         if (failed(linkFiles(llvmModule, std::move(libs))))
@@ -753,6 +755,27 @@ loadBitcodeFile(llvm::LLVMContext &context, StringRef path) {
   return library;
 }
 
+/// Load an LLVM module from a DenseResourceElementsAttr containing bitcode.
+static ErrorOr<std::unique_ptr<llvm::Module>>
+loadBitcodeFromResource(llvm::LLVMContext &context,
+                        DenseResourceElementsAttr bitcodeAttr) {
+  mlir::AsmResourceBlob *blob = bitcodeAttr.getRawHandle().getBlob();
+  if (!blob)
+    return Error("Failed to get bitcode blob from resource attribute");
+
+  ArrayRef<char> bitcodeData = blob->getData();
+  llvm::MemoryBufferRef bufferRef(
+      StringRef(bitcodeData.begin(), bitcodeData.size()), "package_bitcode");
+
+  llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+      llvm::parseBitcodeFile(bufferRef, context);
+  if (!moduleOr)
+    return Error("Failed to parse bitcode from package: " +
+                 llvm::toString(moduleOr.takeError()));
+
+  return std::move(*moduleOr);
+}
+
 /// Link vendor-provided LLVM bitcode libraries into the LLVM module when
 /// necessary.
 static ErrorOrSuccess linkBitcodeLibraries(Location loc,
@@ -784,6 +807,10 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
     for (StringRef libPath : options.bitcodeLibs)
       otherLibs.push_back(b.getStringAttr(libPath));
 
+    // Add bitcode modules from packages.
+    for (DenseResourceElementsAttr bitcodeAttr : options.packageBitcodeModules)
+      otherLibs.push_back(bitcodeAttr);
+
     mlir::gpu::TargetOptions targetOptions(
         /*toolkitPath=*/"/opt/rocm", otherLibs);
     AMDGPUModuleLinker moduleLinker(**mlirModule, target, targetOptions);
@@ -793,20 +820,17 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
   }
 
   // Otherwise, use standard linking procedure.
-  if (options.bitcodeLibs.empty())
+  if (options.bitcodeLibs.empty() && options.packageBitcodeModules.empty())
     return success();
 
   llvm::Linker linker(llvmModule);
-  for (StringRef libPath : options.bitcodeLibs) {
-    ErrorOr<std::unique_ptr<llvm::Module>> loadResult =
-        loadBitcodeFile(llvmModule.getContext(), libPath);
-    if (failed(loadResult))
-      return loadResult.takeError();
 
-    std::unique_ptr<llvm::Module> libModule = std::move(*loadResult);
-
-    if (libModule->getTargetTriple() != llvmModule.getTargetTriple())
-      continue;
+  // Lambda to link a loaded module, handling target triple check and linking
+  auto linkModule =
+      [&](std::unique_ptr<llvm::Module> libModule) -> ErrorOrSuccess {
+    if (libModule->getTargetTriple() != llvmModule.getTargetTriple() ||
+        libModule->getDataLayout() != llvmModule.getDataLayout())
+      return success();
 
     bool err = linker.linkInModule(
         std::move(libModule), llvm::Linker::Flags::LinkOnlyNeeded,
@@ -818,7 +842,31 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
 
     if (err)
       return Error("Unrecoverable failure during bitcode linking.");
+    return success();
+  };
+
+  // Link bitcode libraries from file paths
+  for (StringRef libPath : options.bitcodeLibs) {
+    ErrorOr<std::unique_ptr<llvm::Module>> loadResult =
+        loadBitcodeFile(llvmModule.getContext(), libPath);
+    if (failed(loadResult))
+      return loadResult.takeError();
+
+    if (auto err = linkModule(std::move(*loadResult)))
+      return err.takeError();
   }
+
+  // Link bitcode modules from packages
+  for (DenseResourceElementsAttr bitcodeAttr : options.packageBitcodeModules) {
+    ErrorOr<std::unique_ptr<llvm::Module>> loadResult =
+        loadBitcodeFromResource(llvmModule.getContext(), bitcodeAttr);
+    if (failed(loadResult))
+      return loadResult.takeError();
+
+    if (auto err = linkModule(std::move(*loadResult)))
+      return err.takeError();
+  }
+
   return success();
 }
 

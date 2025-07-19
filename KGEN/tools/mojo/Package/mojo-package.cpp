@@ -13,12 +13,14 @@
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
@@ -34,9 +36,13 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -276,6 +282,35 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 }
 
 //===----------------------------------------------------------------------===//
+// Helper function to write LLVM bitcode module to bytecode attribute
+//===----------------------------------------------------------------------===//
+
+/// Reads an LLVM bitcode file and returns it as a DenseResourceElementsAttr.
+/// Returns nullptr on failure.
+static DenseResourceElementsAttr
+writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, const std::string &bitcodeFile) {
+  // Read the bitcode file
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOr =
+      llvm::MemoryBuffer::getFile(bitcodeFile);
+  if (!bufferOr)
+    return {};
+
+  // Get the buffer contents
+  llvm::MemoryBuffer &buffer = **bufferOr;
+  StringRef data = buffer.getBuffer();
+
+  // Hash the bitcode to generate a unique name
+  llvm::BLAKE3Result<32> hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)data.data(), data.size()));
+  std::string resourceName =
+      "llvm_bitcode_" + llvm::toHex(hash, /*LowerCase=*/true);
+
+  // Create the resource attribute
+  return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
+                            resourceName);
+}
+
+//===----------------------------------------------------------------------===//
 // buildPackage
 //===----------------------------------------------------------------------===//
 
@@ -310,6 +345,25 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
         "compilation failed: unable to write bytecode for package module");
   }
   thePackage.setPostParseModuleAttr(postParseModuleAttr);
+
+  // Process bitcode libraries if any were specified
+  if (!packageArgs.compileOptions.bitcodeLibs.empty()) {
+    SmallVector<DenseResourceElementsAttr> bitcodeAttrs;
+
+    for (const std::string &bitcodeFile :
+         packageArgs.compileOptions.bitcodeLibs) {
+      DenseResourceElementsAttr bitcodeAttr =
+          writeLLVMBitcodeToDenseAttr(theModule.getContext(), bitcodeFile);
+      if (!bitcodeAttr)
+        return Error("failed to load bitcode library: " + bitcodeFile);
+      bitcodeAttrs.push_back(bitcodeAttr);
+    }
+
+    // Set the bitcode libraries on the package
+    thePackage.setExternLLVMBitcodeModulesAttr(
+        LIT::DenseResourceElementsArrayAttr::get(theModule.getContext(),
+                                                 bitcodeAttrs));
+  }
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
@@ -395,6 +449,15 @@ static int package(const State &subcommandState) {
   if (isKgenModule) {
     packageArgs.compileOptions.debugLevel = CompilationOptions::kNoDebug;
     packageArgs.compileOptions.optimizationLevel = 3;
+  }
+
+  if (args.hasArg(options::OPT_bitcode_libs)) {
+    if (isKgenModule)
+      return state.reportError(
+          "bitcode libraries are not supported for kgen modules");
+
+    packageArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
+        args.getAllArgValues(options::OPT_bitcode_libs));
   }
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(

@@ -8,6 +8,7 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/MArchTarget/MArchTarget.h"
@@ -342,6 +343,13 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);
   if (!module)
     return Error("failed to parse the provided Mojo source module");
+
+  // Extract external LLVM bitcode modules from imported packages
+  module->walk([&](LIT::PackageOp packageOp) {
+    if (auto bitcodeModules = packageOp.getExternLLVMBitcodeModulesAttr())
+      for (auto bitcodeAttr : bitcodeModules)
+        compilationOptions.packageBitcodeModules.push_back(bitcodeAttr);
+  });
 
   // Tag the module with the environment, which includes any definitions the
   // user may have specified on the command line.

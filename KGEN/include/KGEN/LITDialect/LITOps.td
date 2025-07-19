@@ -304,7 +304,8 @@ def LIT_PackageOp : LITOp<"package", [
     // compiled.
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
     // References to the dependencies of this package.
-    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies
+    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
