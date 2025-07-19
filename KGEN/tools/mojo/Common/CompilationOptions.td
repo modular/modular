@@ -57,15 +57,24 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
 def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
   Alias<debug_level>, AliasArgs<["full"]>;
 
+def : Flag<["-"], "g0">, Group<CompilationOptionGroup>, Index<7>,
+  Alias<debug_level>, AliasArgs<["none"]>;
+
+def : Flag<["-"], "g1">, Group<CompilationOptionGroup>, Index<8>,
+  Alias<debug_level>, AliasArgs<["line-tables"]>;
+
+def : Flag<["-"], "g2">, Group<CompilationOptionGroup>, Index<9>,
+  Alias<debug_level>, AliasArgs<["full"]>;
+
 defm num_threads : CommandOption<["--", "-"], "num-threads",
-  CompilationOptionGroup, Index<7>, MetaVarName<"NUM">,
+  CompilationOptionGroup, Index<10>, MetaVarName<"NUM">,
   HelpText<
     "Sets the maximum number of threads to use for compilation. "
     "The default is 0 (use all available threads)."
   >>;
 
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
-  Index<8>, Alias<num_threads>;
+  Index<11>, Alias<num_threads>;
 
 
 //===----------------------------------------------------------------------===//
