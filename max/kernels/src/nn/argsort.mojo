@@ -224,7 +224,9 @@ fn _argsort_gpu[
 
     # Else we need to pad the input and indices with sentinel values.
 
-    var padded_input_buffer = ctx.create_buffer[input.dtype](pow_2_length)
+    var padded_input_buffer = ctx.enqueue_create_buffer[input.dtype](
+        pow_2_length
+    )
     var padded_input = LayoutTensor[
         mut=True, input.dtype, Layout.row_major(UNKNOWN_VALUE)
     ](
@@ -234,7 +236,9 @@ fn _argsort_gpu[
         ),
     )
 
-    var padded_indices_buffer = ctx.create_buffer[indices.dtype](pow_2_length)
+    var padded_indices_buffer = ctx.enqueue_create_buffer[indices.dtype](
+        pow_2_length
+    )
     var padded_indices = LayoutTensor[
         mut=True, indices.dtype, Layout.row_major(UNKNOWN_VALUE)
     ](

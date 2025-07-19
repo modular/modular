@@ -130,16 +130,16 @@ def test_load_and_mma_and_multiply_operands[
     var b_lane_host_ptr = UnsafePointer[Scalar[dtype]].alloc(WARP_SIZE)
     var c_lane_host_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(WARP_SIZE * 4)
 
-    var a_device = ctx.create_buffer[dtype](M * K)
-    var b_device = ctx.create_buffer[dtype](K * N)
-    var c_device = ctx.create_buffer[dst_dtype](M * N)
-    var d_device = ctx.create_buffer[dst_dtype](M * N)
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
+    var d_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
 
-    var d_device_mma = ctx.create_buffer[dst_dtype](M * N)
+    var d_device_mma = ctx.enqueue_create_buffer[dst_dtype](M * N)
 
-    var a_lane_device = ctx.create_buffer[dtype](WARP_SIZE)
-    var b_lane_device = ctx.create_buffer[dtype](WARP_SIZE)
-    var c_lane_device = ctx.create_buffer[dst_dtype](WARP_SIZE * 4)
+    var a_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
+    var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
+    var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
 
     var a_host = tb[dtype]().row_major[M, K]().view(a_host_ptr)
     var a_dev = tb[dtype]().row_major[M, K]().view(a_device.unsafe_ptr())
@@ -183,9 +183,9 @@ def test_load_and_mma_and_multiply_operands[
     arange(a_host)
     arange(b_host)
     arange(c_host)
-    ctx.memcopy(a_device, a_host_ptr)
-    ctx.memcopy(b_device, b_host_ptr)
-    ctx.memcopy(c_device, c_host_ptr)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(c_device, c_host_ptr)
 
     ctx.enqueue_function[test_load_a[dst_dtype, dtype, a_dev.layout, shape]](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
@@ -222,10 +222,10 @@ def test_load_and_mma_and_multiply_operands[
         block_dim=(WARP_SIZE),
     )
 
-    ctx.memcopy(a_lane_host_ptr, a_lane_device)
-    ctx.memcopy(b_lane_host_ptr, b_lane_device)
-    ctx.memcopy(c_lane_host_ptr, c_lane_device)
-    ctx.memcopy(d_host_ptr, d_device)
+    ctx.enqueue_copy(a_lane_host_ptr, a_lane_device)
+    ctx.enqueue_copy(b_lane_host_ptr, b_lane_device)
+    ctx.enqueue_copy(c_lane_host_ptr, c_lane_device)
+    ctx.enqueue_copy(d_host_ptr, d_device)
     ctx.synchronize()
 
     print("== test_load_a")
@@ -240,7 +240,7 @@ def test_load_and_mma_and_multiply_operands[
     print("== test_load_d")
     print(d_host)
 
-    ctx.memcopy(d_host_ptr, d_device_mma)
+    ctx.enqueue_copy(d_host_ptr, d_device_mma)
     ctx.synchronize()
 
     print("== test_mma")

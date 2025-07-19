@@ -64,7 +64,7 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
 
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
+from .matmul_amd import gemm_kernel_amd
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
@@ -1228,10 +1228,10 @@ fn multistage_gemm[
             alias BM = config.block_tile_shape[0]
             alias BN = config.block_tile_shape[1]
 
-            var locks_data = ctx.create_buffer[DType.int32](
+            var locks_data = ctx.enqueue_create_buffer[DType.int32](
                 ceildiv(M, BM) * ceildiv(N, BN)
             )
-            ctx.memset(locks_data, 0)
+            ctx.enqueue_memset(locks_data, 0)
 
             alias gemm_kernel_type = multistage_gemm_split_k_kernel[
                 c_type,
@@ -1270,7 +1270,7 @@ fn multistage_gemm[
                 "Executing: split-K with parallel reduction (workspace-based)"
             )
             alias work_space_type = config.split_k_reduction_type
-            var work_space_data = ctx.create_buffer[work_space_type](
+            var work_space_data = ctx.enqueue_create_buffer[work_space_type](
                 runtime_config.num_k_partitions * M * N
             )
             var work_space = NDBuffer[work_space_type, 3](
@@ -1335,7 +1335,7 @@ fn multistage_gemm[
     @parameter
     if has_amd_gpu_accelerator() and transpose_b:
         logger.info("Executing: AMD standard GEMM (no split-K)")
-        alias gemm_kernel_type = amd_gemm_kernel[
+        alias gemm_kernel_type = gemm_kernel_amd[
             c_type,
             tensor_c.layout,
             a_type,

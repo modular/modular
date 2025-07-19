@@ -20,7 +20,8 @@ from max.pipelines.lib import (
     TextAndVisionTokenizer,
 )
 
-from .pixtral import PixtralModel
+from . import weight_adapters
+from .model import PixtralModel
 
 pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration",
@@ -33,4 +34,7 @@ pixtral_arch = SupportedArchitecture(
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
 )

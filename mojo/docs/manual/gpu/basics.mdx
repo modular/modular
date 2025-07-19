@@ -13,7 +13,7 @@ here](https://forum.modular.com/t/gpu-programming-manual/755).
 
 This documentation aims to build your GPU programming knowledge from the ground
 up, starting with the lowest levels of the stack before progressing to
-higher-level functionality. It’s designed for a diverse audience, from
+higher-level functionality. It's designed for a diverse audience, from
 experienced GPU developers to programmers new to GPU coding. Mojo allows you to
 program NVIDIA GPUs, with direct access to low-level GPU primitives, while
 sharing types and functions that can also run on CPUs where applicable.  If
@@ -32,7 +32,7 @@ capable of running in parallel, which forces programmers to rethink how they
 maximize performance. This shift is especially evident in AI applications, where
 performance scales remarkably well with additional cores.
 
-NVIDIA’s breakthrough came with CUDA, a general programming model that allows
+NVIDIA's breakthrough came with CUDA, a general programming model that allows
 developers to target both server and consumer GPUs for any application domain.
 This vision sparked an AI revolution when Alex Krizhevsky, Ilya Sutskever, and
 Geoffrey Hinton trained AlexNet on consumer GPUs, significantly outperforming
@@ -43,8 +43,8 @@ the cost of scheduling threads is much lower compared to a traditional CPU.
 
 Harnessing this hardware requires a new programming mindset. Mojo represents a
 chance to rethink GPU programming and make it more approachable. C/C++ is at the
-core of GPU programming, but we’ve seen leaps in ergonomics and memory safety
-from systems programming languages in recent years. Mojo expands on Python’s
+core of GPU programming, but we've seen leaps in ergonomics and memory safety
+from systems programming languages in recent years. Mojo expands on Python's
 familiar syntax, adds direct access to low-level CPU and GPU intrinsics for
 systems programming, and introduces ergonomic and safety improvements from
 modern languages. This course aims to empower programmers with minimal
@@ -75,7 +75,9 @@ git clone git@github.com:modular/max
 cd max/mojo/docs/manual/gpu
 ```
 
-And open `basics.mdx` to run the code cells interactively. If you don't have `mojo` on your system PATH it will automacailly download and install it the first time you run a Mojo cell.
+And open `basics.mdx` to run the code cells interactively. If you don't have
+`mojo` on your system PATH it will automatically download and install it the
+first time you run a Mojo cell.
 
 If you prefer the traditional approach using a CLI, first install
 [`pixi`](https://pixi.sh/latest/) if you don't have it:
@@ -111,7 +113,7 @@ def main():
 
     var ctx = DeviceContext()
 
-    ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
+    ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
     ctx.synchronize()
 ```
 
@@ -160,7 +162,7 @@ condition. See [Functions](/mojo/manual/functions) more information.
 
 :::
 
-We can pass this function as a parameter to `call_function()` to compile it
+We can pass this function as a parameter to `enqueue_function()` to compile it
 for your attached GPU and launch it. First we need to get the
 [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) for your
 GPU:
@@ -172,7 +174,7 @@ var ctx = DeviceContext()
 Now we have the `DeviceContext` we can compile and launch the kernel:
 
 ```mojo :once
-ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
 
 # Wait for the kernel to finish executing before handing back to CPU
 ctx.synchronize()
@@ -213,7 +215,7 @@ using a tuple with up to three values will determine the (x, y, z) dimensions.
 :::
 
 ```mojo :once
-ctx.call_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
+ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
 ctx.synchronize()
 ```
 
@@ -242,7 +244,7 @@ instance, printing from the CPU without first synchronizing might result in
 out-of-order output:
 
 ```mojo :once
-ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
 print("This might print before the GPU has completed its work")
 ```
 
@@ -259,7 +261,7 @@ host, the device could be slightly slower to finish its work, so you might
 see that output after the host output. Let's add a `synchronize()` call:
 
 ```mojo :once
-ctx.call_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
 ctx.synchronize()
 print("This will print after the GPU has completed its work")
 ```
@@ -319,7 +321,7 @@ fn block_kernel():
         "]"
     )
 
-ctx.call_function[block_kernel](grid_dim=(2, 2), block_dim=2)
+ctx.enqueue_function[block_kernel](grid_dim=(2, 2), block_dim=2)
 ctx.synchronize()
 ```
 
@@ -397,7 +399,7 @@ alias blocks = 4
 alias threads = 4
 alias elements_in = blocks * threads # one element per thread
 
-var in_buffer = ctx.create_buffer[dtype](elements_in)
+var in_buffer = ctx.enqueue_create_buffer[dtype](elements_in)
 ```
 
 Creating the GPU buffer is allocating _global memory_ which can be accessed from
@@ -473,7 +475,7 @@ fn print_values_kernel(in_tensor: InTensor):
     var tid = thread_idx.x
     print("block:", bid, "thread:", tid, "val:", in_tensor[bid, tid])
 
-ctx.call_function[print_values_kernel](
+ctx.enqueue_function[print_values_kernel](
     in_tensor, grid_dim=blocks, block_dim=threads,
 )
 ctx.synchronize()
@@ -512,7 +514,7 @@ launch a kernel to multiply each value:
 fn multiply_kernel[multiplier: Int](in_tensor: InTensor):
     in_tensor[block_idx.x, thread_idx.x] *= multiplier
 
-ctx.call_function[multiply_kernel[2]](
+ctx.enqueue_function[multiply_kernel[2]](
     in_tensor,
     grid_dim=blocks,
     block_dim=threads,
@@ -548,10 +550,10 @@ Output: [ block[0] block[1] block[2] block[3] ]
 Set up the output buffer/tensor for the host and device:
 
 ```mojo :clear
-var out_buffer = ctx.create_buffer[dtype](blocks)
+var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 
 # Zero the values on the device as they'll be used to accumulate results
-_ = out_buffer.fill(0)
+_ = out_buffer.enqueue_fill(0)
 
 alias out_layout = Layout.row_major(blocks)
 alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
@@ -594,7 +596,7 @@ fn sum_reduce_kernel(
         for i in range(threads):
             out_tensor[block_idx.x] += shared[i]
 
-ctx.call_function[sum_reduce_kernel](
+ctx.enqueue_function[sum_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -637,7 +639,7 @@ fn simd_reduce_kernel(
     # The [4] means it loads 4 sequential values before doing the `reduce_add`
     out_tensor[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
 
-ctx.call_function[simd_reduce_kernel](
+ctx.enqueue_function[simd_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -700,7 +702,7 @@ fn warp_reduce_kernel(
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.call_function[warp_reduce_kernel](
+ctx.enqueue_function[warp_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -737,7 +739,7 @@ Now that we've covered some of the core primitives for GPU programming, here's
 an exercise to solidify your understanding. Feel free to revisit the examples as
 you work through it the first time, then challenge yourself to write the code
 independently. Experimenting with the code and observing the results is also a
-highly valuable way to deepen your skills, don’t hesitate to tweak things and
+highly valuable way to deepen your skills, don't hesitate to tweak things and
 see what happens!
 
 1. Create a host buffer for the input of `DType` `Float32`, with 32 elements,
@@ -745,7 +747,7 @@ and initialize the numbers ordered sequentially. Copy the host buffer to the
 device.
 2. Create a in_tensor that wraps the host buffer, with the dimensions (8, 4)
 3. Create an host and device buffer for the output of `DType` `Float32`, with 8
-elements, don't forget to zero the values with `memset()`.
+elements, don't forget to zero the values with `enqueue_fill()`.
 4. Launch a GPU kernel with 8 blocks and 4 threads that reduce sums the values,
 using your preferred method to write to the output buffer.
 5. Copy the device buffer to the host buffer, and print it out on the CPU.
@@ -768,15 +770,15 @@ alias elements_in = blocks * threads
 var ctx = DeviceContext()
 
 # Create buffers
-var in_buffer = ctx.create_buffer[dtype](elements_in)
-var out_buffer = ctx.create_buffer[dtype](blocks)
+var in_buffer = ctx.enqueue_create_buffer[dtype](elements_in)
+var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 
 # Fill in input values sequentially and copy to device
 with in_buffer.map_to_host() as host_buffer:
     iota(host_buffer.unsafe_ptr(), elements_in)
 
 # Zero output buffer values
-_ = out_buffer.fill(0)
+_ = out_buffer.enqueue_fill(0)
 
 # Create the LayoutTensors
 alias layout = Layout.row_major(blocks, threads)
@@ -793,7 +795,7 @@ fn reduce_sum(in_tensor: InTensor, out_tensor: OutTensor):
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.call_function[reduce_sum](
+ctx.enqueue_function[reduce_sum](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
@@ -816,11 +818,11 @@ To continue learning how to write Mojo for GPUs, check out the following
 resources:
 
 - [GPU puzzles](https://builds.modular.com/puzzles/):
-Learn how to program for GPUs by solving increasingly challenging puzzles.
+  Learn how to program for GPUs by solving increasingly challenging puzzles.
 
 - [Build custom ops for GPUs](/max/tutorials/build-custom-ops): Learn to write
-custom ops for MAX graphs that can execute on both CPUs and GPUs.
+  custom ops for MAX graphs that can execute on both CPUs and GPUs.
 
-- [GPU programming examples
-in GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions):
-A variety of GPU code examples, from simple to complex.
+- [GPU programming examples in
+  GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions):
+  A variety of GPU code examples, from simple to complex.

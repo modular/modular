@@ -20,7 +20,7 @@ from python import PythonObject
 """
 
 from os import abort
-from sys.ffi import c_ssize_t
+from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
@@ -63,7 +63,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Defaultable, Sized):
+struct _PyIter(Copyable):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -72,88 +72,42 @@ struct _PyIter(Defaultable, Sized):
 
     var iterator: PythonObject
     """The iterator object that stores location."""
-    var prepared_next_item: PythonObject
+    var next_item: PyObjectPtr
     """The next item to vend or zero if there are no items."""
-    var is_done: Bool
-    """Stores True if the iterator is pointing to the last item."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy another iterator.
-
-        Args:
-            existing: Initialized _PyIter instance.
-        """
-        self.iterator = existing.iterator
-        self.prepared_next_item = existing.prepared_next_item
-        self.is_done = existing.is_done
-
-    @implicit
     fn __init__(out self, iter: PythonObject):
         """Initialize an iterator.
 
         Args:
             iter: A Python iterator instance.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
         self.iterator = iter
-        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
-        if not maybe_next_item:
-            self.is_done = True
-            self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
-        else:
-            self.prepared_next_item = PythonObject(
-                from_owned_ptr=maybe_next_item
-            )
-            self.is_done = False
-
-    fn __init__(out self):
-        """Initialize an empty iterator."""
-        self.iterator = PythonObject(from_owned_ptr=PyObjectPtr())
-        self.is_done = True
-        self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
+        self.next_item = cpy.PyIter_Next(iter._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __next__(mut self: _PyIter) -> PythonObject:
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return Bool(self.next_item)
+
+    fn __next__(mut self) -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
-        if not self.iterator:
-            return self.iterator
-        var cpython = Python().cpython()
-        var current = self.prepared_next_item
-        var maybe_next_item = cpython.PyIter_Next(self.iterator._obj_ptr)
-        if not maybe_next_item:
-            self.is_done = True
-        else:
-            self.prepared_next_item = PythonObject(
-                from_owned_ptr=maybe_next_item
-            )
-        return current
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        """Return zero to halt iteration.
-
-        Returns:
-            0 if the traversal is complete and 1 otherwise.
-        """
-        if self.is_done:
-            return 0
-        else:
-            return 1
+        var cpy = Python().cpython()
+        var curr_item = self.next_item
+        self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
+        return PythonObject(from_owned_ptr=curr_item)
 
 
 @register_passable
@@ -195,47 +149,39 @@ struct PythonObject(
         """Initialize this object from an owned reference-counted Python object
         pointer.
 
-        Ownership of the reference will be assumed by `PythonObject`.
+        For example, this function should be used to construct a `PythonObject`
+        from the pointer returned by "New reference"-type objects from the
+        CPython API.
 
         Args:
-            from_owned_ptr: The `PyObjectPtr` to take ownership of.
+            from_owned_ptr: An owned pointer to a Python object.
+
+        References:
+        - https://docs.python.org/3/glossary.html#term-strong-reference
         """
         self._obj_ptr = from_owned_ptr
 
     fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
-        """Initialize this object from a read-only reference-counted Python
+        """Initialize this object from a borrowed reference-counted Python
         object pointer.
 
-        The reference count of the pointee object will be incremented, and
-        ownership of the additional reference count will be assumed by the
-        initialized `PythonObject`.
-
-        The CPython API documentation indicates the ownership semantics of the
-        returned object on any function that returns a `PyObject*` value. The
-        two possible annotations are:
-
-        * "Return value: New reference."
-        * "Return value: Borrowed reference.
-
-        This function should be used to construct a `PythonObject` from the
-        pointer returned by 'Borrowed reference'-type objects.
+        For example, this function should be used to construct a `PythonObject`
+        from the pointer returned by "Borrowed reference"-type objects from the
+        CPython API.
 
         Args:
-            from_borrowed_ptr: A read-only reference counted pointer to a Python
-                object.
+            from_borrowed_ptr: A borrowed pointer to a Python object.
 
-        Returns:
-            An owned PythonObject pointer.
+        References:
+        - https://docs.python.org/3/glossary.html#term-borrowed-reference
         """
-        var cpython = Python().cpython()
-
+        var cpy = Python().cpython()
         # SAFETY:
-        #   We were passed a Python 'read-only reference', so for it to be
+        #   We were passed a Python "borrowed reference", so for it to be
         #   safe to store this reference, we must increment the reference
-        #   count to convert this to a 'strong reference'.
-        cpython.Py_IncRef(from_borrowed_ptr)
-
-        self = PythonObject(from_owned_ptr=from_borrowed_ptr)
+        #   count to convert this to a "strong reference".
+        cpy.Py_IncRef(from_borrowed_ptr)
+        self._obj_ptr = from_borrowed_ptr
 
     @always_inline
     fn __init__[T: Movable](out self, *, var alloc: T) raises:
@@ -288,9 +234,8 @@ struct PythonObject(
         Args:
             none: None.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.Py_None()
-        cpython.Py_IncRef(self._obj_ptr)
+        var cpy = Python().cpython()
+        self = Self(from_borrowed_ptr=cpy.Py_None())
 
     @implicit
     fn __init__(out self, value: Bool):
@@ -299,21 +244,21 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyBool_FromLong(Int(value))
+        var cpy = Python().cpython()
+        self = Self(from_owned_ptr=cpy.PyBool_FromLong(c_long(Int(value))))
 
     @implicit
-    fn __init__(out self, integer: Int):
+    fn __init__(out self, value: Int):
         """Initialize the object with an integer value.
 
         Args:
-            integer: The integer value.
+            value: The integer value.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyLong_FromSsize_t(integer)
+        var cpy = Python().cpython()
+        self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
 
     @implicit
-    fn __init__[dtype: DType](out self, value: SIMD[dtype, 1]):
+    fn __init__[dtype: DType](out self, value: Scalar[dtype]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
@@ -324,38 +269,21 @@ struct PythonObject(
         Args:
             value: The scalar value.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
 
         @parameter
         if dtype is DType.bool:
-            self._obj_ptr = cpython.PyBool_FromLong(Int(value))
+            var val = c_long(Int(value))
+            self = Self(from_owned_ptr=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var uint_val = value.cast[DType.index]().value
-            self._obj_ptr = cpython.PyLong_FromSize_t(uint_val)
+            var val = c_size_t(value.cast[DType.index]().value)
+            self = Self(from_owned_ptr=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var int_val = value.cast[DType.index]().value
-            self._obj_ptr = cpython.PyLong_FromSsize_t(int_val)
+            var val = c_ssize_t(value.cast[DType.index]().value)
+            self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(val))
         else:
-            var fp_val = value.cast[DType.float64]()
-            self._obj_ptr = cpython.PyFloat_FromDouble(fp_val)
-
-    @implicit
-    fn __init__(out self, value: StringLiteral) raises:
-        """Initialize the object from a string literal.
-
-        Args:
-            value: The string value.
-        """
-        self = PythonObject(value.as_string_slice())
-
-    @implicit
-    fn __init__(out self, value: String) raises:
-        """Initialize the object from a string.
-
-        Args:
-            value: The string value.
-        """
-        self = PythonObject(value.as_string_slice())
+            var val = c_double(value.cast[DType.float64]())
+            self = Self(from_owned_ptr=cpy.PyFloat_FromDouble(val))
 
     @implicit
     fn __init__(out self, string: StringSlice) raises:
@@ -367,10 +295,29 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        cpython = Python().cpython()
-        self._obj_ptr = cpython.PyUnicode_DecodeUTF8(string)
-        if not self._obj_ptr:
-            raise cpython.get_error()
+        var cpy = Python().cpython()
+        var unicode = cpy.PyUnicode_DecodeUTF8(string)
+        if not unicode:
+            raise cpy.get_error()
+        self = Self(from_owned_ptr=unicode)
+
+    @implicit
+    fn __init__(out self, value: StringLiteral) raises:
+        """Initialize the object from a string literal.
+
+        Args:
+            value: The string literal value.
+        """
+        self = Self(value.as_string_slice())
+
+    @implicit
+    fn __init__(out self, value: String) raises:
+        """Initialize the object from a string.
+
+        Args:
+            value: The string value.
+        """
+        self = Self(value.as_string_slice())
 
     @implicit
     fn __init__(out self, slice: Slice):
@@ -379,7 +326,7 @@ struct PythonObject(
         Args:
             slice: The dictionary value.
         """
-        self._obj_ptr = _slice_to_py_object_ptr(slice)
+        self = Self(from_owned_ptr=_slice_to_py_object_ptr(slice))
 
     @always_inline
     fn __init__[
@@ -397,7 +344,7 @@ struct PythonObject(
         Returns:
             The constructed Python list.
         """
-        return Python._list(values)
+        self = Python._list(values)
 
     @always_inline
     fn __init__[
@@ -467,22 +414,18 @@ struct PythonObject(
         Args:
             existing: The value to copy.
         """
-        self._obj_ptr = existing._obj_ptr
-        var cpython = Python().cpython()
-        cpython.Py_IncRef(self._obj_ptr)
+        self = Self(from_borrowed_ptr=existing._obj_ptr)
 
     fn __del__(owned self):
         """Destroy the object.
 
         This decrements the underlying refcount of the pointed-to object.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
-        with GILAcquired(cpython):
-            if self._obj_ptr:
-                cpython.Py_DecRef(self._obj_ptr)
-            self._obj_ptr = PyObjectPtr()
+        with GILAcquired(cpy):
+            cpy.Py_DecRef(self._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1235,26 +1178,22 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        var cpython = Python().cpython()
+        var cpy = Python().cpython()
 
         var num_pos_args = len(args)
-        var tuple_obj = cpython.PyTuple_New(num_pos_args)
+        var args_ = cpy.PyTuple_New(num_pos_args)
         for i in range(num_pos_args):
-            var arg_value = args[i]._obj_ptr
-            cpython.Py_IncRef(arg_value)
-            var result = cpython.PyTuple_SetItem(tuple_obj, i, arg_value)
-            if result != 0:
-                raise Error("internal error: PyTuple_SetItem failed")
-
-        var dict_ptr = Python._dict(kwargs)
-        var callable_obj = self._obj_ptr
-        cpython.Py_IncRef(callable_obj)
-        var result = cpython.PyObject_Call(callable_obj, tuple_obj, dict_ptr)
-        cpython.Py_DecRef(callable_obj)
-        cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(dict_ptr)
+            var arg = args[i]._obj_ptr
+            # increment the refcount for `PyTuple_SetItem` steals the reference
+            # to `arg`
+            cpy.Py_IncRef(arg)
+            _ = cpy.PyTuple_SetItem(args_, i, arg)
+        var kwargs_ = Python._dict(kwargs)
+        var result = cpy.PyObject_Call(self._obj_ptr, args_, kwargs_)
+        cpy.Py_DecRef(args_)
+        cpy.Py_DecRef(kwargs_)
         if not result:
-            raise cpython.get_error()
+            raise cpy.get_error()
         return PythonObject(from_owned_ptr=result)
 
     # ===-------------------------------------------------------------------===#

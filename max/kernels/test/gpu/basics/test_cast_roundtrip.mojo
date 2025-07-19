@@ -45,10 +45,10 @@ fn run_vec_add(ctx: DeviceContext) raises:
     in_host[6] = neg_inf[DType.float32]()
     in_host[7] = -0.0
 
-    var in_device = ctx.create_buffer[DType.float32](length)
-    var out_device = ctx.create_buffer[DType.float32](length)
+    var in_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    in_device.copy_from(in_host)
+    in_device.enqueue_copy_from(in_host)
 
     var block_dim = 32
 

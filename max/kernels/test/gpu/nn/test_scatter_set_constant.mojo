@@ -23,8 +23,8 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
     var data = LayoutTensor[
         DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
     ](data_ptr,).fill(0.0)
-    var data_ptr_gpu = ctx.create_buffer[DType.float32](3 * 3)
-    ctx.memcopy(data_ptr_gpu, data_ptr)
+    var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
+    ctx.enqueue_copy(data_ptr_gpu, data_ptr)
 
     var data_gpu = LayoutTensor[
         DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
@@ -45,8 +45,8 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
     indices[3, 0] = 2
     indices[3, 1] = 0
 
-    var indices_ptr_gpu = ctx.create_buffer[DType.int32](4 * 2)
-    ctx.memcopy(indices_ptr_gpu, indices.ptr)
+    var indices_ptr_gpu = ctx.enqueue_create_buffer[DType.int32](4 * 2)
+    ctx.enqueue_copy(indices_ptr_gpu, indices.ptr)
     var indices_gpu = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
         indices_ptr_gpu,
     )
@@ -68,7 +68,7 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
         data_gpu, indices_gpu, fill_value, ctx_ptr
     )
 
-    ctx.memcopy(data_ptr, data_ptr_gpu)
+    ctx.enqueue_copy(data_ptr, data_ptr_gpu)
 
     for i in range(3):
         for j in range(3):

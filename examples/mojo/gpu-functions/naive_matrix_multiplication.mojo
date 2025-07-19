@@ -37,9 +37,9 @@ def main():
     ]()
 
     var ctx = DeviceContext()
-    var m_buffer = ctx.create_buffer[float_dtype](m_layout.size())
-    var n_buffer = ctx.create_buffer[float_dtype](n_layout.size())
-    var p_buffer = ctx.create_buffer[float_dtype](p_layout.size())
+    var m_buffer = ctx.enqueue_create_buffer[float_dtype](m_layout.size())
+    var n_buffer = ctx.enqueue_create_buffer[float_dtype](n_layout.size())
+    var p_buffer = ctx.enqueue_create_buffer[float_dtype](p_layout.size())
 
     # Map input buffers to host to fill with values from CPU
     with m_buffer.map_to_host() as host_buffer:

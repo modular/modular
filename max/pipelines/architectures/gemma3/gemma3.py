@@ -19,7 +19,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import MLP, LayerList, Linear, Module
+from max.nn import MLP, LayerList, Linear, Module, ReturnLogits
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
@@ -190,11 +190,13 @@ class Gemma3TextModel(Module):
         self.kv_collection_constructor = FetchPagedKVCacheCollection(
             config.kv_params
         )
+        self.return_logits = config.return_logits
 
     def __call__(
         self,
         tokens: TensorValueLike,
         kv_cache_inputs: Sequence[TensorValue],
+        return_n_logits: TensorValue,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens)
@@ -208,8 +210,43 @@ class Gemma3TextModel(Module):
         # Retrieve a variable number of tokens
         last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        logits = None
+        offsets = None
 
-        return (last_logits,)
+        if self.return_logits == ReturnLogits.VARIABLE:
+            return_n_logits_range = ops.range(
+                return_n_logits[0],
+                0,
+                -1,
+                out_dim="return_n_logits_range",
+                device=h.device,
+                dtype=DType.int64,
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            last_tokens = ops.gather(h, last_indices, axis=0)
+            logits = ops.cast(
+                self.lm_head(self.norm(last_tokens)), DType.float32
+            )
+            offsets = ops.range(
+                0,
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                device=h.device,
+                dtype=DType.int64,
+            )
+        elif self.return_logits == ReturnLogits.ALL:
+            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
+            offsets = input_row_offsets
+
+        if offsets is not None:
+            assert logits is not None
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)
 
 
 class Gemma3(Module):
@@ -224,10 +261,11 @@ class Gemma3(Module):
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         kv_cache_inputs: Sequence[TensorValue],
-        return_n_logits: TensorValue,  # Not used for Gemma3 currently
+        return_n_logits: TensorValue,
     ) -> tuple[TensorValue, ...]:
         return self.language_model(
             tokens,
             input_row_offsets=input_row_offsets,
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
         )

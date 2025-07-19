@@ -68,13 +68,13 @@ fn run_vector_reduction[
     memset_zero(c_host, N)
     memset_zero(c_host_ref, N)
 
-    var a_device = ctx.create_buffer[dtype](PN)
-    var c_device = ctx.create_buffer[dtype](N)
-    var lock_dev = ctx.create_buffer[dtype](1)
+    var a_device = ctx.enqueue_create_buffer[dtype](PN)
+    var c_device = ctx.enqueue_create_buffer[dtype](N)
+    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
 
-    ctx.memset(lock_dev, 0)
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(c_device, c_host)
+    ctx.enqueue_memset(lock_dev, 0)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     ctx.enqueue_function[semaphore_vector_reduce[dtype, N, num_parts]](
         c_device,
@@ -84,7 +84,7 @@ fn run_vector_reduction[
         block_dim=N,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
     for i in range(N):
@@ -155,13 +155,13 @@ fn run_matrix_reduction[
     memset_zero(c_host, M * N)
     memset_zero(c_host_ref, M * N)
 
-    var a_device = ctx.create_buffer[dtype](PX)
-    var c_device = ctx.create_buffer[dtype](M * N)
-    var lock_dev = ctx.create_buffer[dtype](1)
+    var a_device = ctx.enqueue_create_buffer[dtype](PX)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
 
-    ctx.memset(lock_dev, 0)
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(c_device, c_host)
+    ctx.enqueue_memset(lock_dev, 0)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     var block_size = 1024
 
@@ -173,7 +173,7 @@ fn run_matrix_reduction[
         block_dim=block_size,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
     for r in range(M):

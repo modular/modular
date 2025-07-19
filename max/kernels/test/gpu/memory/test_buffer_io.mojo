@@ -71,19 +71,19 @@ fn kernel_lds[dtype: DType, nowait: Bool](a: UnsafePointer[Scalar[dtype]]):
 
 def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
-    a_device_buf = ctx.create_buffer[dtype](size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1
 
-    ctx.memcopy(a_device_buf, a_host_buf)
+    ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     ctx.enqueue_function[kernel[dtype, width], dump_asm=False](
         a_device_buf,
         grid_dim=(1, 1),
         block_dim=(64),
     )
-    ctx.memcopy(a_host_buf, a_device_buf)
+    ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()
     for i in range(size_clip):
@@ -95,19 +95,19 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
 def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
     alias dtype = DType.float32
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
-    a_device_buf = ctx.create_buffer[dtype](size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1
 
-    ctx.memcopy(a_device_buf, a_host_buf)
+    ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     ctx.enqueue_function[kernel_lds[dtype, nowait], dump_asm=False](
         a_device_buf,
         grid_dim=ceildiv(size, 256),
         block_dim=256,
     )
-    ctx.memcopy(a_host_buf, a_device_buf)
+    ctx.enqueue_copy(a_host_buf, a_device_buf)
 
     ctx.synchronize()
     for i in range(size_clip):

@@ -23,9 +23,9 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
+from max.interfaces import AudioGenerationMetadata, AudioGeneratorOutput
 from max.pipelines.core import (
     AudioGenerationRequest,
-    AudioGeneratorOutput,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
@@ -334,12 +334,11 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
     async def _collect_audio_metadata(self, response, context):  # noqa: ANN001
         # Collect metadata about generated audio like duration, sample rate etc.
-        audio_metadata = {}
-        if hasattr(response, "sample_rate"):
-            audio_metadata["sample_rate"] = response.sample_rate
-        if hasattr(response, "duration"):
-            audio_metadata["duration"] = response.duration
-        return audio_metadata
+        sample_rate = getattr(response, "sample_rate", None)
+        duration = getattr(response, "duration", None)
+        return AudioGenerationMetadata(
+            sample_rate=sample_rate, duration=duration
+        )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
@@ -387,23 +386,25 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         """Generates complete audio for the provided request."""
         audio_chunks: list[AudioGeneratorOutput] = []
         async for chunk in self.next_chunk(request):
+            if not chunk.audio_data.size:
+                continue
             audio_chunks.append(chunk)
 
         # We import torch here so that only folks that use the
         # AudioGeneratorPipeline will need to have it installed.
-        import torch
+        import numpy as np
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
-                audio_data=torch.tensor([], dtype=torch.float32),
-                metadata={},
+                audio_data=np.array([], dtype=np.float32),
+                metadata=AudioGenerationMetadata(),
                 is_done=True,
             )
 
         # Combine audio chunks and metadata.
-        combined_audio = torch.concat(
-            [chunk.audio_data for chunk in audio_chunks], dim=-1
-        )
+        # Convert numpy arrays to torch tensors for concatenation, then back to numpy
+        np_chunks = [chunk.audio_data for chunk in audio_chunks]
+        combined_audio = np.concatenate(np_chunks, axis=-1)
 
         # We should only return from the next_chunk loop when the last chunk
         # is done.

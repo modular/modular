@@ -55,8 +55,12 @@ fn color_to_grayscale(
 fn main() raises:
     var ctx = create_test_device_context()
 
-    var rgb_buffer = ctx.create_buffer[int_dtype](rgb_layout_orig.size())
-    var gray_buffer = ctx.create_buffer[int_dtype](gray_layout_orig.size())
+    var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
+        rgb_layout_orig.size()
+    )
+    var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
+        gray_layout_orig.size()
+    )
 
     var rgb_tensor = InputTensor[static_spec=rgb_spec](
         rgb_buffer._unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)

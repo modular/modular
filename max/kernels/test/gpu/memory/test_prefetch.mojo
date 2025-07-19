@@ -13,7 +13,7 @@
 
 from sys.intrinsics import prefetch
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from testing import assert_true
 
@@ -27,26 +27,26 @@ fn do_prefetch[
 def test_prefetch_mi300x():
     assert_true(
         "llvm.prefetch "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.float16], target = get_gpu_target["mi300x"]()
         ]()
     )
     assert_true(
         "llvm.prefetch "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.float32], target = get_gpu_target["mi300x"]()
         ]()
     )
     assert_true(
         "llvm.prefetch "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.int32], target = get_gpu_target["mi300x"]()
         ]()
     )
 
     assert_true(
         "llvm.prefetch "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.int64, offset=42],
             target = get_gpu_target["mi300x"](),
         ]()
@@ -56,26 +56,26 @@ def test_prefetch_mi300x():
 def test_prefetch_nvidia():
     assert_true(
         "prefetch.global.L2 "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.float16], target = get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.float32], target = get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.int32], target = get_gpu_target["sm_80"]()
         ]()
     )
 
     assert_true(
         "prefetch.global.L2 "
-        in _compile_code_asm[
+        in _compile_code[
             do_prefetch[DType.int64, offset=42],
             target = get_gpu_target["sm_80"](),
         ]()

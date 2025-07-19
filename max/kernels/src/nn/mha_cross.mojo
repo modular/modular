@@ -274,7 +274,7 @@ fn mha_cross_gpu_naive[
     # Assume self attention if the query sequence length isn't passed.
     var num_keys = kv_max_seq_len + max_cache_size
     alias p_type = get_accum_type[q_type]()
-    var p_device = ctx.create_buffer[p_type](
+    var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * q_max_seq_len * num_keys
     )
 

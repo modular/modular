@@ -94,13 +94,13 @@ fn test_conv3d_gpu[
         1,  # num_groups
     )
     # allocate device memory
-    var input_dev = ctx.create_buffer[dtype](input_size)
-    var filter_dev = ctx.create_buffer[dtype](filter_size)
-    var output_dev = ctx.create_buffer[dtype](output_size)
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
 
     # copy input and filter to device, shipping data to gpu land
-    ctx.memcopy(input_dev, input_host)
-    ctx.memcopy(filter_dev, filter_host)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
 
     # create ndbuffer views, making it easier to work with
     var input_buf = NDBuffer[dtype, 5, _, input_dim](
@@ -146,7 +146,7 @@ fn test_conv3d_gpu[
 
     # copy result back to host, bringing it home
     ctx.synchronize()
-    ctx.memcopy(output_gpu_host, output_dev)
+    ctx.enqueue_copy(output_gpu_host, output_dev)
 
     # Verify results using assert_almost_equal
     try:

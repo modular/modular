@@ -37,9 +37,9 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     alias length = 1024
 
-    var in0 = ctx.create_buffer[DType.float32](length)
-    var in1 = ctx.create_buffer[DType.float32](length).fill(2)
-    var out = ctx.create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length).enqueue_fill(2)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:

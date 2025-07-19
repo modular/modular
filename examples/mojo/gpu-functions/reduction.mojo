@@ -113,8 +113,8 @@ def main():
 
     with DeviceContext() as ctx:
         # Allocate memory on the device
-        out = ctx.create_buffer[dtype](1).fill(0)
-        a = ctx.create_buffer[dtype](SIZE).fill(0)
+        out = ctx.enqueue_create_buffer[dtype](1).enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
 
         # Initialise a with random integers between 0 and 10
         with a.map_to_host() as a_host:
@@ -135,7 +135,7 @@ def main():
 
         # Calculate the sum in a sequential fashion on the host
         # for correctness check
-        expected = ctx.create_host_buffer[dtype](1).fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](1).enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
                 expected[0] += a_host[i]

@@ -85,7 +85,7 @@ def execute_flash_attention[
         IndexList[1](batch_size),
         ctx=ctx,
     )
-    ctx.memcopy(valid_lengths_device.buffer, valid_length.data)
+    ctx.enqueue_copy(valid_lengths_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -95,7 +95,7 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
-    ctx.memcopy(q_device.buffer, q_host.tensor.data)
+    ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
 
     # initialize mask tensor
     # TODO this should ideally create a triangular matrix
@@ -141,9 +141,9 @@ def execute_flash_attention[
     )
 
     # initialize our KVCache
-    var cache_lengths_dev = ctx.create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
-    ctx.memcopy(cache_lengths_dev, cache_valid_length.data)
+    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_dev._unsafe_ptr(), Index(batch_size)
     )
@@ -180,7 +180,7 @@ def execute_flash_attention[
         lookup_table_host.tensor[idx] = UInt32(randval)
         idx += 1
 
-    ctx.memcopy(lookup_table_device.buffer, lookup_table_host.tensor.data)
+    ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
 
     var kv_collection_device = CollectionType(
         kv_block_device.tensor,
@@ -228,8 +228,8 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.memcopy(test_output_host.tensor.data, test_output_device.buffer)
-    ctx.memcopy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
     ref_out = ref_output_host.tensor

@@ -133,11 +133,83 @@ def test_call_protocol_api(python: Python):
     assert_true(cpy.PyObject_Call(dict_func, t, d))
 
 
+def test_number_protocol_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+
+    var long_value = cpy.PyNumber_Long(n)
+    assert_true(long_value)
+    assert_equal(cpy.PyLong_AsSsize_t(long_value), 42)
+
+    var float_value = cpy.PyNumber_Float(n)
+    assert_true(float_value)
+    assert_equal(cpy.PyFloat_AsDouble(float_value), 42.0)
+
+
+def test_iterator_protocol_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    var l = cpy.PyList_New(1)
+    _ = cpy.PyList_SetItem(l, 0, n)
+
+    var it = cpy.PyObject_GetIter(l)
+
+    assert_false(cpy.PyIter_Check(n))
+    assert_true(it)
+    assert_true(cpy.PyIter_Next(it))
+
+
 def test_type_object_api(python: Python):
     var cpy = python.cpython()
 
     var dict_type = cpy.PyDict_Type()
     assert_true(cpy.PyType_GetName(dict_type))
+
+
+def test_integer_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(-42)
+    assert_true(n)
+    assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+
+    var z = cpy.PyLong_FromSize_t(57)
+    assert_true(z)
+    assert_equal(cpy.PyLong_AsSsize_t(z), 57)
+
+
+def test_boolean_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var t = cpy.PyBool_FromLong(1)
+    assert_true(t)
+    assert_equal(cpy.PyObject_IsTrue(t), 1)
+
+    var f = cpy.PyBool_FromLong(0)
+    assert_true(f)
+    assert_equal(cpy.PyObject_IsTrue(f), 0)
+
+
+def test_floating_point_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var f = cpy.PyFloat_FromDouble(3.14)
+    assert_true(f)
+    assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+
+
+def test_unicode_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var str = "Hello, World!"
+
+    var py_str = cpy.PyUnicode_DecodeUTF8(str)
+    assert_true(py_str)
+
+    var res = cpy.PyUnicode_AsUTF8AndSize(py_str)
+    assert_equal(res, str)
 
 
 def test_module_object_api(python: Python):
@@ -161,6 +233,13 @@ def test_module_object_api(python: Python):
             cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
         )
         _ = name
+
+
+def test_slice_object_api(python: Python):
+    var cpy = python.cpython()
+
+    var n = cpy.PyLong_FromSsize_t(42)
+    assert_true(cpy.PySlice_New(n, n, n))
 
 
 def test_PyDict(mut python: Python):
@@ -273,13 +352,34 @@ def main():
     # Call Protocol
     test_call_protocol_api(python)
 
+    # Number Protocol
+    test_number_protocol_api(python)
+
+    # Iterator Protocol
+    test_iterator_protocol_api(python)
+
     # Concrete Objects Layer
 
     # Type Objects
     test_type_object_api(python)
 
+    # Integer Objects
+    test_integer_object_api(python)
+
+    # Boolean Objects
+    test_boolean_object_api(python)
+
+    # Floating-Point Objects
+    test_floating_point_object_api(python)
+
+    # Unicode Objects and Codecs
+    test_unicode_object_api(python)
+
     # Module Objects
     test_module_object_api(python)
+
+    # Slice Objects
+    test_slice_object_api(python)
 
     test_PyDict(python)
     test_PyCapsule(python)

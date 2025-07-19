@@ -89,7 +89,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
 fn run_mandelbrot(ctx: DeviceContext) raises:
     var out_host = UnsafePointer[Scalar[int_type]].alloc(width * height)
 
-    var out_device = ctx.create_buffer[int_type](width * height)
+    var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
     @parameter
@@ -106,7 +106,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
         ctx.execution_time[run_mandelbrot](1) / 1_000_000_000.0,
     )
 
-    ctx.memcopy(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
 
     ctx.synchronize()
 

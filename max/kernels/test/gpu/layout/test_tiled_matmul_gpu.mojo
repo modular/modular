@@ -444,13 +444,13 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     for i in range(M * N):
         mat_c_ptr[i] = 0
 
-    var mat_c_dev = ctx.create_buffer[DType.float32](M * N)
-    var mat_a_dev = ctx.create_buffer[DType.float32](M * K)
-    var mat_b_dev = ctx.create_buffer[DType.float32](K * N)
+    var mat_c_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var mat_a_dev = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var mat_b_dev = ctx.enqueue_create_buffer[DType.float32](K * N)
 
-    ctx.memcopy(mat_c_dev, mat_c_ptr)
-    ctx.memcopy(mat_a_dev, mat_a_ptr)
-    ctx.memcopy(mat_b_dev, mat_b_ptr)
+    ctx.enqueue_copy(mat_c_dev, mat_c_ptr)
+    ctx.enqueue_copy(mat_a_dev, mat_a_ptr)
+    ctx.enqueue_copy(mat_b_dev, mat_b_ptr)
 
     var mat_c = NDBuffer[DType.float32, 2, _, DimList.create_unknown[2]()](
         mat_c_dev._unsafe_ptr(), dynamic_shape=Index(M, N)
@@ -474,7 +474,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         block_dim=(thread_layout.size()),
     )
 
-    ctx.memcopy(mat_c_ptr, mat_c_dev)
+    ctx.enqueue_copy(mat_c_ptr, mat_c_dev)
 
     for m in range(M):
         for n in range(N):

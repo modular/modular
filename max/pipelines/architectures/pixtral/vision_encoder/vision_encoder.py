@@ -17,16 +17,16 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import Conv2DV1
-from max.nn.layer import Layer
-from max.nn.norm import RMSNormV1
+from max.nn import Conv2D
+from max.nn.layer import Module
+from max.nn.norm import RMSNorm
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer
 
 
 @dataclass
-class VisionEncoder(Layer):
+class VisionEncoder(Module):
     """The bare Pixtral vision encoder outputting raw hidden-states without any
     specific head on top.
 
@@ -34,13 +34,36 @@ class VisionEncoder(Layer):
     embeddings of patches.
     """
 
-    patch_conv: Conv2DV1
-    layer_norm: RMSNormV1
+    patch_conv: Conv2D
+    layer_norm: RMSNorm
     patch_positional_embedding: RotaryEmbedding2D
     transformer: Transformer
     dtype: DType
     patch_size: int = 16
+    hidden_size: int = 1024
     max_image_size: int = 1024
+
+    def __init__(
+        self,
+        patch_conv: Conv2D,
+        layer_norm: RMSNorm,
+        patch_positional_embedding: RotaryEmbedding2D,
+        transformer: Transformer,
+        dtype: DType,
+        patch_size: int,
+        hidden_size: int,
+        max_image_size: int,
+    ) -> None:
+        super().__init__()
+
+        self.patch_conv = patch_conv
+        self.layer_norm = layer_norm
+        self.patch_positional_embedding = patch_positional_embedding
+        self.transformer = transformer
+        self.dtype = dtype
+        self.patch_size = patch_size
+        self.hidden_size = hidden_size
+        self.max_image_size = max_image_size
 
     def __call__(
         self, imgs: list[TensorValueLike], attention_mask: TensorValueLike
@@ -48,6 +71,8 @@ class VisionEncoder(Layer):
         """
         imgs: list of images of shape = (height, width, num_channels)
         """
+        print("In vision encoder")
+        print(f"imgs: {TensorValue(imgs[0]).shape}")
         # Images go through a convolution independently to get patched.
         # Returns a list of [batch_size, hidden_size, height/patch_size, width/patch_size] tensors
         patch_embeds_list = [
@@ -58,16 +83,20 @@ class VisionEncoder(Layer):
         # Flatten all images to a single tensor of patches of size (n_patches=seq_length, hidden_size).
         # 1. Flattens each image's patches to (batch_size, n_patches in image, hidden_size).
         # 2. Concat patches vertically on dim 1 to get a sequence of all patches
-        # TODO(MSDK-1192): replace transpose(1, 2) by permute(0, 2, 1)
-        # TODO(MSDK-1195): replace p.reshape((p.shape[0], p.shape[1], -1)) by p.flatten(2)
+
         patch_embeds = ops.concat(
-            [  # p.shape = batch_size, patches_per_height, patches_per_width, hidden_size
-                p.reshape((p.shape[0], -1, p.shape[3]))
+            [  # p.shape = batch_size, hidden_size, patches_per_height, patches_per_width
+                # Move hidden_size to last dim, then flatten spatial dims
+                ops.reshape(
+                    ops.permute(
+                        p, [0, 2, 3, 1]
+                    ),  # [batch, patches_per_height, patches_per_width, hidden]
+                    (p.shape[0], -1, p.shape[1]),  # [batch, seq_len, hidden]
+                )
                 for p in patch_embeds_list
             ],
             axis=1,
         )
-
         # Pre-attention layer normalization
         patch_embeds = self.layer_norm(patch_embeds)
 

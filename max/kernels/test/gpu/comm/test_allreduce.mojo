@@ -79,8 +79,10 @@ fn allreduce_test[
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].create_buffer[dtype](length))
-        out_bufs_list.append(list_of_ctx[i].create_buffer[dtype](length))
+        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        out_bufs_list.append(
+            list_of_ctx[i].enqueue_create_buffer[dtype](length)
+        )
 
         # Create and initialize host buffers
         var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
@@ -96,11 +98,11 @@ fn allreduce_test[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy data to device
-        list_of_ctx[i].memcopy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
@@ -186,7 +188,7 @@ fn allreduce_test[
     @parameter
     for i in range(ngpus):
         expected_sum += i + 1
-        list_of_ctx[i].memcopy(host_buffers[i], out_bufs_list[i])
+        list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
     @parameter

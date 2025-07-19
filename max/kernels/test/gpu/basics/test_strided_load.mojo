@@ -13,7 +13,7 @@
 
 from sys.intrinsics import strided_load
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.memory import AddressSpace
 from testing import assert_true
 
@@ -31,9 +31,7 @@ fn strided_load_kernel[
 def test_strided_load():
     assert_true(
         "@llvm.masked.gather"
-        in _compile_code_asm[
-            strided_load_kernel[width=4], emission_kind="llvm"
-        ]()
+        in _compile_code[strided_load_kernel[width=4], emission_kind="llvm"]()
     )
 
 

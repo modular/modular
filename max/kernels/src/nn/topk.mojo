@@ -1316,7 +1316,7 @@ fn topk_gpu[
     )
 
     # Create temporary buffer for local top-K values
-    var internal_vals_buf = ctx.create_buffer[dtype](
+    var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
         Int(internal_cache_shape.product())
     )
     var device_local_topk_vals = NDBuffer[dtype, internal_rank](
@@ -1324,7 +1324,7 @@ fn topk_gpu[
     )
 
     # Create temporary buffer for local top-K indices
-    var internal_idxs_buf = ctx.create_buffer[out_idx_type](
+    var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
         Int(internal_cache_shape.product())
     )
     var device_local_topk_idxs = NDBuffer[out_idx_type, internal_rank](
@@ -1384,7 +1384,7 @@ fn fused_token_sampling_gpu[
     """
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = max_k
-    var out_vals_buf = ctx.create_buffer[dtype](
+    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
     var out_vals = NDBuffer[dtype, rank](

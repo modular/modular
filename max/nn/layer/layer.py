@@ -348,6 +348,7 @@ class Module(Layer, ABC):
                     f"If you want to load a model with a state_dict that may "
                     f"contain unused keys, set strict=False. "
                     f"The unused keys are:\n {unused_keys_str}"
+                    f"The loaded keys that are not unused are:\n {loaded_keys - state_dict.keys()}"
                 )
                 raise ValueError(msg)
 

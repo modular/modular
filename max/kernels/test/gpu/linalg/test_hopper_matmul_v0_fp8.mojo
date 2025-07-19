@@ -101,11 +101,11 @@ fn test_hopper_fp8_matmul0_tma_wgmma[
 
     # Move operands to the Device
 
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.memcopy(c_device.buffer, c_host.tensor.data)
-    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     hopper_matmul_tma_wgmma[
         transpose_b=transpose_b,
@@ -147,7 +147,9 @@ fn test_hopper_fp8_matmul0_tma_wgmma[
         var b_device_col_major = DeviceNDBuffer[b_type, 2, static_b_shape](
             dynamic_b_shape, ctx=ctx
         )
-        ctx.memcopy(b_device_col_major.buffer, b_host_col_major.tensor.data)
+        ctx.enqueue_copy(
+            b_device_col_major.buffer, b_host_col_major.tensor.data
+        )
 
         vendor_blas.matmul(
             ctx,
@@ -161,8 +163,8 @@ fn test_hopper_fp8_matmul0_tma_wgmma[
 
     ctx.synchronize()
 
-    ctx.memcopy(c_host.tensor.data, c_device.buffer)
-    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
     # Both cutlass and cuBLAS promote output every 4 WGMMA instructions.

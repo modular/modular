@@ -3,6 +3,7 @@ name = "bazel-pyproject"
 version = "0"
 requires-python = ">=3.9" # NOTE: Must be kept in sync with other global settings
 dependencies = [
+  "absl-py",
   "aiofiles",
   "aiohttp",
   "asgiref",
@@ -27,6 +28,7 @@ dependencies = [
   "jinja2",
   "jiwer",
   "kaleido==0.2.1",
+  "llguidance",
   "logbar",
   "markupsafe",
   "matplotlib",
@@ -38,14 +40,14 @@ dependencies = [
   "nvitop",
   "onnxruntime==1.19.2 ", # Needed by faster_whisper, newer versions don't support python 3.9
   "opentelemetry-api",
-  "opentelemetry-exporter-otlp-proto-http",
+  "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
   "opentelemetry-sdk",
   "packaging",
   "pre-commit",
   "prometheus-async",
   "prometheus-client",
-  "protobuf==5.29.1 ", # Must match bazel protobuf version since it doesn't the codegen
+  "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
   "py-cpuinfo",
   "pyarrow",
@@ -67,6 +69,7 @@ dependencies = [
   "requests>=2.28",
   "regex",
   "safetensors",
+  "sentencepiece",
   "sentinel==1.0.0",
   "setuptools",
   "simpy",
@@ -86,7 +89,6 @@ dependencies = [
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
-  "absl-py",
   "wheel",
 
   # modeltool
@@ -135,7 +137,6 @@ amd = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]",
@@ -166,7 +167,6 @@ nvidia = [
   "torchvision==0.22.0",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]",

@@ -91,10 +91,10 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     alias thread_layout = Layout.row_major(4, 2)
     var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
     arange(input_tensor)
-    var device_tensor = ctx.create_buffer[DType.bfloat16](
+    var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
-    ctx.memcopy(device_tensor, input_tensor.ptr)
+    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     ctx.enqueue_function[
         copy_dram_to_sram_buffer_load_kernel[
             DType.bfloat16, 4, 16, 8, thread_layout
@@ -186,10 +186,10 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     alias thread_layout = Layout.row_major(4, 4)
     var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
     arange(input_tensor)
-    var device_tensor = ctx.create_buffer[DType.bfloat16](
+    var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
-    ctx.memcopy(device_tensor, input_tensor.ptr)
+    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     ctx.enqueue_function[
         copy_dram_to_local_buffer_load_kernel[
             DType.bfloat16, 4, 16, 8, thread_layout

@@ -78,10 +78,10 @@ from linalg.bmm import batched_matmul
 from linalg.transpose import transpose
 from memory import stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
-from nn._amd_flash_attention_gpu import (
-    mha_decoding_single_batch as amd_mha_decoding_single_batch,
+from nn.mha_amd import (
+    mha_decoding_single_batch_amd,
+    mha_single_batch_amd,
 )
-from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
@@ -681,9 +681,9 @@ fn flash_attention_dispatch[
                 # We split partitions and then reduce
                 # allocate memory for intermediate results
                 # q # [B, S, H, D]
-                var output_intermediate_data = ctx.create_buffer[output.dtype](
-                    num_heads * depth * batch_size * num_partitions_value
-                )
+                var output_intermediate_data = ctx.enqueue_create_buffer[
+                    output.dtype
+                ](num_heads * depth * batch_size * num_partitions_value)
 
                 var output_intermediate = NDBuffer[output.dtype, 4](
                     output_intermediate_data._unsafe_ptr(),
@@ -701,7 +701,7 @@ fn flash_attention_dispatch[
                     batch_size,
                     Int(num_heads),
                 )
-                var exp_sum_qk_max_data = ctx.create_buffer[accum_type](
+                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
                     2 * data_len
                 )
 
@@ -1121,7 +1121,7 @@ fn mha[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        amd_mha_single_batch[group=group, config=config](
+        mha_single_batch_amd[group=group, config=config](
             output_ptr.offset(q_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -2736,7 +2736,7 @@ fn mha_decoding[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        amd_mha_decoding_single_batch[group=group, config=config](
+        mha_decoding_single_batch_amd[group=group, config=config](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -4381,7 +4381,7 @@ fn mha_gpu_naive[
     var num_keys = max_cache_size
 
     alias p_type = get_accum_type[q_type]()
-    var p_device = ctx.create_buffer[p_type](
+    var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext

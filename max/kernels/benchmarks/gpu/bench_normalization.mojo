@@ -47,9 +47,9 @@ fn bench_layer_norm_gpu[
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
         beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.create_buffer[dtype](cols)
-    var beta_d = ctx.create_buffer[dtype](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var param_shape = IndexList[1](cols)
 
@@ -58,9 +58,9 @@ fn bench_layer_norm_gpu[
     var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[dtype]()
 
-    ctx.memcopy(data_d, data_h)
-    ctx.memcopy(gamma_d, gamma_h)
-    ctx.memcopy(beta_d, beta_h)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.enqueue_copy(beta_d, beta_h)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -139,8 +139,8 @@ fn bench_rms_norm_gpu[
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
 
-    var data_d = ctx.create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.create_buffer[dtype](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var param_shape = IndexList[1](cols)
 
@@ -149,8 +149,8 @@ fn bench_rms_norm_gpu[
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
-    ctx.memcopy(data_d, data_h)
-    ctx.memcopy(gamma_d, gamma_h)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
 
     @__copy_capture(data_buf)
     @always_inline

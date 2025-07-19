@@ -41,10 +41,10 @@ fn test_gather(ctx: DeviceContext) raises:
         for i in range(num_rows):
             for j in range(row_size):
                 input_host[Index(i, j)] = Float32(i).value
-        var input_device_ptr = ctx.create_buffer[DType.float32](
+        var input_device_ptr = ctx.enqueue_create_buffer[DType.float32](
             input_host.size() * sizeof[DType.float32]()
         )
-        ctx.memcopy(input_device_ptr, input_host.data)
+        ctx.enqueue_copy(input_device_ptr, input_host.data)
         var input_device = NDBuffer[
             DType.float32,
             2,
@@ -62,7 +62,7 @@ fn test_gather(ctx: DeviceContext) raises:
             _,
             DimList(num_indices),
         ](indices_host_ptr)
-        var indices_device_ptr = ctx.create_buffer[indices_type](
+        var indices_device_ptr = ctx.enqueue_create_buffer[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
         var indices_device = NDBuffer[
@@ -77,7 +77,7 @@ fn test_gather(ctx: DeviceContext) raises:
         indices_host[0] = -1
         indices_host[1] = -num_rows
 
-        ctx.memcopy(indices_device_ptr, indices_host.data)
+        ctx.enqueue_copy(indices_device_ptr, indices_host.data)
 
         # create output
         var output_host_ptr = UnsafePointer[Float32].alloc(
@@ -89,7 +89,7 @@ fn test_gather(ctx: DeviceContext) raises:
             _,
             DimList(num_indices, row_size),
         ](output_host_ptr)
-        var output_device_ptr = ctx.create_buffer[DType.float32](
+        var output_device_ptr = ctx.enqueue_create_buffer[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
         var output_device = NDBuffer[
@@ -107,7 +107,7 @@ fn test_gather(ctx: DeviceContext) raises:
         )
         ctx.synchronize()
 
-        ctx.memcopy(output_host.data, output_device_ptr)
+        ctx.enqueue_copy(output_host.data, output_device_ptr)
 
         _ = input_device_ptr
         _ = indices_device_ptr

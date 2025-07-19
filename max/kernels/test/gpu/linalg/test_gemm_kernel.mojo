@@ -164,13 +164,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     for i in range(K * N):
         b_host[i] = i
 
-    var a_device = ctx.create_buffer[DType.float32](M * K)
-    var b_device = ctx.create_buffer[DType.float32](K * N)
-    var c_device = ctx.create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     var mat_a = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
@@ -207,7 +207,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         block_dim=(NUM_THREADS),
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -228,7 +228,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    ctx.memcopy(c_host_ref, c_device_ref)
+    ctx.enqueue_copy(c_host_ref, c_device_ref)
     ctx.synchronize()
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):

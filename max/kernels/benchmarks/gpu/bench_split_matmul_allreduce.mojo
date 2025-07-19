@@ -116,10 +116,10 @@ fn bench_matmul_all_reduce[
     @parameter
     for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
-        A_list.append(list_of_ctx[i].create_buffer[dtype](mk))
-        B_list.append(list_of_ctx[i].create_buffer[dtype](nk))
-        C_list.append(list_of_ctx[i].create_buffer[dtype](mn))
-        C_reduced_list.append(list_of_ctx[i].create_buffer[dtype](mn))
+        A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
+        B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
+        C_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
+        C_reduced_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
 
         # Allocate matmul inputs A B and final output C_reduced on host
         A_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mk))
@@ -131,8 +131,8 @@ fn bench_matmul_all_reduce[
         random.randn(B_host_list[i], nk)
 
         # Copy A and B to device
-        list_of_ctx[i].memcopy(A_list[i], A_host_list[i])
-        list_of_ctx[i].memcopy(B_list[i], B_host_list[i])
+        list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
+        list_of_ctx[i].enqueue_copy(B_list[i], B_host_list[i])
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -140,7 +140,7 @@ fn bench_matmul_all_reduce[
                 sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].memset[DType.uint8](signal_buffers[i], 0)
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # Create the list of NDBuffers.

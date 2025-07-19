@@ -59,6 +59,14 @@ llvm.toolchain(
         "linux-x86_64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_amd64.tar.xz"],
     },
 )
+llvm.sysroot(
+    label = "@sysroot-jammy-aarch64",
+    targets = ["linux-aarch64"],
+)
+llvm.sysroot(
+    label = "@sysroot-jammy-x86_64",
+    targets = ["linux-x86_64"],
+)
 use_repo(llvm, "llvm_toolchain")
 
 register_toolchains("@llvm_toolchain//:all")

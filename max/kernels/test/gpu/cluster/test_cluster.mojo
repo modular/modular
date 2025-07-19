@@ -195,7 +195,7 @@ fn pipeline_test_kernel[
 fn test_cluster_launch_control(ctx: DeviceContext) raises:
     alias n = 4000
 
-    data = ctx.create_buffer[DType.float32](n)
+    data = ctx.enqueue_create_buffer[DType.float32](n)
 
     ctx.enqueue_function[cluster_launch_control](
         data,
@@ -207,7 +207,7 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
     var data_host_ptr = UnsafePointer[Float32].alloc(n)
     var data_host = NDBuffer[DType.float32, 1, _, DimList(n)](data_host_ptr)
 
-    ctx.memcopy(data_host_ptr, data)
+    ctx.enqueue_copy(data_host_ptr, data)
     ctx.synchronize()
 
     for i in range(n):

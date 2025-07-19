@@ -50,9 +50,9 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.create_buffer[dtype](size)
-    var out_device = ctx.create_buffer[dtype](size)
-    ctx.memcopy(in_device, in_host)
+    var in_device = ctx.enqueue_create_buffer[dtype](size)
+    var out_device = ctx.enqueue_create_buffer[dtype](size)
+    ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
@@ -67,7 +67,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     )
 
     # Copy results back and verify
-    ctx.memcopy(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
     for i in range(size):
@@ -124,9 +124,9 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.create_buffer[dtype](size)
-    var out_device = ctx.create_buffer[dtype](size)
-    ctx.memcopy(in_device, in_host)
+    var in_device = ctx.enqueue_create_buffer[dtype](size)
+    var out_device = ctx.enqueue_create_buffer[dtype](size)
+    ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
@@ -143,7 +143,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     )
 
     # Copy results back and verify
-    ctx.memcopy(out_host, out_device)
+    ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
     for i in range(size):

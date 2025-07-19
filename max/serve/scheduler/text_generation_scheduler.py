@@ -78,11 +78,26 @@ class TokenGenerationSchedulerConfig:
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     def __post_init__(self) -> None:
+        if self.max_batch_size_tg <= 0:
+            msg = f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
+            raise ValueError(msg)
+        if self.max_batch_size_ce <= 0:
+            msg = f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
+            raise ValueError(msg)
+        if (
+            self.target_tokens_per_batch_ce is not None
+            and self.target_tokens_per_batch_ce <= 0
+        ):
+            msg = f"`target_tokens_per_batch_ce` must be greater than 0, found {self.target_tokens_per_batch_ce}"
+            raise ValueError(msg)
         if (
             self.enable_chunked_prefill
             and self.target_tokens_per_batch_ce is None
         ):
             msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
+            raise ValueError(msg)
+        if self.max_forward_steps_tg <= 0:
+            msg = f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
             raise ValueError(msg)
 
 
@@ -794,8 +809,8 @@ def load_text_generation_scheduler(
         max_batch_size_tg=pipeline_config.max_batch_size
         if pipeline_config.max_batch_size is not None
         else 1,
-        max_forward_steps_tg=pipeline_config.max_new_tokens
-        if pipeline_config.max_new_tokens != -1
+        max_forward_steps_tg=pipeline_config.max_num_steps
+        if pipeline_config.max_num_steps != -1
         else 1,
         max_batch_size_ce=pipeline_config.max_ce_batch_size,
         target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,

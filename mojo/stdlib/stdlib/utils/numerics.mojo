@@ -65,8 +65,7 @@ struct FPUtils[
         Returns:
             The mantissa width.
         """
-
-        return bitwidthof[dtype]() - Self.exponent_width() - 1
+        return DType.mantissa_width[dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -79,21 +78,7 @@ struct FPUtils[
         Returns:
             The max exponent.
         """
-
-        @parameter
-        if dtype is DType.float8_e4m3fnuz:
-            return 7
-        elif dtype is DType.float8_e4m3fn:
-            return 8
-        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
-            return 16
-        elif dtype in (DType.bfloat16, DType.float32):
-            return 128
-        elif dtype is DType.float64:
-            return 1024
-        else:
-            constrained[False, "unsupported float type"]()
-            return {}
+        return DType.max_exponent[dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -103,19 +88,17 @@ struct FPUtils[
         Returns:
             The exponent width.
         """
+        return DType.exponent_width[dtype]()
 
-        @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            return 4
-        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
-            return 5
-        elif dtype in (DType.float32, DType.bfloat16):
-            return 8
-        elif dtype is DType.float64:
-            return 11
-        else:
-            constrained[False, "unsupported float type"]()
-            return {}
+    @staticmethod
+    @always_inline
+    fn exponent_bias() -> Int:
+        """Returns the exponent bias of a floating point type.
+
+        Returns:
+            The exponent bias.
+        """
+        return DType.exponent_bias[dtype]()
 
     @staticmethod
     @always_inline
@@ -126,21 +109,6 @@ struct FPUtils[
             The mantissa mask.
         """
         return (1 << Self.mantissa_width()) - 1
-
-    @staticmethod
-    @always_inline
-    fn exponent_bias() -> Int:
-        """Returns the exponent bias of a floating point type.
-
-        Returns:
-            The exponent bias.
-        """
-
-        @parameter
-        if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
-            return Self.max_exponent()
-        else:
-            return Self.max_exponent() - 1
 
     @staticmethod
     @always_inline

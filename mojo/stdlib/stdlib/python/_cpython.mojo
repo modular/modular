@@ -27,6 +27,7 @@ from sys.arg import argv
 from sys.ffi import (
     DLHandle,
     c_char,
+    c_double,
     c_int,
     c_long,
     c_size_t,
@@ -271,10 +272,6 @@ fn _py_get_version(lib: DLHandle) -> StaticString:
             UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
         ]()
     )
-
-
-fn _py_finalize(lib: DLHandle):
-    lib.call["Py_Finalize"]()
 
 
 @fieldwise_init
@@ -946,6 +943,30 @@ alias PyObject_CallObject = ExternalFunction[
     fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
+# Number Protocol
+alias PyNumber_Long = ExternalFunction[
+    "PyNumber_Long",
+    # PyObject *PyNumber_Long(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyNumber_Float = ExternalFunction[
+    "PyNumber_Float",
+    # PyObject *PyNumber_Float(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
+# Iterator Protocol
+alias PyIter_Check = ExternalFunction[
+    "PyIter_Check",
+    # int PyIter_Check(PyObject *o)
+    fn (PyObjectPtr) -> c_int,
+]
+alias PyIter_Next = ExternalFunction[
+    "PyIter_Next",
+    # PyObject *PyIter_Next(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
 # Concrete Objects Layer
 # Type Objects
 alias PyType_GenericAlloc = ExternalFunction[
@@ -962,6 +983,61 @@ alias PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
+]
+
+# Integer Objects
+alias PyLong_FromSsize_t = ExternalFunction[
+    "PyLong_FromSsize_t",
+    # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyLong_FromSize_t = ExternalFunction[
+    "PyLong_FromSize_t",
+    # PyObject *PyLong_FromSize_t(size_t v)
+    fn (c_size_t) -> PyObjectPtr,
+]
+alias PyLong_AsSsize_t = ExternalFunction[
+    "PyLong_AsSsize_t",
+    # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
+    fn (PyObjectPtr) -> Py_ssize_t,
+]
+
+# Boolean Objects
+alias PyBool_FromLong = ExternalFunction[
+    "PyBool_FromLong",
+    # PyObject *PyBool_FromLong(long v)
+    fn (c_long) -> PyObjectPtr,
+]
+
+# Floating-Point Objects
+alias PyFloat_FromDouble = ExternalFunction[
+    "PyFloat_FromDouble",
+    # PyObject *PyFloat_FromDouble(double v)
+    fn (c_double) -> PyObjectPtr,
+]
+alias PyFloat_AsDouble = ExternalFunction[
+    "PyFloat_AsDouble",
+    # double PyFloat_AsDouble(PyObject *pyfloat)
+    fn (PyObjectPtr) -> c_double,
+]
+
+# Unicode Objects and Codecs
+alias PyUnicode_DecodeUTF8 = ExternalFunction[
+    "PyUnicode_DecodeUTF8",
+    # PyObject *PyUnicode_DecodeUTF8(const char *str, Py_ssize_t size, const char *errors)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        Py_ssize_t,
+        UnsafePointer[c_char, mut=False],
+    ) -> PyObjectPtr,
+]
+alias PyUnicode_AsUTF8AndSize = ExternalFunction[
+    "PyUnicode_AsUTF8AndSize",
+    # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
+    fn (
+        PyObjectPtr,
+        UnsafePointer[Py_ssize_t],
+    ) -> UnsafePointer[c_char, mut=False],
 ]
 
 # Module Objects
@@ -986,10 +1062,11 @@ alias PyModule_AddObjectRef = ExternalFunction[
     fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
 ]
 
-# PyObject *PyLong_FromSsize_t(Py_ssize_t v)
-alias PyLong_FromSsize_t = ExternalFunction[
-    "PyLong_FromSsize_t",
-    fn (Py_ssize_t) -> PyObjectPtr,
+# Slice Objects
+alias PySlice_New = ExternalFunction[
+    "PySlice_New",
+    # PyObject *PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
 # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
@@ -1183,18 +1260,39 @@ struct CPython(Copyable, Defaultable, Movable):
     # Call Protocol
     var _PyObject_Call: PyObject_Call.type
     var _PyObject_CallObject: PyObject_CallObject.type
+    # Number Protocol
+    var _PyNumber_Long: PyNumber_Long.type
+    var _PyNumber_Float: PyNumber_Float.type
+    # Iterator Protocol
+    var _PyIter_Check: PyIter_Check.type
+    var _PyIter_Next: PyIter_Next.type
     # Concrete Objects Layer
     # Type Objects
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
     var _PyType_GetName: PyType_GetName.type
     var _PyType_FromSpec: PyType_FromSpec.type
+    # The None Object
+    var _Py_None: PyObjectPtr
+    # Integer Objects
+    var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
+    var _PyLong_FromSize_t: PyLong_FromSize_t.type
+    var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
+    # Boolean Objects
+    var _PyBool_FromLong: PyBool_FromLong.type
+    # Floating-Point Objects
+    var _PyFloat_FromDouble: PyFloat_FromDouble.type
+    var _PyFloat_AsDouble: PyFloat_AsDouble.type
+    # Unicode Objects and Codecs
+    var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
+    var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
     var _PyModule_AddFunctions: PyModule_AddFunctions.type
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
+    # Slice Objects
+    var _PySlice_New: PySlice_New.type
 
-    var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
 
     # Object Implementation Support
@@ -1313,12 +1411,45 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyObject_Call = PyObject_Call.load(self.lib)
         self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
 
+        self._PyNumber_Long = PyNumber_Long.load(self.lib)
+        self._PyNumber_Float = PyNumber_Float.load(self.lib)
+
+        self._PyIter_Check = PyIter_Check.load(self.lib)
+        self._PyIter_Next = PyIter_Next.load(self.lib)
+
         self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
         if self.version.minor >= 11:
             self._PyType_GetName = PyType_GetName.load(self.lib)
         else:
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+
+        if self.version.minor >= 13:
+            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
+            # References:
+            # - https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
+            # - https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
+
+            # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
+            self._Py_None = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](0)
+        else:
+            # PyObject *Py_None
+            self._Py_None = PyObjectPtr(
+                self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            )
+
+        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
+        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
+        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+
+        self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+
+        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
+        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
+        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
 
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
@@ -1328,7 +1459,8 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
 
-        self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
+        self._PySlice_New = PySlice_New.load(self.lib)
+
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
         if self.version.minor >= 10:
@@ -1339,14 +1471,13 @@ struct CPython(Copyable, Defaultable, Movable):
     fn __del__(owned self):
         pass
 
-    @staticmethod
-    fn destroy(mut existing: CPython):
-        if existing.logging_enabled:
-            print("CPython destroy")
-            print("Number of remaining refs:", existing.total_ref_count[])
-        _py_finalize(existing.lib)
-        existing.lib.close()
-        existing.total_ref_count.free()
+    fn destroy(mut self):
+        self.log("CPython destroy")
+        self.log("Number of remaining refs:", self.total_ref_count[])
+        # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
+        self.lib.call["Py_FinalizeEx"]()
+        self.lib.close()
+        self.total_ref_count.free()
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
@@ -1552,10 +1683,12 @@ struct CPython(Copyable, Defaultable, Movable):
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
 
+        A function version of `Py_XINCREF()`, which is no-op if `ptr` is `NULL`.
+
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XINCREF
         """
-
         self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_IncRef(ptr)
         self._inc_total_rc()
@@ -1563,10 +1696,12 @@ struct CPython(Copyable, Defaultable, Movable):
     fn Py_DecRef(self, ptr: PyObjectPtr):
         """Release a strong reference to the object `ptr` points to.
 
+        A function version of `Py_XDECREF()`, which is no-op if `ptr` is `NULL`.
+
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XDECREF
         """
-
         self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_DecRef(ptr)
         self._dec_total_rc()
@@ -2013,6 +2148,77 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
+    # Number Protocol
+    # ref: https://docs.python.org/3/c-api/number.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `obj` converted to an integer object on success,
+        or `NULL` on failure. This is the equivalent of the Python expression
+        `int(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
+        """
+        var r = self._PyNumber_Long(obj)
+        self._inc_total_rc()
+        return r
+
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `o` converted to a float object on success, or `NULL` on
+        failure. This is the equivalent of the Python expression `float(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Float
+        """
+        var r = self._PyNumber_Float(obj)
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Iterator Protocol
+    # ref: https://docs.python.org/3/c-api/iter.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyIter_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return non-zero if the object `obj` can be safely passed to `PyIter_Next()`,
+        and `0` otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Check
+        """
+        return self._PyIter_Check(obj)
+
+    fn PyIter_Next(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Return the next value from the iterator `obj`. The object must be an
+        iterator according to `PyIter_Check()`. If there are no remaining values,
+        returns `NULL` with no exception set. If an error occurs while retrieving
+        the item, returns `NULL` and passes along the exception.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Next
+        """
+        var r = self._PyIter_Next(obj)
+        self.log(
+            r,
+            " NEWREF PyIter_Next from ",
+            obj,
+            ", refcnt(obj):",
+            self._Py_REFCNT(r),
+            "refcnt(iter)",
+            self._Py_REFCNT(obj),
+        )
+        if r:
+            self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Concrete Objects Layer
     # ref: https://docs.python.org/3/c-api/concrete.html
     # ===-------------------------------------------------------------------===#
@@ -2066,6 +2272,183 @@ struct CPython(Copyable, Defaultable, Movable):
         var r = self._PyType_FromSpec(spec)
         self._inc_total_rc()
         return r
+
+    # ===-------------------------------------------------------------------===#
+    # The None Object
+    # ref: https://docs.python.org/3/c-api/none.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_None(self) -> PyObjectPtr:
+        """The Python `None` object, denoting lack of value.
+
+        References:
+        - https://docs.python.org/3/c-api/none.html#c.Py_None
+        """
+        return self._Py_None
+
+    # ===-------------------------------------------------------------------===#
+    # Integer Objects
+    # ref: https://docs.python.org/3/c-api/long.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
+        on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
+        """
+        var r = self._PyLong_FromSsize_t(value)
+        self.log(
+            r,
+            " NEWREF PyLong_FromSsize_t, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `size_t`, or `NULL` on
+        failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
+        """
+        var r = self._PyLong_FromSize_t(value)
+        self.log(
+            r,
+            " NEWREF PyLong_FromSize_t, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyLong_AsSsize_t(self, pylong: PyObjectPtr) -> Py_ssize_t:
+        """Return a C `Py_ssize_t` representation of `pylong`.
+
+        Raise `OverflowError` if the value of `pylong` is out of range for
+        a `Py_ssize_t`.
+
+        Returns `-1` on error. Use `PyErr_Occurred()` to disambiguate.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
+        """
+        return self._PyLong_AsSsize_t(pylong)
+
+    # ===-------------------------------------------------------------------===#
+    # Boolean Objects
+    # ref: https://docs.python.org/3/c-api/bool.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
+        """Return `Py_True` or `Py_False`, depending on the truth value
+        of `value`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
+        """
+        var r = self._PyBool_FromLong(value)
+        self.log(
+            r,
+            " NEWREF PyBool_FromLong, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Floating-Point Objects
+    # ref: https://docs.python.org/3/c-api/float.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyFloat_FromDouble(self, value: c_double) -> PyObjectPtr:
+        """Create a PyFloatObject object from `value`, or `NULL` on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble
+        """
+        var r = self._PyFloat_FromDouble(value)
+        self.log(
+            r,
+            " NEWREF PyFloat_FromDouble, refcnt:",
+            self._Py_REFCNT(r),
+            ", value:",
+            value,
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyFloat_AsDouble(self, pyfloat: PyObjectPtr) -> c_double:
+        """Return a C double representation of the contents of `pyfloat`.
+
+        This method returns `-1.0` upon failure, so one should call
+        `PyErr_Occurred()` to check for errors.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble
+        """
+        return self._PyFloat_AsDouble(pyfloat)
+
+    # ===-------------------------------------------------------------------===#
+    # Unicode Objects and Codecs
+    # ref: https://docs.python.org/3/c-api/unicode.html
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the signature to take str, size, and errors as args
+    fn PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
+        """Create a Unicode object by decoding size bytes of the UTF-8 encoded
+        string slice `s`. Return `NULL` if an exception was raised by the codec.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
+        """
+        var r = self._PyUnicode_DecodeUTF8(
+            s.unsafe_ptr().bitcast[c_char](),
+            Py_ssize_t(s.byte_length()),
+            "strict".unsafe_cstr_ptr(),
+        )
+        self.log(
+            r,
+            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
+            self._Py_REFCNT(r),
+            ", str:",
+            s,
+        )
+        self._inc_total_rc()
+        return r
+
+    # TODO: fix signature to take unicode and size as args
+    fn PyUnicode_AsUTF8AndSize(
+        self, obj: PyObjectPtr
+    ) -> StringSlice[MutableAnyOrigin]:
+        """Return a pointer to the UTF-8 encoding of the Unicode object, and
+        store the size of the encoded representation (in bytes) in `size`.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize
+        """
+        var length = Py_ssize_t(0)
+        var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
+        return StringSlice[MutableAnyOrigin](
+            ptr=ptr.bitcast[Byte](), length=length
+        )
 
     # ===-------------------------------------------------------------------===#
     # Module Objects
@@ -2134,6 +2517,39 @@ struct CPython(Copyable, Defaultable, Movable):
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
         return self._PyModule_AddObjectRef(module, name, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Slice Objects
+    # ref: https://docs.python.org/3/c-api/slice.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PySlice_New(
+        self,
+        start: PyObjectPtr,
+        stop: PyObjectPtr,
+        step: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Return a new slice object with the given values.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/slice.html#c.PySlice_New
+        """
+        var r = self._PySlice_New(start, stop, step)
+        self.log(
+            r,
+            " NEWREF PySlice_New, refcnt:",
+            self._Py_REFCNT(r),
+            ", start:",
+            start,
+            ", stop:",
+            stop,
+            ", step:",
+            step,
+        )
+        self._inc_total_rc()
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Set operations
@@ -2391,242 +2807,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return self.PyList_SetItem_func(list_obj, index, value)
 
     # ===-------------------------------------------------------------------===#
-    # Concrete Objects
-    # ref: https://docs.python.org/3/c-api/concrete.html
-    # ===-------------------------------------------------------------------===#
-
-    fn Py_None(self) -> PyObjectPtr:
-        """The Python `None` object, denoting lack of value.
-
-        References:
-        - https://docs.python.org/3/c-api/none.html#c.Py_None
-        """
-
-        # Get pointer to the immortal `None` PyObject struct instance.
-        # Note:
-        #   The name of this global is technical a private part of the
-        #   CPython API, but unfortunately the only stable ways to access it are
-        #   macros.
-        # TODO(MSTDL-977):
-        #   Investigate doing this without hard-coding private API details.
-
-        # PyObject *Py_None
-        var ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-
-        if not ptr:
-            abort("error: unable to get pointer to CPython `None` struct")
-
-        return PyObjectPtr(ptr)
-
-    # ===-------------------------------------------------------------------===#
-    # Boolean Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
-        """Return `Py_True` or `Py_False`, depending on the truth value
-        of `value`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
-        """
-        # PyObject *PyBool_FromLong(long v)
-        var r = self.lib.call["PyBool_FromLong", PyObjectPtr](value)
-        self.log(
-            r,
-            " NEWREF PyBool_FromLong, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyBool_Check(self, obj: PyObjectPtr) -> Bool:
-        """Return true if `obj` is of type `PyBool_Type`. This function always
-        succeeds.
-
-        References:
-        - https://docs.python.org/3/c-api/bool.html#c.PyBool_Check
-        """
-        # int PyBool_Check(PyObject *o)
-        return Bool(self.lib.call["PyBool_Check", c_int](obj))
-
-    # ===-------------------------------------------------------------------===#
-    # Integer Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
-        """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
-        on failure.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
-        """
-        var r = self.PyLong_FromSsize_t_func(value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSsize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
-        """Return a new `PyLongObject` object from a C `unsigned long`,
-        or `NULL` on failure.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
-        """
-        # PyObject *PyLong_FromSize_t(size_t v)
-        var r = self.lib.call["PyLong_FromSize_t", PyObjectPtr](value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_AsSsize_t(self, obj: PyObjectPtr) -> Py_ssize_t:
-        """Return a C `Py_ssize_t` representation of `pylong`.
-
-        Raise `OverflowError` if the value of `pylong` is out of range for
-        a `Py_ssize_t`.
-
-        Returns `-1` on error. Use `PyErr_Occurred()` to disambiguate.
-
-        References:
-        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
-        """
-        # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
-        return self.lib.call["PyLong_AsSsize_t", c_ssize_t](obj)
-
-    fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """Returns the `obj` converted to an integer object on success,
-        or `NULL` on failure. This is the equivalent of the Python expression
-        `int(o)`.
-
-        Return value: New reference.
-
-        References:
-        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
-        """
-        # PyObject *PyNumber_Long(PyObject *o)
-        var r = self.lib.call["PyNumber_Long", PyObjectPtr](obj)
-        self._inc_total_rc()
-        return r
-
-    # ===-------------------------------------------------------------------===#
-    # Floating-Point Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
-        """
-        return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
-
-    fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble).
-        """
-
-        var r = self.lib.call["PyFloat_FromDouble", PyObjectPtr](value)
-
-        self.log(
-            r,
-            " NEWREF PyFloat_FromDouble, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyFloat_AsDouble(self, py_object: PyObjectPtr) -> Float64:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble).
-        """
-        return self.lib.call["PyFloat_AsDouble", Float64](py_object)
-
-    # ===-------------------------------------------------------------------===#
-    # Unicode Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyUnicode_DecodeUTF8(self, strslice: StringSlice) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8).
-        """
-        var r = self.lib.call["PyUnicode_DecodeUTF8", PyObjectPtr](
-            strslice.unsafe_ptr().bitcast[Int8](),
-            strslice.byte_length(),
-            "strict".unsafe_cstr_ptr(),
-        )
-
-        self.log(
-            r,
-            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
-            self._Py_REFCNT(r),
-            ", str:",
-            strslice,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PySlice_FromSlice(self, slice: Slice) -> PyObjectPtr:
-        # Convert Mojo Slice to Python slice parameters
-        # Note: Deliberately avoid using `span.indices()` here and instead pass
-        # the Slice parameters directly to Python. Python's C implementation
-        # already handles such conditions, allowing Python to apply its own slice
-        # handling.
-        var py_start = self.Py_None()
-        var py_stop = self.Py_None()
-        var py_step = self.Py_None()
-
-        if slice.start:
-            py_start = self.PyLong_FromSsize_t(c_ssize_t(slice.start.value()))
-        if slice.end:
-            py_stop = self.PyLong_FromSsize_t(c_ssize_t(slice.end.value()))
-        if slice.end:
-            py_step = self.PyLong_FromSsize_t(c_ssize_t(slice.step.value()))
-
-        var py_slice = self.PySlice_New(py_start, py_stop, py_step)
-
-        if py_start != self.Py_None():
-            self.Py_DecRef(py_start)
-        if py_stop != self.Py_None():
-            self.Py_DecRef(py_stop)
-        self.Py_DecRef(py_step)
-
-        return py_slice
-
-    fn PyUnicode_AsUTF8AndSize(
-        self, py_object: PyObjectPtr
-    ) -> StringSlice[MutableAnyOrigin]:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
-        """
-
-        var length = Py_ssize_t(0)
-        var ptr = self.lib.call[
-            "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
-        ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
-        return StringSlice[MutableAnyOrigin](ptr=ptr, length=length)
-
-    # ===-------------------------------------------------------------------===#
     # Python Error types
     # ===-------------------------------------------------------------------===#
 
@@ -2650,70 +2830,6 @@ struct CPython(Copyable, Defaultable, Movable):
             )
 
         return ptr[]
-
-    # ===-------------------------------------------------------------------===#
-    # Python Iterator operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyIter_Next(self, iterator: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Next).
-        """
-
-        var next_obj = self.lib.call["PyIter_Next", PyObjectPtr](iterator)
-
-        self.log(
-            next_obj,
-            " NEWREF PyIter_Next from ",
-            iterator,
-            ", refcnt(obj):",
-            self._Py_REFCNT(next_obj),
-            "refcnt(iter)",
-            self._Py_REFCNT(iterator),
-        )
-
-        if next_obj:
-            self._inc_total_rc()
-        return next_obj
-
-    fn PyIter_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Check).
-        """
-        return self.lib.call["PyIter_Check", c_int](obj) != 0
-
-    fn PySequence_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/sequence.html#c.PySequence_Check).
-        """
-        return self.lib.call["PySequence_Check", c_int](obj) != 0
-
-    # ===-------------------------------------------------------------------===#
-    # Python Slice Creation
-    # ===-------------------------------------------------------------------===#
-
-    fn PySlice_New(
-        self, start: PyObjectPtr, stop: PyObjectPtr, step: PyObjectPtr
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/slice.html#c.PySlice_New).
-        """
-        var r = self.lib.call["PySlice_New", PyObjectPtr](start, stop, step)
-
-        self.log(
-            r,
-            " NEWREF PySlice_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", start:",
-            start,
-            ", stop:",
-            stop,
-            ", step:",
-            step,
-        )
-
-        self._inc_total_rc()
-        return r
 
     # ===-------------------------------------------------------------------===#
     # Capsules

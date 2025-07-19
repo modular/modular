@@ -12,84 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof, env_get_bool, env_get_int
+from sys import sizeof, env_get_bool, env_get_int
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, _make_tuple
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from gpu.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
-from gpu.grid_controls import (
-    PDLLevel,
-    launch_dependent_grids,
-    pdl_launch_attributes,
-    wait_on_dependent_grids,
-)
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import _compile_code_asm
-from gpu.host import get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.grid_controls import PDLLevel
+from gpu.host import DeviceContext
 from gpu.host.info import H100
-from gpu.id import (
-    block_dim,
-    block_id_in_cluster,
-    block_idx,
-    grid_dim,
-    lane_id,
-    thread_idx,
-)
-from gpu.id import warp_id as get_warp_id
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-    fence_mbarrier_init,
-    tma_store_fence,
-)
-from gpu.mma import (
-    WGMMADescriptor,
-    st_matrix,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_local_to_dram,
-    copy_sram_to_dram,
-)
-from layout.swizzle import make_ldmatrix_swizzle
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    st_matrix_n_layout,
-    tile_layout_k_major,
-    wgmma_c_layout,
-)
-from layout.tma_async import (
-    PipelineState,
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tma_tile,
-)
-from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
-from memory import bitcast, stack_allocation
-from memory.pointer import _GPUAddressSpace
-from stdlib.bit import log2_floor
+from gpu.id import grid_dim
+from gpu.memory import AddressSpace
+from gpu.mma import st_matrix
+from layout import Layout, LayoutTensor
+from linalg.matmul_tile_scheduler import MatmulSchedule, RasterOrder
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from utils.index import Index
 from logger import Logger
 from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .matmul_sm90 import warp_specialize_gemm_with_multicasting
+from .matmul_sm90_splitk import warp_specialize_gemm_with_multicasting_splitk
 
 # TODO: Move to a general location and use for all dispatch
 alias DISPATCH_MISS = 0
@@ -1155,7 +1095,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # GTC matmul configs
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
-        if m <= 32:
+        if m <= 16:
             alias config = MatmulConfig[
                 a_type,
                 b_type,
@@ -1194,18 +1134,18 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
                 cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=12,
+                num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
                 pdl_level=pdl_level,
             )
-            warp_specialize_gemm_with_multicasting[
+            warp_specialize_gemm_with_multicasting_splitk[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                # schedule = MatmulSchedule.DS_SCHEDULER,
-                # grid_shape = Index(128, 1),
+                splits=2,
+                raster_order = RasterOrder.AlongM,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),

@@ -134,7 +134,8 @@ struct NamedBarrierSemaphore[
 
     It's using an acquire-release logic instead of atomic instructions for inter-CTA synchronization with a shared lock variable.
     Please note that the memory barrier is for syncing warp groups within in a CTA.
-    (Cutlass reference implementation)[https://github.com/NVIDIA/cutlass/blob/a1aaf2300a8fc3a8106a05436e1a2abad0930443/include/cutlass/arch/barrier.h].
+    Cutlass reference implementation:
+    https://github.com/NVIDIA/cutlass/blob/a1aaf2300a8fc3a8106a05436e1a2abad0930443/include/cutlass/arch/barrier.h.
 
     """
 

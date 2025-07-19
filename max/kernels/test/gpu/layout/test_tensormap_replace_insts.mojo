@@ -114,7 +114,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         DType.bfloat16, 2, Index(M, N)
     ](ctx, old_src.device_tensor())
 
-    var device_tensormaps = ctx.create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
@@ -132,7 +132,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
+    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
 
     ctx.synchronize()
 
@@ -270,7 +270,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         DType.bfloat16, 2, Index(M, N)
     ](ctx, old_src.device_tensor())
 
-    var device_tensormaps = ctx.create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
@@ -288,7 +288,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
+    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
 
     ctx.synchronize()
 
@@ -470,7 +470,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var dst = ManagedLayoutTensor[dtype, dst_layout](ctx)
     arange(new_src.tensor(), 1001)
 
-    var device_tensormaps = ctx.create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_subtensors
     )
     var tensormaps_host_ptr = stack_allocation[num_of_subtensors * 128, UInt8]()
@@ -481,7 +481,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
             tensormaps_host_ptr[
                 i * 128 + j
             ] = template_tma_tensormap.descriptor.data[j]
-    ctx.memcopy(device_tensormaps, tensormaps_host_ptr)
+    ctx.enqueue_copy(device_tensormaps, tensormaps_host_ptr)
 
     var tensormaps = TMATensorTileArray[
         num_of_subtensors,

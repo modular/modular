@@ -74,13 +74,13 @@ fn test_function_unchecked(ctx: DeviceContext) raises:
     var twos = TwoS(scalar)
 
     # Initialize the input and outputs with known values.
-    var in0 = ctx.create_buffer[T](length)
-    var out = ctx.create_buffer[T](length)
+    var in0 = ctx.enqueue_create_buffer[T](length)
+    var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.create_buffer[T](length).fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
     ctx.enqueue_function_unchecked[vec_func](
         in0,
@@ -119,13 +119,13 @@ fn test_function_checked(ctx: DeviceContext) raises:
     var ones = OneS(scalar)
 
     # Initialize the input and outputs with known values.
-    var in0 = ctx.create_buffer[T](length)
-    var out = ctx.create_buffer[T](length)
+    var in0 = ctx.enqueue_create_buffer[T](length)
+    var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.create_buffer[T](length).fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
     var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
     ctx.enqueue_function_checked(
@@ -166,13 +166,13 @@ fn test_function_experimental(ctx: DeviceContext) raises:
     var ones = OneS(scalar)
 
     # Initialize the input and outputs with known values.
-    var in0 = ctx.create_buffer[T](length)
-    var out = ctx.create_buffer[T](length)
+    var in0 = ctx.enqueue_create_buffer[T](length)
+    var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.create_buffer[T](length).fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
     var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
     ctx.enqueue_function_experimental(

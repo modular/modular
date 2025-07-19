@@ -29,7 +29,7 @@ from gpu import (
     warp_id,
 )
 from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
@@ -71,16 +71,16 @@ fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
 
 
 def test_parameterized_on_cuda_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         parameterized_on_cuda, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_parameterized_on_cuda(asm)
 
 
 def test_parameterized_on_cuda_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         parameterized_on_cuda, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_parameterized_on_cuda(asm)
 
 
@@ -100,16 +100,16 @@ fn _verify_hello(asm: StringSlice) raises -> None:
 
 
 def test_hello_mojo_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         hello_mojo, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_hello(asm)
 
 
 def test_hello_mojo_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         hello_mojo, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_hello(asm)
 
 
@@ -147,16 +147,16 @@ def _verify_erf_elementwise(asm: StringSlice):
 
 
 def test_erf_elementwise_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         erf_elementwise, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         erf_elementwise, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_erf_elementwise(asm)
 
 
@@ -183,16 +183,16 @@ fn _verify_erf_kernel(asm: StringSlice) raises -> None:
 
 
 def test_erf_kernel_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         erf_kernel, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         erf_kernel, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
@@ -216,16 +216,16 @@ fn _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
 
 
 def test_shared_stack_allocation_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_shared_stack_allocation, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_shared_stack_allocation(asm)
 
 
 def test_shared_stack_allocation_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_shared_stack_allocation, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_shared_stack_allocation(asm)
 
 
@@ -245,16 +245,16 @@ fn _verify_barrier(asm: StringSlice) raises -> None:
 
 
 def test_barrier_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_barrier, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_barrier(asm)
 
 
 def test_barrier_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_barrier, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_barrier(asm)
 
 
@@ -362,12 +362,12 @@ def _verify_gemm(asm: StringSlice):
 
 
 def test_gemm_sm80():
-    var asm = _compile_code_asm[gemm, target = get_gpu_target["sm_80"]()]()
+    var asm = _compile_code[gemm, target = get_gpu_target["sm_80"]()]().asm
     _verify_gemm(asm)
 
 
 def test_gemm_sm90():
-    var asm = _compile_code_asm[gemm, target = get_gpu_target["sm_90"]()]()
+    var asm = _compile_code[gemm, target = get_gpu_target["sm_90"]()]().asm
     _verify_gemm(asm)
 
 
@@ -394,16 +394,16 @@ fn _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
 
 
 def test_warp_shuffle_up_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_warp_shuffle_up, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_warp_shuffle_up(asm)
 
 
 def test_warp_shuffle_up_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_warp_shuffle_up, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_warp_shuffle_up(asm)
 
 
@@ -425,16 +425,16 @@ fn _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
 
 
 def test_warp_shuffle_down_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_warp_shuffle_down, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_warp_shuffle_down(asm)
 
 
 def test_warp_shuffle_down_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         test_warp_shuffle_down, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_warp_shuffle_down(asm)
 
 
@@ -461,16 +461,16 @@ fn _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
 
 
 def test_warp_sum_reduce_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         warp_sum_reduce, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_warp_sum_reduce(asm)
 
 
 def test_warp_sum_reduce_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         warp_sum_reduce, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_warp_sum_reduce(asm)
 
 
@@ -503,16 +503,16 @@ fn _verify_block_reduce(asm: StringSlice) raises -> None:
 
 
 def test_block_reduce_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         block_reduce, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_block_reduce(asm)
 
 
 def test_block_reduce_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         block_reduce, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_block_reduce(asm)
 
 

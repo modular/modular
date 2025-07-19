@@ -45,14 +45,14 @@ fn test_scaled_fp8_quant[
     random(in_host.tensor)
     zero(out_host.tensor)
 
-    ctx.memcopy(in_device.buffer, in_host.tensor.data)
-    ctx.memcopy(out_device.buffer, out_host.tensor.data)
+    ctx.enqueue_copy(in_device.buffer, in_host.tensor.data)
+    ctx.enqueue_copy(out_device.buffer, out_host.tensor.data)
 
     quantize_static_scaled_fp8[out_dtype, in_dtype](
         out_device.tensor, in_device.tensor, scale, ctx
     )
 
-    ctx.memcopy(out_host.tensor.data, out_device.buffer)
+    ctx.enqueue_copy(out_host.tensor.data, out_device.buffer)
 
     ctx.synchronize()
 
@@ -107,14 +107,14 @@ fn test_dynamic_fp8_quant[
 
     random(in_host.tensor)
 
-    ctx.memcopy(in_device.buffer, in_host.tensor.data)
+    ctx.enqueue_copy(in_device.buffer, in_host.tensor.data)
 
     quantize_dynamic_scaled_fp8[group_size_or_per_token](
         out_device.tensor, scales_device.tensor, in_device.tensor, 1200.0, ctx
     )
 
-    ctx.memcopy(out_host.tensor.data, out_device.buffer)
-    ctx.memcopy(scales_host.tensor.data, scales_device.buffer)
+    ctx.enqueue_copy(out_host.tensor.data, out_device.buffer)
+    ctx.enqueue_copy(scales_host.tensor.data, scales_device.buffer)
     ctx.synchronize()
 
     for i in range(m.value):

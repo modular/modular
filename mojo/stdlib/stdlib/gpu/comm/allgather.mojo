@@ -99,7 +99,7 @@ fn _allgather_naive[
             )
 
             # Copy from input device to current device.
-            curr_ctx.memcopy(
+            curr_ctx.enqueue_copy(
                 output_device_buffer,
                 device_buffers[input_idx],
             )
@@ -224,7 +224,7 @@ fn _allgather_p2p[
         )
 
         # Launch kernel.
-        curr_ctx.call_function[
+        curr_ctx.enqueue_function[
             _allgather_p2p_kernel[
                 dtype,
                 rank,

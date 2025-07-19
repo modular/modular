@@ -14,11 +14,28 @@
 from math import ceildiv
 
 from gpu.id import block_idx, grid_dim
-from linalg.fast_div import FastDiv
+from utils.fast_div import FastDiv
 
 from utils.index import Index, IndexList
 
 from linalg.utils_gpu import block_swizzle
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct RasterOrder(Copyable, Movable):
+    var _value: Int32
+
+    alias AlongN = Self(0)
+    alias AlongM = Self(1)
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
 
 
 @fieldwise_init
@@ -33,9 +50,29 @@ struct WorkInfo(Copyable, Movable, Stringable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
+    alias INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
+
+    @always_inline
+    fn __init__(
+        out self,
+    ):
+        self.m = 0
+        self.n = 0
+        self.k_start = 0
+        self.num_k_tiles = 0
+        self.is_valid_tile = False
+
     @always_inline
     fn is_valid(self) -> Bool:
         return self.is_valid_tile
+
+    @always_inline
+    fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
+        return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
+
+    @always_inline
+    fn get_k_start(self) -> UInt32:
+        return self.k_start
 
     @no_inline
     fn __str__(self) -> String:

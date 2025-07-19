@@ -15,14 +15,17 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import logging
-import unittest.mock
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from os import environ
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Generic,
     Optional,
     Protocol,
@@ -30,9 +33,11 @@ from typing import (
     runtime_checkable,
 )
 
+import llguidance.hf
+import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-import torch
+from llguidance import LLMatcher
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -72,14 +77,6 @@ from .hf_utils import download_weight_files
 from .lora import LoRAManager
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
-
-try:
-    # xgrammar configures the root logger, which also transitively
-    # impacts anyone using us as a library.  So let's avoid the damage here.
-    with unittest.mock.patch("logging.basicConfig"):
-        import xgrammar as xgr
-except ImportError:
-    pass
 
 logger = logging.getLogger("max.pipelines")
 
@@ -144,6 +141,13 @@ class ModelInputs:
 
     lora_ranks: Tensor | None = None
     """Tensor containing the LoRA ranks"""
+
+    def update(self, **kwargs) -> None:
+        key: str
+        value: Any
+        for key, value in kwargs.items():
+            if hasattr(self, key) and value is not None:
+                setattr(self, key, value)
 
 
 @dataclass(frozen=True)
@@ -498,6 +502,20 @@ def get_paged_manager(
     return None
 
 
+@dataclasses.dataclass
+class BatchInfo:
+    """Information about a batch of requests passed to the pipeline"""
+
+    past_seq_lens: list[int]
+    """Coordinated list of past sequence lengths (i.e. context lengths)"""
+
+    seq_lens: list[int]
+    """Coordinated list of sequence lengths, i.e. prompt_len or 1"""
+
+    num_steps: int
+    """Number of steps to do in the pipeline"""
+
+
 class TextGenerationPipeline(TokenGenerator[T]):
     """Generalized token generator pipeline."""
 
@@ -512,6 +530,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._pipeline_config = pipeline_config
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
+
+        self.batch_info_output_fname = environ.get(
+            "MAX_BATCH_INFO_FILENAME", None
+        )
+        self.batch_infos: list[BatchInfo] = []
 
         # Expand eos tokens if more are provided in pipeline_config
         if (
@@ -545,11 +568,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 pipeline_config.model_config.model_path
             )
             self.vocab_size = len(self.tokenizer)
-            tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-                self.tokenizer, vocab_size=self.vocab_size
+            self._tokenizer_info = llguidance.hf.from_tokenizer(
+                self.tokenizer, n_vocab=self.vocab_size
             )
-
-            self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
 
         # Initialize Session.
         session = InferenceSession(devices=self._devices)
@@ -652,15 +673,13 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: list[T],
         num_steps: int,
-    ) -> tuple[ModelInputs, int, Optional[torch.Tensor]]:
+    ) -> tuple[ModelInputs, int, Optional[npt.NDArray[np.int32]]]:
         tracer: Tracer = Tracer("prepare_batch")
 
         if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
-            bitmask = torch.full(
-                xgr.get_bitmask_shape(len(batch), self.vocab_size),
-                -1,
-                dtype=torch.int32,
+            bitmask = llguidance.numpy.allocate_token_bitmask(
+                len(batch), self.vocab_size
             )
         else:
             bitmask = None
@@ -674,30 +693,27 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     raise ValueError(msg)
 
                 try:
-                    compiled_grammar = (
-                        self._grammar_compiler.compile_json_schema(
-                            context.json_schema, any_whitespace=False
-                        )
+                    serialized_grammar = LLMatcher.grammar_from_json_schema(
+                        context.json_schema,
+                        defaults={
+                            "whitespace_flexible": False,
+                        },
                     )
-                    matcher = xgr.GrammarMatcher(compiled_grammar)
+                    matcher = LLMatcher(
+                        self._tokenizer_info, serialized_grammar
+                    )
                     context.set_matcher(matcher)
                 except Exception as e:
                     msg = f"Json schema provided in request cannot be compiled to valid grammar. \
-                    Please update your json schema to produce valid structured output. From XGrammar: {e}"
+                    Please update your json schema to produce valid structured output. From llguidance: {e}"
                     logger.warning(msg)
                     # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
                     context.json_schema = None  # type: ignore
 
             if context.matcher:
-                if (
-                    jump_forward_string
-                    := context.matcher.find_jump_forward_string()
-                ):
-                    tokens = self.tokenizer.encode(
-                        jump_forward_string, add_special_tokens=False
-                    )
-                    for token in tokens:
-                        context.jump_ahead(token)
+                jump_forward_tokens = context.matcher.compute_ff_tokens()
+                for token in jump_forward_tokens:
+                    context.jump_ahead(token)
 
             # Claim cache rows for context.
             if not self._pipeline_model.kv_manager.contains(
@@ -714,8 +730,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
             if (
                 self._pipeline_config.sampling_config.enable_structured_output
                 and context.matcher
+                and bitmask is not None
             ):
-                context.matcher.fill_next_token_bitmask(bitmask, index=i)
+                llguidance.numpy.fill_next_token_bitmask(
+                    context.matcher, bitmask, index=i
+                )
 
         # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
@@ -916,6 +935,36 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         return self._pipeline_model._lora_manager.sort_lora_batch(batch)
 
+    def _record_batch_info(self, contexts: Iterable[T], num_steps: int) -> None:
+        """
+        Records batch information for the current inference step.
+
+        Args:
+            contexts (Iterable[T]): An iterable of context objects, each containing
+                'start_idx' (past sequence length) and 'active_length' (current sequence length).
+            num_steps (int): The number of steps processed in this batch.
+
+        Side Effects:
+            Appends a BatchInfo instance to self.batch_infos, capturing the past sequence lengths,
+            current sequence lengths, and number of steps for the batch.
+        """
+        self.batch_infos.append(
+            BatchInfo(
+                past_seq_lens=[x.start_idx for x in contexts],
+                seq_lens=[x.active_length for x in contexts],
+                num_steps=num_steps,
+            )
+        )
+
+    def __del__(self) -> None:
+        if self.batch_info_output_fname is not None:
+            output = {
+                "batch_data": [dataclasses.asdict(x) for x in self.batch_infos]
+            }
+            with open(self.batch_info_output_fname, "w") as f:
+                json.dump(output, f, indent=2)
+                f.flush()  # Refer to MAXSERV-893
+
     @traced
     def next_token(
         self,
@@ -927,6 +976,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         """
 
         batch = self._maybe_sort_loras(batch)
+        if self.batch_info_output_fname is not None:
+            self._record_batch_info(batch.values(), num_steps)
+
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
@@ -1043,14 +1095,16 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 model_inputs=curr_step_inputs
             )
 
+            tensor_bitmask = None
             if bitmask is not None:
                 assert self.vocab_size is not None
-                bits = 2 ** torch.arange(32, dtype=torch.int32)
-                bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
+                bits = 2 ** np.arange(32, dtype=np.int32)
+                bitmask = (bitmask[..., np.newaxis] & bits) != 0
+                bitmask = bitmask.reshape(len(context_batch), -1).astype(
+                    np.bool_
+                )
                 bitmask = bitmask[:, 0 : self.vocab_size]
-
-                bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
+                tensor_bitmask = Tensor.from_numpy(bitmask).to(self._devices[0])
 
             # Sample next token.
             tracer.next("sample_next_token")
@@ -1063,7 +1117,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 top_p,
                 seed,
                 logit_offsets=model_outputs.logit_offsets,
-                bitmask=bitmask,
+                bitmask=tensor_bitmask,
                 frequency_data=frequency_data,
                 min_tokens_mask=min_tokens_masks[i]
                 if min_tokens_masks

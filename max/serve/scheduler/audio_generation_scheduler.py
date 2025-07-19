@@ -22,13 +22,17 @@ from collections import deque
 from collections.abc import Generator
 from typing import Any
 
-import torch
+import numpy as np
 import zmq
-from max.interfaces import AudioGenerationResponse, EngineResult
+from max.interfaces import (
+    AudioGenerationMetadata,
+    AudioGenerationResponse,
+    AudioGeneratorOutput,
+    EngineResult,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerator,
-    AudioGeneratorOutput,
     TTSContext,
     msgpack_numpy_decoder,
 )
@@ -300,15 +304,15 @@ class AudioGenerationScheduler(Scheduler):
         audio_responses: dict[str, EngineResult[AudioGeneratorOutput]] = {}
         for req_id, response in responses.items():
             if response.has_audio_data:
-                audio_data = torch.from_numpy(response.audio_data)
+                audio_data = response.audio_data
             else:
-                audio_data = torch.tensor([], dtype=torch.float32)
+                audio_data = np.array([], dtype=np.float32)
 
             if response.is_done:
                 audio_responses[req_id] = EngineResult.complete(
                     AudioGeneratorOutput(
                         audio_data=audio_data,
-                        metadata={},
+                        metadata=AudioGenerationMetadata(),
                         is_done=response.is_done,
                         buffer_speech_tokens=response.buffer_speech_tokens,
                     )
@@ -317,7 +321,7 @@ class AudioGenerationScheduler(Scheduler):
                 audio_responses[req_id] = EngineResult.active(
                     AudioGeneratorOutput(
                         audio_data=audio_data,
-                        metadata={},
+                        metadata=AudioGenerationMetadata(),
                         is_done=response.is_done,
                         buffer_speech_tokens=response.buffer_speech_tokens,
                     )

@@ -35,7 +35,7 @@ fn _create_device_buffer[
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 ]:
-    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
+    var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
         NDBuffer[dtype, rank, _, shape](
@@ -132,14 +132,14 @@ fn matmul_test_case[
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
 
-    ctx.memcopy(mat_a_dev[0], mat_a_host.data)
-    ctx.memcopy(mat_b_dev[0], mat_b_host.data)
+    ctx.enqueue_copy(mat_a_dev[0], mat_a_host.data)
+    ctx.enqueue_copy(mat_b_dev[0], mat_b_host.data)
 
     _matmul_gpu[use_tensor_core=True](
         mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx
     )
 
-    ctx.memcopy(mat_c_host.data, mat_c_dev[0])
+    ctx.enqueue_copy(mat_c_host.data, mat_c_dev[0])
     ctx.synchronize()
 
     # FIXME: We should run a reference gpu matmul, the reference should also

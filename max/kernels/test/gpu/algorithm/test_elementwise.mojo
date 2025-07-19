@@ -38,10 +38,10 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         for j in range(8):
             in_host[Index(i, j)] = i + j
 
-    var in_device = ctx.create_buffer[dtype](flattened_length)
-    var out_device = ctx.create_buffer[dtype](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.copy_from(in_host.data)
+    in_device.enqueue_copy_from(in_host.data)
 
     var in_buffer = NDBuffer[dtype, 2](in_device._unsafe_ptr(), Index(2, 8))
     var out_buffer = NDBuffer[dtype, 2](out_device._unsafe_ptr(), Index(2, 8))
@@ -61,7 +61,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.copy_to(out_host.data)
+    out_device.enqueue_copy_to(out_host.data)
 
     ctx.synchronize()
 
@@ -108,10 +108,10 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
         for j in range(3):
             in_host[Index(i, j)] = i + j
 
-    var in_device = ctx.create_buffer[dtype](flattened_length)
-    var out_device = ctx.create_buffer[dtype](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.copy_from(in_host.data)
+    in_device.enqueue_copy_from(in_host.data)
 
     var in_buffer = NDBuffer[dtype, 2](in_device._unsafe_ptr(), Index(3, 3))
     var out_buffer = NDBuffer[dtype, 2](out_device._unsafe_ptr(), Index(3, 3))
@@ -131,7 +131,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
         IndexList[2](3, 3),
         ctx,
     )
-    out_device.copy_to(out_host.data)
+    out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
     var expected_vals = List[Scalar[dtype]](
@@ -163,10 +163,10 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
             for k in range(5):
                 in_host[Index(i, j, k)] = i * 4 * 5 + j * 5 + k
 
-    var in_device = ctx.create_buffer[dtype](flattened_length)
-    var out_device = ctx.create_buffer[dtype](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.copy_from(in_host.data)
+    in_device.enqueue_copy_from(in_host.data)
 
     var in_buffer_transposed = NDBuffer[dtype, 3](
         in_device._unsafe_ptr(), Index(4, 2, 5), Index(5, 20, 1)
@@ -192,7 +192,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.copy_to(out_host.data)
+    out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
     var expected_vals = List[Scalar[dtype]](

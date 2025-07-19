@@ -27,7 +27,7 @@ fn run_func[
 ) raises:
     print("test trigonometric functions on gpu")
 
-    var out = ctx.create_buffer[dtype](1)
+    var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
     fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: SIMD[dtype, 1]):

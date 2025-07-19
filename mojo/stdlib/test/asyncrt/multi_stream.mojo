@@ -41,9 +41,9 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     alias length = 1 * 1024 * 1024
     alias T = DType.float32
 
-    var in0_dev1 = ctx1.create_buffer[T](length)
-    var in0_dev2 = ctx1.create_buffer[T](length)
-    var in0_dev3 = ctx1.create_buffer[T](length)
+    var in0_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in0_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in0_dev3 = ctx1.enqueue_create_buffer[T](length)
 
     # Initialize the variable inputs with known values.
     with in0_dev1.map_to_host() as in_host1, in0_dev2.map_to_host() as in_host2, in0_dev3.map_to_host() as in_host3:
@@ -54,18 +54,18 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    in1_dev1 = ctx1.create_buffer[T](length).fill(1.0)
-    in1_dev2 = ctx1.create_buffer[T](length).fill(2.0)
-    in1_dev3 = ctx1.create_buffer[T](length).fill(3.0)
+    in1_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
+    in1_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
+    in1_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(3.0)
 
     # Initialize the device outputs with known bad values.
-    out_dev1 = ctx1.create_buffer[T](length).fill(101.0)
-    out_dev2 = ctx1.create_buffer[T](length).fill(102.0)
-    out_dev3 = ctx1.create_buffer[T](length).fill(103.0)
+    out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
+    out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
+    out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
     # Initialize the result buffer on a second queue with known bad values.
-    var out_host1 = ctx2.create_host_buffer[T](length).fill(0.1)
-    var out_host2 = ctx2.create_host_buffer[T](length).fill(0.2)
-    var out_host3 = ctx2.create_host_buffer[T](length).fill(0.3)
+    var out_host1 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.1)
+    var out_host2 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.2)
+    var out_host3 = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.3)
 
     for i in range(10):
         print(out_host1[i])
@@ -91,7 +91,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev1.reassign_ownership_to(ctx2)
-    out_dev1.copy_to(out_host1)
+    out_dev1.enqueue_copy_to(out_host1)
     ctx1.enqueue_function_experimental(
         dev_func,
         in0_dev2,
@@ -102,7 +102,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev2.reassign_ownership_to(ctx2)
-    out_dev2.copy_to(out_host2)
+    out_dev2.enqueue_copy_to(out_host2)
     ctx1.enqueue_function_experimental(
         dev_func,
         in0_dev3,
@@ -113,7 +113,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     out_dev3.reassign_ownership_to(ctx2)
-    out_dev3.copy_to(out_host3)
+    out_dev3.enqueue_copy_to(out_host3)
 
     # Wait for the copies to be completed.
     ctx2.synchronize()
@@ -166,9 +166,9 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     alias T = DType.float32
 
     # Initialize the variable inputs with known values.
-    var in_dev1 = ctx1.create_buffer[T](length)
-    var in_dev2 = ctx1.create_buffer[T](length)
-    var in_dev3 = ctx1.create_buffer[T](length)
+    var in_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in_dev3 = ctx1.enqueue_create_buffer[T](length)
     with in_dev1.map_to_host() as in_host1, in_dev2.map_to_host() as in_host2, in_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
@@ -177,16 +177,16 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = 3 * index
 
     # Initialize the fixed (right) inputs.
-    var in_dev4 = ctx1.create_buffer[T](length).fill(1.0)
-    var in_dev5 = ctx1.create_buffer[T](length).fill(2.0)
+    var in_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(1.0)
+    var in_dev5 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(2.0)
 
     # Initialize the outputs with known bad values
-    var out_dev1 = ctx1.create_buffer[T](length).fill(101.0)
-    var out_dev2 = ctx1.create_buffer[T](length).fill(102.0)
-    var out_dev3 = ctx1.create_buffer[T](length).fill(103.0)
-    var out_dev4 = ctx1.create_buffer[T](length).fill(104.0)
+    var out_dev1 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(101.0)
+    var out_dev2 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(102.0)
+    var out_dev3 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(103.0)
+    var out_dev4 = ctx1.enqueue_create_buffer[T](length).enqueue_fill(104.0)
 
-    var out_host = ctx2.create_host_buffer[T](length).fill(0.5)
+    var out_host = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.5)
 
     # Pre-compile and pre-register the device function
     var dev_func1 = ctx1.compile_function_experimental[vec_func]()
@@ -240,7 +240,7 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     # have settled since `out_dev4` is associated with ctx1.
     ctx1.enqueue_wait_for(ctx2)
     # Schedule a cross-context copy `out_dev4`@ctx1->`out_host`@ctx2
-    out_dev4.copy_to(out_host)
+    out_dev4.enqueue_copy_to(out_host)
     # Reassign ownership of `out_host` to ctx1, then synchronize on ctx1 for the
     #  copies to be completed.
     out_host.reassign_ownership_to(ctx1)

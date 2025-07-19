@@ -93,11 +93,11 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
         a_host[i] = i
         b_host[i] = 0
 
-    var a_device = ctx.create_buffer[DType.float32](m)
-    var b_device = ctx.create_buffer[DType.float32](m)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](m)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](m)
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
 
     alias func_select = stencil1d_smem if smem == True else stencil1d
 
@@ -117,7 +117,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
         b_device = a_device
         a_device = tmp_ptr
 
-    ctx.memcopy(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
 
     ctx.synchronize()
 

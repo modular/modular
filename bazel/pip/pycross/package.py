@@ -74,13 +74,6 @@ class Package:
                 unique_dependencies[dep.name] = dep
 
         self.dependencies = list(unique_dependencies.values())
-        # Hack around pytorch triton AMD dependency issue for now, just never use it
-        if self.name == "xgrammar":
-            self.dependencies = [
-                dep
-                for dep in self.dependencies
-                if not dep.name.startswith("triton@")
-            ]
 
     def render(self) -> tuple[str, set[Download]]:
         deps_by_constraints: dict[str, list[str]] = defaultdict(list)

@@ -302,7 +302,7 @@ struct MMATileBuffers[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
-fn gemm_kernel[
+fn gemm_kernel_amd[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

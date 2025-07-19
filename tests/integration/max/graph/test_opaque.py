@@ -118,52 +118,6 @@ def test_opaque_introspection(
     assert len(reader_model.output_metadata) == 1
 
 
-class PythonCounter:
-    def __init__(self, a: int = 0, b: int = 0) -> None:
-        self.a = a
-        self.b = b
-
-    def bump(self) -> None:
-        self.a += 1
-        self.b += self.a
-
-    def copy(self):
-        return PythonCounter(self.a, self.b)
-
-
-def test_pyobject_opaque(
-    session: InferenceSession, counter_ops_path: Path
-) -> None:
-    python_type = _OpaqueType("PythonObject")
-
-    bumper_graph = Graph(
-        "bumper",
-        input_types=[python_type],
-        output_types=[python_type],
-        custom_extensions=[counter_ops_path],
-    )
-    with bumper_graph:
-        x = ops.inplace_custom(
-            "bump_python_counter",
-            device=DeviceRef.CPU(),
-            values=[bumper_graph.inputs[0]],
-            out_types=[python_type],
-        )[0]
-        y = ops.inplace_custom(
-            "bump_python_counter",
-            device=DeviceRef.CPU(),
-            values=[x],
-            out_types=[python_type],
-        )[0]
-        bumper_graph.output(y)
-    bumper_compiled = session.load(bumper_graph)
-
-    counter = PythonCounter()
-    for _ in range(5):
-        counter = bumper_compiled.execute(counter)[0]  # type: ignore
-    assert counter.a == 10 and counter.b == 55
-
-
 def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,

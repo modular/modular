@@ -18,10 +18,9 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 
 from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace, external_memory, tma_store_fence
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -33,9 +32,7 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
-from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout.swizzle import make_swizzle
 from layout.int_tuple import IntTuple
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -51,7 +48,6 @@ from linalg import vendor_blas
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from stdlib.bit import log2_floor
 
 # Additional imports for testing
 from internal_utils import (
@@ -484,10 +480,6 @@ fn blackwell_matmul_tma_umma[
     )
 
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
-
-
 fn get_dic_of_shapes(
     index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
 ) -> Tuple[Int, Int, Int]:
@@ -623,11 +615,11 @@ def test_blackwell_matmul_tma_umma[
 
     # Move operands to the Device
 
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.memcopy(c_device.buffer, c_host.tensor.data)
-    ctx.memcopy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     var a = from_ndbuffer_row_major(a_device.tensor)
     var b = from_ndbuffer_row_major(b_device.tensor)
@@ -702,8 +694,8 @@ def test_blackwell_matmul_tma_umma[
 
         ctx.synchronize()
 
-        ctx.memcopy(c_host.tensor.data, c_device.buffer)
-        ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
         alias rtol = 1e-2
 

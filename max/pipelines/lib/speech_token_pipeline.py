@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 from max.driver import DeviceStream, Tensor
 from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -180,14 +179,16 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 new_tokens_np = new_tokens.to_numpy()  # type: ignore
                 seq_has_eos |= np.isin(new_tokens_np, eos_token_list)
 
+            tensor_bitmask = None
             if bitmask is not None:
                 assert self.vocab_size is not None
-                bits = 2 ** torch.arange(32, dtype=torch.int32)
-                bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
+                bits = 2 ** np.arange(32, dtype=np.int32)
+                bitmask = (bitmask[..., np.newaxis] & bits) != 0
+                bitmask = bitmask.reshape(len(context_batch), -1).astype(
+                    np.bool_
+                )
                 bitmask = bitmask[:, 0 : self.vocab_size]
-
-                bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
+                tensor_bitmask = Tensor.from_numpy(bitmask).to(self._devices[0])
 
             # Sample next token.
             tracer.next("sample_next_token")
@@ -200,7 +201,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 top_p,
                 seed,
                 logit_offsets=model_outputs.logit_offsets,
-                bitmask=bitmask,
+                bitmask=tensor_bitmask,
                 frequency_data=frequency_data,
                 min_tokens_mask=min_tokens_masks[i]
                 if min_tokens_masks

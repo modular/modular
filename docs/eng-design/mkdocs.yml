@@ -16,6 +16,7 @@ site_url: https://modular.github.io/modular/
 theme:
   name: material
 markdown_extensions:
+  - attr_list
   - pymdownx.blocks.caption
   - pymdownx.highlight:
       anchor_linenums: true

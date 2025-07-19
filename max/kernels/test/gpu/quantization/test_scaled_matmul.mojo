@@ -122,12 +122,12 @@ fn test_matmul_dynamic_scaled_fp8[
                     * b_scales_host.tensor[0, j].cast[DType.float32]()
                 )
 
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
-    ctx.memcopy(a_scales_device.buffer, a_scales_host.tensor.data)
-    ctx.memcopy(b_scales_device.buffer, b_scales_host.tensor.data)
-    ctx.memcopy(a_device_ref.buffer, a_host_ref.tensor.data)
-    ctx.memcopy(b_device_ref.buffer, b_host_ref.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_scales_device.buffer, a_scales_host.tensor.data)
+    ctx.enqueue_copy(b_scales_device.buffer, b_scales_host.tensor.data)
+    ctx.enqueue_copy(a_device_ref.buffer, a_host_ref.tensor.data)
+    ctx.enqueue_copy(b_device_ref.buffer, b_host_ref.tensor.data)
 
     matmul_dynamic_scaled_fp8[transpose_b=transpose_b, target="gpu",](
         c_device.tensor,
@@ -137,7 +137,7 @@ fn test_matmul_dynamic_scaled_fp8[
         b_scales_device.tensor,
         ctx,
     )
-    ctx.memcopy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.synchronize()
 
     matmul[transpose_b=transpose_b, target="gpu",](
@@ -147,7 +147,7 @@ fn test_matmul_dynamic_scaled_fp8[
         Optional[DeviceContext](ctx),
     )
 
-    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
     for i in range(m.value):

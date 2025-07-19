@@ -181,13 +181,13 @@ fn run_mma_fp32_fp32(
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.create_buffer[DType.float32](M * K)
-    var b_device = ctx.create_buffer[DType.float32](K * N)
-    var c_device = ctx.create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
-    ctx.memcopy(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 16
@@ -205,7 +205,7 @@ fn run_mma_fp32_fp32(
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive(a_host, b_host, c_host_ref, M, N, K)
 
@@ -261,13 +261,19 @@ fn run_mma_fp32_fp16[
             c_host[b * M * N + i] = 0
             c_host_ref[b * M * N + i] = 0
 
-    var a_device = ctx.create_buffer[DType.float16](M * K * mma_n_blocks)
-    var b_device = ctx.create_buffer[DType.float16](K * N * mma_n_blocks)
-    var c_device = ctx.create_buffer[DType.float32](M * N * mma_n_blocks)
+    var a_device = ctx.enqueue_create_buffer[DType.float16](
+        M * K * mma_n_blocks
+    )
+    var b_device = ctx.enqueue_create_buffer[DType.float16](
+        K * N * mma_n_blocks
+    )
+    var c_device = ctx.enqueue_create_buffer[DType.float32](
+        M * N * mma_n_blocks
+    )
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
-    ctx.memcopy(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 4 if mma_n_blocks == 16 else 16
@@ -285,7 +291,7 @@ fn run_mma_fp32_fp16[
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive[mma_n_blocks](a_host, b_host, c_host_ref, M, N, K)
 
@@ -347,13 +353,19 @@ fn run_mma_fp32_bf16[
             c_host[b * M * N + i] = 0
             c_host_ref[b * M * N + i] = 0
 
-    var a_device = ctx.create_buffer[DType.bfloat16](M * K * mma_n_blocks)
-    var b_device = ctx.create_buffer[DType.bfloat16](K * N * mma_n_blocks)
-    var c_device = ctx.create_buffer[DType.float32](M * N * mma_n_blocks)
+    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](
+        M * K * mma_n_blocks
+    )
+    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](
+        K * N * mma_n_blocks
+    )
+    var c_device = ctx.enqueue_create_buffer[DType.float32](
+        M * N * mma_n_blocks
+    )
 
-    ctx.memcopy(a_device, a_host)
-    ctx.memcopy(b_device, b_host)
-    ctx.memcopy(c_device, c_host)
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     alias WARP_PER_BLOCK = 1
     alias MMA_M = 4 if mma_n_blocks == 16 else 16
@@ -371,7 +383,7 @@ fn run_mma_fp32_bf16[
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
-    ctx.memcopy(c_host, c_device)
+    ctx.enqueue_copy(c_host, c_device)
 
     matmul_naive[mma_n_blocks](a_host, b_host, c_host_ref, M, N, K)
 

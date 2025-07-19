@@ -13,7 +13,7 @@
 
 from time import perf_counter_ns, time_function
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.intrinsics import *
 from testing import *
@@ -30,16 +30,16 @@ fn _verify_clock_functions(asm: StringSlice) raises -> None:
 
 
 def test_clock_functions_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_clock_functions(asm)
 
 
 def test_clock_functions_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_clock_functions(asm)
 
 
@@ -63,16 +63,16 @@ fn _verify_time_functions(asm: StringSlice) raises -> None:
 
 
 def test_time_functions_sm80():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         time_functions, target = get_gpu_target["sm_80"]()
-    ]()
+    ]().asm
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
-    var asm = _compile_code_asm[
+    var asm = _compile_code[
         time_functions, target = get_gpu_target["sm_90"]()
-    ]()
+    ]().asm
     _verify_time_functions(asm)
 
 

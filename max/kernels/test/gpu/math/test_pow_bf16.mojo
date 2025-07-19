@@ -29,8 +29,8 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     alias length = 256
     alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
-    var in_device = ctx.create_buffer[type](length)
-    var out_device = ctx.create_buffer[type](length)
+    var in_device = ctx.enqueue_create_buffer[type](length)
+    var out_device = ctx.enqueue_create_buffer[type](length)
 
     # Add a small constant to avoid 0^-pow.
     alias epsilon = 0.001

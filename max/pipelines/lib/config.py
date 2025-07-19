@@ -715,10 +715,10 @@ class AudioGenerationConfig(PipelineConfig):
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
 
-    block_sizes: list[int] | None = None
-    """The block sizes to use for streaming.
-    If this is an int, then fixed-size blocks of the given size are used
-    If this is a list, then variable block sizes are used."""
+    chunk_size: list[int] | None = None
+    """The chunk sizes to use for streaming.
+    If this is an int, then fixed-size chunks of the given size are used
+    If this is a list, then variable chunk sizes are used."""
 
     buffer: int = 0
     """The number of previous speech tokens to pass to the audio decoder on
@@ -762,7 +762,7 @@ class AudioGenerationConfig(PipelineConfig):
         self,
         audio_decoder: str,
         audio_decoder_weights: str = "",
-        block_sizes: list[int] | None = None,
+        chunk_size: list[int] | None = None,
         buffer: int = 0,
         block_causal: bool = False,
         prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
@@ -783,7 +783,7 @@ class AudioGenerationConfig(PipelineConfig):
 
         self.audio_decoder = audio_decoder
         self.audio_decoder_weights = audio_decoder_weights
-        self.block_sizes = block_sizes
+        self.chunk_size = chunk_size
         self.buffer = buffer
         self.block_causal = block_causal
         self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
@@ -805,11 +805,11 @@ class AudioGenerationConfig(PipelineConfig):
         audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
 
         # Configuration for audio generation streaming.
-        block_sizes_str = audio_flags.pop("block_sizes", "")
-        if not block_sizes_str:
-            block_sizes = None
+        chunk_size_str = audio_flags.pop("chunk_size", "")
+        if not chunk_size_str:
+            chunk_size = None
         else:
-            block_sizes = [int(size) for size in block_sizes_str.split(",")]
+            chunk_size = [int(size) for size in chunk_size_str.split(",")]
 
         buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
 
@@ -843,7 +843,7 @@ class AudioGenerationConfig(PipelineConfig):
         return cls(
             audio_decoder=audio_decoder,
             audio_decoder_weights=audio_decoder_weights,
-            block_sizes=block_sizes,
+            chunk_size=chunk_size,
             buffer=buffer,
             block_causal=block_causal,
             prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,

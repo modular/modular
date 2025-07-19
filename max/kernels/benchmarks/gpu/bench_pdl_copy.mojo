@@ -113,15 +113,15 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     for i in range(length):
         c_host[i] = 0
 
-    var a_device = context.create_buffer[dtype](length)
-    var b_device = context.create_buffer[dtype](length)
-    var c_device = context.create_buffer[dtype](length)
-    var d_device = context.create_buffer[dtype](length)
+    var a_device = context.enqueue_create_buffer[dtype](length)
+    var b_device = context.enqueue_create_buffer[dtype](length)
+    var c_device = context.enqueue_create_buffer[dtype](length)
+    var d_device = context.enqueue_create_buffer[dtype](length)
 
-    context.memcopy(a_device, a_host)
-    context.memcopy(b_device, b_host)
-    context.memcopy(c_device, c_host)
-    context.memcopy(d_device, d_host)
+    context.enqueue_copy(a_device, a_host)
+    context.enqueue_copy(b_device, b_host)
+    context.enqueue_copy(c_device, c_host)
+    context.enqueue_copy(d_device, d_host)
 
     @always_inline
     @parameter
@@ -159,7 +159,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         BenchId("copy_pdl", input_id=String("length=", length)),
     )
     context.synchronize()
-    context.memcopy(c_host, c_device)
+    context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
 
@@ -188,15 +188,15 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     for i in range(length):
         c_host[i] = 0
 
-    var a_device = context.create_buffer[dtype](length)
-    var b_device = context.create_buffer[dtype](length)
-    var c_device = context.create_buffer[dtype](length)
-    var d_device = context.create_buffer[dtype](length)
+    var a_device = context.enqueue_create_buffer[dtype](length)
+    var b_device = context.enqueue_create_buffer[dtype](length)
+    var c_device = context.enqueue_create_buffer[dtype](length)
+    var d_device = context.enqueue_create_buffer[dtype](length)
 
-    context.memcopy(a_device, a_host)
-    context.memcopy(b_device, b_host)
-    context.memcopy(c_device, c_host)
-    context.memcopy(d_device, d_host)
+    context.enqueue_copy(a_device, a_host)
+    context.enqueue_copy(b_device, b_host)
+    context.enqueue_copy(c_device, c_host)
+    context.enqueue_copy(d_device, d_host)
 
     @always_inline
     @parameter
@@ -232,7 +232,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         BenchId("copy_n", input_id=String("length=", length)),
     )
     context.synchronize()
-    context.memcopy(c_host, c_device)
+    context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
 

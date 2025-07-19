@@ -349,7 +349,7 @@ class SpecInstance:
         return "/".join(tokens)
 
     def hash(self, with_variables: bool = True) -> str:
-        MAX_FILENAME_LEN = 255
+        MAX_FILENAME_LEN = 224
 
         tokens = [self.file_stem]
         for param in self.params:
@@ -907,7 +907,6 @@ class Scheduler:
             f"scheduled {len(unique_build_items)} unique build items out of {self.num_specs}"
             + LINE
         )
-
         if unique_build_items:
             obj_cache = self.obj_cache
 
@@ -950,6 +949,10 @@ class Scheduler:
                     unique_build_paths[bin_name] = binary_path
 
                 self.progress.update(build_progress, advance=1)
+            logging.info(
+                f"finished building {len(unique_build_paths)} unique items"
+                + LINE
+            )
         return unique_build_paths
 
     def execute_all(
@@ -960,9 +963,12 @@ class Scheduler:
         exec_suffix,  # noqa: ANN001
     ) -> None:
         """Execute all the items in the scheduler"""
+
+        num_build_items = len(self.build_items)
+
         exec_progress = self.progress.add_task(
             "run",
-            total=len(self.build_items),
+            total=num_build_items,
         )
 
         exec_prefix_in = copy.deepcopy(exec_prefix)
@@ -992,6 +998,15 @@ class Scheduler:
                 logging.info(f"writing profiling results to {profile_output}")
 
             if bin_path:
+
+                def _percentage(x: int, y: int) -> int:
+                    if x > 0 and y > 0:
+                        return int((x / y) * 100.0)
+                    return 0
+
+                logging.info(
+                    f"running binary [{b.idx}/{num_build_items}] ({_percentage(b.idx, num_build_items)}%)"
+                )
                 exec_output = s.execute(
                     bin_path,
                     b.output_path,

@@ -53,15 +53,15 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = UnsafePointer[Float32].alloc(16)
     var out_data = UnsafePointer[Float32].alloc(16)
-    var in_data_device = ctx.create_buffer[DType.float32](16)
-    var out_data_device = ctx.create_buffer[DType.float32](16)
+    var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
         out_data[i] = 0
 
-    ctx.memcopy(in_data_device, in_data)
-    ctx.memcopy(out_data_device, out_data)
+    ctx.enqueue_copy(in_data_device, in_data)
+    ctx.enqueue_copy(out_data_device, out_data)
 
     ctx.enqueue_function[copy_via_shared](
         in_data_device,
@@ -70,7 +70,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
         block_dim=(16),
     )
 
-    ctx.memcopy(out_data, out_data_device)
+    ctx.enqueue_copy(out_data, out_data_device)
 
     ctx.synchronize()
 
@@ -147,10 +147,10 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = i + 1
 
-    var a_device = ctx.create_buffer[DType.float32](size)
-    var b_device = ctx.create_buffer[DType.float32](2 * size)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](size)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
 
-    ctx.memcopy(a_device, a_host)
+    ctx.enqueue_copy(a_device, a_host)
 
     alias kernel = copy_with_src_size
     alias src_size = 3 * sizeof[DType.float32]()
@@ -163,7 +163,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
         block_dim=(1, 1, 1),
     )
 
-    ctx.memcopy(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
 
     ctx.synchronize()
 
@@ -195,10 +195,10 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = 0
 
-    var a_device = ctx.create_buffer[DType.bfloat16](size)
-    var b_device = ctx.create_buffer[DType.bfloat16](2 * size)
+    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](size)
+    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](2 * size)
 
-    ctx.memcopy(a_device, a_host)
+    ctx.enqueue_copy(a_device, a_host)
 
     alias kernel = copy_with_non_zero_fill[2 * size]
 
@@ -212,7 +212,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
         block_dim=(1, 1, 1),
     )
 
-    ctx.memcopy(b_host, b_device)
+    ctx.enqueue_copy(b_host, b_device)
 
     ctx.synchronize()
 

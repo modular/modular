@@ -157,15 +157,15 @@ $L__BB0_2:
     alias LEN = 1024
     alias BLOCK_DIM = 32
 
-    lhs = ctx.create_buffer[DType.float32](LEN).fill(2.0)
-    rhs = ctx.create_buffer[DType.float32](LEN).fill(1.0)
-    out = ctx.create_buffer[DType.float32](LEN)
+    lhs = ctx.enqueue_create_buffer[DType.float32](LEN).enqueue_fill(2.0)
+    rhs = ctx.enqueue_create_buffer[DType.float32](LEN).enqueue_fill(1.0)
+    out = ctx.enqueue_create_buffer[DType.float32](LEN)
 
     func = ctx.load_function[vec_add_sig](
         function_name="_Z9vectorAddPKfS0_Pfi",
         asm=ptx,
     )
-    ctx.call_function(
+    ctx.enqueue_function(
         func,
         lhs,
         rhs,

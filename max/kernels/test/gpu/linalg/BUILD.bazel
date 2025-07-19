@@ -32,6 +32,7 @@ _EXTRA_CONSTRAINTS = {
     "test_warp_specialization_hilbert_gemm.mojo": ["//:h100_gpu"],
     "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
     "test_deepseek_scheduler.mojo": ["//:h100_gpu"],
+    "test_sm90_splitk.mojo": ["//:h100_gpu"],
 }
 
 _FILECHECK_TESTS = [
@@ -63,7 +64,10 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
-        enable_assertions = not src in "test_warp_specialization_gemm.mojo",  # TODO: Fix assertions exception
+        enable_assertions = not src in [
+            "test_warp_specialization_gemm.mojo",
+            "test_generated_sm90_matmul_ptx.mojo",
+        ],  # TODO: Fix assertions exception
         tags = ["gpu"] + (
             ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
         ),

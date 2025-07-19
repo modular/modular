@@ -8,7 +8,6 @@ modular_py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":xgrammar_if_gpu",
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
@@ -21,24 +20,12 @@ modular_py_library(
         requirement("gguf"),
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
+        requirement("llguidance"),
         requirement("numpy"),
         requirement("pillow"),
         requirement("torch"),
         requirement("transformers"),
     ],
-)
-
-modular_py_library(
-    name = "empty",
-)
-
-# NOTE: Hack to get around processing deps in the open source repo
-alias(
-    name = "xgrammar_if_gpu",
-    actual = select({
-        "//:has_gpu": requirement("xgrammar"),
-        "//conditions:default": ":empty",
-    }),
 )
 
 pkg_files(

@@ -150,6 +150,8 @@ build:remote-h100 --repo_env=MODULAR_TARGET=linux:x86_64
 
 build:ci-remote-h100 --config=ci-gpu-common
 build:ci-remote-h100 --config=remote-h100
+build:ci-remote-h100 --build_metadata=TAGS=h100
+build:ci-remote-h100 --test_keep_going=false
 
 build:remote-mi300 --config=remote
 build:remote-mi300 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
@@ -160,6 +162,8 @@ build:remote-mi300 --repo_env=MODULAR_TARGET=linux:x86_64
 
 build:ci-remote-mi300 --config=ci-gpu-common
 build:ci-remote-mi300 --config=remote-mi300
+build:ci-remote-mi300 --build_metadata=TAGS=mi300
+build:ci-remote-mi300 --test_keep_going=false
 
 test:ci-test --config=ci-no-config
 test:ci-test --remote_download_outputs=minimal

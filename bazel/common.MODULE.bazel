@@ -1,15 +1,15 @@
 """Define bazel dependencies common to the internal and external repos."""
 
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "abseil-cpp", version = "20250127.0")
+bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.8")
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
-bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "29.1")
+bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_mojo", version = "0.4.1")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
@@ -77,10 +77,10 @@ single_version_override(
 # TODO: Remove when >0.4.1 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-Uhba46RfmMCL1xWvSr9oFD3gVFgvvaPLkOi2w02QHl0=",
-    strip_prefix = "rules_mojo-89f42326ed883777558b88b4127508ced550a22b",
+    integrity = "sha256-votbwv5MIO/0FlrO8T39tJ5B+iBWrIOjKSGfZVNExzo=",
+    strip_prefix = "rules_mojo-98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/89f42326ed883777558b88b4127508ced550a22b.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f.tar.gz",
     ],
 )
 
@@ -94,7 +94,6 @@ single_version_override(
         "//bazel/public-patches:rules_mypy_pycross.patch",
         # https://github.com/theoremlp/rules_mypy/pull/104
         "//bazel/public-patches:rules_mypy_user_site.patch",
-        "//bazel/public-patches:rules_mypy_zipfile.patch",
     ],
 )
 
@@ -102,12 +101,10 @@ single_version_override(
     module_name = "grpc",
     patch_strip = 1,
     patches = [
-        # TODO: Drop when we update grpc again
-        "//bazel/public-patches:grpc.patch",
-        # TODO: Drop once https://github.com/grpc/grpc/commit/ed7916161a405b0e01aa7c39494c7dd536264ea4 is in a release
-        "//bazel/public-patches:grpc-providers.patch",
+        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        "//bazel/public-patches:grpc-no-macos-x86.patch",
     ],
-    version = "1.68.0",
+    version = "1.73.1",
 )
 
 single_version_override(
@@ -265,4 +262,22 @@ http_archive(
     sha256 = "7a20f3d33cbbc75683d66e0562d4bdbd702ca656d7dc1b7be3c592de6a6517b9",
     strip_prefix = "uv-aarch64-apple-darwin",
     url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
+)
+
+bazel_dep(name = "sysroot-jammy-aarch64")
+archive_override(
+    module_name = "sysroot-jammy-aarch64",
+    integrity = "sha256-v5qAjOEKEE/JknXfG/cmYOPcJY20dCjSqVqI0ZaAE5g=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/2/bf9a808ce10a104fc99275df1bf72660e3dc258db47428d2a95a88d196801398/sysroot-jammy-aarch64.tar.xz",
+    ],
+)
+
+bazel_dep(name = "sysroot-jammy-x86_64")
+archive_override(
+    module_name = "sysroot-jammy-x86_64",
+    integrity = "sha256-wqmIjd+G/q4gbakYTVLokn0TwCaw59kROGXgPcA47jA=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/2/c2a9888ddf86feae206da9184d52e8927d13c026b0e7d9113865e03dc038ee30/sysroot-jammy-x86_64.tar.xz",
+    ],
 )

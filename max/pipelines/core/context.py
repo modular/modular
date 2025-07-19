@@ -261,11 +261,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         return ret_list
 
-    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
+    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:  # type: ignore
         self._matcher = matcher
 
     @property
-    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
+    def matcher(self) -> Optional[llguidance.LLMatcher]:  # type: ignore
         return self._matcher
 
     def rollback(self, idx: int) -> None:
@@ -472,7 +472,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
-            assert self.matcher.accept_token(new_token)
+            assert self.matcher.consume_token(new_token)
 
         self._is_initial_prompt = False
 
@@ -496,7 +496,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
-            assert self.matcher.accept_token(new_token)
+            assert self.matcher.consume_token(new_token)
 
         self._is_initial_prompt = False
 

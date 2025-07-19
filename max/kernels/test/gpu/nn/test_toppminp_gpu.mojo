@@ -281,8 +281,8 @@ fn test_case_sampling[
     )
 
     # Copy to device
-    ctx.memcopy(device_in.buffer, in_logits.data)
-    ctx.memcopy(device_p_thresholds.buffer, p_thresholds.data)
+    ctx.enqueue_copy(device_in.buffer, in_logits.data)
+    ctx.enqueue_copy(device_p_thresholds.buffer, p_thresholds.data)
 
     # Copy to CPU and perform softmax & sort for correctness testing
     var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -353,8 +353,8 @@ fn test_case_sampling[
             temperature=temperature,
         )
     # Copy results back
-    ctx.memcopy(token_ids.data, device_token_ids.buffer)
-    ctx.memcopy(in_logits.data, device_in.buffer)  # for testing
+    ctx.enqueue_copy(token_ids.data, device_token_ids.buffer)
+    ctx.enqueue_copy(in_logits.data, device_in.buffer)  # for testing
     ctx.synchronize()
 
     # Check if the probs are sorted in descending order, this validates the

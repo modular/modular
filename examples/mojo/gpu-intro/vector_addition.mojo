@@ -52,8 +52,12 @@ def main():
         ctx = DeviceContext()
 
         # Create HostBuffers for input vectors
-        lhs_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
-        rhs_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
+        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
         ctx.synchronize()
 
         # Initialize the input vectors
@@ -65,15 +69,17 @@ def main():
         print("RHS buffer: ", rhs_host_buffer)
 
         # Create DeviceBuffers for the input vectors
-        lhs_device_buffer = ctx.create_buffer[float_dtype](vector_size)
-        rhs_device_buffer = ctx.create_buffer[float_dtype](vector_size)
+        lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+        rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
 
         # Copy the input vectors from the HostBuffers to the DeviceBuffers
-        ctx.memcopy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
-        ctx.memcopy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
+        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
+        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
-        result_device_buffer = ctx.create_buffer[float_dtype](vector_size)
+        result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
 
         # Wrap the DeviceBuffers in LayoutTensors
         lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
@@ -90,10 +96,14 @@ def main():
         )
 
         # Create a HostBuffer for the result vector
-        result_host_buffer = ctx.create_host_buffer[float_dtype](vector_size)
+        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
 
         # Copy the result vector from the DeviceBuffer to the HostBuffer
-        ctx.memcopy(dst_buf=result_host_buffer, src_buf=result_device_buffer)
+        ctx.enqueue_copy(
+            dst_buf=result_host_buffer, src_buf=result_device_buffer
+        )
 
         # Finally, synchronize the DeviceContext to run all enqueued operations
         ctx.synchronize()

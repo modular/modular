@@ -651,15 +651,15 @@ struct LayoutTensor[
 
         var ctx = DeviceContext()
         # Allocate buffers
-        var dev_buf = ctx.create_buffer[dtype](16)
-        var host_buf = ctx.create_host_buffer[dtype](16)
+        var dev_buf = ctx.enqueue_create_buffer[dtype](16)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
         # Ensure buffers have been created
         ctx.synchronize()
 
         # Initialize host buffer and copy to device buffer
         for i in range(16):
             host_buf[i] = i
-        ctx.memcopy(dev_buf, host_buf)
+        ctx.enqueue_copy(dev_buf, host_buf)
 
         # Create LayoutTensor to use on device
         alias layout = Layout.row_major(4, 4)
@@ -693,7 +693,7 @@ struct LayoutTensor[
         alias dtype = DType.float32
 
         var ctx = DeviceContext()
-        var dev_buf = ctx.create_host_buffer[dtype](8)
+        var dev_buf = ctx.enqueue_create_host_buffer[dtype](8)
 
         alias layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
@@ -5723,6 +5723,31 @@ struct ThreadScope(Copyable, Movable):
 
 
 @always_inline("nodebug")
+fn _get_worker_idx[thread_scope: ThreadScope]() -> UInt:
+    """
+    Returns the worker index for the current thread scope.
+
+    This function determines the index of the current worker (thread) based on the
+    specified thread scope. If the scope is `BLOCK`, it returns the thread's index
+    within the block (`thread_idx.x`). If the scope is `WARP`, it returns the lane
+    ID within the warp (`lane_id()`).
+
+    Parameters:
+        thread_scope: The scope at which the worker index is determined.
+
+    Returns:
+        UInt: The worker index within the specified scope.
+
+    """
+
+    @parameter
+    if thread_scope == ThreadScope.BLOCK:
+        return thread_idx.x
+    else:
+        return lane_id()
+
+
+@always_inline("nodebug")
 fn _copy_dram_to_sram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     """Validate arguments for DRAM to SRAM copy operations.
 
@@ -5835,11 +5860,9 @@ fn copy_dram_to_sram[
         from global memory to shared memory for faster access.
     """
     _copy_dram_to_sram_validate_args(dst, src)
-    alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope]()
 
     @parameter
     if num_threads > num_busy_threads:
@@ -5958,15 +5981,14 @@ fn copy_dram_to_sram[
         bound: The bound of the source tensor iterator.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+
     var src_tensor = src_iter[].vectorize[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
     ]()
     _copy_dram_to_sram_validate_args(dst, src_tensor)
     alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
 
     @parameter
     if num_threads > num_busy_threads:
@@ -6314,7 +6336,7 @@ fn copy_dram_to_sram[
         num_threads: Total number of threads participating in the copy
             operation. Defaults to the size of `thread_layout`.
         thread_scope: Scope at which thread operations are performed
-                (`BLOCK` or `WARP)`. Defaults to `ThreadScope.BLOCK`, where all
+                (`BLOCK` or `WARP`). Defaults to `ThreadScope.BLOCK`, where all
                 threads in a block participate.
 
     Args:
@@ -6904,9 +6926,7 @@ fn copy_local_to_dram[
     """
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     @parameter
@@ -7005,11 +7025,10 @@ fn copy_local_to_dram[
         flexibility.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
@@ -7107,9 +7126,7 @@ fn copy_dram_to_local[
     alias simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var descriptor = get_amd_buffer_descriptor(src_base)
 
@@ -7199,9 +7216,7 @@ fn copy_dram_to_local[
     alias simd_width = src_tensor.element_layout.size()
     _copy_local_to_dram_validate_args(src_tensor, dst)
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
 
     var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
@@ -7265,9 +7280,7 @@ fn copy_dram_to_local[
         dst: The destination tensor in register memory (LOCAL address space).
         src:  The source tensor in global memory (DRAM).
     """
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
     @parameter
@@ -7394,9 +7407,7 @@ fn copy_local_to_shared[
         "src address space must be LOCAL.",
     ]()
 
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
+    var worker_idx = _get_worker_idx[thread_scope]()
 
     constrained[
         src.dtype == dst.dtype

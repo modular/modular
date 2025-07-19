@@ -16,7 +16,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from linalg.fast_div import FastDiv
+from utils.fast_div import FastDiv
 from testing import *
 
 from utils.index import Index, IndexList
@@ -32,8 +32,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
         type, 1, MutableAnyOrigin, DimList(length)
     ].stack_allocation()
 
-    var out_divisors = ctx.create_buffer[type](length)
-    var out_remainders = ctx.create_buffer[type](length)
+    var out_divisors = ctx.enqueue_create_buffer[type](length)
+    var out_remainders = ctx.enqueue_create_buffer[type](length)
 
     var out_divisors_buffer = NDBuffer[type, 1](
         out_divisors._unsafe_ptr(), Index(length)
@@ -54,8 +54,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     elementwise[func, simd_width=1, target="gpu"](Index(length), ctx)
 
-    ctx.memcopy(divisors.data, out_divisors)
-    ctx.memcopy(remainders.data, out_remainders)
+    ctx.enqueue_copy(divisors.data, out_divisors)
+    ctx.enqueue_copy(remainders.data, out_remainders)
 
     ctx.synchronize()
 

@@ -15,23 +15,15 @@ from math import ceildiv
 from sys import simdwidthof, sizeof
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, _make_tuple
+from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
-    block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.grid_controls import (
-    launch_dependent_grids,
-    pdl_launch_attributes,
-    wait_on_dependent_grids,
-)
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import _compile_code_asm
-from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (
@@ -40,30 +32,16 @@ from gpu.id import (
     block_idx,
     global_idx,
     grid_dim,
-    lane_id,
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.mma import (
-    WGMMADescriptor,
-    st_matrix,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_local_to_dram,
-    copy_sram_to_dram,
-)
+from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    st_matrix_n_layout,
     tile_layout_k_major,
 )
 from layout.tma_async import (
@@ -79,7 +57,6 @@ from linalg.matmul_sm90 import (
     warp_specialized_gemm_output,
 )
 from linalg.matmul_loadop_sm90 import async_load_AB
-from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -87,8 +64,6 @@ from utils.static_tuple import StaticTuple
 
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
-
-alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -562,6 +537,7 @@ fn grouped_matmul_kernel[
                 b_smem_iter,
                 m_coord,
                 n_coord,
+                0,
                 rank_n,
                 rank_m,
                 write_pipeline_states,

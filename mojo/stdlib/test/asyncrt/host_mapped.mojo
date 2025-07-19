@@ -19,14 +19,14 @@ fn main() raises:
 
     alias length = 20
 
-    var in_buf = ctx.create_buffer[DType.int64](length)
-    var out_buf = ctx.create_buffer[DType.int64](length)
+    var in_buf = ctx.enqueue_create_buffer[DType.int64](length)
+    var out_buf = ctx.enqueue_create_buffer[DType.int64](length)
 
     with in_buf.map_to_host() as in_map:
         for i in range(length):
             in_map[i] = i
 
-    in_buf.copy_to(out_buf)
+    in_buf.enqueue_copy_to(out_buf)
 
     with out_buf.map_to_host() as out_map:
         for i in range(length):

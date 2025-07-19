@@ -494,8 +494,8 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16, 2, static_dequan_shape
     ](dynamic_dequan_shape, ctx=ctx)
 
-    ctx.memcopy(gguf_b_device.buffer, gguf_b_host.tensor.data)
-    ctx.memcopy(repacked_b_device.buffer, repacked_b_host.tensor.data)
+    ctx.enqueue_copy(gguf_b_device.buffer, gguf_b_host.tensor.data)
+    ctx.enqueue_copy(repacked_b_device.buffer, repacked_b_host.tensor.data)
 
     alias gguf_b_layout = Layout.row_major[gguf_b_device.rank](
         gguf_b_device.shape
@@ -579,8 +579,10 @@ fn test_repack_Q4_0_for_sm8x(
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
     )
 
-    ctx.memcopy(repacked_b_host.tensor.data, repacked_b_device.buffer)
-    ctx.memcopy(repacked_dequan_host.tensor.data, repacked_dequan_device.buffer)
+    ctx.enqueue_copy(repacked_b_host.tensor.data, repacked_b_device.buffer)
+    ctx.enqueue_copy(
+        repacked_dequan_host.tensor.data, repacked_dequan_device.buffer
+    )
 
     ctx.synchronize()
 
@@ -673,8 +675,8 @@ fn test_quantized[
         dynamic_c_shape, ctx=ctx
     )
 
-    ctx.memcopy(a_device.buffer, a_host.tensor.data)
-    ctx.memcopy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
@@ -765,7 +767,7 @@ fn test_quantized[
         # dump_asm=Path("./pipeline-gemm-2.ptx"),
     )
 
-    ctx.memcopy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
     alias kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     alias config_ref = kernels_ref.ampere_128x128_4
@@ -776,7 +778,7 @@ fn test_quantized[
         ctx,
     )
 
-    ctx.memcopy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
 
     ctx.synchronize()
 
