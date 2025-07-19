@@ -15,12 +15,12 @@ import pytest
 from dependency import Dependency
 
 
-def test_throws_missing_keys():
+def test_throws_missing_keys() -> None:
     with pytest.raises(ValueError, match="Missing required keys in blob"):
         Dependency({}, {})
 
 
-def test_initialize_dependency_without_version():
+def test_initialize_dependency_without_version() -> None:
     blob = {
         "name": "example_package",
         "marker": "sys_platform == 'linux'",
@@ -32,7 +32,7 @@ def test_initialize_dependency_without_version():
     assert dependency.marker_str == "sys_platform == 'linux'"
 
 
-def test_initialize_dependency_with_version():
+def test_initialize_dependency_with_version() -> None:
     blob = {
         "name": "example_package",
         "marker": "sys_platform == 'linux' or sys_platform == 'darwin'",
@@ -48,7 +48,7 @@ def test_initialize_dependency_with_version():
     )
 
 
-def test_no_constraints():
+def test_no_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "",
@@ -59,7 +59,7 @@ def test_no_constraints():
     assert dependency.constraints() == ([""], [])
 
 
-def test_all_platforms_constraints():
+def test_all_platforms_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "sys_platform == 'linux' or sys_platform == 'darwin'",
@@ -70,7 +70,7 @@ def test_all_platforms_constraints():
     assert dependency.constraints() == ([""], [])
 
 
-def test_universal_constraints():
+def test_universal_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "(sys_platform == 'linux' or sys_platform == 'darwin') and python_version >= '3.9'",
@@ -81,7 +81,7 @@ def test_universal_constraints():
     assert dependency.constraints() == ([""], [])
 
 
-def test_python_version_constraints():
+def test_python_version_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "python_version < '3.10'",
@@ -98,7 +98,7 @@ def test_python_version_constraints():
     ]
 
 
-def test_pypy_constraints():
+def test_pypy_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "python_implementation == 'PyPy'",
@@ -110,7 +110,7 @@ def test_pypy_constraints():
     assert not gpu_constraints
 
 
-def test_wild_constraint():
+def test_wild_constraint() -> None:
     blob = {
         "name": "example_package",
         "marker": "(python_full_version < '3.10' and sys_platform == 'darwin') or (python_full_version < '3.10' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')",
@@ -127,7 +127,7 @@ def test_wild_constraint():
     ]
 
 
-def test_nvidia_only_constraints():
+def test_nvidia_only_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-nvidia'",
@@ -146,7 +146,7 @@ def test_nvidia_only_constraints():
     ]
 
 
-def test_amd_only_constraints():
+def test_amd_only_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd'",
@@ -165,7 +165,7 @@ def test_amd_only_constraints():
     ]
 
 
-def test_multi_gpu_constraints():
+def test_multi_gpu_constraints() -> None:
     blob = {
         "name": "example_package",
         "marker": "extra == 'group-15-bazel-pyproject-nvidia' or extra == 'group-15-bazel-pyproject-amd'",

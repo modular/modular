@@ -60,7 +60,7 @@ class Llama4MoE(MoE):
     experts' weights are concatenated together.
     """
 
-    def _init_experts(self):
+    def _init_experts(self) -> None:
         # the routed experts' weights are concatenated together, and
         # stored in a non-transposed format.
         self.gate_up_weight = Weight(

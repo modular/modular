@@ -51,7 +51,7 @@ def _next_seed():
     return seed
 
 
-def set_seed(seed: TensorValue | int = 0):
+def set_seed(seed: TensorValue | int = 0) -> None:
     """Sets the seed for random numbers generated in the graph.
 
     This must be set at least once for each graph using random number utilities.

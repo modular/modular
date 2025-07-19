@@ -210,7 +210,7 @@ def test_sharding_strategy_is_replicate() -> None:
     assert colwise_strategy.is_replicate is False
 
 
-def test_stacked_qkv_sharding_strategy_divisible():
+def test_stacked_qkv_sharding_strategy_divisible() -> None:
     """Tests stacked QKV sharding with dimensions divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         num_heads = 32
@@ -256,7 +256,7 @@ def test_stacked_qkv_sharding_strategy_divisible():
         assert total_v_elements == hidden_size
 
 
-def test_stacked_qkv_sharding_strategy_non_divisible():
+def test_stacked_qkv_sharding_strategy_non_divisible() -> None:
     """Tests stacked QKV sharding with dimensions NOT divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         num_heads = 30  # Not divisible by 4
@@ -299,7 +299,7 @@ def test_stacked_qkv_sharding_strategy_non_divisible():
         assert total_rows == 3 * hidden_size
 
 
-def test_stacked_qkv_sharding_small_example():
+def test_stacked_qkv_sharding_small_example() -> None:
     """Tests stacked QKV sharding with a small example for clarity."""
     with Graph("test", input_types=[]) as graph:
         num_heads = 7  # 7 heads / 3 devices = 2.33...
@@ -329,7 +329,7 @@ def test_stacked_qkv_sharding_small_example():
             assert int(shard.shape[1]) == hidden_size
 
 
-def test_head_aware_col_sharding_strategy_divisible():
+def test_head_aware_col_sharding_strategy_divisible() -> None:
     """Tests head-aware column sharding with dimensions divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         num_heads = 32
@@ -357,7 +357,7 @@ def test_head_aware_col_sharding_strategy_divisible():
             assert int(shard.shape[1]) == expected_cols
 
 
-def test_head_aware_col_sharding_strategy_non_divisible():
+def test_head_aware_col_sharding_strategy_non_divisible() -> None:
     """Tests head-aware column sharding with dimensions NOT divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         num_heads = 30  # Not divisible by 4
@@ -397,7 +397,7 @@ def test_head_aware_col_sharding_strategy_non_divisible():
         assert total_cols == hidden_size
 
 
-def test_sharding_strategy_is_stacked_qkv():
+def test_sharding_strategy_is_stacked_qkv() -> None:
     """Tests the is_stacked_qkv property of ShardingStrategy."""
     # Test stacked QKV strategy
     stacked_qkv_strategy = ShardingStrategy.stacked_qkv(
@@ -419,7 +419,7 @@ def test_sharding_strategy_is_stacked_qkv():
     assert replicate_strategy.is_stacked_qkv is False
 
 
-def test_sharding_strategy_is_head_aware_colwise():
+def test_sharding_strategy_is_head_aware_colwise() -> None:
     """Tests the is_head_aware_colwise property of ShardingStrategy."""
     # Test head-aware columnwise strategy
     head_aware_strategy = ShardingStrategy.head_aware_columnwise(

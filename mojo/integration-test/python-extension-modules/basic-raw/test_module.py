@@ -15,7 +15,7 @@
 import mojo_module
 
 
-def test_basic_raw():
+def test_basic_raw() -> None:
     result = mojo_module.mojo_count_args(1, 2)
 
     assert result == 2

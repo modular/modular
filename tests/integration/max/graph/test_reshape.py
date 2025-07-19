@@ -18,7 +18,7 @@ from max.graph import DeviceRef, Dim, Graph, TensorType
 
 
 @pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
-def test_rebind__new_parameter_expression__not_divisible_by_4(session):  # noqa: ANN001
+def test_rebind__new_parameter_expression__not_divisible_by_4(session) -> None:  # noqa: ANN001
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -34,7 +34,7 @@ def test_rebind__new_parameter_expression__not_divisible_by_4(session):  # noqa:
 
 
 @pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
-def test_rebind__new_parameter_expression__divisible_by_4(session):  # noqa: ANN001
+def test_rebind__new_parameter_expression__divisible_by_4(session) -> None:  # noqa: ANN001
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -49,7 +49,7 @@ def test_rebind__new_parameter_expression__divisible_by_4(session):  # noqa: ANN
     assert result.shape == (2, 4, 4)
 
 
-def test_rebind__no_new_parameter__not_divisible_by_4(session):  # noqa: ANN001
+def test_rebind__no_new_parameter__not_divisible_by_4(session) -> None:  # noqa: ANN001
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -64,7 +64,7 @@ def test_rebind__no_new_parameter__not_divisible_by_4(session):  # noqa: ANN001
         model.execute(input)
 
 
-def test_rebind__no_new_parameter__divisible_by_4(session):  # noqa: ANN001
+def test_rebind__no_new_parameter__divisible_by_4(session) -> None:  # noqa: ANN001
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 

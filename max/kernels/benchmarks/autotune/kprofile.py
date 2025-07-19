@@ -383,7 +383,9 @@ def diff_baseline(
             print(LINE)
 
 
-def codegen(specs: list[TuningSpec], snippet_path: Path, output_path: Path):
+def codegen(
+    specs: list[TuningSpec], snippet_path: Path, output_path: Path
+) -> None:
     details = []
     details += [HEADER]
 
@@ -410,7 +412,7 @@ def codegen(specs: list[TuningSpec], snippet_path: Path, output_path: Path):
     print(f"wrote results to [{output_path}]")
 
 
-def check_specs(specs: list[TuningSpec]):
+def check_specs(specs: list[TuningSpec]) -> None:
     # TODO: check specs have the same tuning hash
     spec_list = [pd.DataFrame([s.params[0]]) for s in specs]
     merged_specs = pd.concat(spec_list, axis=0, ignore_index=True)
@@ -461,7 +463,7 @@ class ComplexParamList(click.Option):
                 raise click.BadParameter(value)  # noqa: B904
 
 
-def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png"):
+def draw_heatmap(df: pd.DataFrame, img: str = "correlation.png") -> None:
     column_names = df.columns
     width_px = 1600
     height_px = 1200
@@ -493,7 +495,7 @@ def correlation_analysis(
     output_path,  # noqa: ANN001
     metric: str = "met (ms)",
     verbose: bool = False,
-):
+) -> None:
     pkl_list = []
     for pkl in files:
         try:

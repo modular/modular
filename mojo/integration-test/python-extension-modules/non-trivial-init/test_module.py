@@ -24,7 +24,7 @@ sys.path.insert(0, "")
 import mojo_module
 
 
-def test_non_trivial_initialization():
+def test_non_trivial_initialization() -> None:
     """Test creating MojoPair with custom values MojoPair(42, 10)."""
     pair = mojo_module.MojoPair(42, 10)
 
@@ -33,7 +33,7 @@ def test_non_trivial_initialization():
     assert pair.get_second() == 10
 
 
-def test_swap_method():
+def test_swap_method() -> None:
     """Test the swap method works correctly."""
     pair = mojo_module.MojoPair(42, 10)
 
@@ -48,7 +48,7 @@ def test_swap_method():
     assert pair.get_second() == 42
 
 
-def test_error_handling():
+def test_error_handling() -> None:
     """Test error handling for invalid initialization arguments."""
     # These should raise appropriate errors
     with pytest.raises(Exception):

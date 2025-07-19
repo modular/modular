@@ -192,7 +192,7 @@ def _to_mlir(o):  # noqa: ANN001
     return o
 
 
-def _set_output_param_decls(op: Operation, params: dict[str, None]):
+def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
     # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
     # - nanobind doesn't allow custom metaclasses, but __instancecheck__
     #   must be defined on a metaclass

@@ -585,7 +585,7 @@ class LoRAManager:
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
-    ):
+    ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
 

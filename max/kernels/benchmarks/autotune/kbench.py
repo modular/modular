@@ -1021,7 +1021,7 @@ class Scheduler:
 
             self.progress.update(exec_progress, advance=1)
 
-    def close_pool(self):
+    def close_pool(self) -> None:
         self.cpu_pool.close()
         self.cpu_pool.join()
 

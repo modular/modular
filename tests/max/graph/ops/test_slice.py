@@ -525,7 +525,7 @@ def test_slice_invalid_start_stop(graph_builder) -> None:  # noqa: ANN001
             x[2:1]
 
 
-def test_slice_out_of_bounds_specific_error_message(graph_builder):  # noqa: ANN001
+def test_slice_out_of_bounds_specific_error_message(graph_builder) -> None:  # noqa: ANN001
     """Test that slicing with bounds larger than tensor dimensions raises an error."""
     with graph_builder(
         input_types=[
@@ -606,7 +606,7 @@ def test_slice_out_of_bounds(
             ops.slice_tensor(graph.inputs[0].tensor, index)
 
 
-def test_slice_zero_sized_tensor(graph_builder):  # noqa: ANN001
+def test_slice_zero_sized_tensor(graph_builder) -> None:  # noqa: ANN001
     """Test that slicing zero-sized tensors works correctly."""
     # Test case that was failing: slicing [0:0] on a zero-sized dimension
     with graph_builder(
