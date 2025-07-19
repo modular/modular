@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 import pytest
@@ -27,6 +28,93 @@ from max.nn.kv_cache import (
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
+from torch.utils.dlpack import from_dlpack
+
+
+class KeyOrValue(Enum):
+    KEY = 0
+    VALUE = 1
+
+
+def _dump_k_cache_to_torch_tensor(
+    cache: PagedKVCacheManager,
+    ctx,  # noqa: ANN001
+    device_id: int = 0,
+) -> torch.Tensor:
+    """
+    Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
+
+    This should only be used for testing purposes.
+    """
+    return _dump_k_or_v_cache_to_torch_tensor(
+        cache, ctx, device_id, KeyOrValue.KEY
+    )
+
+
+def _dump_v_cache_to_torch_tensor(
+    cache: PagedKVCacheManager,
+    ctx,  # noqa: ANN001
+    device_id: int = 0,
+) -> torch.Tensor:
+    """
+    Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
+
+    This should only be used for testing purposes.
+    """
+    return _dump_k_or_v_cache_to_torch_tensor(
+        cache, ctx, device_id, KeyOrValue.VALUE
+    )
+
+
+def _dump_k_or_v_cache_to_torch_tensor(
+    cache: PagedKVCacheManager,
+    ctx,  # noqa: ANN001
+    device_id: int = 0,
+    key_or_value: KeyOrValue = KeyOrValue.KEY,
+) -> torch.Tensor:
+    """
+    Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
+
+    This should only be used for testing purposes.
+    """
+    seq_id = ctx.cache_seq_id
+    req_blocks = cache.block_manager.get_req_blocks(seq_id)
+
+    torch_dtype = cache.params.dtype.to_torch()
+
+    # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
+    device_tensor = cache.device_tensors[device_id]
+    device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
+
+    # [total_num_pages, num_layers, page_size, n_heads, head_dim]
+    device_tensor_torch = device_tensor_torch[:, key_or_value.value, :, :, :, :]
+
+    # [seq_len, num_layers, n_heads, head_dim]
+    seq_len = ctx.start_idx
+    res = torch.empty(
+        (
+            seq_len,
+            cache.num_layers,
+            cache.params.n_kv_heads_per_device,
+            cache.params.head_dim,
+        ),
+        dtype=torch_dtype,
+    )
+
+    for start_idx in range(0, seq_len, cache.page_size):
+        end_idx = min(start_idx + cache.page_size, seq_len)
+
+        block_id = req_blocks[start_idx // cache.page_size]
+
+        # [num_layers, page_size, n_heads, head_dim]
+        block_torch = device_tensor_torch[block_id, :]
+
+        for token_idx in range(start_idx, end_idx):
+            res[token_idx, :, :, :] = block_torch[
+                :, token_idx % cache.page_size, :, :
+            ]
+
+    return res
 
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
@@ -446,7 +534,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
 
     for batch_idx, ctx in enumerate(batch):
         ctx.update(999)
-        k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
+        k_cache = _dump_k_cache_to_torch_tensor(kv_manager, ctx)
 
         # Calculate starting position for this batch
         seq_start = (
