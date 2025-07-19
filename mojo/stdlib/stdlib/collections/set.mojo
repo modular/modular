@@ -17,7 +17,14 @@ from hashlib import Hasher, default_hasher
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
-    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
+    Boolable,
+    Comparable,
+    Copyable,
+    ExplicitlyCopyable,
+    Hashable,
+    KeyElement,
+    Movable,
+    Sized,
 ):
     """A set data type.
 
@@ -78,13 +85,40 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         for e in elements:
             self.add(e)
 
+    @doc_private
+    fn __init__(out self, var data: Dict[T, NoneType, H]):
+        """Construct a set from an existing Dict.
+
+        Args:
+            data: The Dict to use as the underlying data for the set.
+        """
+        self._data = data^
+
+    @deprecated(
+        "Using an implicit copy on `Set` is deprecated. Use `my_set.copy()`"
+        " or move the `Set` with `my_set^` instead."
+    )
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
+
+        Note that this method is deprecated, as well as the `Copyable` trait
+        on `Set`. Use the `my_set.copy()` method instead or move the set with `my_set^`.
 
         Args:
             other: The existing Set instance to copy from.
         """
         self._data = other._data.copy()
+
+    fn copy(self) -> Self:
+        """Create an explicit copy of the set.
+
+        Prefer using this function over the copy constructor, as the copy
+        constructor is deprecated and will go away in the future.
+
+        Returns:
+            A new Set instance with the same elements as this one.
+        """
+        return Self(self._data.copy())
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -413,7 +447,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             A new set containing any elements which appear in either
             this set or the `other` set.
         """
-        var result = self
+        var result = self.copy()
         for o in other:
             result.add(o)
 

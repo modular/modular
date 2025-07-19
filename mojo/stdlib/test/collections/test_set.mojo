@@ -45,7 +45,7 @@ def test_set_move():
 
 def test_set_copy():
     var s1 = {1, 2, 3}
-    var s2 = s1
+    var s2 = s1.copy()
     assert_equal(s1, s2)
 
 
