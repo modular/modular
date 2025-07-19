@@ -369,7 +369,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
                 if not sent:
                     raise RuntimeError(
-                        "f{request_id} not received on decode worker, and not sent to prefill"
+                        f"{request_id} not received on decode worker, and not sent to prefill"
                     )
 
             async def _verify_transfer_engine_registered() -> None:
