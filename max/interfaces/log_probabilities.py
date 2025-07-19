@@ -42,12 +42,9 @@ class LogProbabilities(msgspec.Struct, tag=True, omit_defaults=True):
         if len(self.top_log_probabilities) != len(other.top_log_probabilities):
             return False
 
-        if not all(
+        return all(
             a == b
             for a, b in zip(
                 self.top_log_probabilities, other.top_log_probabilities
             )
-        ):
-            return False
-
-        return True
+        )
