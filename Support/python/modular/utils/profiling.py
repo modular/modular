@@ -225,7 +225,7 @@ class TimeTrace:
         """
         if level_string[0] != "0":
             raise ValueError(
-                "Given level value ({level_string}) "
+                f"Given level value ({level_string}) "
                 "does not match expected octal format"
             )
         return [int(x) for x in level_string[-1:1:-1]]
