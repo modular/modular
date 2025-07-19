@@ -22,6 +22,6 @@ def test_api_source(mo_model_path: Path) -> None:
     expected_line = "max.engine.api.language: python"
 
     with open(filepath) as file:
-        lines = [line.strip() for line in file.readlines()]
+        lines = [line.strip() for line in file]
 
     assert expected_line in lines

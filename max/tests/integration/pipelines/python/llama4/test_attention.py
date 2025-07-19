@@ -146,8 +146,7 @@ def generate_max_outputs(
 
     state_dict = {}
     for weight_name, value in weights.items():
-        if weight_name.startswith("self_attn."):
-            weight_name = weight_name[len("self_attn.") :]
+        weight_name = weight_name.removeprefix("self_attn.")
         state_dict[weight_name] = value.cpu()
 
     text_config = config.text_config

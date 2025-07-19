@@ -98,11 +98,7 @@ class MockPipelineModel(PipelineModel):
     ) -> int:
         MAX_LENGTH = 1200
         if pipeline_config.max_length:
-            return (
-                pipeline_config.max_length
-                if pipeline_config.max_length < MAX_LENGTH
-                else MAX_LENGTH
-            )
+            return min(MAX_LENGTH, pipeline_config.max_length)
 
         return MAX_LENGTH
 

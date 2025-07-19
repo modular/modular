@@ -30,5 +30,5 @@ def test_graph_telemetry() -> None:
 
     expected_line = "max.pipeline.name: add"
     with open(filepath) as file:
-        lines = [line.strip() for line in file.readlines()]
+        lines = [line.strip() for line in file]
     assert expected_line in lines
