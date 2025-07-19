@@ -27,14 +27,14 @@ del tensor  # type: ignore
 __all__ = [
     "CPU",
     "Accelerator",
+    "DLPackArray",
     "Device",
     "DeviceSpec",
     "DeviceStream",
-    "DLPackArray",
     "Tensor",
-    "accelerator_count",
     "accelerator_api",
+    "accelerator_count",
+    "devices_exist",
     "load_devices",
     "scan_available_devices",
-    "devices_exist",
 ]
