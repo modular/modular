@@ -67,6 +67,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer
+from sys.intrinsics import _type_is_eq
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
@@ -473,6 +474,7 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The object to get the float point representation of.
         """
+        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline
@@ -488,6 +490,7 @@ struct SIMD[dtype: DType, size: Int](
         Raises:
             If the type does not have a float point representation.
         """
+        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
 
     # TODO(MSTDL-1587): Remove the dummy parameter.
@@ -560,6 +563,10 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The bool value.
         """
+        constrained[
+            _type_is_eq[__type_of(self), Self](),
+            "Target type doesn't support conversion from `Bool`",
+        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
