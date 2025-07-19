@@ -283,9 +283,9 @@ class TagFilter:
         """Determines if this filter is satisfied by a tag list."""
         if not all(required_tag in tags for required_tag in self.must_have):
             return False
-        if any(forbidden_tag in tags for forbidden_tag in self.must_not_have):
-            return False
-        return True
+        return not any(
+            forbidden_tag in tags for forbidden_tag in self.must_not_have
+        )
 
 
 class TagFilterParamType(click.ParamType):

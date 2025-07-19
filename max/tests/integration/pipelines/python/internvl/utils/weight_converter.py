@@ -22,7 +22,7 @@ def convert_hf_to_max_weights(
     """
     # Check if these are full model weights (have vision_model prefix) or component weights
     has_vision_model_prefix = any(
-        k.startswith("vision_model.") for k in hf_state_dict.keys()
+        k.startswith("vision_model.") for k in hf_state_dict
     )
 
     if has_vision_model_prefix:

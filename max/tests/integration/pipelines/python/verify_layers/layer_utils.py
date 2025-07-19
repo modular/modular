@@ -89,16 +89,16 @@ def find_matching_layers(
     max_normalized = {}
     torch_normalized = {}
 
-    for max_name in max_layers.keys():
+    for max_name in max_layers:
         normalized = normalize_max_layer_name(max_name)
         max_normalized[normalized] = max_name
 
-    for torch_name in torch_layers.keys():
+    for torch_name in torch_layers:
         normalized = normalize_pytorch_layer_name(torch_name)
         torch_normalized[normalized] = torch_name
 
     # Find matches
-    for normalized_name in max_normalized.keys():
+    for normalized_name in max_normalized:
         if normalized_name in torch_normalized:
             matches.append(
                 (
