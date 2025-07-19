@@ -35,7 +35,6 @@ from max.pipelines.core import (
     AudioGenerator,
     TTSContext,
     msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -223,11 +222,7 @@ class AudioGenerationScheduler(Scheduler):
         )
         self.response_q = ZmqPushSocket[
             dict[str, EngineResult[AudioGeneratorOutput]]
-        ](
-            zmq_ctx=zmq_ctx,
-            zmq_endpoint=response_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
