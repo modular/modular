@@ -46,7 +46,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
-from utils.fast_div import FastDiv
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -1177,63 +1176,6 @@ fn _get_start_indices_of_nth_subvolume_uint[
     )
 
 
-@always_inline
-fn _get_start_indices_of_nth_subvolume_uint[
-    rank: Int,
-    dtype: DType, //,
-    subvolume_rank: UInt = 1,
-](
-    out volume: IndexList[rank],
-    n: UInt,
-    divisors: InlineArray[FastDiv[dtype], rank],
-):
-    """Converts a flat index into the starting ND indices of the nth subvolume
-    with rank `subvolume_rank`.
-
-    Parameters:
-        rank: The rank of the ND index.
-        dtype: The DType of the fast div objects.
-        subvolume_rank: The rank of the subvolume under consideration.
-
-    Args:
-        n: The flat index to convert (the nth subvolume to retrieve).
-        divisors: The FastDiv divisors.
-
-    Returns:
-        Constructed ND-index.
-    """
-
-    constrained[
-        subvolume_rank <= rank,
-        "subvolume rank cannot be greater than indices rank",
-    ]()
-    constrained[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
-
-    # fast impls for common cases
-    @parameter
-    if rank == 2 and subvolume_rank == 1:
-        return {n, 0}
-
-    @parameter
-    if rank - 1 == subvolume_rank:
-        return {n}
-
-    @parameter
-    if rank == subvolume_rank:
-        return {0}
-
-    var curr_index = Scalar[FastDiv[dtype].uint_type](n)
-    volume = __type_of(volume)()
-
-    @parameter
-    for i in reversed(range(rank - subvolume_rank)):
-        var quotient, remainder = divisors[i].__divmod__(curr_index)
-        volume[i] = Int(remainder)
-        curr_index = quotient
-
-    return
-
-
 # ===-----------------------------------------------------------------------===#
 # Elementwise
 # ===-----------------------------------------------------------------------===#
@@ -1659,10 +1601,6 @@ fn _elementwise_impl_gpu[
         "the sm_count and thread_count must be known",
     ]()
 
-    for i in range(rank):
-        if shape[i] >= Int(UInt32.MAX):
-            raise "the shape dimension must be less than UInt32.MAX"
-
     # split between packed and tail regions of input
     var length: UInt = shape.flattened_length()
     var num_packed_elems = length // simd_width
@@ -1679,22 +1617,14 @@ fn _elementwise_impl_gpu[
         ),
     )
 
-    var divisors = InlineArray[FastDiv[DType.uint32], rank](uninitialized=True)
-
-    @parameter
-    for i in range(rank):
-        divisors[i] = FastDiv[DType.uint32](shape[i])
-
     @__copy_capture(
-        num_packed_elems, unpacked_tail_length, packed_region_length, shape
+        num_packed_elems, unpacked_tail_length, packed_region_length
     )
     @parameter
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_size)
     )
-    fn _elementwise_gpu_kernel[
-        *, block_size: UInt, handle_uneven_simd: Bool
-    ](divisors: InlineArray[FastDiv[DType.uint32], rank]):
+    fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
@@ -1712,7 +1642,7 @@ fn _elementwise_impl_gpu[
             block_size * grid_dim.x,
         ):
             var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
-                idx * simd_width, divisors
+                idx * simd_width, shape
             )
 
             @parameter
@@ -1723,19 +1653,20 @@ fn _elementwise_impl_gpu[
                     for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
-                                idx * simd_width + off, divisors
-                            )
+                                idx * simd_width + off,
+                                shape,
+                            ).canonicalize()
                         )
                 else:
-                    func[simd_width, rank](start_indices)
+                    func[simd_width, rank](start_indices.canonicalize())
             else:
-                func[simd_width, rank](start_indices)
+                func[simd_width, rank](start_indices.canonicalize())
 
         # process the tail region
         if tid < unpacked_tail_length:
             var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
-                packed_region_length + tid, divisors
-            )
+                packed_region_length + tid, shape
+            ).canonicalize()
             func[1, rank](index_tup)
 
         @parameter
@@ -1748,7 +1679,6 @@ fn _elementwise_impl_gpu[
                 block_size=block_size, handle_uneven_simd=False
             ]
         ](
-            divisors,
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1759,7 +1689,6 @@ fn _elementwise_impl_gpu[
                 block_size=block_size, handle_uneven_simd=True
             ]
         ](
-            divisors,
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
