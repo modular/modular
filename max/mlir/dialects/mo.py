@@ -97,7 +97,7 @@ def call_(
     *,
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
-    prefix: str = "",  # noqa: ANN001
+    prefix: str = "",
 ) -> _ods_common.VariadicResultValueT:
     if results is None:
         results = []

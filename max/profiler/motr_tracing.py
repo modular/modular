@@ -401,7 +401,7 @@ def _patch_uvloop_policy() -> None:
     - It only affects future event loop creation
     """
     try:
-        import uvloop  # type: ignore[import-not-found]  # noqa: F401
+        import uvloop  # type: ignore[import-not-found]
     except ModuleNotFoundError:
         return  # uvloop not installed, nothing to patch
 
