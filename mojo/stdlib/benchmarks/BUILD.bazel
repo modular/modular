@@ -4,7 +4,7 @@ load("//bazel:api.bzl", "mojo_test")
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        args = ["-t"],  # NOTE: to test changes on the current branch using run-benchmarks.sh, remove the -t flag. Remember to replace it again before pushing any code.
+        args = ["-t"],  # NOTE: to test changes on the current branch, remove the -t flag. Remember to replace it again before pushing any code.
         data = [
             "collections/data/UN_charter_AR.html",
             "collections/data/UN_charter_AR.txt",
