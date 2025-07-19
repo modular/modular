@@ -17,9 +17,9 @@ from .text_generation import (
 )
 
 __all__ = [
+    "AudioGenerationMetadata",
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
-    "AudioGenerationMetadata",
     "EmbeddingsResponse",
     "TextGenerationResponse",
     "TextResponse",
