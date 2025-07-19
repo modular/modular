@@ -81,6 +81,8 @@ extend-select = [
   "RUF002", # Obscure unicode symbols in docstrings
   "RUF022", # `__all__` is not sorted
   "RUF100", # Unused noqa comment
+  "FURB", # Refurb lints for modernization
+  "RUF046", # Value being cast to int is already an integer
 ]
 
 [tool.ruff.lint.pydocstyle]

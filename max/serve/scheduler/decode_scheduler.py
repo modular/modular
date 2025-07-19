@@ -339,11 +339,8 @@ class DecodeScheduler(Scheduler):
                     prefill_response.context.max_length
                 )
             )
-            num_steps = (
-                self.scheduler_config.max_forward_steps_tg
-                if self.scheduler_config.max_forward_steps_tg
-                < num_available_steps
-                else num_available_steps
+            num_steps = min(
+                num_available_steps, self.scheduler_config.max_forward_steps_tg
             )
 
             # Prefetch data early, only add to batch if we can prefetch successfully.

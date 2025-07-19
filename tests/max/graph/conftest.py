@@ -83,7 +83,7 @@ def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):
 def clip(v, min, max):  # noqa: ANN001
     # Like np.clip, but more stable for python int types.
     # np.clip will cast to a float for values > intmax.
-    return min if v < min else max if v > max else v
+    return min if v < min else max if v > max else v  # noqa: FURB136
 
 
 @st.composite

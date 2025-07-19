@@ -519,7 +519,7 @@ class BlockManager(Generic[T]):
         current_seq_len = ctx.current_length + num_steps - 1
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
-        num_new_blocks = 0 if 0 > num_new_blocks else num_new_blocks
+        num_new_blocks = max(num_new_blocks, 0)
 
         # Check that the number of completed tokens is less than or equal to the number of tokens we can
         # currently store in the reserved blocks.

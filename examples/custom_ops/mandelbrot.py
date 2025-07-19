@@ -33,7 +33,7 @@ def draw_mandelbrot(
                 print(p, end="")
             else:
                 print(" ", end="")
-        print("")
+        print()
 
 
 def create_mandelbrot_graph(
