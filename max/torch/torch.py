@@ -37,7 +37,7 @@ try:
     import torch
     from torch._library.custom_ops import CustomOpDef
 except ImportError:
-    raise ImportError(
+    raise ImportError(  # noqa: B904
         "torch not found - install `max[torch]` (if using pip/uv) or max-conda (if using magic/conda)"
     )
 

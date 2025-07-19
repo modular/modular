@@ -137,7 +137,7 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
         except BufferError as e:
             msg = str(e)
             if msg.startswith("Cannot export readonly array"):
-                raise type(e)(
+                raise type(e)(  # noqa: B904
                     msg
                     + " Consider passing `copy = True` to `Tensor.from_dlpack`."
                 )
@@ -152,7 +152,7 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     # Check for torch tensors by looking for the is_contiguous method rather
     # than importing torch.
     if hasattr(array, "is_contiguous") and callable(
-        getattr(array, "is_contiguous")
+        getattr(array, "is_contiguous")  # noqa: B009
     ):
         if not array.is_contiguous():
             raise ValueError(
