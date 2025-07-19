@@ -27,7 +27,10 @@ class NumpyEncoder(JSONEncoder):
 class NumpyDecoder(JSONDecoder):
     def __init__(self, *args, **kwargs) -> None:
         JSONDecoder.__init__(
-            self, object_hook=self.object_hook, *args, **kwargs
+            self,
+            object_hook=self.object_hook,
+            *args,  # noqa: B026
+            **kwargs,  # noqa: B026
         )
 
     def object_hook(self, dct):  # noqa: ANN001

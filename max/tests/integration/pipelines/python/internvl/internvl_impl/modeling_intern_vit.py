@@ -327,7 +327,7 @@ class InternVisionEncoder(nn.Module):
         encoder_states = () if output_hidden_states else None
         hidden_states = inputs_embeds
 
-        for idx, encoder_layer in enumerate(self.layers):
+        for idx, encoder_layer in enumerate(self.layers):  # noqa: B007
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
             if self.gradient_checkpointing and self.training:

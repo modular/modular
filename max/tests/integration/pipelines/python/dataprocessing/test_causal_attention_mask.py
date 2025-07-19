@@ -81,7 +81,7 @@ def test_causal_mask__masks_current_and_later_tokens(
 ) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask(start_pos, seq_len)
-    for m, sp, sl in zip(mask, start_pos, seq_len):
+    for m, sp, sl in zip(mask, start_pos, seq_len):  # noqa: B007
         for pos, sequence_mask in enumerate(m):
             # Check that all tokens _after_ this one are masked.
             assert np.all(sequence_mask[sp + pos + 1 :] == FILL_VAL)
@@ -97,6 +97,6 @@ def test_causal_mask__does_not_mask_prior_tokens(
 ) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask(start_pos, seq_len)
-    for m, sp, sl in zip(mask, start_pos, seq_len):
+    for m, sp, sl in zip(mask, start_pos, seq_len):  # noqa: B007
         for pos, sequence_mask in enumerate(m):
             assert np.all(sequence_mask[: sp + pos + 1] == 0.0)

@@ -621,7 +621,7 @@ def capture_max_layer_outputs(
 
     try:
         # Apply the monkey patch using setattr to avoid mypy errors
-        setattr(InferenceSession, "__init__", patched_init)
+        setattr(InferenceSession, "__init__", patched_init)  # noqa: B010
 
         # Find all Module subclasses and patch them
         # This is a simplified approach - in practice you might need to be more selective
@@ -701,7 +701,7 @@ def capture_max_layer_outputs(
         return {}
     finally:
         # Restore original InferenceSession.__init__ using setattr
-        setattr(InferenceSession, "__init__", original_init)
+        setattr(InferenceSession, "__init__", original_init)  # noqa: B010
 
         # Restore original methods
         layer_capture.restore_original_methods()

@@ -447,7 +447,7 @@ class GenericOracle(PipelineOracle):
         model_path: str,
         device_encoding_map: dict[str, list[str]],
         weight_path_map: dict[str, str] | None = None,
-        config_params: dict[str, Any] = {},
+        config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,

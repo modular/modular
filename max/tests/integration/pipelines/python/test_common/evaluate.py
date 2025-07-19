@@ -192,7 +192,7 @@ def next_token_with_logits(
     req_to_context_dict: dict[str, Any],
     update_values: dict[str, list[Any]],
     eos_token: Optional[int] = None,
-    req_to_reference_dict: dict[str, ModelOutput] = {},
+    req_to_reference_dict: dict[str, ModelOutput] = {},  # noqa: B006
 ) -> bool:
     """Generates the next token and stores the logits.
 

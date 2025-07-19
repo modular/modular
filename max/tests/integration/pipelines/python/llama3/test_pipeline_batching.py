@@ -165,7 +165,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     max_tokens = max(c.max_length for c in context_batch.values())
 
     # Execute batches until they are complete
-    for i in range(context.current_length, max_tokens):
+    for i in range(context.current_length, max_tokens):  # noqa: B007
         batch_ids_with_lengths = {
             batch_id: c.current_length for batch_id, c in context_batch.items()
         }

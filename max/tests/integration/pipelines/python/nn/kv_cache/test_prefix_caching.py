@@ -107,7 +107,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 1: Token gen 15 - 18
     toks = [15, 16, 17, 18, 19]
-    for i, tok in enumerate(toks[:-1]):
+    for i, tok in enumerate(toks[:-1]):  # noqa: B007
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
@@ -139,7 +139,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 2: Token gen 14 - 17
     toks = [14, 15, 99, 100, 101]
-    for i, tok in enumerate(toks[:-1]):
+    for i, tok in enumerate(toks[:-1]):  # noqa: B007
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0

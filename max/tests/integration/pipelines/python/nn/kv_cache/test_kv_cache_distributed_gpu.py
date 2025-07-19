@@ -151,7 +151,7 @@ async def test_swapping_to_host_multi_gpu(
     # This exceeds the 500 token limit so we will need to swap to host.
     prompt_len = 100
     reqs: list[InputContext] = []
-    for i in range(10):
+    for i in range(10):  # noqa: B007
         reqs.append(create_text_context(len(reqs), gen_prompt(prompt_len)))
     for i in range(10):
         reqs.append(create_text_context(len(reqs), reqs[i].all_tokens))

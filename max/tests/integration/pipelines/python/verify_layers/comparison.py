@@ -178,7 +178,7 @@ def generate_comparison_text_report(
             f.write("=" * 80 + "\n\n")
 
             # Layer-by-layer results - only numerical data
-            for i, (idx, name, mse, result) in enumerate(
+            for i, (idx, name, mse, result) in enumerate(  # noqa: B007
                 zip(layer_indices, layer_names, mse_values, results)
             ):
                 mse_str = f"{mse:.6e}" if not np.isinf(mse) else "inf"
@@ -510,7 +510,7 @@ def check_execution_order_consistency(
         if differences:
             error_msg = f"Execution order mismatch found at {len(differences)} positions:\n"
             # Show first few differences
-            for i, (pos, max_norm, torch_norm) in enumerate(differences[:5]):
+            for i, (pos, max_norm, torch_norm) in enumerate(differences[:5]):  # noqa: B007
                 error_msg += f"  Position {pos}: MAX='{max_norm}' vs PyTorch='{torch_norm}'\n"
             if len(differences) > 5:
                 error_msg += (

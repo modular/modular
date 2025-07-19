@@ -52,7 +52,7 @@ class DummyPipelineConfig(PipelineConfig):
         max_batch_size: int | None = None,
         max_length: int | None = None,
         pdl_level: str = "1",
-        device_specs: list[DeviceSpec] = [],
+        device_specs: list[DeviceSpec] = [],  # noqa: B006
         kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
         gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF,
         enable_structured_output: bool = False,

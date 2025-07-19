@@ -52,7 +52,7 @@ class MockPipelineModel(PipelineModel):
         encoding: SupportedEncoding,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        devices: list[Device] = [],
+        devices: list[Device] = [],  # noqa: B006
         adapter: Optional[WeightsAdapter] = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:

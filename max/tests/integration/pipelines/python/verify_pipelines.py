@@ -1043,7 +1043,7 @@ def main(
         # pipeline by name. This is because the bisection script does not
         # currently have access to the org name. Fix this by making the
         # bisection use the existing json status report.
-        for pipeline_name, pipeline_def in PIPELINES.items():
+        for pipeline_name, pipeline_def in PIPELINES.items():  # noqa: B007
             if display_name(pipeline_name) == pipeline:
                 pipeline = pipeline_name
                 break

@@ -416,7 +416,7 @@ def test_speculative_decoding_context_update(
     )
 
     # The index bump hack from generate_draft_tokens()
-    for i, context in enumerate(context_batch):
+    for i, context in enumerate(context_batch):  # noqa: B007
         context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
 
     pipeline.update_contexts(

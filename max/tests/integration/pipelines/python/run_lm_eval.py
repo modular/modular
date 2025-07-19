@@ -15,14 +15,14 @@ def monkeypatch_api_timeout() -> None:
     import aiohttp
     from lm_eval.models import api_models
 
-    old_client_session = getattr(api_models, "ClientSession")
+    old_client_session = getattr(api_models, "ClientSession")  # noqa: B009
 
     @functools.wraps(old_client_session)
     def wrapped_client_session(*args, **kwargs):
         kwargs["timeout"] = aiohttp.ClientTimeout(total=None)
         return old_client_session(*args, **kwargs)
 
-    setattr(api_models, "ClientSession", wrapped_client_session)
+    setattr(api_models, "ClientSession", wrapped_client_session)  # noqa: B010
 
 
 monkeypatch_api_timeout()

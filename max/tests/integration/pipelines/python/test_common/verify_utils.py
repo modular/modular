@@ -64,7 +64,7 @@ class ValidationResultCollection:
         """Returns a combined failure message for all entries in the collection."""
         message = ""
         num_failures = 0
-        for name, result in self._results.items():
+        for name, result in self._results.items():  # noqa: B007
             if result.success:
                 continue
 
@@ -105,7 +105,7 @@ class ValidationResultCollection:
 class ValidatorBase(ABC):
     """Base class defining the interface for custom validation metrics"""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None:  # noqa: B027
         pass
 
     @staticmethod
