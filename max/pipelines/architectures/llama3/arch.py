@@ -15,6 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
+    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -46,6 +47,7 @@ llama_arch = SupportedArchitecture(
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
+    rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={

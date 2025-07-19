@@ -569,7 +569,9 @@ class PipelineConfig(MAXConfig):
             default_encoding=arch.default_encoding
         )
 
-        model_config.validate_and_resolve_rope_type()
+        model_config.validate_and_resolve_rope_type(
+            arch_rope_type=arch.rope_type
+        )
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:

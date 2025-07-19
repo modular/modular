@@ -15,6 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
+    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -38,6 +39,7 @@ granite_arch = SupportedArchitecture(
     },
     pipeline_model=GraniteModel,
     tokenizer=TextTokenizer,
+    rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

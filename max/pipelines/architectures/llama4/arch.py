@@ -18,6 +18,7 @@ from max.nn.kv_cache import KVCacheStrategy
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.lib import (
+    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
@@ -44,6 +45,7 @@ llama4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     # NOTE: Llama 4 interleaves RoPE and NoPE (no positional encodings).
+    rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
