@@ -22,7 +22,7 @@ def run_verification_subprocess(
     export_path: Path,
     layer_data_path: Path,
     input_injection: bool,
-):
+) -> None:
     run_layer_verification(
         device_type=device_str,
         devices=device_str,
@@ -51,7 +51,7 @@ class PipelineRunner:
         self.layer_data_path = layer_data_path
         self.device_str = device_str
 
-    def run(self):
+    def run(self) -> None:
         """Run each scenario in a separate subprocess to free GPU memory between runs."""
 
         # Run without input injection

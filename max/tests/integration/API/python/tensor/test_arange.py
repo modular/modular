@@ -13,12 +13,12 @@ from max.dtype import DType
 from max.experimental.tensor import Tensor
 
 
-def test_arange():
+def test_arange() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     assert_all_close(list(range(10)), t)
 
 
-def test_invalid():
+def test_invalid() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     with pytest.raises(
         AssertionError, match="atol: tensors not close at index 0, 2.0 > 1e-06"

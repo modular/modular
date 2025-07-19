@@ -14,12 +14,12 @@ from max.experimental import random
 from max.experimental.tensor import Tensor
 
 
-def test_normal():
+def test_normal() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     assert_all_close(list(range(10)), t)
 
 
-def test_uniform():
+def test_uniform() -> None:
     t1 = random.uniform([20], dtype=DType.float32, device=CPU())
     t2 = random.uniform([20], dtype=DType.float32, device=CPU())
 

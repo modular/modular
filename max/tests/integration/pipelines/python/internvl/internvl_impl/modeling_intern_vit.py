@@ -366,7 +366,7 @@ class InternVisionModel(PreTrainedModel):
         self.embeddings = InternVisionEmbeddings(config)
         self.encoder = InternVisionEncoder(config)
 
-    def resize_pos_embeddings(self, old_size, new_size, patch_size):  # noqa: ANN001
+    def resize_pos_embeddings(self, old_size, new_size, patch_size) -> None:  # noqa: ANN001
         pos_emb = self.embeddings.position_embedding
         _, num_positions, embed_dim = pos_emb.shape
         cls_emb = pos_emb[:, :1, :]

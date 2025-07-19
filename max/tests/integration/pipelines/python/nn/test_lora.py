@@ -406,7 +406,7 @@ def compare_linear_lora_outputs(
     rank: int,
     alpha: int,
     is_gpu: bool = False,
-):
+) -> None:
     """Compare MAX LinearLoRA full vs PyTorch LinearLoRA outputs."""
 
     base_weight = generate_tensor((out_dim, in_dim), TORCH_DTYPE, seed=42)
@@ -438,7 +438,7 @@ def compare_linear_lora_outputs(
 @pytest.mark.parametrize(
     "is_gpu", [False, True] if accelerator_count() > 0 else [False]
 )
-def test_linear_lora(is_gpu: bool):
+def test_linear_lora(is_gpu: bool) -> None:
     compare_linear_lora_outputs(64, 128, 8, 16, is_gpu=is_gpu)
     compare_linear_lora_outputs(128, 64, 4, 8, is_gpu=is_gpu)
 
@@ -636,7 +636,7 @@ def attention_lora_max_output(
 
 def compare_attention_lora_outputs(
     config: AttentionTestConfig, is_gpu: bool = False
-):
+) -> None:
     """Compare MAX AttentionWithRopeAndLoRA vs PyTorch RoPE attention with LoRA."""
     weights = create_attention_weights(config)
     x = generate_tensor(
@@ -690,7 +690,7 @@ def compare_attention_lora_outputs(
 @pytest.mark.parametrize(
     "is_gpu", [False, True] if accelerator_count() > 0 else [False]
 )
-def test_attention_lora(is_gpu: bool):
+def test_attention_lora(is_gpu: bool) -> None:
     config1 = AttentionTestConfig(
         hidden_size=128,
         n_q_heads=4,

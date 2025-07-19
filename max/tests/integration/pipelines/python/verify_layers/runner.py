@@ -54,7 +54,7 @@ def run_layer_verification(
 
     layer_data_path.mkdir(parents=True, exist_ok=True)
 
-    def run_verification(export_path: Path, layer_data_path: Path):
+    def run_verification(export_path: Path, layer_data_path: Path) -> None:
         # Parse device specs
         device_specs = DevicesOptionType.device_specs(devices)
         print(f"device_specs: {device_specs}")

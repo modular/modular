@@ -237,7 +237,7 @@ def test_dynamic_rope_freqs_cis(
     theta: float,
     short_seq_len: int,
     long_seq_len: int,
-):
+) -> None:
     """Test that DynamicRotaryEmbedding behaves identically to RotaryEmbedding
     for short sequences, and correctly expands the freqs_cis buffer for long
     sequences."""

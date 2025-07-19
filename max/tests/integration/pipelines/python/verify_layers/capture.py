@@ -442,7 +442,7 @@ class TorchLayerIOCapture:
         except Exception as e:
             logging.error(f"Failed to clear {module_names_file}: {e}")
 
-    def register_hooks(self, model: torch.nn.Module):
+    def register_hooks(self, model: torch.nn.Module) -> None:
         """Register forward hooks for all modules in the model."""
         for name, module in model.named_modules():
             if len(list(module.children())) == 0:  # Only leaf modules
@@ -491,7 +491,7 @@ class TorchLayerIOCapture:
     def _make_hook(self, module_name: str, module: torch.nn.Module):
         """Create a forward hook for a specific module."""
 
-        def hook_fn(module, inputs, outputs):  # noqa: ANN001
+        def hook_fn(module, inputs, outputs) -> None:  # noqa: ANN001
             # Use the original module name, replacing dots with underscores for valid filenames
             layer_name = module_name
             self.layer_count += 1
@@ -553,13 +553,13 @@ class TorchLayerIOCapture:
 
         return hook_fn
 
-    def remove_hooks(self):
+    def remove_hooks(self) -> None:
         """Remove all registered hooks."""
         for hook in self.hooks:
             hook.remove()
         self.hooks.clear()
 
-    def save_metadata(self):
+    def save_metadata(self) -> None:
         """Save layer metadata to JSON file."""
         metadata_file = self.torch_layers_export_path / "layer_metadata.json"
         with open(metadata_file, "w") as f:
@@ -610,7 +610,7 @@ def capture_max_layer_outputs(
     # Monkey patch InferenceSession to set debug print options on all new sessions
     original_init = InferenceSession.__init__
 
-    def patched_init(self, *args, **kwargs):  # noqa: ANN001
+    def patched_init(self, *args, **kwargs) -> None:  # noqa: ANN001
         # Call original init
         original_init(self, *args, **kwargs)
         # Set debug print options on this session
