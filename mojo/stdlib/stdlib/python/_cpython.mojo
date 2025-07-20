@@ -1097,6 +1097,13 @@ alias PyList_SetItem = ExternalFunction[
     fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
+# Memory Management
+alias PyObject_Free = ExternalFunction[
+    "PyObject_Free",
+    # void PyObject_Free(void *p)
+    fn (OpaquePointer) -> None,
+]
+
 # Object Implementation Support
 # Common Object Structures
 alias Py_Is = ExternalFunction[
@@ -1317,6 +1324,8 @@ struct CPython(Copyable, Defaultable, Movable):
 
     var PyList_SetItem_func: PyList_SetItem.type
 
+    # Memory Management
+    var _PyObject_Free: PyObject_Free.type
     # Object Implementation Support
     # Common Object Structures
     var _Py_Is: Py_Is.type
@@ -1484,6 +1493,8 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PySlice_New = PySlice_New.load(self.lib)
 
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
+
+        self._PyObject_Free = PyObject_Free.load(self.lib)
 
         if self.version.minor >= 10:
             self._Py_Is = Py_Is.load(self.lib)
@@ -1956,17 +1967,6 @@ struct CPython(Copyable, Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
         return self._PyImport_AddModule(name.unsafe_cstr_ptr())
-
-    # ===-------------------------------------------------------------------===#
-    # Reflection
-    # ref: https://docs.python.org/3/c-api/reflection.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
-        """
-        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
 
     # ===-------------------------------------------------------------------===#
     # Abstract Objects Layer
@@ -2906,11 +2906,15 @@ struct CPython(Copyable, Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/memory.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyObject_Free(self, p: OpaquePointer):
-        """[Reference](
-        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
+    fn PyObject_Free(self, ptr: OpaquePointer):
+        """Frees the memory block pointed to by `ptr`, which must have been
+        returned by a previous call to `PyObject_Malloc()`, `PyObject_Realloc()`
+        or PyObject_Calloc()`.
+
+        References:
+        - https://docs.python.org/3/c-api/memory.html#c.PyObject_Free
         """
-        self.lib.call["PyObject_Free"](p)
+        self._PyObject_Free(ptr)
 
     # ===-------------------------------------------------------------------===#
     # Object Implementation Support

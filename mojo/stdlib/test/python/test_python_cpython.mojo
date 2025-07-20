@@ -309,6 +309,15 @@ def test_PyCapsule(mut python: Python):
         )
 
 
+def test_memory_management_api(python: Python):
+    var cpy = python.cpython()
+
+    var ptr = cpy.lib.call["PyObject_Malloc", UnsafePointer[NoneType]](64)
+    assert_true(ptr)
+
+    cpy.PyObject_Free(ptr)
+
+
 def test_common_object_structure_api(python: Python):
     var cpy = python.cpython()
 
@@ -383,6 +392,9 @@ def main():
 
     test_PyDict(python)
     test_PyCapsule(python)
+
+    # Memory Management
+    test_memory_management_api(python)
 
     # Object Implementation Support
 
