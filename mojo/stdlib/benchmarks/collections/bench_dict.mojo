@@ -46,7 +46,7 @@ fn bench_dict_init(mut b: Bencher) raises:
     fn call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
-            keep(d._entries.data)
+            keep(d._entries.unsafe_ptr())
             keep(d._index.data)
 
     b.iter[call_fn]()
