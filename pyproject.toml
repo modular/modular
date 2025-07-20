@@ -38,6 +38,19 @@ extend-exclude = [
 
 [tool.ruff.lint]
 ignore = [
+  "ANN002", # TODO: Missing type annotation for *args
+  "ANN003", # TODO: Missing type annotation for **kwargs
+  "ANN201", # TODO: Missing return type annotation for public function
+  "ANN202", # TODO: Missing return type annotation for private function
+  "ANN204", # TODO: Missing return type annotation for special method
+  "ANN205", # TODO: Missing return type annotation for staticmethod
+  "ANN206", # TODO: Missing return type annotation for classmethod
+  "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
+  "D105", # undocumented-magic-method
+  "D106", # undocumented-public-nested-class
+  "D205", # missing-blank-line-after-summary
+  "D209", # new-line-after-last-paragraph
+  "D212", # multi-line-summary-first-line (to allow init with args only)
   "E401", # multiple imports on one line
   "E402", # TODO: import top of file
   "E711", # TODO: comparison to None
@@ -50,39 +63,26 @@ ignore = [
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
-  "D105", # undocumented-magic-method
-  "D106", # undocumented-public-nested-class
-  "D205", # missing-blank-line-after-summary
-  "D209", # new-line-after-last-paragraph
-  "D212", # multi-line-summary-first-line (to allow init with args only)
   "UP007", # TODO: Enable when we drop 3.9
-  "ANN002", # TODO: Missing type annotation for *args
-  "ANN003", # TODO: Missing type annotation for **kwargs
-  "ANN201", # TODO: Missing return type annotation for public function
-  "ANN202", # TODO: Missing return type annotation for private function
-  "ANN204", # TODO: Missing return type annotation for special method
-  "ANN205", # TODO: Missing return type annotation for staticmethod
-  "ANN206", # TODO: Missing return type annotation for classmethod
-  "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
   "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
 ]
 extend-select = [
-  "I", # Import sorting lints
-  "RUF013", # Implicit optionals are disallowed
-  "D", # Pydocstyle lints
-  "UP", # Type annotations should not use Union, Optional, etc
   "ANN", # Require function type annotations
+  "B", # Bugbear lints
+  "D", # Pydocstyle lints
+  "FURB", # Refurb lints for modernization
+  "I", # Import sorting lints
+  "RUF002", # Obscure unicode symbols in docstrings
+  "RUF013", # Implicit optionals are disallowed
+  "RUF022", # `__all__` is not sorted
+  "RUF100", # Unused noqa comment
+  "RUF046", # Value being cast to int is already an integer
   "SIM103", # Return condition directly instead of using if/else
   "SIM118", # Use `key in dict` instead of `key in dict.keys()`
   "T10", # Checks for the presence of debugger calls and imports.
-  "B", # Bugbear lints
-  "RUF002", # Obscure unicode symbols in docstrings
-  "RUF022", # `__all__` is not sorted
-  "RUF100", # Unused noqa comment
-  "FURB", # Refurb lints for modernization
-  "RUF046", # Value being cast to int is already an integer
+  "UP", # Type annotations should not use Union, Optional, etc
 ]
 
 [tool.ruff.lint.pydocstyle]
