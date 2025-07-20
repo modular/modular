@@ -109,7 +109,7 @@ class GenericSchedulerOutput(Generic[T]):
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
-        batch_inputs: dict[str, T] = {},
+        batch_inputs: dict[str, T] = {},  # noqa: B006
         input_tokens: int | None = None,
         cached_tokens: int | None = None,
     ) -> None:
@@ -218,13 +218,10 @@ class TokenGenerationScheduler(Scheduler):
             return True
 
         # If there are less than 10% free blocks, prioritize TG over CE
-        if (
+        return not (
             self.paged_manager is not None
             and self.paged_manager.free_blocks_pct < 0.1
-        ):
-            return False
-
-        return True
+        )
 
     @traced
     def _maybe_chunk_prefill_request(

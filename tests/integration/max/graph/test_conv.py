@@ -59,7 +59,7 @@ def torch_conv2d(
 def test_conv2d(
     session,  # noqa: ANN001
     input_type: TensorType,
-    filter_type: TensorType,  # noqa: ANN001
+    filter_type: TensorType,
 ) -> None:
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs

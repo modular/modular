@@ -14,11 +14,11 @@
 from render import render_constrained_deps
 
 
-def test_render_no_deps():
+def test_render_no_deps() -> None:
     assert render_constrained_deps("foo", {}, {}) == ""
 
 
-def test_render_normal_deps():
+def test_render_normal_deps() -> None:
     output = render_constrained_deps("foo_deps", {"": ["bar", "baz"]}, {})
     assert (
         output
@@ -32,7 +32,7 @@ def test_render_normal_deps():
     )
 
 
-def test_render_non_gpu_conditional_deps():
+def test_render_non_gpu_conditional_deps() -> None:
     output = render_constrained_deps(
         "foo_deps",
         {
@@ -62,7 +62,7 @@ def test_render_non_gpu_conditional_deps():
     )
 
 
-def test_render_gpu_conditional_deps():
+def test_render_gpu_conditional_deps() -> None:
     output = render_constrained_deps(
         "foo_deps",
         {
@@ -92,7 +92,7 @@ def test_render_gpu_conditional_deps():
     )
 
 
-def test_render_gpu_conditional_only_deps():
+def test_render_gpu_conditional_only_deps() -> None:
     output = render_constrained_deps(
         "foo_deps",
         {},
@@ -119,7 +119,7 @@ def test_render_gpu_conditional_only_deps():
     )
 
 
-def test_render_both_conditional_deps():
+def test_render_both_conditional_deps() -> None:
     output = render_constrained_deps(
         "foo_deps",
         {

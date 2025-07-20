@@ -67,17 +67,17 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
     def next_chunk(
         self, batch: dict[str, TTSContext]
     ) -> dict[str, AudioGenerationResponse]:
-        next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]
+        next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
         return next_chunk(batch)
 
     def release(self, context: TTSContext) -> None:
-        release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]
+        release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
         release(context)
 
     @property
     def decoder_sample_rate(self) -> int:
-        return getattr(self.pipeline_model, "decoder_sample_rate")  # type: ignore[has-type]
+        return getattr(self.pipeline_model, "decoder_sample_rate")  # type: ignore[has-type]  # noqa: B009
 
     @property
     def prev_num_steps(self) -> int:
-        return getattr(self.pipeline_model, "prev_num_steps")  # type: ignore[has-type]
+        return getattr(self.pipeline_model, "prev_num_steps")  # type: ignore[has-type]  # noqa: B009

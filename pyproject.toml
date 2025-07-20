@@ -64,12 +64,25 @@ ignore = [
   "ANN205", # TODO: Missing return type annotation for staticmethod
   "ANN206", # TODO: Missing return type annotation for classmethod
   "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
+  "B008", # Do not perform function call in argument defaults
+  "B017", # Do not assert blind exception: `Exception`
+  "B028", # No explicit `stacklevel` keyword argument found
 ]
 extend-select = [
-  "I",
-  "D",
-  "UP",
-  "ANN",
+  "I", # Import sorting lints
+  "RUF013", # Implicit optionals are disallowed
+  "D", # Pydocstyle lints
+  "UP", # Type annotations should not use Union, Optional, etc
+  "ANN", # Require function type annotations
+  "SIM103", # Return condition directly instead of using if/else
+  "SIM118", # Use `key in dict` instead of `key in dict.keys()`
+  "T10", # Checks for the presence of debugger calls and imports.
+  "B", # Bugbear lints
+  "RUF002", # Obscure unicode symbols in docstrings
+  "RUF022", # `__all__` is not sorted
+  "RUF100", # Unused noqa comment
+  "FURB", # Refurb lints for modernization
+  "RUF046", # Value being cast to int is already an integer
 ]
 
 [tool.ruff.lint.pydocstyle]

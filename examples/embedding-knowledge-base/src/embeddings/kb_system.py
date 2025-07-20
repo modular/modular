@@ -13,6 +13,7 @@
 
 import logging
 from functools import lru_cache
+from typing import Optional
 
 import numpy as np
 import requests
@@ -53,12 +54,12 @@ class SmartKnowledgeBase:
                 )
             except Exception as e:
                 if attempt == max_retries - 1:
-                    raise Exception(
+                    raise Exception(  # noqa: B904
                         f"Failed to get embeddings after {max_retries} attempts: {e}"
                     )
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
 
-    @lru_cache(maxsize=1000)
+    @lru_cache(maxsize=1000)  # noqa: B019
     def _get_embedding_cached(self, text: str) -> np.ndarray:
         """Cached version for single text embedding."""
         return self._get_embedding([text])[0]
@@ -80,7 +81,7 @@ class SmartKnowledgeBase:
         if len(self.documents) >= 3:
             self._cluster_documents()
 
-    def _cluster_documents(self, n_clusters: int = None) -> None:
+    def _cluster_documents(self, n_clusters: Optional[int] = None) -> None:
         """Cluster documents into topics."""
         if n_clusters is None:
             n_clusters = max(2, len(self.documents) // 5)

@@ -46,12 +46,12 @@ def _next_seed():
     try:
         seed = SEEDS[graph]
     except LookupError:
-        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")
+        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
     SEEDS[graph] = _rotate_seed(seed)
     return seed
 
 
-def set_seed(seed: TensorValue | int = 0):
+def set_seed(seed: TensorValue | int = 0) -> None:
     """Sets the seed for random numbers generated in the graph.
 
     This must be set at least once for each graph using random number utilities.

@@ -159,6 +159,12 @@ mutation.
 
 ### Tooling changes
 
+- Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match
+  common compiler conventions:
+  - `-g0`: No debug information (alias for `--debug-level=none`)
+  - `-g1`: Line table debug information (alias for `--debug-level=line-tables`)
+  - `-g2`: Full debug information (alias for `--debug-level=full`)
+
 - Added progress reporting support to the Mojo language server. This will emit progress
   notifications in your editor when the server is currently parsing a document.
 

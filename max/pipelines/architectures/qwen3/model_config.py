@@ -59,8 +59,8 @@ class Qwen3Config(Llama3Config):
         """
         return KVCacheParams(
             dtype=cache_dtype,
-            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),
-            head_dim=getattr(
+            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
+            head_dim=getattr(  # noqa: B009
                 huggingface_config, "head_dim"
             ),  # Use head_dim directly from config
             page_size=kv_cache_config.kv_cache_page_size,

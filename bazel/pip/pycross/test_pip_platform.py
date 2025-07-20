@@ -81,7 +81,7 @@ from pip_platform import Platform
         ),
     ],
 )
-def test_platform_tags_match(platforms: list[Platform], url: str):
+def test_platform_tags_match(platforms: list[Platform], url: str) -> None:
     download = Download({"url": url, "hash": "sha256:deadbeef"})
     for platform in platforms:
         assert platform.is_compatible_with(download), (

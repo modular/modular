@@ -30,8 +30,8 @@ __all__ = [
     "FetchPagedKVCacheCollection",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "PagedKVCacheManager",
     "PagedKVCacheCollection",
+    "PagedKVCacheManager",
     "PagedKVCacheType",
     "XferReqData",
 ]

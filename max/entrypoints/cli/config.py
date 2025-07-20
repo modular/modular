@@ -60,7 +60,7 @@ def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
     if len(interior_args) > 1:
         msg = (
             "Parsing does not currently supported Union type, with more than"
-            " one non-None type: {type_hint}"
+            f" one non-None type: {type_hint}"
         )
         raise ValueError(msg)
 

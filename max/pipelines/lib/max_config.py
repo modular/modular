@@ -152,7 +152,7 @@ class ProfilingConfig(MAXConfig):
                 self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
             except ValueError:
                 valid_values = [mode.value for mode in GPUProfilingMode]
-                raise ValueError(
+                raise ValueError(  # noqa: B904
                     "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
 

@@ -44,7 +44,7 @@ def test_concat__static_dim(
     graph_builder,  # noqa: ANN001
     base_type: TensorType,
     axis_sizes: list[StaticDim],
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assume(axis_sizes)
     merged_size = sum(dim.dim for dim in axis_sizes)
@@ -73,7 +73,7 @@ def test_concat__static_dim(
 def test_concat__axis_out_of_bounds(
     graph_builder,  # noqa: ANN001
     base_type: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assume(axis < -base_type.rank or axis >= base_type.rank)
 
@@ -91,7 +91,7 @@ def test_concat__bad_dtype(
     graph_builder,  # noqa: ANN001
     type_a: TensorType,
     type_b: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assume(type_a.dtype != type_b.dtype)
     assert type_a.shape == type_b.shape
@@ -121,7 +121,7 @@ def test_concat__different_ranks(
     graph_builder,  # noqa: ANN001
     type_a: TensorType,
     type_b: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assert type_a.dtype == type_b.dtype
     assume(type_a.rank != type_b.rank)
@@ -145,7 +145,7 @@ def test_concat__mismatched_dims(
     graph_builder,  # noqa: ANN001
     type_a: TensorType,
     type_b: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assert type_a.dtype == type_b.dtype
     assert type_a.rank == type_b.rank
@@ -166,7 +166,7 @@ def test_concat__mismatched_dims(
 def test_concat__symbolic__size_1(
     graph_builder,  # noqa: ANN001
     base_type: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     assume(not isinstance(base_type.shape[axis], StaticDim))
 

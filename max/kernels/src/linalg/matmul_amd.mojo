@@ -39,10 +39,12 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout._utils import TensorCoreKGroup
+from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
+from ._multistage_gemm_gpu import warp_split_k_reduction
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 
@@ -103,6 +105,7 @@ struct AMD_MMA[
     simd_width: Int,
     swizzle: Swizzle,
     BK: Int,
+    WK: Int,
 ]:
     alias type_alignment = alignof[SIMD[in_type, Self.simd_width]]()
     alias tensor_core_mma = TensorCoreKGroup[
@@ -131,7 +134,7 @@ struct AMD_MMA[
 
     alias SharedMemWarpTileType[
         warp_rows: Int, smem_layout: Layout
-    ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, BK]
+    ] = Self.SharedMemTileType[smem_layout].TileType[warp_rows, WK]
 
 
 @always_inline
@@ -207,6 +210,7 @@ struct MMATileBuffers[
         out self,
         ref [tensor_origin]tensor: tensor_type,
         warp_idx: Int,
+        warp_k_idx: Int,
         block_idx: Int,
     ):
         """Initialize memory regions for a matrix based on warp coordinates.
@@ -214,12 +218,13 @@ struct MMATileBuffers[
         Args:
             tensor: The tensor to load from global memory.
             warp_idx: The warp index within the computation grid (used for MMA operations).
+            warp_k_idx: The warp index within the computation grid (used for MMA operations).
             block_idx: The block index within the computation grid (used for warp tiling).
         """
         self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
         self.shared_mem_warp_tile = self.shared_mem_tile.tile[
-            warp_rows, mma_type.BK
-        ](warp_idx, 0)
+            warp_rows, mma_type.WK
+        ](warp_idx, warp_k_idx)
         self.load_reg_tile = Self.MMARegTileType.stack_allocation()
         self.mma_reg_tile = Self.MMARegTileType.stack_allocation().split[
             mma_type.num_k_tiles
@@ -378,11 +383,12 @@ fn gemm_kernel_amd[
     # Block-level tile dimensions
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
+    alias BK = config.block_tile_shape[2] * config.num_warp_k_partitions
 
     # Warp-level tile dimensions
     alias WM = config.warp_tile_shape[0]
     alias WN = config.warp_tile_shape[1]
+    alias WK = config.warp_tile_shape[2]
 
     # Matrix multiply instruction dimensions
     alias MMA_M = config.mma_shape[0]
@@ -392,26 +398,19 @@ fn gemm_kernel_amd[
     # SIMD and vectorization parameters
     alias simd_width = simdwidthof[a_type]()
 
-    # AMD specific parameters
-    # TODO: Document the logic behind these magic numbers
-    alias k_group_size = 16 // simd_width
-    alias swizzle = Swizzle(2, 0, 2)
-    alias thread_layout = Layout(
-        IntTuple(IntTuple(8, 4), IntTuple(4, 2)),
-        IntTuple(IntTuple(4, 64), IntTuple(1, 32)),
-    )
-
     # Warp organization
     alias num_warps_m = UInt(BM // WM)
     alias num_warps_n = UInt(BN // WN)
+    alias num_warps_k = UInt(BK // WK)
 
     # MMA instruction tiling
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
     # K dimension tiling
+    alias k_group_size = 16 // simd_width
     alias k_tile_size = MMA_K * k_group_size
-    alias num_k_tiles = BK // k_tile_size
+    alias num_k_tiles = WK // k_tile_size
 
     # Matrix dimensions from input tensors
     var M = a.dim[0]()
@@ -421,16 +420,48 @@ fn gemm_kernel_amd[
 
     # Thread and warp indices
     var warp_id = get_warp_id()
-    var warp_m, warp_n = divmod(warp_id, num_warps_n)
+    var warp_km, warp_n = divmod(warp_id, num_warps_n)
+    var warp_k, warp_m = divmod(warp_km, num_warps_m)
+
+    # Helper function for thread layout
+    @parameter
+    fn get_thread_layout() -> Layout:
+        # TODO: Document the logic behind this layout
+        # Define a layout that corresponds to the below pattern:
+        #
+        # | T00 T01 T02 T03 | T16 T17 T18 T19 | ...
+        # | T04 T05 T06 T07 | T20 T21 T22 T23 |
+        # | T08 T09 T10 T11 | T24 T25 T26 T27 |
+        # | T12 T13 T14 T15 | T28 T29 T30 T31 |
+        # | T64 T65 T66 T67 | T80 T81 T82 T83 | ...
+        # | T68 T69 T70 T71 | T84 T85 T86 T87 |
+        # | T72 T73 T74 T75 | T88 T89 T90 T91 |
+        # | T76 T77 T78 T79 | T92 T93 T94 T95 |
+        alias inner_block_size = 16
+        alias inner_block_cols = k_tile_size // simd_width
+        alias inner_block_rows = inner_block_size // inner_block_cols
+
+        alias num_k_tiles_block = BK // k_tile_size
+        alias outer_block_size = num_k_tiles_block * inner_block_size
+        alias outer_block_count = config.num_threads() // outer_block_size
+
+        return Layout(
+            IntTuple(
+                IntTuple(inner_block_rows, outer_block_count),
+                IntTuple(inner_block_cols, BK // k_tile_size),
+            ),
+            IntTuple(
+                IntTuple(inner_block_cols, outer_block_size),
+                IntTuple(1, inner_block_size),
+            ),
+        )
 
     # Helper function for shared memory layout
-    @always_inline
     @parameter
     fn get_smem_layout[block_rows: Int]() -> Layout:
-        # TODO: Document the logic behind these magic numbers
         return Layout(
-            IntTuple(block_rows, IntTuple(32, 2)),
-            IntTuple(32, IntTuple(1, block_rows * 32)),
+            IntTuple(block_rows, IntTuple(k_tile_size, BK // k_tile_size)),
+            IntTuple(k_tile_size, IntTuple(1, block_rows * k_tile_size)),
         )
 
     # AMD TensorCore operator for matrix multiplication
@@ -444,32 +475,32 @@ fn gemm_kernel_amd[
         num_m_mmas=num_m_mmas,
         num_n_mmas=num_n_mmas,
         simd_width=simd_width,
-        swizzle=swizzle,
+        swizzle = Swizzle(3, 0, 1),
         BK=BK,
+        WK=WK,
     ]
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[BM](),
         tensor_type = __type_of(a),
-        thread_layout=thread_layout,
+        thread_layout = get_thread_layout(),
         block_rows=BM,
         warp_rows=WM,
         stride=stride,
         num_mmas=num_m_mmas,
         mma_type=amd_mma,
-    ](a, warp_m, block_idx.y)
+    ](a, warp_m, warp_k, block_idx.y)
 
-    # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
         tensor_type = __type_of(b),
-        thread_layout=thread_layout,
+        thread_layout = get_thread_layout(),
         block_rows=BN,
         warp_rows=WN,
         stride=stride,
         num_mmas=num_n_mmas,
         mma_type=amd_mma,
-    ](b, warp_n, block_idx.x)
+    ](b, warp_n, warp_k, block_idx.x)
 
     # Accumulation registers for result
     alias c_reg_tile_type = LayoutTensor[
@@ -580,6 +611,23 @@ fn gemm_kernel_amd[
         mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
     schedule_barrier()
+
+    # Accumulate the warp-k tiles via shared memory.
+    @parameter
+    if num_warps_k > 1:
+        var reduction_smem = stack_allocation[
+            BM * BN * (num_warps_k // 2),
+            accum_type,
+            address_space = AddressSpace.SHARED,
+            alignment = alignof[SIMD[accum_type, 4]](),
+        ]()
+
+        warp_split_k_reduction[
+            BM, BN, config.num_threads() // num_warps_k, num_warps_k
+        ](warp_k, c_reg_tile, reduction_smem)
+
+        if warp_k != 0:
+            return
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory

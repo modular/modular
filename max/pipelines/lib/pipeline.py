@@ -662,11 +662,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
-        return (
-            num_steps
-            if num_available_steps > num_steps
-            else num_available_steps
-        )
+        return min(num_available_steps, num_steps)
 
     @traced
     def prepare_batch(

@@ -72,7 +72,7 @@ class SafetensorWeights(Weights):
             for idx, filepath in enumerate(self._filepaths):
                 with safe_open(filepath) as f:
                     self._tensors |= set(f.keys())
-                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}
+                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}  # noqa: SIM118
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
         self._st_weight_map = {} if _st_weight_map is None else _st_weight_map

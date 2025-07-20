@@ -755,7 +755,7 @@ class GPTQLinearV1(QLinearV1):
         if isinstance(weights, Weights) and weights.qweight.exists():
             orig_quantized_weights = [weights.qweight, weights.scales]
             quantized_weights = []
-            for idx, qw in enumerate(orig_quantized_weights):
+            for idx, qw in enumerate(orig_quantized_weights):  # noqa: B007
                 orig = qw.allocate()
                 # TODO(AITLIB-135): allocate_as_bytes is only available for
                 # safetensors. This isn't a problem right now because gptq is
@@ -1052,7 +1052,7 @@ class MLP(Module):
         )
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
-        assert activation_function in _ACTIVATION_FUNCTIONS.keys()
+        assert activation_function in _ACTIVATION_FUNCTIONS
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
 
     def __call__(self, x: TensorValueLike) -> TensorValue:

@@ -14,7 +14,7 @@
 from abc import ABC, abstractmethod
 
 
-class Person(ABC):
+class Person(ABC):  # noqa: B024
     pass
 
 

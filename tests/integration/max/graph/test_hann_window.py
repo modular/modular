@@ -28,7 +28,7 @@ def test_hann_window(
     session,  # noqa: ANN001
     window_length: int,
     periodic: bool,
-    dtype: DType,  # noqa: ANN001
+    dtype: DType,
 ) -> None:
     """Test hann_window against PyTorch's implementation."""
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:

@@ -210,7 +210,7 @@ static_tensor_type = tensor_types(
 def test_slice_static_dims(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    rand: random.Random,  # noqa: ANN001
+    rand: random.Random,
 ) -> None:
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
@@ -298,7 +298,7 @@ def test_slice_static_dims(
 def test_slice_symbolic_tensor(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    indices: list[slice],  # noqa: ANN001
+    indices: list[slice],
 ) -> None:
     """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
     # NOTE: the `Graph` constructor verifies the staged graph op.
@@ -321,7 +321,7 @@ def test_slice_symbolic_tensor(
 def test_slice_dim_overflow(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    indices: list[slice],  # noqa: ANN001
+    indices: list[slice],
 ) -> None:
     """Tests cases that would overflow an int64 slice index."""
     with pytest.raises(
@@ -525,7 +525,7 @@ def test_slice_invalid_start_stop(graph_builder) -> None:  # noqa: ANN001
             x[2:1]
 
 
-def test_slice_out_of_bounds_specific_error_message(graph_builder):  # noqa: ANN001
+def test_slice_out_of_bounds_specific_error_message(graph_builder) -> None:  # noqa: ANN001
     """Test that slicing with bounds larger than tensor dimensions raises an error."""
     with graph_builder(
         input_types=[
@@ -582,7 +582,7 @@ reasonable_static_tensor_type = tensor_types(
 def test_slice_out_of_bounds(
     graph_builder,  # noqa: ANN001
     tensor_type: TensorType,
-    rand: random.Random,  # noqa: ANN001
+    rand: random.Random,
 ) -> None:
     """Test that out-of-bounds slice indices raise appropriate errors."""
     # Pick a random dimension to make out of bounds
@@ -606,7 +606,7 @@ def test_slice_out_of_bounds(
             ops.slice_tensor(graph.inputs[0].tensor, index)
 
 
-def test_slice_zero_sized_tensor(graph_builder):  # noqa: ANN001
+def test_slice_zero_sized_tensor(graph_builder) -> None:  # noqa: ANN001
     """Test that slicing zero-sized tensors works correctly."""
     # Test case that was failing: slicing [0:0] on a zero-sized dimension
     with graph_builder(

@@ -10,25 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for ops.cast."""
-
-from hypothesis import given
-from max.dtype import DType
-from max.graph import (
-    TensorType,
-    ops,
-)
+#
+# This file only tests the debug_assert function
+#
+# ===----------------------------------------------------------------------=== #
 
 
-@given(base_type=..., target_dtype=...)
-def test_cast__tensor(
-    graph_builder,  # noqa: ANN001
-    base_type: TensorType,
-    target_dtype: DType,
-) -> None:
-    """Test that cast correctly converts tensor values between different data types."""
-    expected_type = base_type.cast(target_dtype)
-    with graph_builder(input_types=[base_type]) as graph:
-        out = ops.cast(graph.inputs[0], target_dtype)
-        assert out.type == expected_type
-        graph.output(out)
+def main():
+    alias res = test_debug_assert_compile_time()
+
+    # CHECK: 33
+    print(res)
+
+
+fn test_debug_assert_compile_time() -> Int:
+    debug_assert(True, "ok")
+    debug_assert[assert_mode="safe"](True, "ok")
+    debug_assert[assert_mode="safe", cpu_only=True](True, "ok")
+
+    return 33

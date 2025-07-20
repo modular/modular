@@ -62,13 +62,11 @@ def is_lora_kind(key: str) -> bool:
     """
     Whether the key is a lora kind
     """
-    if (
+    return bool(
         LoRAType.A.value in key
         or LoRAType.B.value in key
         or LoRAType.BIAS.value in key
-    ):
-        return True
-    return False
+    )
 
 
 class LoRAModel:
@@ -585,7 +583,7 @@ class LoRAManager:
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
-    ):
+    ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
 
@@ -608,7 +606,7 @@ class LoRAManager:
             for req_id, _ in sorted(
                 batch.items(),
                 key=lambda item: self._model_name_to_rank(
-                    getattr(item[1], "model_name")
+                    getattr(item[1], "model_name")  # noqa: B009
                 ),
             )
         }

@@ -37,7 +37,7 @@ def test_logical_not__same_type(graph_builder, tensor_type: TensorType) -> None:
 @given(tensor_type=...)
 def test_logical_not__invalid_dtype(
     graph_builder,  # noqa: ANN001
-    tensor_type: TensorType,  # noqa: ANN001
+    tensor_type: TensorType,
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type]) as graph:
@@ -46,4 +46,4 @@ def test_logical_not__invalid_dtype(
             logical_not(x)
 
         with pytest.raises(ValueError):
-            ~x
+            ~x  # noqa: B018

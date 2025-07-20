@@ -143,7 +143,7 @@ def test_conditional_shape_to_tensor_solo_dim(session) -> None:  # noqa: ANN001
 @pytest.mark.skip(reason="assert fail")
 def test_conditional_inplace_user_supplied(
     custom_ops_path,  # noqa: ANN001
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     import torch
 

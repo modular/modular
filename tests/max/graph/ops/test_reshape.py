@@ -219,7 +219,7 @@ def test_reshape__can_reshape_single_element_tensors(
         graph.output(out)
 
 
-def test_MAXPLAT_328():
+def test_MAXPLAT_328() -> None:
     input_type = TensorType(
         DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
     )
@@ -230,7 +230,7 @@ def test_MAXPLAT_328():
         graph.output(x.reshape([n_patches // 4, 4, 2048]))
 
 
-def test_MAXPLAT_328_no_new_parameter():
+def test_MAXPLAT_328_no_new_parameter() -> None:
     input_type = TensorType(
         DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
     )
@@ -242,7 +242,7 @@ def test_MAXPLAT_328_no_new_parameter():
 
 
 @pytest.mark.skip("MAXPLAT-330: This is currently a compile-time error")
-def test_reshape_statically_known_impossible_shape():
+def test_reshape_statically_known_impossible_shape() -> None:
     input_type = TensorType(
         DType.float32, [7, 4], device=DeviceRef.from_device(CPU())
     )
@@ -258,7 +258,7 @@ def test_reshape_statically_known_impossible_shape():
 @pytest.mark.skip(
     "MAXPLAT-329: Point users towards using a rebind before reshape"
 )
-def test_reshape_needs_rebind_error_message():
+def test_reshape_needs_rebind_error_message() -> None:
     input_type = TensorType(
         DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
     )

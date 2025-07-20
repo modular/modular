@@ -75,7 +75,7 @@ async def stream_text_to_console(
                 pipeline_request, num_steps=num_steps
             )
 
-            for request_idx, response in responses.items():
+            for request_idx, response in responses.items():  # noqa: B007
                 if response.is_done:
                     generate_again = False
 
