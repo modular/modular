@@ -1091,6 +1091,26 @@ alias PySlice_New = ExternalFunction[
     fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
+# Capsules
+alias PyCapsule_Destructor = (
+    # typedef void (*PyCapsule_Destructor)(PyObject *)
+    destructor
+)
+alias PyCapsule_New = ExternalFunction[
+    "PyCapsule_New",
+    # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
+    fn (
+        OpaquePointer,
+        UnsafePointer[c_char, mut=False],
+        PyCapsule_Destructor,
+    ) -> PyObjectPtr,
+]
+alias PyCapsule_GetPointer = ExternalFunction[
+    "PyCapsule_GetPointer",
+    # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> OpaquePointer,
+]
+
 # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
 alias PyList_SetItem = ExternalFunction[
     "PyList_SetItem",
@@ -1314,6 +1334,9 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
     # Slice Objects
     var _PySlice_New: PySlice_New.type
+    # Capsules
+    var _PyCapsule_New: PyCapsule_New.type
+    var _PyCapsule_GetPointer: PyCapsule_GetPointer.type
 
     var PyList_SetItem_func: PyList_SetItem.type
 
@@ -1482,6 +1505,9 @@ struct CPython(Copyable, Defaultable, Movable):
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
 
         self._PySlice_New = PySlice_New.load(self.lib)
+
+        self._PyCapsule_New = PyCapsule_New.load(self.lib)
+        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(self.lib)
 
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
@@ -2858,14 +2884,11 @@ struct CPython(Copyable, Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/capsule.html
     # ===-------------------------------------------------------------------===#
 
-    alias PyCapsule_Destructor = destructor
-    """`typedef void (*PyCapsule_Destructor)(PyObject *)`"""
-
     fn PyCapsule_New(
-        mut self,
+        self,
         pointer: OpaquePointer,
-        owned name: String,
-        destructor: Self.PyCapsule_Destructor,
+        var name: String,
+        destructor: PyCapsule_Destructor,
     ) -> PyObjectPtr:
         """Create a `PyCapsule` encapsulating the pointer. The pointer argument
         may not be `NULL`.
@@ -2875,17 +2898,14 @@ struct CPython(Copyable, Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
-        var new_capsule = self.lib.call["PyCapsule_New", PyObjectPtr](
-            pointer, name.unsafe_cstr_ptr(), destructor
-        )
+        var r = self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
         self._inc_total_rc()
-        return new_capsule
+        return r
 
     fn PyCapsule_GetPointer(
-        mut self,
+        self,
         capsule: PyObjectPtr,
-        owned name: String,
+        var name: String,
     ) raises -> OpaquePointer:
         """Retrieve the pointer stored in the capsule. On failure, set an
         exception and return `NULL`.
@@ -2893,13 +2913,10 @@ struct CPython(Copyable, Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer
         """
-        # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
-        var ptr = self.lib.call["PyCapsule_GetPointer", OpaquePointer](
-            capsule, name.unsafe_cstr_ptr()
-        )
+        var r = self._PyCapsule_GetPointer(capsule, name.unsafe_cstr_ptr())
         if self.PyErr_Occurred():
             raise self.get_error()
-        return ptr
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Memory Management

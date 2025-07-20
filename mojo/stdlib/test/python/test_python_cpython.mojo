@@ -278,35 +278,28 @@ def test_PyDict(mut python: Python):
     assert_false(succ)
 
 
-fn destructor(capsule: PyObjectPtr) -> None:
-    pass
+def test_capsule_api(python: Python):
+    var cpy = python.cpython()
 
+    var o = PyObjectPtr()
+    with assert_raises(contains="called with invalid PyCapsule object"):
+        _ = cpy.PyCapsule_GetPointer(o, "some_name")
 
-def test_PyCapsule(mut python: Python):
-    var cpython_env = python.cpython()
-
-    # Passing an invalid PyCapsule so it should raise an error.
-    var the_object = PythonObject(0)
-    with assert_raises(
-        contains="PyCapsule_GetPointer called with invalid PyCapsule object"
-    ):
-        _ = cpython_env.PyCapsule_GetPointer(the_object._obj_ptr, "some_name")
-
-    # Build a capsule and retrieve a pointer to it.
     var capsule_impl = UnsafePointer[UInt64].alloc(1)
-    var capsule = cpython_env.PyCapsule_New(
-        capsule_impl.bitcast[NoneType](), "some_name", destructor
+
+    fn empty_dtor(capsule: PyObjectPtr):
+        pass
+
+    var capsule = cpy.PyCapsule_New(
+        capsule_impl.bitcast[NoneType](), "some_name", empty_dtor
     )
-    var capsule_pointer = cpython_env.PyCapsule_GetPointer(capsule, "some_name")
+    var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
     assert_equal(capsule_impl.bitcast[NoneType](), capsule_pointer)
 
-    # PyCapsule for this name hasn't been created, so it should raise an error.
-    with assert_raises(
-        contains="PyCapsule_GetPointer called with incorrect name"
-    ):
-        _ = cpython_env.PyCapsule_GetPointer(
-            capsule, "this name does not exist in the capsule"
-        )
+    with assert_raises(contains="called with incorrect name"):
+        _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
+
+    capsule_impl.free()
 
 
 def test_common_object_structure_api(python: Python):
@@ -381,8 +374,10 @@ def main():
     # Slice Objects
     test_slice_object_api(python)
 
+    # Capsules
+    test_capsule_api(python)
+
     test_PyDict(python)
-    test_PyCapsule(python)
 
     # Object Implementation Support
 
