@@ -20,12 +20,9 @@ from typing import Callable, Literal
 from max.dtype import DType
 from max.graph import TensorValue
 from max.graph.weights import WeightData
-from max.nn import ReturnLogits
+from max.nn import DistributedGemmConfig, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from ..llama3.model_config import Llama3Config
@@ -57,15 +54,15 @@ class Olmo2Config(Llama3Config):
             KVCacheParams object with the correct head_dim from config.
         """
         if hasattr(huggingface_config, "head_dim"):
-            head_dim = getattr(huggingface_config, "head_dim")
+            head_dim = getattr(huggingface_config, "head_dim")  # noqa: B009
         else:
-            head_dim = getattr(huggingface_config, "hidden_size") // getattr(
+            head_dim = getattr(huggingface_config, "hidden_size") // getattr(  # noqa: B009
                 huggingface_config, "num_attention_heads"
             )
 
         return KVCacheParams(
             dtype=cache_dtype,
-            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),
+            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
             head_dim=head_dim,
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -202,4 +199,5 @@ class Olmo2Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             float8_config=base_config.float8_config,
             use_subgraphs=base_config.use_subgraphs,
+            dist_gemm_config=DistributedGemmConfig.generate(),
         )

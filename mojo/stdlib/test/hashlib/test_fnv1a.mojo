@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from bit import pop_count
 from hashlib._fnv1a import Fnv1a
-from hashlib._hasher import _Hasher, _HashableWithHasher, _hash_with_hasher
+from hashlib.hasher import Hasher
 from testing import assert_equal, assert_true
 from memory import memset_zero
 from test_utils import (
@@ -34,26 +33,26 @@ from test_utils import (
 
 def test_hash_byte_array():
     assert_equal(
-        _hash_with_hasher[HasherType=Fnv1a](String("a")),
-        _hash_with_hasher[HasherType=Fnv1a](String("a")),
+        hash[HasherType=Fnv1a]("a"),
+        hash[HasherType=Fnv1a]("a"),
     )
     assert_equal(
-        _hash_with_hasher[HasherType=Fnv1a](String("b")),
-        _hash_with_hasher[HasherType=Fnv1a](String("b")),
-    )
-
-    assert_equal(
-        _hash_with_hasher[HasherType=Fnv1a](String("c")),
-        _hash_with_hasher[HasherType=Fnv1a](String("c")),
+        hash[HasherType=Fnv1a]("b"),
+        hash[HasherType=Fnv1a]("b"),
     )
 
     assert_equal(
-        _hash_with_hasher[HasherType=Fnv1a](String("d")),
-        _hash_with_hasher[HasherType=Fnv1a](String("d")),
+        hash[HasherType=Fnv1a]("c"),
+        hash[HasherType=Fnv1a]("c"),
+    )
+
+    assert_equal(
+        hash[HasherType=Fnv1a]("d"),
+        hash[HasherType=Fnv1a]("d"),
     )
     assert_equal(
-        _hash_with_hasher[HasherType=Fnv1a](String("d")),
-        _hash_with_hasher[HasherType=Fnv1a](String("d")),
+        hash[HasherType=Fnv1a]("d"),
+        hash[HasherType=Fnv1a]("d"),
     )
 
 
@@ -62,15 +61,13 @@ def test_avalanche():
     # produce significatly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(_hash_with_hasher[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = v
-        hashes.append(
-            _hash_with_hasher[HasherType=Fnv1a](buffer.unsafe_ptr(), 256)
-        )
+        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, 15)
 
@@ -82,9 +79,7 @@ def test_trailing_zeros():
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(
-            _hash_with_hasher[HasherType=Fnv1a](buffer.unsafe_ptr(), i)
-        )
+        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), i))
 
     assert_dif_hashes(hashes, 21)
 
@@ -146,19 +141,19 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.float32, 1](1)), 3414781483884328927)
     assert_equal(hash(SIMD[DType.float64, 1](1)), 14020758201297909727)
 
+    assert_equal(hash(SIMD[DType.bool, 1](True)), 12638152016183539244)
     assert_equal(hash(SIMD[DType.int8, 1](1)), 12638152016183539244)
     assert_equal(hash(SIMD[DType.int16, 1](1)), 12638152016183539244)
     assert_equal(hash(SIMD[DType.int32, 1](1)), 12638152016183539244)
     assert_equal(hash(SIMD[DType.int64, 1](1)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.bool, 1](True)), 12638152016183539244)
     assert_equal(hash(SIMD[DType.int128, 1](1)), 589727492704079044)
     assert_equal(hash(SIMD[DType.int64, 2](1, 0)), 589727492704079044)
     assert_equal(hash(SIMD[DType.int256, 1](1)), 12478008331234465636)
     assert_equal(hash(SIMD[DType.int64, 4](1, 0, 0, 0)), 12478008331234465636)
 
-    assert_equal(hash(SIMD[DType.int8, 1](-1)), 5808589858502755950)
-    assert_equal(hash(SIMD[DType.int16, 1](-1)), 5808589858502755950)
-    assert_equal(hash(SIMD[DType.int32, 1](-1)), 5808589858502755950)
+    assert_equal(hash(SIMD[DType.int8, 1](-1)), 12638352127299873646)
+    assert_equal(hash(SIMD[DType.int16, 1](-1)), 12690424998011946606)
+    assert_equal(hash(SIMD[DType.int32, 1](-1)), 7718450949043144302)
     assert_equal(hash(SIMD[DType.int64, 1](-1)), 5808589858502755950)
     assert_equal(hash(SIMD[DType.int128, 1](-1)), 591639543425159523)
     assert_equal(hash(SIMD[DType.int64, 2](-1)), 591639543425159523)
@@ -183,7 +178,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = _hash_with_hasher[HasherType=Fnv1a](String("hello"))
+    alias h = hash[HasherType=Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 

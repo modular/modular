@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
-
 
 from pathlib import Path, _dir_of_current_file
 from tempfile import gettempdir
@@ -52,7 +50,7 @@ def test_file_read_bytes_multi():
         assert_equal(len(bytes1), 12, "12 bytes")
         var string1 = String(bytes=bytes1)
         assert_equal(len(string1), 12, "12 chars")
-        assert_equal(string1, String("Lorem ipsum "))
+        assert_equal(string1, "Lorem ipsum ")
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")

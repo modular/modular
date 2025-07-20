@@ -15,10 +15,12 @@
 from collections import OptionalReg
 from math import align_up, ceildiv
 from sys import (
+    CompilationTarget,
     alignof,
     env_get_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
+    is_amd_gpu,
     is_nvidia_gpu,
     simdwidthof,
     sizeof,
@@ -46,9 +48,16 @@ from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
+from bit import prev_power_of_two
+
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===-----------------------------------------------------------------------===#
+
+
+alias is_sm90 = ":90" in _accelerator_arch()
+alias is_sm100 = ":100" in _accelerator_arch()
+alias is_sm90or100 = is_sm90 or is_sm100
 
 
 @register_passable("trivial")
@@ -82,6 +91,18 @@ struct FlashAttentionAlgorithm(
         return String.write(self)
 
     @always_inline
+    fn init(self, type: DType) -> Self:
+        if self._value == -1:
+
+            @parameter
+            if is_sm90or100:
+                return FlashAttentionAlgorithm(2 + type.is_half_float())
+            else:
+                return FlashAttentionAlgorithm(2)
+        else:
+            return self
+
+    @always_inline
     fn write_to[W: Writer](self, mut writer: W):
         if self._value == 0:
             writer.write("naive-attention")
@@ -93,11 +114,6 @@ struct FlashAttentionAlgorithm(
             writer.write("flash-attention-3")
         else:
             writer.write("invalid algorithm")
-
-
-alias is_sm90 = ":90" in _accelerator_arch()
-alias is_sm100 = ":100" in _accelerator_arch()
-alias is_sm90or100 = is_sm90 or is_sm100
 
 
 @fieldwise_init
@@ -152,22 +168,29 @@ struct MHAConfig(Copyable, Movable, Writable):
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    fn q_smem_size(self, fa3: Bool = False) -> UInt:
-        q_smem = self.block_m() * self.depth
-        return UInt(2) * q_smem if fa3 else q_smem
+    fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
+        q_size = self.block_m() * self.depth
+        num_q = 2 if fa3 and persistent else 1
+        return num_q * q_size
 
     fn kv_smem_size(self, fa3: Bool = False) -> UInt:
-        kv_smem = self.block_n() * self.depth
-        return kv_smem * self.num_pipeline_stages if fa3 else kv_smem
+        if fa3:
+            return self.num_pipeline_stages * self.block_n() * self.depth
+        else:
+            return self.block_n() * self.depth
 
-    fn k_smem_size(self, sm_90: Bool = False) -> UInt:
-        k_smem = self.block_n() * self.depth
-        return k_smem * self.num_pipeline_stages if sm_90 else k_smem
+    fn k_smem_size(self, fa3: Bool = False) -> UInt:
+        if fa3:
+            return self.kv_smem_size(True)
+        else:
+            return self.block_n() * self.depth
 
-    fn v_smem_size(self, sm_90: Bool = False) -> UInt:
-        BN = self.block_n()
-        kv_smem = BN * BN
-        return kv_smem * self.num_pipeline_stages if sm_90 else kv_smem
+    fn v_smem_size(self, fa3: Bool = False) -> UInt:
+        if fa3:
+            return self.kv_smem_size(True)
+        else:
+            BN = self.block_n()
+            return BN * BN
 
     fn p_smem_size(self) -> UInt:
         return self.block_m() * self.block_n()
@@ -182,18 +205,21 @@ struct MHAConfig(Copyable, Movable, Writable):
         if not has_nvidia_gpu_accelerator():
             return 0
 
+        alias persistent = (
+            env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+        ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
         @parameter
         if shared_kv:
             num_smem_elements = (
-                self.q_smem_size()
+                self.q_smem_size(sm_90_fa3, persistent)
                 + self.kv_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
             )
         else:
             num_smem_elements = (
-                self.q_smem_size(sm_90_fa3)
+                self.q_smem_size(sm_90_fa3, persistent)
                 + self.k_smem_size(sm_90_fa3)
                 + self.v_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
@@ -204,10 +230,11 @@ struct MHAConfig(Copyable, Movable, Writable):
 
         num_smem_bytes = self.type.sizeof() * num_smem_elements
         if sm_90_fa3:
-            alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
-            num_smem_bytes += (4 * self.num_pipeline_stages + 4) * sizeof[
-                DType.int64
-            ]() + (2 * sizeof[DType.uint32]() if persistent != 0 else 0)
+            alias i64_size = sizeof[DType.int64]()
+            num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
+                4 * i64_size + 2 * sizeof[DType.uint32]() if persistent
+                != 0 else 0
+            )
         return num_smem_bytes
 
     fn __init__(
@@ -220,28 +247,68 @@ struct MHAConfig(Copyable, Movable, Writable):
         BK: OptionalReg[UInt] = None,
         WM: OptionalReg[UInt] = None,
         WN: OptionalReg[UInt] = None,
-        num_pipeline_stages: UInt = 2 if is_sm90or100 else 4,
+        num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
-        algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
+        algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
     ):
         self.type = type
         self.num_heads = num_heads
         self.depth = depth
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
+        self.algorithm = algorithm.init(type)
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
-        # BN
-        self.num_keys_per_block = num_keys_per_block.or_else(depth)
-
-        if is_sm90or100 and type.is_half_float():
+        if (
+            is_sm90or100
+            and type.is_half_float()
+            and self.algorithm == FlashAttentionAlgorithm(3)
+        ):
             # BM
-            self.num_queries_per_block = num_queries_per_block.or_else(
-                128 if algorithm == 3 else 64
-            )
+            self.num_queries_per_block = num_queries_per_block.or_else(128)
+            reg_per = 224 if self.num_queries_per_block > 64 else 256
+            if num_keys_per_block:
+                self.num_keys_per_block = num_keys_per_block.value()
+            elif depth == 64:  # FIXME: larger values cause inworld failures
+                self.num_keys_per_block = 64
+            else:
+                # BN
+                # reg use per warp is at least
+                # 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
+                # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
+                # (reg_per - depth//2 - 4) >= 3*BN//4
+                # BN <= (4*reg_per - 2*depth - 16)//3
+                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                alias persistent = (
+                    env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+                )
+                smem_total = 227000
+                # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
+                #                 + 16*pipeline_stages + 40*persistent
+                # smem_total - 2*BM*depth*(1+persistent) - 16*pipeline_stages - 40*persistent
+                #        >= 2*depth*pipeline_stages*BN
+                # BN <= (smem_total//2 - BM*depth*(1+persistent) - 8*pipeline_stages
+                #        - 20*persistent) // (depth*pipeline_stages)
+                smem_upper_bound = (
+                    smem_total // 2
+                    - self.num_queries_per_block * depth * (1 + persistent)
+                    - 8 * num_pipeline_stages
+                    - 20 * persistent
+                ) // (depth * num_pipeline_stages)
+                # divide and multiply by 16 to get a multiple of MMA_K
+                min_upper_bound = 16 * (
+                    min(reg_upper_bound, smem_upper_bound) // 16
+                )
+                # FIXME: add support for non-power-of-twos?
+                self.num_keys_per_block = max(
+                    prev_power_of_two(min_upper_bound), 64
+                )
             self.BK = BK.or_else(64)
+            self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
+            # BN
+            self.num_keys_per_block = num_keys_per_block.or_else(depth)
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 32 if type
@@ -252,23 +319,27 @@ struct MHAConfig(Copyable, Movable, Writable):
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
             ) if has_nvidia_gpu_accelerator() else 32
+            self.WN = WN.or_else(32 if type is DType.float32 else depth)
         self.WM = WM.or_else(
             32 if type
             is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
-        self.WN = WN.or_else(32 if type is DType.float32 else depth)
-        self.algorithm = algorithm
 
     fn __str__(self) -> String:
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("ampere_")
+        if self.algorithm == 2:
+            writer.write("ampere_")
+        else:
+            writer.write("fa3_")
         writer.write(self.type, "_")
         # Use BNxBM to match MatmulConfig, which matches cublas
         writer.write(self.block_n(), "x", self.block_m(), "_")
         writer.write(self.block_k(), "x")
         writer.write(self.num_pipeline_stages)
+        writer.write(",depth = ", self.depth)
+        writer.write(",num_attention_heads = ", self.num_heads)
 
 
 @always_inline
@@ -330,7 +401,7 @@ fn _copy_frag_to_smem_nvidia[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
@@ -374,7 +445,9 @@ fn _copy_frag_to_smem_nvidia[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)
                 )[]
-                alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
+                alias align = alignof[
+                    SIMD[p_smem_iter.dtype, frag_simd_width]
+                ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
 
@@ -415,7 +488,7 @@ fn _copy_frag_to_smem_amd[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
@@ -483,10 +556,14 @@ fn _copy_frag_to_smem[
         _copy_frag_to_smem_nvidia[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
-    else:
+    elif is_amd_gpu():
         _copy_frag_to_smem_amd[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="_copy_frag_to_smem",
+        ]()
 
 
 @always_inline

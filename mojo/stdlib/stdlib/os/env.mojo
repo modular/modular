@@ -25,7 +25,7 @@ from sys.ffi import c_int
 
 
 fn setenv(
-    owned name: String, owned value: String, overwrite: Bool = True
+    owned name: String, var value: String, overwrite: Bool = True
 ) -> Bool:
     """Changes or adds an environment variable.
 
@@ -54,7 +54,7 @@ fn setenv(
     return status == 0
 
 
-fn unsetenv(owned name: String) -> Bool:
+fn unsetenv(var name: String) -> Bool:
     """Unsets an environment variable.
 
     Args:
@@ -70,7 +70,7 @@ fn unsetenv(owned name: String) -> Bool:
     return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
 
 
-fn getenv(owned name: String, default: String = "") -> String:
+fn getenv(var name: String, default: String = "") -> String:
     """Returns the value of the given environment variable.
 
     Constraints:

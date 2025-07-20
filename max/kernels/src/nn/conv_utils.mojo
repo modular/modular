@@ -15,7 +15,6 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    has_avx2,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
@@ -24,6 +23,7 @@ from sys.info import (
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from layout import LayoutTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList
@@ -41,8 +41,8 @@ alias elementwise_epilogue_type = fn[rank: Int] (
     f_size: Int,
 ) capturing -> None
 
-alias elementwise_simd_epilogue_type = fn[type: DType, rank: Int, width: Int] (
-    IndexList[rank], SIMD[type, width]
+alias elementwise_simd_epilogue_type = fn[dtype: DType, rank: Int, width: Int] (
+    IndexList[rank], SIMD[dtype, width]
 ) capturing -> None
 
 
@@ -277,6 +277,52 @@ fn get_conv_shape[
     rank: Int,
     filter_packed: Bool,
 ](
+    output: LayoutTensor,
+    input: LayoutTensor,
+    filter: LayoutTensor,
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+) -> ConvShape[rank]:
+    var output_dims = IndexList[rank](0)
+    var input_dims = IndexList[rank](0)
+    var filter_dims = IndexList[rank](0)
+
+    @parameter
+    for i in range(rank):
+        output_dims[i] = output.dim[i + 1]()
+        input_dims[i] = input.dim[i + 1]()
+
+        @parameter
+        if filter_packed:
+            filter_dims[i] = filter.dim[i + 1]()
+        else:
+            filter_dims[i] = filter.dim[i]()
+
+    return ConvShape[rank](
+        n=input.dim[0](),
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=input.dim[rank + 1](),
+        f=output.dim[rank + 1](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
+
+
+@always_inline
+fn get_conv_shape[
+    rank: Int,
+    filter_packed: Bool,
+](
     output: NDBuffer,
     input: NDBuffer,
     filter: NDBuffer,
@@ -322,13 +368,13 @@ fn get_conv2d_shape[
     output_shape: DimList,
     input_shape: DimList,
     filter_shape: DimList,
-    type: DType,
+    dtype: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
 ](
-    output: NDBuffer[mut=True, type, 4, _, output_shape],
-    input: NDBuffer[type, 4, _, input_shape],
-    filter: NDBuffer[type, 4, _, filter_shape],
+    output: NDBuffer[mut=True, dtype, 4, _, output_shape],
+    input: NDBuffer[dtype, 4, _, input_shape],
+    filter: NDBuffer[dtype, 4, _, filter_shape],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     stride: IndexList[2],
@@ -362,13 +408,13 @@ fn get_conv2d_shape[
     output_shape: DimList,
     input_shape: DimList,
     filter_shape: DimList,
-    type: DType,
+    dtype: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
 ](
-    output: NDBuffer[mut=True, type, 4, _, output_shape],
-    input: NDBuffer[type, 4, _, input_shape],
-    filter: NDBuffer[type, filter_rank, _, filter_shape],
+    output: NDBuffer[mut=True, dtype, 4, _, output_shape],
+    input: NDBuffer[dtype, 4, _, input_shape],
+    filter: NDBuffer[dtype, filter_rank, _, filter_shape],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     stride: IndexList[2],
@@ -406,7 +452,7 @@ fn get_conv2d_shape[
 
 
 @always_inline
-fn get_conv_tile_size[type: DType]() -> Int:
+fn get_conv_tile_size[dtype: DType]() -> Int:
     # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
     # filter window in convolution. So the cache tile size (in terms of
     # elements) is rounded up to multiple of 9.
@@ -415,35 +461,35 @@ fn get_conv_tile_size[type: DType]() -> Int:
     # See MatmulUtils for context on tile size for debug built and macos.
     @parameter
     if is_debug_build():
-        return 4 * KB // sizeof[type]()
+        return 4 * KB // sizeof[dtype]()
 
     @parameter
     if os_is_macos():
-        return 64 * KB // sizeof[type]()
+        return 64 * KB // sizeof[dtype]()
 
     @parameter
     if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         #  Graviton 2 and Skylake server
         # have a 1 MiB L2 cache
-        return 576 * KB // sizeof[type]()
+        return 576 * KB // sizeof[dtype]()
 
     # AMD Rome has a 512 KiB L2 cache.
-    return 288 * KB // sizeof[type]()
+    return 288 * KB // sizeof[dtype]()
 
 
 @always_inline
 fn get_conv_tile_shape[
-    type: DType,
+    dtype: DType,
 ](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> IndexList[2]:
     """Compute the (c, f) tile shape in L2.
     Assume NHWC layout, the tile shape is (R, S, c_tile, f_tile). R and S are
     by default fully covered. The heuristic tried to block in C as much as
     possible. If C is small, it would start to block F.
     """
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
 
     # Number of elements in tile.
-    var tile_size = get_conv_tile_size[type]()
+    var tile_size = get_conv_tile_size[dtype]()
     # Number of elements in micro kernel's f dimension.
     var micro_kernel_f = micro_kernel_width * simd_size
     # Max C tile size, assuming R, S, and micro_kernel_f are covered.

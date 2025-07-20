@@ -31,6 +31,7 @@ from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
+from sys.info import CompilationTarget
 
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
@@ -298,8 +299,14 @@ fn _printf[
                     Int32(Int(bound == args_len)),
                 )
 
-        else:
+        elif not is_gpu():
             _printf_cpu[fmt](args, file)
+        else:
+            # If we aren't targeting either a known GPU vendor, or CPU, issue
+            # a target error.
+            return CompilationTarget.unsupported_target_error[
+                operation="_printf"
+            ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -410,13 +417,20 @@ fn print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.data[buffer.pos] = 0
-            file.write_bytes(
-                Span[Byte, ImmutableAnyOrigin](
-                    ptr=buffer.data, length=buffer.pos + 1
-                )
-            )
+            buffer.nul_terminate()
 
+            @parameter
+            if is_nvidia_gpu():
+                _printf["%s"](buffer.data)
+            elif is_amd_gpu():
+                var msg = printf_begin()
+                _ = printf_append_string_n(
+                    msg, Span(ptr=buffer.data, length=buffer.pos), is_last=True
+                )
+            else:
+                return CompilationTarget.unsupported_target_error[
+                    operation="print"
+                ]()
         else:
             var buffer = _WriteBufferStack(file)
             alias length = values.__len__()
@@ -425,6 +439,7 @@ fn print[
             for i in range(length):
                 values[i].write_to(buffer)
 
+                @parameter
                 if i < length - 1:
                     sep.write_to(buffer)
 

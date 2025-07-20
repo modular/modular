@@ -19,7 +19,11 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 
 
-def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
+def l2_norm(
+    x: TensorValue,
+    eps=1e-6,  # noqa: ANN001
+    multiply_before_cast: bool = True,
+) -> TensorValue:
     """Computes the L2 norm of the input."""
     weight = ops.constant(
         1, DType.float32, device=DeviceRef.CPU()
@@ -40,5 +44,5 @@ def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
             ),  # weight_offset = 0.0
         ],
         [TensorType(dtype=DType.float32, shape=x.shape, device=x.device)],
-        parameters={"multiply_before_cast": True},
+        parameters={"multiply_before_cast": multiply_before_cast},
     )[0].tensor.cast(original_dtype)

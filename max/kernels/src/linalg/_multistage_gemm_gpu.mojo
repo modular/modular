@@ -48,7 +48,7 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
@@ -66,7 +66,7 @@ from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
+from .matmul_amd import gemm_kernel_amd
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
@@ -91,6 +91,9 @@ fn warp_split_k_reduction[
     c_reg_tile: LayoutTensor[
         c_type, c_layout, address_space = AddressSpace.LOCAL, **_
     ],
+    smem: UnsafePointer[
+        Scalar[c_type], address_space = AddressSpace.SHARED, **_
+    ],
 ):
     alias red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
 
@@ -99,12 +102,6 @@ fn warp_split_k_reduction[
 
     var i_red = num_warp_k_partitions // 2
     var tid = thread_idx.x
-
-    var smem = external_memory[
-        Scalar[c_type],
-        address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[c_type, c_frag_size]](),
-    ]()
 
     while i_red > 0:
         barrier()
@@ -119,7 +116,7 @@ fn warp_split_k_reduction[
             .vectorize[1, c_frag_size]()
         )
         if i_red <= warp_k_part_id < 2 * i_red:
-            copy[thread_layout=red_layout](
+            copy_local_to_shared[thread_layout=red_layout](
                 red_tb_smem,
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
@@ -136,6 +133,33 @@ fn warp_split_k_reduction[
                     __type_of(c_reg_tile_vectorized[0, i])
                 ](red_tb_thread_tile[0, i])
         i_red //= 2
+
+
+@always_inline
+fn warp_split_k_reduction[
+    c_type: DType,
+    c_layout: Layout, //,
+    BM: Int,
+    BN: Int,
+    num_threads_per_warp_k_part: Int,
+    num_warp_k_partitions: Int,
+](
+    warp_k_part_id: Int,
+    c_reg_tile: LayoutTensor[
+        c_type, c_layout, address_space = AddressSpace.LOCAL, **_
+    ],
+):
+    alias c_frag_size = c_layout.shape[1].value()
+
+    var smem = external_memory[
+        Scalar[c_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[c_type, c_frag_size]](),
+    ]()
+
+    warp_split_k_reduction[
+        BM, BN, num_threads_per_warp_k_part, num_warp_k_partitions
+    ](warp_k_part_id, c_reg_tile, smem)
 
 
 @always_inline
@@ -667,7 +691,7 @@ fn multistage_gemm_kernel[
     c_linear_idx_type: DType,
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, **_],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
@@ -898,7 +922,7 @@ fn multistage_gemm_kernel[
         for i in range(__type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
             alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-            var dst_idx = 0
+            var dst_idx: Int
 
             @parameter
             if c_gmem_frag.layout.all_dims_known():
@@ -943,7 +967,10 @@ fn multistage_gemm_kernel[
             .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -983,7 +1010,7 @@ fn multistage_gemm_kernel[
                 )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_gmem_frag.layout.all_dims_known():
@@ -1192,7 +1219,7 @@ fn multistage_gemm_split_k_kernel[
 
         @parameter
         if has_amd_gpu_accelerator() and transpose_b:
-            amd_gemm_kernel[
+            gemm_kernel_amd[
                 work_space_type,
                 work_space_part.layout,
                 a_type,

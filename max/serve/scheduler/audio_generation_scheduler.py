@@ -20,26 +20,28 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Generator
-from typing import Any, cast
+from typing import Any
 
-import torch
+import numpy as np
 import zmq
+from max.interfaces import (
+    AudioGenerationMetadata,
+    AudioGenerationResponse,
+    AudioGeneratorOutput,
+    EngineResult,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
-    AudioGenerationResponse,
     AudioGenerator,
-    AudioGeneratorOutput,
     TTSContext,
     msgpack_numpy_decoder,
 )
-from max.profiler import Trace, traced
-from max.serve.process_control import ProcessControl
+from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
-from .queues import STOP_STREAM
 from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
@@ -50,7 +52,7 @@ MAX_SERVE_TTS_BATCH_INFO_FILENAME: str | None = os.environ.get(
 
 
 class SchedulerLogger:
-    def __init__(self, path: str | None):
+    def __init__(self, path: str | None) -> None:
         self.path = path
         # open a file and overwrite it
         self.f = None
@@ -141,7 +143,7 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         enable_prioritize_first_decode: bool,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.max_queue_size_tg = (
             max_queue_size_tg
@@ -167,7 +169,7 @@ class AudioGenerationSchedulerOutput:
         self,
         reqs: dict[str, TTSContext],
         batch_type: BatchType,
-    ):
+    ) -> None:
         self.start_time = time.time()
         self.reqs = reqs
         self.batch_type = batch_type
@@ -201,7 +203,6 @@ class AudioGenerationSchedulerOutput:
 class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         scheduler_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
@@ -214,17 +215,14 @@ class AudioGenerationScheduler(Scheduler):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
-        # Multiprocessing resources.
-        self.pc = process_control
-
         self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
-        self.response_q = ZmqPushSocket[list[dict[str, AudioGeneratorOutput]]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
-        )
+        self.response_q = ZmqPushSocket[
+            dict[str, EngineResult[AudioGeneratorOutput]]
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -244,11 +242,11 @@ class AudioGenerationScheduler(Scheduler):
                 "Chunked prefill is not supported with TTS Scheduler"
             )
 
+        self.batch_generator = self._create_batch_generator()
+
         self.batch_info_logger = SchedulerLogger(
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
         )
-
-        # TODO health check
 
     def _retrieve_pending_requests(self) -> None:
         while not self.request_q.empty():
@@ -293,8 +291,7 @@ class AudioGenerationScheduler(Scheduler):
                 self.available_cache_indices.add(req_data.cache_seq_id)
                 del self.decode_reqs[req_id]
 
-                stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-                self.response_q.put_nowait([{req_id: stop_stream}])
+                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
 
     @traced
     def _stream_responses_to_frontend(
@@ -304,24 +301,33 @@ class AudioGenerationScheduler(Scheduler):
         if not responses:
             return
 
-        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-        audio_responses: dict[str, AudioGeneratorOutput] = {}
-        stop_responses: dict[str, AudioGeneratorOutput] = {}
+        audio_responses: dict[str, EngineResult[AudioGeneratorOutput]] = {}
         for req_id, response in responses.items():
             if response.has_audio_data:
-                audio_data = torch.from_numpy(response.audio_data)
+                audio_data = response.audio_data
             else:
-                audio_data = torch.tensor([], dtype=torch.float32)
-            audio_responses[req_id] = AudioGeneratorOutput(
-                audio_data=audio_data,
-                metadata={},
-                is_done=response.is_done,
-                buffer_speech_tokens=response.buffer_speech_tokens,
-            )
-            if response.is_done:
-                stop_responses[req_id] = stop_stream
+                audio_data = np.array([], dtype=np.float32)
 
-        self.response_q.put_nowait([audio_responses, stop_responses])
+            if response.is_done:
+                audio_responses[req_id] = EngineResult.complete(
+                    AudioGeneratorOutput(
+                        audio_data=audio_data,
+                        metadata=AudioGenerationMetadata(),
+                        is_done=response.is_done,
+                        buffer_speech_tokens=response.buffer_speech_tokens,
+                    )
+                )
+            else:
+                audio_responses[req_id] = EngineResult.active(
+                    AudioGeneratorOutput(
+                        audio_data=audio_data,
+                        metadata=AudioGenerationMetadata(),
+                        is_done=response.is_done,
+                        buffer_speech_tokens=response.buffer_speech_tokens,
+                    )
+                )
+
+        self.response_q.put_nowait(audio_responses)
 
     def _create_tg_batch(
         self,
@@ -379,7 +385,7 @@ class AudioGenerationScheduler(Scheduler):
         assert batch.batch_size > 0
 
         # execute the batch
-        with Trace(f"_schedule({batch})"):
+        with Tracer(f"_schedule({batch})"):
             responses = self.pipeline.next_chunk(batch.reqs)
 
         # add the encoded requests to the continuous batch
@@ -431,49 +437,33 @@ class AudioGenerationScheduler(Scheduler):
             ):
                 yield self._create_tg_batch()
 
-    def run(self) -> None:
-        """The Scheduler loop that creates batches and schedules them on GPU"""
-        batch_generator = self._create_batch_generator()
+    def run_iteration(self) -> None:
+        # Construct the batch to execute
+        t0 = time.monotonic()
+        self._retrieve_pending_requests()
+        batch = next(self.batch_generator)
+        t1 = time.monotonic()
+        batch_creation_time_s = t1 - t0
 
-        i = 0
-        while i % 10 or not self.pc.is_canceled():
-            self.pc.beat()
-            i += 1
+        # If the batch is empty, skip
+        if batch.batch_size == 0:
+            return
 
-            try:
-                # Construct the batch to execute
-                t0 = time.monotonic()
-                self._retrieve_pending_requests()
-                batch = next(batch_generator)
-                t1 = time.monotonic()
-                batch_creation_time_s = t1 - t0
+        # Schedule the batch
+        t0 = time.monotonic()
+        self._schedule(batch)
+        t1 = time.monotonic()
+        batch_execution_time_s = t1 - t0
 
-                # If the batch is empty, skip
-                if batch.batch_size == 0:
-                    continue
+        # Log batch metrics
+        num_steps = self.pipeline.prev_num_steps
+        assert num_steps is not None and num_steps > 0
+        self.batch_info_logger.log(
+            batch,
+            len(self.pending_reqs),
+            batch_creation_time_s,
+            batch_execution_time_s,
+            num_steps,
+        )
 
-                # Schedule the batch
-                t0 = time.monotonic()
-                self._schedule(batch)
-                t1 = time.monotonic()
-                batch_execution_time_s = t1 - t0
-
-                # Log batch metrics
-                num_steps = self.pipeline.prev_num_steps
-                assert num_steps is not None and num_steps > 0
-                self.batch_info_logger.log(
-                    batch,
-                    len(self.pending_reqs),
-                    batch_creation_time_s,
-                    batch_execution_time_s,
-                    num_steps,
-                )
-
-                # occasionally handle cancelled requests
-                if i % 20 == 0:
-                    self._handle_cancelled_requests()
-
-            except Exception as e:
-                logger.exception("An error occurred during scheduling")
-                # TODO try to recover
-                raise e
+        self._handle_cancelled_requests()

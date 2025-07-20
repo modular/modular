@@ -32,11 +32,11 @@ class WithLazyPipelineOptions(click.Command):
     and should be removed when the pipeline_config_options decorator is fast.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self._options_loaded = False
         super().__init__(*args, **kwargs)
 
-    def _ensure_options_loaded(self):
+    def _ensure_options_loaded(self) -> None:
         if not self._options_loaded:
             # Lazily load and apply pipeline_config_options decorator
             from max.entrypoints.cli import pipeline_config_options
@@ -57,33 +57,31 @@ class WithLazyPipelineOptions(click.Command):
             for param in getattr(self.callback, "__click_params__", []):
                 self.params.append(param)
 
-    def get_help(self, ctx):
+    def get_help(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_help(ctx)
 
-    def invoke(self, ctx):
+    def invoke(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().invoke(ctx)
 
-    def parse_args(self, ctx, args):
+    def parse_args(self, ctx, args):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().parse_args(ctx, args)
 
-    def get_params(self, ctx):
+    def get_params(self, ctx):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().get_params(ctx)
 
-    def shell_complete(self, ctx, incomplete):
+    def shell_complete(self, ctx, incomplete):  # noqa: ANN001
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
-            if any(param.name == "task_flags" for param in rv.params):
-                rv.ignore_unknown_options = True
             return rv
         supported = ", ".join(self.list_commands(ctx))
         ctx.fail(
@@ -102,19 +100,19 @@ class ModelGroup(click.Group):
     help="Show the MAX version and exit.",
 )
 def main() -> None:
-    pass
+    configure_telemetry()
 
 
-def configure_telemetry() -> None:
+def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
     settings = Settings()
-    configure_logging(settings)
+    configure_logging(settings, color)
     configure_metrics(settings)
 
 
-def common_server_options(func):
+def common_server_options(func):  # noqa: ANN001
     @click.option(
         "--profile-serve",
         is_flag=True,
@@ -161,7 +159,12 @@ def common_server_options(func):
 @click.option(
     "--task", type=str, default="text_generation", help="The task to run."
 )
-@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--task-arg",
+    multiple=True,
+    type=str,  # Take them all in as strings
+    help="Task-specific arguments to pass to the underlying model (can be used multiple times).",
+)
 def cli_serve(
     profile_serve: bool,
     performance_fake: str,
@@ -170,7 +173,7 @@ def cli_serve(
     experimental_enable_kvcache_agent: bool,
     port: int,
     task: str,
-    task_flags: list[str],
+    task_arg: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -181,19 +184,18 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_pipeline
     from max.entrypoints.cli.config import parse_task_flags
+    from max.interfaces import PipelineTask
     from max.pipelines import (
         AudioGenerationConfig,
         PipelineConfig,
-        PipelineTask,
     )
 
     # Initialize config, and serve.
-
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
         pipeline_config = AudioGenerationConfig.from_flags(
-            parse_task_flags(task_flags), **config_kwargs
+            parse_task_flags(task_arg), **config_kwargs
         )
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
@@ -342,5 +344,4 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
-    configure_telemetry()
     main()

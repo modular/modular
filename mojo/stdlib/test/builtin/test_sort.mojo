@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
@@ -574,7 +573,7 @@ def test_sort_comparamble_elements_list():
     fn gen_list(count: Int):
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
-        var names = [String("Maxim"), "Max", "Alex", "Bob", "Joe"]
+        var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]
         for age in ages:
             var name = names[Int(age) % len(names)]
             list.append(Person(name, Int(age)))

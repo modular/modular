@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
 from random import random_ui64, seed
 from sys import bitwidthof
@@ -104,14 +101,14 @@ alias width = bitwidthof[Int]()
 
 @parameter
 fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
-    var values = _build_list[0, 2**width - 1]()
+    var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(values)):
-                var result = func(values.unsafe_get(i))
+            for i in range(len(_values)):
+                var result = func(_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
@@ -119,14 +116,14 @@ fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
-    var values = _build_list[0, 2**width - 1]()
+    var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(values)):
-                var result = func(values.unsafe_get(i))
+            for i in range(len(_values)):
+                var result = func(_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()

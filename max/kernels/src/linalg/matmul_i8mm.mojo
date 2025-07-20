@@ -25,7 +25,7 @@ from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 
 
 struct LoadStore_i8mm[
-    type: DType,
+    dtype: DType,
     simd_size: Int,
     single_row: Bool,
     tile_rows: Int,
@@ -33,7 +33,7 @@ struct LoadStore_i8mm[
 ]:
     alias num_simd_cols = tile_columns // simd_size
     var output_tile: _Accumulator[
-        type, tile_rows, Self.num_simd_cols, simd_size
+        dtype, tile_rows, Self.num_simd_cols, simd_size
     ]
     var skip_boundary_check: Bool
 
@@ -41,7 +41,7 @@ struct LoadStore_i8mm[
     @implicit
     fn __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
+            dtype, tile_rows, Self.num_simd_cols, simd_size
         ]()
         self.skip_boundary_check = skip_boundary_check
 
@@ -52,7 +52,7 @@ struct LoadStore_i8mm[
     @always_inline
     fn _load_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -64,7 +64,7 @@ struct LoadStore_i8mm[
 
             @parameter
             for idx1 in range(tile_columns // simd_size):
-                var c_data: SIMD[type, simd_size] = 0
+                var c_data: SIMD[dtype, simd_size] = 0
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
@@ -73,8 +73,8 @@ struct LoadStore_i8mm[
                     )
                     var t1 = c_ptr_loc.load[width=2](
                         c_stride * (2 * idx0 + 1) + 2 * idx1
-                    ) if not single_row else SIMD[type, 2](0)
-                    c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+                    ) if not single_row else SIMD[dtype, 2](0)
+                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
                 elif idx1 * 2 <= c_bound[1]:
                     var t0 = partial_simd_load[2](
                         c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
@@ -87,15 +87,15 @@ struct LoadStore_i8mm[
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
-                    ) if not single_row else SIMD[type, 2](0)
-                    c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+                    ) if not single_row else SIMD[dtype, 2](0)
+                    c_data = rebind[SIMD[dtype, simd_size]](t0.join(t1))
 
                 self.output_tile[idx0, idx1] = c_data
 
     @always_inline
     fn _store_c_tile(
         mut self,
-        c_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],

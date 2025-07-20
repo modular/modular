@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
 
 from tempfile import NamedTemporaryFile
 
@@ -50,7 +48,7 @@ struct PrintChecker:
         self.call_location = __call_location()
         self.cursor = 0
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
     fn __moveinit__(out self, owned existing: Self):
@@ -120,7 +118,7 @@ def test_print():
         print(">", x, file=checker.stream())
         checker.check_line_starts_with("> 0.6535")
 
-        print(String("Hello world"), file=checker.stream())
+        print("Hello world", file=checker.stream())
         checker.check_line("Hello world")
 
 

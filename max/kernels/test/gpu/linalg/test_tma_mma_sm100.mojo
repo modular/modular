@@ -278,7 +278,7 @@ fn tma_umma_kernel_ss[
         datapaths=16,
         bits=256,
         repeat = BN // 8,
-        type=accum_type,
+        dtype=accum_type,
         pack=False,
         width=c_frag_size,
     ](tmem_addr)
@@ -582,7 +582,7 @@ fn tma_umma_kernel_ts[
         datapaths=16,
         bits=256,
         repeat = BN // 8,
-        type=accum_type,
+        dtype=accum_type,
         pack=False,
         width=c_frag_size,
     ](c_tmem)

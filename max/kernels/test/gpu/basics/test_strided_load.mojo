@@ -13,16 +13,16 @@
 
 from sys.intrinsics import strided_load
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.memory import AddressSpace
 from testing import assert_true
 
 
 fn strided_load_kernel[
-    *, type: DType = DType.uint32, width: Int = 1
+    *, dtype: DType = DType.uint32, width: Int = 1
 ](
-    output: UnsafePointer[SIMD[type, width]],
-    ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.GENERIC],
+    output: UnsafePointer[SIMD[dtype, width]],
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
     stride: Int,
 ):
     output[] = strided_load[width](ptr, stride)
@@ -31,9 +31,7 @@ fn strided_load_kernel[
 def test_strided_load():
     assert_true(
         "@llvm.masked.gather"
-        in _compile_code_asm[
-            strided_load_kernel[width=4], emission_kind="llvm"
-        ]()
+        in _compile_code[strided_load_kernel[width=4], emission_kind="llvm"]()
     )
 
 

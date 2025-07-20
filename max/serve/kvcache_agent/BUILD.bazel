@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "modular_py_library", "proto_library", "py_grpc_library", "py_proto_library", "requirement")
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("//bazel:api.bzl", "modular_py_library", "proto_library", "py_grpc_library", "requirement")
 
 modular_py_library(
     name = "kvcache_agent",
@@ -18,8 +19,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve/queue",
         requirement("grpcio"),
-        requirement("grpcio-tools"),
-        requirement("grpcio-reflection"),
         requirement("pyzmq"),
         requirement("msgspec"),
     ],

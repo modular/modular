@@ -70,7 +70,7 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         transport: DispatcherTransport[DispatcherMessagePayload],
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         """Initialize dispatcher service with local sockets and remote transport."""
         self.transport = transport
 

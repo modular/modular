@@ -1,40 +1,120 @@
 """Define bazel dependencies common to the internal and external repos."""
 
+bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
+bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.8")
-
-# TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
-bazel_dep(name = "aspect_rules_py", version = "1.4.0")
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
-bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
+bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "29.1")
+bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_mojo", version = "0.4.1")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
-bazel_dep(name = "rules_pycross", version = "0.7.1")
-bazel_dep(name = "rules_python", version = "1.4.0-rc4")
+bazel_dep(name = "rules_pycross", version = "0.8.0")
+bazel_dep(name = "rules_python", version = "1.5.1")
 bazel_dep(name = "rules_shell", version = "0.4.1")
+bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
+bazel_dep(name = "rules_apple", version = "3.22.0")
+bazel_dep(name = "rules_swift", version = "2.8.2")
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
-bazel_dep(name = "rules_mypy", version = "0.32.0", dev_dependency = True)
-bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
-
+# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
 single_version_override(
-    module_name = "rules_python",
+    module_name = "rules_jvm_external",
+    version = "6.7",
+)
+
+bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
+
+archive_override(
+    module_name = "rules_pycross",
+    integrity = "sha256-DnwyjQfpS9MRtk5Uh8UbPHvbXnbs38ciht55/pJRFZE=",
     patch_strip = 1,
     patches = [
-        # https://github.com/bazelbuild/rules_python/issues/2622
-        "//bazel/public-patches:rules_python_skip.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/2807
-        "//bazel/public-patches:rules_python_py_wheel_requires_file.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/2813
-        "//bazel/public-patches:rules_python_override_hub.patch",
+        # https://github.com/jvolkman/rules_pycross/pull/176
+        "//bazel/public-patches:rules_pycross_watch.patch",
     ],
+    strip_prefix = "rules_pycross-b4707803848b06ae264247bcba15ddf3ef4008e2",
+    urls = [
+        "https://github.com/jvolkman/rules_pycross/archive/b4707803848b06ae264247bcba15ddf3ef4008e2.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "aspect_rules_py",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/aspect-build/rules_py/pull/463
+        "//bazel/public-patches:rules_py_main.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "aspect_rules_js",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/aspect-build/rules_js/pull/2277
+        "//bazel/public-patches:rules_js_env_inherit.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "with_cfg.bzl",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:with_cfg_visibility.patch",
+    ],
+)
+
+# TODO: Remove when >0.4.1 is released
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-votbwv5MIO/0FlrO8T39tJ5B+iBWrIOjKSGfZVNExzo=",
+    strip_prefix = "rules_mojo-98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/theoremlp/rules_mypy/pull/105
+        "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
+        # https://github.com/theoremlp/rules_mypy/pull/106
+        "//bazel/public-patches:rules_mypy_pycross.patch",
+        # https://github.com/theoremlp/rules_mypy/pull/104
+        "//bazel/public-patches:rules_mypy_user_site.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "grpc",
+    patch_strip = 1,
+    patches = [
+        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        "//bazel/public-patches:grpc-no-macos-x86.patch",
+    ],
+    version = "1.73.1",
+)
+
+single_version_override(
+    module_name = "grpc-java",
+    patch_strip = 1,
+    patches = [
+        # TODO: Drop when this is pulled from bzlmod instead of grpc_deps.bzl
+        "//bazel/public-patches:grpc-java.patch",
+    ],
+    version = "1.67.1",
 )
 
 DEFAULT_PYTHON_VERSION = "3.12"
@@ -47,156 +127,42 @@ PYTHON_VERSIONS = [
     "3_13",
 ]
 
-DEFAULT_TORCH_VERSION = "2_7_0"
-
-TORCH_VERSIONS = [
-    "2_5_0",
-    "2_5_1",
-    "2_6_0",
-    "2_7_0",
-]
-
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = DEFAULT_PYTHON_VERSION)
 
 [
-    python.toolchain(
-        ignore_root_user_error = True,
-        is_default = version.replace("_", ".") == DEFAULT_PYTHON_VERSION,
-        python_version = version.replace("_", "."),
-    )
+    python.toolchain(python_version = version.replace("_", "."))
     for version in PYTHON_VERSIONS
 ]
 
-[
-    use_repo(python, "python_{}".format(version))
-    for version in PYTHON_VERSIONS
-]
+# Only the lowest version is used explicitly, everything else is indirect
+use_repo(python, "python_3_9")
 
-pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-pip.whl_mods(
-    additive_build_content = """
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["site-packages/torch/include/**/*.h"]),
-    includes = ["site-packages/torch/include"],
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "api",
-    hdrs = glob(["site-packages/torch/include/torch/csrc/api/include/**/*.h"]),
-    includes = ["site-packages/torch/include/torch/csrc/api/include"],
-    visibility = ["//visibility:public"],
-)
-""",
-    hub_name = "whl_mods_hub",
-    whl_name = "torch",
-)
-pip.override(
-    file = "xgrammar-0.1.18-cp{version}-cp{version}-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version = DEFAULT_PYTHON_VERSION.replace(".", "")),
-    hub_name = "modular_amd_gpu_pip_deps",
-    patch_strip = 1,
-    patches = [
-        "//bazel/third-party:xgrammar-amd-triton.patch",
-        "//bazel/third-party:xgrammar-record.patch",
+environments = use_extension("@rules_pycross//pycross/extensions:environments.bzl", "environments")
+environments.create_for_python_toolchains(
+    name = "rules_pycross_all_environments",
+    platforms = [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
     ],
+    python_versions = [x.replace("_", ".") for x in PYTHON_VERSIONS],
 )
-use_repo(pip, "whl_mods_hub")
+use_repo(environments, "rules_pycross_all_environments")
 
-pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
-    hub_name = "modular_amd_gpu_pip_deps",
-    python_version = DEFAULT_PYTHON_VERSION,
-    requirements_by_platform = {
-        "//:bazel/pip/requirements/amd-gpu-requirements.txt": "linux_x86_64",
-    },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
+lock_file = use_extension("@rules_pycross//pycross/extensions:lock_file.bzl", "lock_file")
+lock_file.instantiate(
+    name = "modular_pip_lock_file_repo",
+    lock_file = "//bazel/pip/requirements:pycross_lock_file.bzl",
 )
-pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
-    hub_name = "modular_nvidia_gpu_pip_deps",
-    python_version = DEFAULT_PYTHON_VERSION,
-    requirements_by_platform = {
-        "//:bazel/pip/requirements/nvidia-gpu-requirements.txt": "linux_x86_64",
-    },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
-)
-
-[pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
-    hub_name = "pip_torch-{}_deps".format(version),
-    python_version = DEFAULT_PYTHON_VERSION,
-    requirements_by_platform = {
-        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(version): "linux_x86_64,linux_aarch64,osx_aarch64",
-    },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
-) for version in TORCH_VERSIONS]
-
-use_repo(
-    pip,
-    "modular_amd_gpu_pip_deps",
-    "modular_nvidia_gpu_pip_deps",
-)
-
-[use_repo(
-    pip,
-    "pip_torch-{}_deps".format(version),
-) for version in TORCH_VERSIONS]
+use_repo(lock_file, "modular_pip_lock_file_repo")
 
 module_versions = use_repo_rule("//bazel/pip:module_versions.bzl", "module_versions")
 
 module_versions(
     name = "module_versions",
     default_python_version = DEFAULT_PYTHON_VERSION,
-    default_torch_version = DEFAULT_TORCH_VERSION,
     python_versions = PYTHON_VERSIONS,
-    torch_versions = TORCH_VERSIONS,
-)
-
-types = use_extension("@rules_mypy//mypy:types.bzl", "types")
-types.requirements(
-    name = "pip_types",
-    pip_requirements = "@pip_torch-{}_deps//:requirements.bzl".format(DEFAULT_TORCH_VERSION),
-    requirements_txt = "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION),
-)
-use_repo(types, "pip_types")
-
-pip_requirements = use_repo_rule("//bazel/pip:pip_requirements.bzl", "pip_requirements")
-
-pip_requirements(
-    name = "modular_pip_requirements",
-    amd_gpu_requirements = [
-        "//bazel/pip/requirements:amd-gpu-requirements.txt",
-    ],
-    nvidia_gpu_requirements = [
-        "//bazel/pip/requirements:nvidia-gpu-requirements.txt",
-    ],
-    requirements = [
-        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION),
-    ],
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -245,6 +211,10 @@ mojo.gpu_toolchains(
         "MI355": "mi355",
         "Navi": "radeon",
         "AMD Radeon Graphics": "radeon",
+        "Apple M1": "m1",
+        "Apple M2": "m2",
+        "Apple M3": "m3",
+        "Apple M4": "m4",
     },
     # GPU name -> target accelerator
     supported_gpus = {
@@ -262,6 +232,52 @@ mojo.gpu_toolchains(
         "mi355": "amdgpu:gfx950",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
+        "m1": "metal:10",
+        "m2": "metal:20",
+        "m3": "metal:30",
+        "m4": "metal:40",
     },
 )
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
+
+http_archive(
+    name = "uv_linux_aarch64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "4351c1e2ec13f5eb4da058ac1c39f00ae3042de9d6fdb6480e0170f32813210f",
+    strip_prefix = "uv-aarch64-unknown-linux-musl",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-unknown-linux-musl.tar.gz",
+)
+
+http_archive(
+    name = "uv_linux_x86_64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "b1dc0892749e93382decbd894755be0ba1535587f0bb8333572b072d1b0f652a",
+    strip_prefix = "uv-x86_64-unknown-linux-gnu",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-x86_64-unknown-linux-gnu.tar.gz",
+)
+
+http_archive(
+    name = "uv_darwin_aarch64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "7a20f3d33cbbc75683d66e0562d4bdbd702ca656d7dc1b7be3c592de6a6517b9",
+    strip_prefix = "uv-aarch64-apple-darwin",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
+)
+
+bazel_dep(name = "sysroot-jammy-aarch64")
+archive_override(
+    module_name = "sysroot-jammy-aarch64",
+    integrity = "sha256-v5qAjOEKEE/JknXfG/cmYOPcJY20dCjSqVqI0ZaAE5g=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/2/bf9a808ce10a104fc99275df1bf72660e3dc258db47428d2a95a88d196801398/sysroot-jammy-aarch64.tar.xz",
+    ],
+)
+
+bazel_dep(name = "sysroot-jammy-x86_64")
+archive_override(
+    module_name = "sysroot-jammy-x86_64",
+    integrity = "sha256-wqmIjd+G/q4gbakYTVLokn0TwCaw59kROGXgPcA47jA=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/2/c2a9888ddf86feae206da9184d52e8927d13c026b0e7d9113865e03dc038ee30/sysroot-jammy-x86_64.tar.xz",
+    ],
+)

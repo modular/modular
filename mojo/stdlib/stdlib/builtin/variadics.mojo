@@ -23,12 +23,14 @@ from memory import Pointer
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     """Const Iterator for VariadicList.
 
     Parameters:
         type: The type of the elements in the list.
     """
+
+    alias Element = type
 
     var index: Int
     var src: VariadicList[type]
@@ -133,7 +135,8 @@ struct _VariadicListMemIter[
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
         list_origin: The origin of the VariadicListMem.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias variadic_list_type = VariadicListMem[
@@ -181,7 +184,8 @@ struct VariadicListMem[
                         mut or owned argument.
         element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias reference_type = Pointer[element_type, origin]
@@ -253,9 +257,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable]
-        .cast_from[__origin_of(origin, self)]
-        .result
+        Origin[elt_is_mutable].cast_from[__origin_of(origin, self)]
     ] element_type:
         """Gets a single element on the variadic list.
 

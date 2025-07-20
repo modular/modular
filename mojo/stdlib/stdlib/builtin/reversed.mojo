@@ -20,6 +20,8 @@ from collections.deque import _DequeIter
 from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from collections.list import _ListIter
 
+from hashlib import Hasher
+
 from memory.span import Span, _SpanIter
 
 from .range import _StridedRange
@@ -122,7 +124,12 @@ fn reversed[
 fn reversed[
     K: KeyElement,
     V: Copyable & Movable,
-](ref value: Dict[K, V],) -> _DictKeyIter[K, V, __origin_of(value), False]:
+    H: Hasher,
+](
+    ref value: Dict[K, V, H],
+) -> _DictKeyIter[
+    K, V, H, __origin_of(value), False
+]:
     """Get a reversed iterator of the input dict.
 
     **Note**: iterators are currently non-raising.
@@ -130,6 +137,7 @@ fn reversed[
     Parameters:
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
+        H: The type of the hasher in the dict.
 
     Args:
         value: The dict to get the reversed iterator of.
@@ -143,10 +151,11 @@ fn reversed[
 fn reversed[
     K: KeyElement,
     V: Copyable & Movable,
+    H: Hasher,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
-](ref value: _DictValueIter[K, V, dict_origin]) -> _DictValueIter[
-    K, V, dict_origin, False
+](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
+    K, V, H, dict_origin, False
 ]:
     """Get a reversed iterator of the input dict values.
 
@@ -155,6 +164,7 @@ fn reversed[
     Parameters:
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
+        H: The type of the hasher in the dict.
         dict_mutability: Whether the reference to the dict values is mutable.
         dict_origin: The origin of the dict values.
 
@@ -170,10 +180,11 @@ fn reversed[
 fn reversed[
     K: KeyElement,
     V: Copyable & Movable,
+    H: Hasher,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
-](ref value: _DictEntryIter[K, V, dict_origin]) -> _DictEntryIter[
-    K, V, dict_origin, False
+](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[
+    K, V, H, dict_origin, False
 ]:
     """Get a reversed iterator of the input dict items.
 
@@ -182,6 +193,7 @@ fn reversed[
     Parameters:
         K: The type of the keys in the dict.
         V: The type of the values in the dict.
+        H: The type of the hasher in the dict.
         dict_mutability: Whether the reference to the dict items is mutable.
         dict_origin: The origin of the dict items.
 
@@ -192,7 +204,7 @@ fn reversed[
         The reversed iterator of the dict items.
     """
     var src = value.src
-    return _DictEntryIter[K, V, dict_origin, False](
+    return _DictEntryIter[K, V, H, dict_origin, False](
         src[]._reserved() - 1, 0, src
     )
 

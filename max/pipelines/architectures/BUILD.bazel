@@ -6,7 +6,6 @@ modular_py_library(
     imports = ["../../.."],
     deps = [
         requirement("numpy"),
-        requirement("safetensors"),
         requirement("pillow"),
         # TODO: These are required for the llama3.1 model. Remove them if
         # possible.

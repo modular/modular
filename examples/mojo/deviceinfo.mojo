@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
 
 from collections.string import StaticString
 from sys import (
@@ -72,5 +71,4 @@ def main():
     print("    Arch           : ", arch)
     print("    Physical Cores : ", num_physical_cores())
     print("    Logical Cores  : ", num_logical_cores())
-    # CHECK: CPU Features
     print("    CPU Features   :", cpu_features)

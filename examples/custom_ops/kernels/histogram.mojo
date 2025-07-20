@@ -15,15 +15,13 @@ from math import ceildiv
 from os import Atomic
 
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
-from gpu.host import DeviceContext
-from gpu.host.info import Info, is_cpu, is_gpu
+from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
-from utils.index import IndexList
 
 alias bin_width = Int(UInt8.MAX)
 
@@ -99,6 +97,8 @@ struct Histogram:
         input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        _histogram_cpu(output, input) if is_cpu[target]() else _histogram_gpu(
-            output, input, ctx
-        )
+        @parameter
+        if is_cpu[target]():
+            _histogram_cpu(output, input)
+        else:
+            _histogram_gpu(output, input, ctx)

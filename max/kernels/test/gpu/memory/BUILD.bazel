@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 _FILECHECK_TESTS = [
     "test_memory.mojo",
     "test_sharedmem_async_cp.mojo",
+    "test_tma_ops.mojo",
 ]
 
 _OTHER_TESTS = [

@@ -89,7 +89,7 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, IteratorTrait, Movable, Sized):
+](Copyable, Iterator, Movable, Sized):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -169,7 +169,7 @@ struct LinkedList[
         self._size = 0
 
     fn __init__(
-        out self, owned *elements: ElementType, __list_literal__: () = ()
+        out self, var *elements: ElementType, __list_literal__: () = ()
     ):
         """Initialize a linked list with the given elements.
 
@@ -182,7 +182,7 @@ struct LinkedList[
         """
         self = Self(elements=elements^)
 
-    fn __init__(out self, *, owned elements: VariadicListMem[ElementType, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[ElementType, _]):
         """Construct a list from a `VariadicListMem`.
 
         Args:
@@ -257,7 +257,7 @@ struct LinkedList[
             curr.free()
             curr = next
 
-    fn append(mut self, owned value: ElementType):
+    fn append(mut self, var value: ElementType):
         """Add an element to the end of the list.
 
         Args:
@@ -280,7 +280,7 @@ struct LinkedList[
         self._tail = addr
         self._size += 1
 
-    fn prepend(mut self, owned value: ElementType):
+    fn prepend(mut self, var value: ElementType):
         """Add an element to the beginning of the list.
 
         Args:
@@ -340,7 +340,7 @@ struct LinkedList[
         elem.free()
         return value^
 
-    fn pop[I: Indexer](mut self, owned i: I) raises -> ElementType:
+    fn pop[I: Indexer](mut self, var i: I) raises -> ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -379,7 +379,7 @@ struct LinkedList[
             self._size -= 1
             return data^
 
-        raise String("Invalid index for pop: {}").format(Int(i))
+        raise String("Invalid index for pop: ", Int(i))
 
     fn maybe_pop(mut self) -> Optional[ElementType]:
         """Removes the tail of the list and returns it, if it exists.
@@ -403,7 +403,7 @@ struct LinkedList[
         elem.free()
         return value^
 
-    fn maybe_pop[I: Indexer](mut self, owned i: I) -> Optional[ElementType]:
+    fn maybe_pop[I: Indexer](mut self, var i: I) -> Optional[ElementType]:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -477,7 +477,7 @@ struct LinkedList[
             curr = curr[].next
         return new^
 
-    fn insert[I: Indexer](mut self, idx: I, owned elem: ElementType) raises:
+    fn insert[I: Indexer](mut self, idx: I, var elem: ElementType) raises:
         """Insert an element `elem` into the list at index `idx`.
 
         Parameters:
@@ -538,9 +538,9 @@ struct LinkedList[
                 self._head = node
             self._size += 1
         else:
-            raise String("Index {} out of bounds").format(i)
+            raise String("Index ", i, " out of bounds")
 
-    fn extend(mut self, owned other: Self):
+    fn extend(mut self, var other: Self):
         """Extends the list with another.
 
         Args:
@@ -727,7 +727,7 @@ struct LinkedList[
         debug_assert(len(self) > 0, "unable to get item from empty list")
         return self._get_node_ptr(index)[].value
 
-    fn __setitem__[I: Indexer](mut self, index: I, owned value: ElementType):
+    fn __setitem__[I: Indexer](mut self, index: I, var value: ElementType):
         """Set the element at the specified index.
 
         Parameters:

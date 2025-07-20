@@ -10,10 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from hashlib._ahash import AHasher
-from hashlib._hasher import _hash_with_hasher as hash
 from hashlib.hash import hash as old_hash
 
 from builtin._location import __call_location
@@ -84,7 +82,7 @@ def test_avalanche():
         var diff = dif_bits(hashes0[i], hashes1[i])
         assert_true(
             diff > 16,
-            String("Index: {}, diff between: {} and {} is: {}").format(
+            "Index: {}, diff between: {} and {} is: {}".format(
                 i, hashes0[i], hashes1[i], diff
             ),
         )
@@ -109,38 +107,13 @@ def test_trailing_zeros():
         var diff = dif_bits(hashes0[i], hashes1[i])
         assert_true(
             diff > 18,
-            String("Index: {}, diff between: {} and {} is: {}").format(
+            "Index: {}, diff between: {} and {} is: {}".format(
                 i, hashes0[i], hashes1[i], diff
             ),
         )
 
     assert_dif_hashes(hashes0, 18)
     assert_dif_hashes(hashes1, 18)
-
-
-@always_inline
-def assert_fill_factor_old_hash[
-    label: String
-](words: List[String], num_buckets: Int, lower_bound: Float64):
-    # A perfect hash function is when the number of buckets is equal to number of words
-    # and the fill factor results in 1.0
-    var buckets = List[Int](0) * num_buckets
-    for w in words:
-        var h = old_hash(w.unsafe_ptr(), w.byte_length())
-        buckets[h % num_buckets] += 1
-    var unfilled = 0
-    for v in buckets:
-        if v == 0:
-            unfilled += 1
-
-    var fill_factor = 1 - unfilled / num_buckets
-    assert_true(
-        fill_factor >= lower_bound,
-        String("Fill factor for {} is {}, provided lower bound was {}").format(
-            label, fill_factor, lower_bound
-        ),
-        location=__call_location(),
-    )
 
 
 def test_fill_factor():
@@ -150,16 +123,11 @@ def test_fill_factor():
     assert_fill_factor["AR", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["AR", hasher0](words, len(words) // 13, 1.0)
 
-    # TODO: flaky test
-    # assert_fill_factor_old_hash["AR"](words, len(words), 0.59)
-
     words = gen_word_pairs[words_el]()
     assert_fill_factor["EL", hasher0](words, len(words), 0.63)
     assert_fill_factor["EL", hasher0](words, len(words) // 2, 0.86)
     assert_fill_factor["EL", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["EL", hasher0](words, len(words) // 13, 1.0)
-
-    assert_fill_factor_old_hash["EL"](words, len(words), 0.015)
 
     words = gen_word_pairs[words_en]()
     assert_fill_factor["EN", hasher0](words, len(words), 0.63)
@@ -167,15 +135,11 @@ def test_fill_factor():
     assert_fill_factor["EN", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["EN", hasher0](words, len(words) // 14, 1.0)
 
-    assert_fill_factor_old_hash["EN"](words, len(words), 0.015)
-
     words = gen_word_pairs[words_he]()
     assert_fill_factor["HE", hasher0](words, len(words), 0.63)
     assert_fill_factor["HE", hasher0](words, len(words) // 2, 0.86)
     assert_fill_factor["HE", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["HE", hasher0](words, len(words) // 14, 1.0)
-
-    assert_fill_factor_old_hash["HE"](words, len(words), 0.2)
 
     words = gen_word_pairs[words_lv]()
     assert_fill_factor["LV", hasher0](words, len(words), 0.63)
@@ -183,23 +147,17 @@ def test_fill_factor():
     assert_fill_factor["LV", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["LV", hasher0](words, len(words) // 13, 0.99)
 
-    assert_fill_factor_old_hash["LV"](words, len(words), 0.015)
-
     words = gen_word_pairs[words_pl]()
     assert_fill_factor["PL", hasher0](words, len(words), 0.63)
     assert_fill_factor["PL", hasher0](words, len(words) // 2, 0.86)
     assert_fill_factor["PL", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["PL", hasher0](words, len(words) // 13, 1.0)
 
-    assert_fill_factor_old_hash["PL"](words, len(words), 0.015)
-
     words = gen_word_pairs[words_ru]()
     assert_fill_factor["RU", hasher0](words, len(words), 0.63)
     assert_fill_factor["RU", hasher0](words, len(words) // 2, 0.86)
     assert_fill_factor["RU", hasher0](words, len(words) // 4, 0.98)
     assert_fill_factor["RU", hasher0](words, len(words) // 13, 1.0)
-
-    assert_fill_factor_old_hash["RU"](words, len(words), 0.015)
 
 
 def test_hash_simd_values():
@@ -215,11 +173,12 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.float32, 1](1)), 7268380206556411294)
     assert_equal(hash(SIMD[DType.float64, 1](1)), 1824371972732385641)
 
+    assert_equal(hash(SIMD[DType.bool, 1](True)), 7121024052126637824)
     assert_equal(hash(SIMD[DType.int8, 1](1)), 7121024052126637824)
     assert_equal(hash(SIMD[DType.int16, 1](1)), 7121024052126637824)
     assert_equal(hash(SIMD[DType.int32, 1](1)), 7121024052126637824)
     assert_equal(hash(SIMD[DType.int64, 1](1)), 7121024052126637824)
-    assert_equal(hash(SIMD[DType.bool, 1](True)), 7121024052126637824)
+    assert_equal(hash(SIMD[DType.uint8, 1](1)), 7121024052126637824)
     assert_equal(hash(SIMD[DType.int128, 1](1)), 5122900632109575720)
     assert_equal(hash(SIMD[DType.int64, 2](1, 0)), 5122900632109575720)
     assert_equal(hash(SIMD[DType.int256, 1](1)), 1160009272114074316)
@@ -228,15 +187,14 @@ def test_hash_simd_values():
     assert_equal(
         hash(SIMD[DType.int64, 8](1, 0, 0, 0, 1, 0, 0, 0)), 8329308917989271970
     )
-
     assert_equal(hash(SIMD[DType.uint256, 2](1)), 8329308917989271970)
     assert_equal(
         hash(SIMD[DType.uint64, 8](1, 0, 0, 0, 1, 0, 0, 0)), 8329308917989271970
     )
 
-    assert_equal(hash(SIMD[DType.int8, 1](-1)), 3480139124131340807)
-    assert_equal(hash(SIMD[DType.int16, 1](-1)), 3480139124131340807)
-    assert_equal(hash(SIMD[DType.int32, 1](-1)), 3480139124131340807)
+    assert_equal(hash(SIMD[DType.int8, 1](-1)), 14422269892667380249)
+    assert_equal(hash(SIMD[DType.int16, 1](-1)), 11448219905088272650)
+    assert_equal(hash(SIMD[DType.int32, 1](-1)), 3690585083486137738)
     assert_equal(hash(SIMD[DType.int64, 1](-1)), 3480139124131340807)
     assert_equal(hash(SIMD[DType.int128, 1](-1)), 11199890586389833974)
     assert_equal(hash(SIMD[DType.int64, 2](-1)), 11199890586389833974)

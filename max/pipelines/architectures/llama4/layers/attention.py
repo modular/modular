@@ -81,7 +81,7 @@ class _Llama4TextAttention(Module):
         use_qk_norm: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 8192,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -236,11 +236,9 @@ class _Llama4TextAttention(Module):
 
         if self.use_rope:
             if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
+                freqs_cis = self.rope.freqs_cis.to(xq.device)
             else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+                freqs_cis = self.rope.freqs_cis
             xq = fused_qk_ragged_rope(
                 self.kv_params,
                 xq,
@@ -253,7 +251,7 @@ class _Llama4TextAttention(Module):
 
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
-            xq = l2_norm(xq)
+            xq = l2_norm(xq, self.qk_norm_eps, multiply_before_cast=False)
             rms_norm_key_cache(
                 self.kv_params,
                 kv_collection=kv_collection,
@@ -308,7 +306,7 @@ class _Llama4TextAttention(Module):
 class _DistributedLlama4TextAttention(_Llama4TextAttention):
     """Distributed implementation of the Llama4 text attention layer."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(

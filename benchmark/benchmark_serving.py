@@ -343,7 +343,7 @@ ASYNC_REQUEST_FUNCS = {
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit=65535):
+def set_ulimit(target_soft_limit=65535) -> None:  # noqa: ANN001
     resource_type = resource.RLIMIT_NOFILE
     current_soft, current_hard = resource.getrlimit(resource_type)
 
@@ -975,7 +975,7 @@ async def benchmark(
     return result
 
 
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace) -> None:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -1157,7 +1157,7 @@ def main(args: argparse.Namespace):
 
         # Save to file
         base_model_id = model_id.split("/")[-1]
-        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}.json"  # noqa
+        file_name = f"{backend}-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
         if args.result_filename:
             file_name = args.result_filename
         if args.result_dir:
@@ -1220,7 +1220,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer",
         type=str,
-        help=(  # noqa: E501
+        help=(
             "Name or path of the tokenizer, if not using the default tokenizer."
         ),
     )

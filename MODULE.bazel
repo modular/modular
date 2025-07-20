@@ -8,17 +8,28 @@ module(
 include("//bazel:common.MODULE.bazel")
 
 bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
-single_version_override(
+
+# TODO: Remove override (not patch) once >1.4.0 is released
+archive_override(
     module_name = "toolchains_llvm",
+    integrity = "sha256-6aV/BiwLvmc4+ZU/E2cIZ2A8yXuUV3fS9V2oweWL41I=",
     patch_strip = 1,
     patches = [
         "//bazel:toolchains_llvm.patch",
+    ],
+    strip_prefix = "toolchains_llvm-6eef27401b4dff9de4ca6f66aea7592a90305789",
+    urls = [
+        "https://github.com/bazel-contrib/toolchains_llvm/archive/6eef27401b4dff9de4ca6f66aea7592a90305789.tar.gz",
     ],
 )
 
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
+
+mblack_alias = use_repo_rule("//bazel:mblack_alias.bzl", "mblack_alias")
+
+mblack_alias(name = "mblack")
 
 modular_wheel_repository = use_repo_rule("//bazel:modular_wheel_repository.bzl", "modular_wheel_repository")
 
@@ -47,6 +58,14 @@ llvm.toolchain(
         "linux-aarch64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_arm64.tar.xz"],
         "linux-x86_64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_amd64.tar.xz"],
     },
+)
+llvm.sysroot(
+    label = "@sysroot-jammy-aarch64",
+    targets = ["linux-aarch64"],
+)
+llvm.sysroot(
+    label = "@sysroot-jammy-x86_64",
+    targets = ["linux-x86_64"],
 )
 use_repo(llvm, "llvm_toolchain")
 

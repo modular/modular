@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
 
 def test_range_len():
@@ -205,6 +204,45 @@ def test_scalar_range():
     assert_equal(actual_elements, expected_elements)
 
 
+def test_range_compile_time():
+    """Tests that verify compile-time parameter loops work correctly with
+    various scalar types.
+    """
+
+    @parameter
+    for i in range(10):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in reversed(range(10)):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(UInt8(10)):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(Int32(10)):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(1, UInt16(10), 2):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(1, Int16(10), 2):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in reversed(range(1, Int16(10), 2)):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(Int64(10), 1, -2):
+        assert_true(i > 0)
+        assert_true(i <= 10)
+
+
 def main():
     test_range_len()
     test_range_len_uint()
@@ -215,3 +253,4 @@ def main():
     test_range_reversed()
     test_indexing()
     test_range_bounds()
+    test_range_compile_time()

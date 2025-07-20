@@ -632,7 +632,7 @@ fn _convert_cfrags_to_tuple[
 
     @parameter
     for i in range(c_frag_size):
-        c_frags_in_tuple[i] = rebind[Scalar[c_type]](c_frags._get[0, i]())
+        c_frags_in_tuple[i] = rebind[Scalar[c_type]](c_frags[0, i])
 
     return c_frags_in_tuple
 
@@ -648,7 +648,7 @@ fn _convert_cfrags_to_simd[
 ):
     @parameter
     for i in range(c_frag_size):
-        c_frags._set[0, i](c_frags_in_tuple[i])
+        c_frags[0, i] = c_frags_in_tuple[i]
 
 
 struct TensorCoreAsync[
@@ -801,7 +801,7 @@ struct TensorCoreAsync[
         if num_warp_groups > 1:
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
-        alias layout_b = "col" if transpose_b else StaticString("row")
+        alias layout_b = "col" if transpose_b else "row"
         alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
 
         @parameter
@@ -943,7 +943,7 @@ struct TensorCoreAsync[
         b_desc = _wgmma_descriptor[b_canonical_layout, transpose_b, b_swizzle](
             b_smem_tile.ptr
         )
-        alias layout_b = "col" if transpose_b else StaticString("row")
+        alias layout_b = "col" if transpose_b else "row"
 
         @parameter
         for k_mma in range(num_k_mmas):

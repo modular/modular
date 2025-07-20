@@ -24,6 +24,7 @@ from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
+    DistributedGemmConfig,
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
@@ -39,6 +40,7 @@ from max.nn import (
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
@@ -403,7 +405,9 @@ class Llama3ConfigBase(MAXModelConfigBase):
     devices: list[DeviceRef]
     clip_qkv: float | None
     float8_config: Float8Config | None
+    dist_gemm_config: DistributedGemmConfig | None
     longrope_scaling_params: LongRoPEScalingParams | None = None
+    lora_config: LoRAConfig | None = None
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -655,4 +659,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
+            # Force-disable matmul-allreduce overlap for llama FP8.
+            # TODO: GEX-2388: Figure out the issue and re-enable this.
+            dist_gemm_config=DistributedGemmConfig(
+                enable_matmul_allreduce=False
+            )
+            if dtype.is_float8()
+            else DistributedGemmConfig.generate(),
+            lora_config=pipeline_config.lora_config,
         )

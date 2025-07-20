@@ -37,7 +37,7 @@ alias simd_size: Int = simdwidthof[DType.float32]()
 
 # CHECK-LABEL: test_conv3d
 fn test[
-    type: DType, filter_packed: Bool
+    dtype: DType, filter_packed: Bool
 ](
     N: Int,
     DHW: IndexList[3],
@@ -67,7 +67,7 @@ fn test[
     var WO = (W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1) // stride[2] + 1
     # fmt: on
 
-    # Alternative with explicit type parameters
+    # Alternative with explicit dtype parameters
     var padding_0 = IndexList[2](pad_d[0], pad_d[1])
     var padding_1 = IndexList[2](pad_h[0], pad_h[1])
     var padding_2 = IndexList[2](pad_w[0], pad_w[1])
@@ -93,13 +93,13 @@ fn test[
     var filter_size = Q * R * S * C_per_group * F
     var output_size = N * DO * HO * WO * F
 
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
-    rand[type](input_ptr, input_size)
-    rand[type](filter_ptr, filter_size)
+    rand[dtype](input_ptr, input_size)
+    rand[dtype](filter_ptr, filter_size)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -109,18 +109,18 @@ fn test[
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
-    var input = NDBuffer[type, 5](input_ptr, Index(N, D, H, W, C))
-    var filter = NDBuffer[type, 5](filter_ptr, Index(Q, R, S, C_per_group, F))
+    var input = NDBuffer[dtype, 5](input_ptr, Index(N, D, H, W, C))
+    var filter = NDBuffer[dtype, 5](filter_ptr, Index(Q, R, S, C_per_group, F))
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
-    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[type, 6](
+    var packed_filter = NDBuffer[dtype, 6](
         packed_filter_ptr,
         packed_filter_shape,
     )
-    var output = NDBuffer[type, 5](output_ptr, Index(N, DO, HO, WO, F))
+    var output = NDBuffer[dtype, 5](output_ptr, Index(N, DO, HO, WO, F))
 
     @parameter
     if filter_packed:
@@ -128,9 +128,9 @@ fn test[
 
     # Reference: naive conv
     Naive2dConvolution[
-        type,
-        type,
-        type,
+        dtype,
+        dtype,
+        dtype,
     ].run(
         output_ref_ptr,
         input_ptr,
@@ -161,9 +161,9 @@ fn test[
             DimList.create_unknown[5](),
             DimList.create_unknown[6](),
             DimList.create_unknown[5](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             True,
             conv_attr,
         ].run(output, input, packed_filter, conv_shape)
@@ -178,9 +178,9 @@ fn test[
             DimList.create_unknown[5](),
             DimList.create_unknown[5](),
             DimList.create_unknown[5](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             False,
             conv_attr,
         ].run(output, input, filter, conv_shape)
@@ -235,9 +235,9 @@ fn test[
 
 
 fn main() raises:
-    alias type = DType.float32
+    alias dtype = DType.float32
 
-    test[DType.float32, False](  # type, filter_packed
+    test[DType.float32, False](  # dtype, filter_packed
         1,  # N: batch size
         IndexList[3](4, 4, 4),  # DHW: depth, height, width
         2,  # C: channels
@@ -251,7 +251,7 @@ fn main() raises:
         1,  # num_groups
     )
 
-    test[type, False](
+    test[dtype, False](
         1,  # batch size
         Index(2, 4, 5),  # input shape
         4,  # C
@@ -264,7 +264,7 @@ fn main() raises:
         Index(0, 0),  # pad_w
         1,  # num_groups
     )
-    test[type, False](
+    test[dtype, False](
         1,  # batch size
         Index(9, 8, 5),  # input shape
         1,  # C
@@ -279,7 +279,7 @@ fn main() raises:
     )
 
     # w/o packing, w/ padding.
-    test[type, False](
+    test[dtype, False](
         1,  # batch size
         Index(5, 7, 6),  # input shape
         7,  # C
@@ -292,7 +292,7 @@ fn main() raises:
         Index(1, 1),  # pad_w
         1,  # num_groups
     )
-    test[type, False](
+    test[dtype, False](
         1,  # batch size
         Index(10, 11, 6),  # input shape
         2,  # C
@@ -307,7 +307,7 @@ fn main() raises:
     )
 
     # w/ packing, w/o padding.
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(11, 13, 17),  # input shape
         9,  # C
@@ -320,7 +320,7 @@ fn main() raises:
         Index(0, 0),  # pad_w
         1,  # num_groups
     )
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(13, 9, 7),  # input shape
         4,  # C
@@ -335,7 +335,7 @@ fn main() raises:
     )
 
     # w/ packing, w/ padding.
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(5, 5, 5),  # input shape
         4,  # C
@@ -348,7 +348,7 @@ fn main() raises:
         Index(1, 1),  # pad_w
         1,  # num_groups
     )
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(11, 9, 14),  # input shape
         4,  # C
@@ -364,7 +364,7 @@ fn main() raises:
 
     # 3D-UNet shapes.
     # Leave large shapes in comments to save time for CI.
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(8, 8, 8),  # input shape
         320,  # C
@@ -378,7 +378,7 @@ fn main() raises:
         1,  # num_groups
     )
 
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(8, 8, 8),  # input shape
         320,  # C
@@ -392,7 +392,7 @@ fn main() raises:
         1,  # num_groups
     )
 
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(4, 4, 4),  # input shape
         320,  # C
@@ -406,7 +406,7 @@ fn main() raises:
         1,  # num_groups
     )
 
-    test[type, True](
+    test[dtype, True](
         1,  # batch size
         Index(8, 8, 8),  # input shape
         640,  # C
@@ -420,7 +420,7 @@ fn main() raises:
         1,  # num_groups
     )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(128, 128, 128),  # input shape
     #     1,  # C
@@ -434,7 +434,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(128, 128, 128),  # input shape
     #     32,  # C
@@ -448,7 +448,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(128, 128, 128),  # input shape
     #     32,  # C
@@ -462,7 +462,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(64, 64, 64),  # input shape
     #     64,  # C
@@ -476,7 +476,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(32, 32, 32),  # input shape
     #     128,  # C
@@ -490,7 +490,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(32, 32, 32),  # input shape
     #     128,  # C
@@ -504,7 +504,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(16, 16, 16),  # input shape
     #     256,  # C
@@ -518,7 +518,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(16, 16, 16),  # input shape
     #     256,  # C
@@ -532,7 +532,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(16, 16, 16),  # input shape
     #     512,  # C
@@ -546,7 +546,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(16, 16, 16),  # input shape
     #     256,  # C
@@ -560,7 +560,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(32, 32, 32),  # input shape
     #     256,  # C
@@ -574,7 +574,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(32, 32, 32),  # input shape
     #     128,  # C
@@ -588,7 +588,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(64, 64, 64),  # input shape
     #     128,  # C
@@ -602,7 +602,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(64, 64, 64),  # input shape
     #     64,  # C
@@ -616,7 +616,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(128, 128, 128),  # input shape
     #     64,  # C
@@ -630,7 +630,7 @@ fn main() raises:
     #     1,  # num_groups
     # )
 
-    # test[type, True](
+    # test[dtype, True](
     #     1,  # batch size
     #     Index(128, 128, 128),  # input shape
     #     32,  # C

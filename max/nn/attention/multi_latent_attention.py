@@ -66,7 +66,7 @@ class LatentAttentionWithRope(Module):
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
         buffer_size: int = 16384,
-    ):
+    ) -> None:
         """Initializes the latent attention layer.
 
         Args:
@@ -123,7 +123,10 @@ class LatentAttentionWithRope(Module):
                 device=self.devices[0],
             )
             self.q_a_layernorm = RMSNorm(
-                dim=self.q_lora_rank, dtype=dtype, eps=1e-6
+                dim=self.q_lora_rank,
+                dtype=dtype,
+                eps=1e-6,
+                multiply_before_cast=False,
             )
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
@@ -247,10 +250,10 @@ class LatentAttentionWithRope(Module):
 
             iter_i = ops.constant(1, DType.int64, device=DeviceRef.CPU())
 
-            def cond_fn(iter_i, prev_result, prev_softmax_info):
+            def cond_fn(iter_i, prev_result, prev_softmax_info):  # noqa: ANN001
                 return buffer_lengths_host[iter_i] > 0
 
-            def body_fn(iter_i, prev_result, prev_softmax_info):
+            def body_fn(iter_i, prev_result, prev_softmax_info):  # noqa: ANN001
                 kv_buffer = flare_mla_decompress_k_cache(
                     self.kv_params,
                     buffer_row_offsets[iter_i],
@@ -387,6 +390,7 @@ class LatentAttentionWithRope(Module):
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.kv_lora_rank,
             weight_offset=0.0,
+            multiply_before_cast=False,
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))

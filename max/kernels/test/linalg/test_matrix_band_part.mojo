@@ -22,10 +22,10 @@ from utils import IndexList
 
 def matrix_band_part[
     rank: Int,
-    type: DType,
+    dtype: DType,
 ](
-    input: NDBuffer[type, rank],
-    output: NDBuffer[mut=True, type, rank],
+    input: NDBuffer[dtype, rank],
+    output: NDBuffer[mut=True, dtype, rank],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
@@ -51,11 +51,11 @@ def matrix_band_part[
     fn input_fn[
         width: Int,
         _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input.load[width=width](rebind[IndexList[rank]](coords))
 
     _matrix_band_part[
-        type,
+        dtype,
         int_type,
         cond_type,
         rank,
@@ -75,11 +75,13 @@ def matrix_band_part[
 def test_matrix_band_part():
     alias rank = 2
     alias shape = DimList(3, 3)
-    alias type = DType.float32
+    alias dtype = DType.float32
 
-    var input = NDBuffer[type, rank, MutableAnyOrigin, shape].stack_allocation()
+    var input = NDBuffer[
+        dtype, rank, MutableAnyOrigin, shape
+    ].stack_allocation()
     var output = NDBuffer[
-        type, rank, MutableAnyOrigin, shape
+        dtype, rank, MutableAnyOrigin, shape
     ].stack_allocation()
 
     input[0, 0] = 1

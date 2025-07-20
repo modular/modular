@@ -28,7 +28,6 @@ import psutil
 import zmq
 import zmq.asyncio
 import zmq.constants
-from max.profiler import traced
 
 logger = logging.getLogger("max.serve")
 
@@ -146,7 +145,7 @@ class ZmqPushSocket(Generic[T]):
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
         serialize: Callable[[Any], bytes] = pickle.dumps,
-    ):
+    ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
@@ -176,7 +175,7 @@ class ZmqPushSocket(Generic[T]):
         self,
         msg: Any,
         **kwargs,
-    ):
+    ) -> None:
         self.put(msg, flags=zmq.NOBLOCK, **kwargs)
 
     def put(
@@ -219,8 +218,8 @@ class ZmqPullSocket(Generic[T]):
         self,
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
-        deserialize=pickle.loads,
-    ):
+        deserialize=pickle.loads,  # noqa: ANN001
+    ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
@@ -247,7 +246,7 @@ class ZmqPullSocket(Generic[T]):
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
-    def put_front_nowait(self, item: T):
+    def put_front_nowait(self, item: T) -> None:
         """A new method that allows us to add requests to the front of the queue."""
         if self._closed:
             raise RuntimeError("Socket is closed")
@@ -261,7 +260,7 @@ class ZmqPullSocket(Generic[T]):
             msg = self.pull_socket.recv(**kwargs)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
 
             logger.exception(
                 f"Failed to receive message on ZMQ socket for unknown reason: {e}"
@@ -271,6 +270,7 @@ class ZmqPullSocket(Generic[T]):
         try:
             return self.deserialize(msg)
         except Exception as e:
+            logger.exception(e)
             raise
 
     def get(self, **kwargs) -> T:
@@ -282,7 +282,6 @@ class ZmqPullSocket(Generic[T]):
 
         return self._pull_from_socket(**kwargs)
 
-    @traced
     def get_nowait(self, **kwargs) -> T:
         return self.get(flags=zmq.NOBLOCK, **kwargs)
 
@@ -315,7 +314,7 @@ class ZmqRouterSocket(Generic[T]):
         bind: bool = True,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.router_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
@@ -370,7 +369,7 @@ class ZmqRouterSocket(Generic[T]):
             )
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive multipart message: {e}")
             raise
 
@@ -396,7 +395,7 @@ class ZmqDealerSocket(Generic[T]):
         bind: bool = False,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.dealer_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.DEALER, bind=bind
@@ -445,7 +444,7 @@ class ZmqDealerSocket(Generic[T]):
             message = self.dealer_socket.recv(flags=flags)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
+                raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive message: {e}")
             raise
 

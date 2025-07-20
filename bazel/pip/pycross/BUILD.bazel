@@ -1,0 +1,22 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+
+modular_py_binary(
+    name = "generate",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_*.py"],
+    ),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("packaging"),
+    ],
+)
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["test_*.py"]),
+    deps = [
+        ":generate",
+    ],
+)

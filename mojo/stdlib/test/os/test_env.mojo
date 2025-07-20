@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: system-linux || system-darwin
-# RUN: TEST_MYVAR=MyValue %mojo %s
 
 from os import getenv, setenv, unsetenv
 
@@ -26,7 +24,6 @@ def test_getenv():
     assert_equal(getenv("NON_EXISTENT_VAR", "DefaultValue"), "DefaultValue")
 
 
-# CHECK-OK-LABEL: test_setenv
 def test_setenv():
     assert_equal(setenv("NEW_VAR", "FOO", True), True)
     assert_equal(getenv("NEW_VAR"), "FOO")

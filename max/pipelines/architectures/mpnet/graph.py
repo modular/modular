@@ -44,7 +44,7 @@ class MPNetEmbeddings(Layer):
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         config = self.config = huggingface_config
         self.word_embeddings = EmbeddingV1(
             weights.word_embeddings.weight.allocate(
@@ -114,7 +114,7 @@ class MPNetSelfAttention(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+    ) -> None:
         config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(
@@ -181,7 +181,7 @@ class MPNetSelfAttention(Layer):
 
     def __call__(
         self,
-        hidden_states,
+        hidden_states,  # noqa: ANN001
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
@@ -225,7 +225,7 @@ class MPNetAttention(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+    ) -> None:
         config = huggingface_config
         self.attn = MPNetSelfAttention(
             pipeline_config, weights.attn, huggingface_config, dtype
@@ -268,7 +268,7 @@ class MPNetIntermediate(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+    ) -> None:
         config = huggingface_config
         self.dense = LinearV1(
             weights.dense.weight.allocate(
@@ -299,7 +299,7 @@ class MPNetOutput(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+    ) -> None:
         config = huggingface_config
         self.dense = LinearV1(
             weights.dense.weight.allocate(
@@ -340,7 +340,7 @@ class MPNetLayer(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+    ) -> None:
         self.attention = MPNetAttention(
             pipeline_config, weights.attention, huggingface_config, dtype
         )
@@ -375,7 +375,7 @@ class MPNetEncoder(Layer):
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         config = self.config = huggingface_config
         self.n_heads = config.num_attention_heads
         num_hidden_layers = config.num_hidden_layers
@@ -434,7 +434,9 @@ class MPNetEncoder(Layer):
 
     @staticmethod
     def relative_position_bucket(
-        relative_position: TensorValue, num_buckets=32, max_distance=128
+        relative_position: TensorValue,
+        num_buckets=32,  # noqa: ANN001
+        max_distance=128,  # noqa: ANN001
     ) -> TensorValue:
         n = -relative_position
 
@@ -475,7 +477,7 @@ class MPNetModel(Layer):
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         self.embeddings = MPNetEmbeddings(
             pipeline_config,
             weights.embeddings,

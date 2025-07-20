@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
 
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_true
@@ -108,11 +107,6 @@ def test_bitwise():
     assert_false(value)
 
 
-def test_neg():
-    assert_equal(-1, -True)
-    assert_equal(0, -False)
-
-
 def test_indexer():
     assert_true(1 == index(Bool(True)))
     assert_true(0 == index(Bool(False)))
@@ -174,7 +168,6 @@ def main():
     test_convert_from_implicitly_boolable()
     test_bool_representation()
     test_bitwise()
-    test_neg()
     test_indexer()
     test_comparisons()
     test_float_conversion()

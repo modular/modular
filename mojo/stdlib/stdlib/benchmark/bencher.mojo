@@ -296,6 +296,8 @@ struct BenchConfig(Copyable, Movable):
     """Lower bound on benchmarking time in secs."""
     var min_warmuptime_secs: Float64
     """Lower bound on warmup time in secs."""
+    var num_warmup_iters: Int
+    """Number of warmup iterations."""
     var max_batch_size: Int
     """The maximum number of iterations to perform per time measurement."""
     var max_iters: Int
@@ -326,9 +328,10 @@ struct BenchConfig(Copyable, Movable):
         out_file: Optional[Path] = None,
         min_runtime_secs: Float64 = 1.0,
         max_runtime_secs: Float64 = 2.0,
-        min_warmuptime_secs: Float64 = 1.0,
+        min_warmuptime_secs: Float64 = 0.0,
+        num_warmup_iters: Int = 10,
         max_batch_size: Int = 0,
-        max_iters: Int = 1_000_000_000,
+        max_iters: Int = 1_000_000,
         num_repetitions: Int = 1,
         flush_denormals: Bool = True,
     ) raises:
@@ -336,11 +339,12 @@ struct BenchConfig(Copyable, Movable):
 
         Args:
             out_file: Output file to write results to.
-            min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
-            max_runtime_secs: Upper bound on benchmarking time in secs (default `1`).
-            min_warmuptime_secs: Lower bound on warmup time in secs (default `1.0`).
+            min_runtime_secs: Lower bound on benchmarking time in secs (default `1.0`).
+            max_runtime_secs: Upper bound on benchmarking time in secs (default `2.0`).
+            min_warmuptime_secs: Lower bound on warmup time in secs (default `0.0`).
+            num_warmup_iters: Number of warmup iterations (default `10`).
             max_batch_size: The maximum number of iterations to perform per time measurement.
-            max_iters: Max number of iterations to run (default `1_000_000_000`).
+            max_iters: Max number of iterations to run (default `1_000_000`).
             num_repetitions: Number of times the benchmark has to be repeated.
             flush_denormals: Whether or not the denormal values are flushed.
         """
@@ -348,6 +352,7 @@ struct BenchConfig(Copyable, Movable):
         self.min_runtime_secs = min_runtime_secs
         self.max_runtime_secs = max_runtime_secs
         self.min_warmuptime_secs = min_warmuptime_secs
+        self.num_warmup_iters = num_warmup_iters
         self.max_batch_size = max_batch_size
         self.max_iters = max_iters
         self.out_file = out_file
@@ -961,6 +966,7 @@ struct Bench(Stringable, Writable):
                 min_runtime_secs=self.config.min_runtime_secs,
                 max_runtime_secs=self.config.max_runtime_secs,
                 min_warmuptime_secs=self.config.min_warmuptime_secs,
+                num_warmup_iters=self.config.num_warmup_iters,
             )
         )
 

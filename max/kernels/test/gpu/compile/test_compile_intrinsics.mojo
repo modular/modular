@@ -13,17 +13,17 @@
 
 from math import exp2
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host.info import A100
 from gpu.intrinsics import *
 
 
 fn kernel[
-    type: DType, memory: Bool = True
+    dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[type]],
-    ptr: UnsafePointer[Scalar[type]],
-    val: Scalar[type],
+    output: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype]],
+    val: Scalar[dtype],
 ):
     store_release[memory=memory](ptr, val)
     output[] = load_acquire[memory=memory](ptr)
@@ -33,26 +33,26 @@ fn kernel[
 def test_compile_code():
     print("== test_compile_code")
 
-    # CHECK: st.release.sys.global.u32 [%rd1], %r1;
-    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
-    print(_compile_code_asm[kernel[DType.int32], target = A100.target()]())
+    # CHECK: st.release.sys.global.u32 [%rd2], %r1;
+    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd2];
+    print(_compile_code[kernel[DType.int32], target = A100.target()]())
 
-    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
-    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
-    print(_compile_code_asm[kernel[DType.bfloat16], target = A100.target()]())
+    # CHECK: st.release.sys.global.u16 [%rd2], %rs1;
+    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd2];
+    print(_compile_code[kernel[DType.bfloat16], target = A100.target()]())
 
-    # CHECK: st.release.sys.global.u32 [%rd1], %r1;
-    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
+    # CHECK: st.release.sys.global.u32 [%rd2], %r1;
+    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd2];
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel[DType.int32, memory=False], target = A100.target()
         ]()
     )
 
-    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
-    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
+    # CHECK: st.release.sys.global.u16 [%rd2], %rs1;
+    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd2];
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel[DType.bfloat16, memory=False], target = A100.target()
         ]()
     )
@@ -60,7 +60,7 @@ def test_compile_code():
     # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l,~{memory}"(bfloat %2, ptr %1)
     # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l,~{memory}"(ptr %1)
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel[DType.bfloat16, memory=True],
             target = A100.target(),
             emission_kind="llvm-opt",
@@ -70,7 +70,7 @@ def test_compile_code():
     # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l"(bfloat %2, ptr %1)
     # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l"(ptr %1)
     print(
-        _compile_code_asm[
+        _compile_code[
             kernel[DType.bfloat16, memory=False],
             target = A100.target(),
             emission_kind="llvm-opt",
@@ -85,14 +85,12 @@ def test_compile_code():
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
     print(
-        _compile_code_asm[
+        _compile_code[
             exp_op, target = A100.target(), emission_kind="llvm-opt"
         ]()
     )
     # CHECK: fma.rn.f32
-    print(
-        _compile_code_asm[exp_op, target = A100.target(), emission_kind="asm"]()
-    )
+    print(_compile_code[exp_op, target = A100.target(), emission_kind="asm"]())
 
 
 def main():

@@ -99,7 +99,7 @@ class Layer:
         # Check `__dict__` instead of `hasattr` because `hasattr` passes on
         # subclasses that don't implement the method.
         if "__call__" in cls.__dict__:
-            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))
+            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))  # noqa: B010
 
     def __call__(self, *args, **kwargs):
         """Defines the forward function of this layer.
@@ -151,7 +151,7 @@ class Module(Layer, ABC):
     the weight names to be unique within the model.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # `__init__` may be called if `__setattr__` is called before
         # `super().__init__()`. So, to avoid resetting the values, first
         # check to see if the layer has been initialized before.
@@ -161,7 +161,7 @@ class Module(Layer, ABC):
             self._weight_values: dict[str, DLPackCompatible] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name, value) -> None:  # noqa: ANN001
         try:
             if isinstance(value, Module):
                 self._sublayers[name] = value
@@ -183,7 +183,7 @@ class Module(Layer, ABC):
             return
         super().__setattr__(name, value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         # TODO: Make this pretty
         return f"{type(self).__name__}({len(self.sublayers)} layers, {len(self.layer_weights)} weights)"
 
@@ -191,13 +191,13 @@ class Module(Layer, ABC):
     def layer_weights(self) -> dict[str, Weight]:
         return self._layer_weights
 
-    def __delattr__(self, name: str):
+    def __delattr__(self, name: str) -> None:
         self._sublayers.pop(name, None)
         self._layer_weights.pop(name, None)
         self._shared_weights.pop(name, None)
         super().__delattr__(name)
 
-    def set_shared_weight(self, name: str, weight: Weight):
+    def set_shared_weight(self, name: str, weight: Weight) -> None:
         setattr(self, name, weight)
         self._shared_weights[name] = weight
 
@@ -233,7 +233,7 @@ class Module(Layer, ABC):
         layer_weights = list(self.raw_state_dict().values())
         subgraph_input_types: list[Type] = []
 
-        def flatten(t, result):
+        def flatten(t, result) -> None:  # noqa: ANN001
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -348,6 +348,7 @@ class Module(Layer, ABC):
                     f"If you want to load a model with a state_dict that may "
                     f"contain unused keys, set strict=False. "
                     f"The unused keys are:\n {unused_keys_str}"
+                    f"The loaded keys that are not unused are:\n {loaded_keys - state_dict.keys()}"
                 )
                 raise ValueError(msg)
 
@@ -540,7 +541,7 @@ def recursive_named_layers(
 
         yield (name, layer)
         prefix = f"{name}." if name else ""
-        for local_name, layer in layer.sublayers.items():
+        for local_name, layer in layer.sublayers.items():  # noqa: B020
             queue.append((f"{prefix}{local_name}", layer))
 
 
@@ -582,14 +583,14 @@ def add_layer_hook(
     _LAYER_HOOKS.append(fn)
 
 
-def clear_hooks():
+def clear_hooks() -> None:
     """Remove all hooks."""
     _LAYER_HOOKS.clear()
 
 
-def _call_with_hooks(call_fn):
+def _call_with_hooks(call_fn):  # noqa: ANN001
     @wraps(call_fn)
-    def __call_with_hooks(layer, *args, **kwargs):
+    def __call_with_hooks(layer, *args, **kwargs):  # noqa: ANN001
         # Hide this wrapper from rich traceback.
         _rich_traceback_omit = True
 

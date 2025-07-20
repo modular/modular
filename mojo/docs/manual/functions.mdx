@@ -348,7 +348,7 @@ so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code
 
 Inside the function, `args` is available as a
 [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack). The easiest
-way to work with the arguments is to use the `each()` method to iterate through
+way to work with the arguments is to use the `@parameter for` language to iterate through
 the `VariadicPack`:
 
 ```mojo
@@ -356,10 +356,9 @@ fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
     @parameter
-    fn add[Type: Intable](value: Type):
-        total += Int(value)
+    for i in range(args.__len__()):
+        total += Int(args[i])
 
-    args.each[add]()
     return total
 
 print(count_many_things(5, 11.7, 12))
@@ -393,10 +392,10 @@ fn print_many[T: Stringable, *Ts: Stringable](first: T, *rest: *Ts):
     print_string(String(first))
 
     @parameter
-    fn print_elt[T: Stringable](a: T):
+    for i in range(rest.__len__()):
         print_string(" ")
-        print_string(String(a))
-    rest.each[print_elt]()
+        print_string(String(rest[i]))
+
 print_many("Bob")
 ```
 
@@ -722,7 +721,7 @@ copied. Named result syntax lets you specify a named, uninitialized variable to
 return to the caller using the `out` argument convention:
 
 ```mojo
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     name_tag = NameTag(name^)
 ```
 
@@ -746,9 +745,9 @@ The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
 ```mojo
-def get_name_tag(owned name: String) -> NameTag:
+def get_name_tag(var name: String) -> NameTag:
     ...
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     ...
 ```
 
@@ -767,22 +766,22 @@ which takes several steps to initialize:
 struct ImmovableObject:
     var name: String
 
-    fn __init__(out self, owned name: String):
+    fn __init__(out self, var name: String):
         self.name = name^
 
-def create_immovable_object(owned name: String, out obj: ImmovableObject):
+def create_immovable_object(var name: String, out obj: ImmovableObject):
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
 
 def main():
-    my_obj = create_immutable_object("Blob")
+    my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
-def create_immovable_object2(owned name: String) -> ImmovableObject:
+def create_immovable_object2(var name: String) -> ImmovableObject:
     obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
@@ -794,7 +793,7 @@ or copied to the callee. This isn't an issue if the newly-created value is
 returned immediately:
 
 ```mojo
-def create_immovable_object3(owned name: String) -> ImmovableObject:
+def create_immovable_object3(var name: String) -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
 

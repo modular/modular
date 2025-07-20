@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-# RUN: %mojo %s | FileCheck %s
 
 from math import iota
 from sys import num_physical_cores, simdwidthof
@@ -102,7 +100,6 @@ fn main() raises:
     var parallelized = benchmark.run[bench_parallel]().mean(unit)
     print("Parallelized:", parallelized, unit)
 
-    # CHECK: Parallel speedup
     print("Parallel speedup:", vectorized / parallelized)
 
     matrix.data.free()

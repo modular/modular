@@ -13,7 +13,7 @@ here](https://forum.modular.com/t/gpu-programming-manual/755).
 
 This documentation aims to build your GPU programming knowledge from the ground
 up, starting with the lowest levels of the stack before progressing to
-higher-level functionality. It’s designed for a diverse audience, from
+higher-level functionality. It's designed for a diverse audience, from
 experienced GPU developers to programmers new to GPU coding. Mojo allows you to
 program NVIDIA GPUs, with direct access to low-level GPU primitives, while
 sharing types and functions that can also run on CPUs where applicable.  If
@@ -32,7 +32,7 @@ capable of running in parallel, which forces programmers to rethink how they
 maximize performance. This shift is especially evident in AI applications, where
 performance scales remarkably well with additional cores.
 
-NVIDIA’s breakthrough came with CUDA, a general programming model that allows
+NVIDIA's breakthrough came with CUDA, a general programming model that allows
 developers to target both server and consumer GPUs for any application domain.
 This vision sparked an AI revolution when Alex Krizhevsky, Ilya Sutskever, and
 Geoffrey Hinton trained AlexNet on consumer GPUs, significantly outperforming
@@ -43,8 +43,8 @@ the cost of scheduling threads is much lower compared to a traditional CPU.
 
 Harnessing this hardware requires a new programming mindset. Mojo represents a
 chance to rethink GPU programming and make it more approachable. C/C++ is at the
-core of GPU programming, but we’ve seen leaps in ergonomics and memory safety
-from systems programming languages in recent years. Mojo expands on Python’s
+core of GPU programming, but we've seen leaps in ergonomics and memory safety
+from systems programming languages in recent years. Mojo expands on Python's
 familiar syntax, adds direct access to low-level CPU and GPU intrinsics for
 systems programming, and introduces ergonomic and safety improvements from
 modern languages. This course aims to empower programmers with minimal
@@ -75,12 +75,14 @@ git clone git@github.com:modular/max
 cd max/mojo/docs/manual/gpu
 ```
 
-And open `basics.mdx` to run the code cells interactively.
+And open `basics.mdx` to run the code cells interactively. If you don't have
+`mojo` on your system PATH it will automatically download and install it the
+first time you run a Mojo cell.
 
 If you prefer the traditional approach using a CLI, first install
 [`pixi`](https://pixi.sh/latest/) if you don't have it:
 
-```bash
+```sh
 curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
@@ -113,6 +115,13 @@ def main():
 
     ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
     ctx.synchronize()
+```
+
+```text
+GPU thread: [ 0 0 0 ]
+GPU thread: [ 1 0 0 ]
+GPU thread: [ 2 0 0 ]
+GPU thread: [ 3 0 0 ]
 ```
 
 Then compile and run the file using `mojo main.mojo`.
@@ -223,16 +232,16 @@ GPU thread: [ 1 1 1 ]
 
 We're now launching 8 (2x2x2) threads in total.
 
-## Host vs device and enqueue
+## Host vs device
 
 You'll see the word host which refers to the CPU that schedules work for the
 device, device refers to the accelerator which in this case is a GPU.
 
-When you encounter the term `enqueue` in a method or function call, it means
-that the host is scheduling the operation to execute asynchronously on the
-device. If your host-side code relies on the outcome of these device-enqueued
-operations, you need to call `ctx.synchronize()`. For instance, printing from
-the CPU without first synchronizing might result in out-of-order output:
+When you're running device side code, it means that the host is scheduling the
+operation to execute asynchronously on the device. If your host-side code relies
+on the outcome of device-side code, you need to call `ctx.synchronize()`. For
+instance, printing from the CPU without first synchronizing might result in
+out-of-order output:
 
 ```mojo :once
 ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
@@ -265,24 +274,23 @@ GPU thread: [ 3 0 0 ]
 This will print after the GPU has completed its work
 ```
 
-Any method or function you `enqueue` to run on the device, will run in the order
-that you enqueued them. It's only when you're doing something from the host
-which is dependent on the results of enqueued calls that you have to
-synchronize.
+Any method you run on a `DeviceContext` that interacts with the device, will run
+in the order that you called them. You only have to synchronize when you're
+doing something from the host which is dependent on the results of the device.
 
 In GPU programming with Mojo, when there's a tradeoff between GPU performance
 and safety or ergonomics, performance takes priority, aligning with the
-expectations of kernel engineers. For instance, while we could eliminate the
-`enqueue` prefix from method calls and force synchronization for each of them,
-this would come at a performance cost. Take note to remember anything from these
-warning text blocks for potential safety violations:
+expectations of kernel engineers. For instance while we could force
+synchronization for each call that interacts with the device, this would come at
+a performance cost where we want to run multiple functions asynchronously and
+synchronize once.
 
 :::warning Synchronization
 
-For any methods or functions prefixed with `enqueue`, you must synchronize
-before running CPU code that is dependent on what you're enqueuing. Enqueueing
-multiple method or function calls for a single GPU is safe, as they are
-scheduled to run in the order you call them.
+For any methods or functions that interact with the device, you must synchronize
+before running CPU code that is dependent on it's execution. Multiple method or
+function calls for a single GPU is safe, as they are scheduled to run in the
+order you call them.
 
 :::
 
@@ -320,12 +328,12 @@ ctx.synchronize()
 ```text
 block: [ 0 0 0 ] thread: [ 0 0 0 ]
 block: [ 0 0 0 ] thread: [ 1 0 0 ]
-block: [ 1 0 0 ] thread: [ 0 0 0 ]
-block: [ 1 0 0 ] thread: [ 1 0 0 ]
-block: [ 1 1 0 ] thread: [ 0 0 0 ]
-block: [ 1 1 0 ] thread: [ 1 0 0 ]
 block: [ 0 1 0 ] thread: [ 0 0 0 ]
 block: [ 0 1 0 ] thread: [ 1 0 0 ]
+block: [ 1 1 0 ] thread: [ 0 0 0 ]
+block: [ 1 1 0 ] thread: [ 1 0 0 ]
+block: [ 1 0 0 ] thread: [ 0 0 0 ]
+block: [ 1 0 0 ] thread: [ 1 0 0 ]
 ```
 
 We're still launching 8 (2x2x2) threads, where there are 4 blocks, each with 2
@@ -376,7 +384,7 @@ And index (2, 0) would be:
 [ 6 7 ]
 ```
 
-This is where you'd introduce the y dimension, later we'll being working on
+This is where you'd introduce the y dimension, later we'll begin working on
 image data which is a tensor with 3 dimensions: (height, width, color_channels).
 For now we're going to focus on how blocks and threads interact, splitting up an
 array into 1 row per block, and 1 value per thread.
@@ -474,22 +482,22 @@ ctx.synchronize()
 ```
 
 ```text
-block: 3 thread: 0 val: 12
-block: 3 thread: 1 val: 13
-block: 3 thread: 2 val: 14
-block: 3 thread: 3 val: 15
-block: 1 thread: 0 val: 4
-block: 1 thread: 1 val: 5
-block: 1 thread: 2 val: 6
-block: 1 thread: 3 val: 7
-block: 2 thread: 0 val: 8
-block: 2 thread: 1 val: 9
-block: 2 thread: 2 val: 10
-block: 2 thread: 3 val: 11
 block: 0 thread: 0 val: 0
 block: 0 thread: 1 val: 1
 block: 0 thread: 2 val: 2
 block: 0 thread: 3 val: 3
+block: 1 thread: 0 val: 4
+block: 1 thread: 1 val: 5
+block: 1 thread: 2 val: 6
+block: 1 thread: 3 val: 7
+block: 3 thread: 0 val: 12
+block: 3 thread: 1 val: 13
+block: 3 thread: 2 val: 14
+block: 3 thread: 3 val: 15
+block: 2 thread: 0 val: 8
+block: 2 thread: 1 val: 9
+block: 2 thread: 2 val: 10
+block: 2 thread: 3 val: 11
 ```
 
 As in the visualization above, the block/thread is getting the corresponding
@@ -547,7 +555,7 @@ var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 # Zero the values on the device as they'll be used to accumulate results
 _ = out_buffer.enqueue_fill(0)
 
-alias out_layout = Layout.row_major(elements_in)
+alias out_layout = Layout.row_major(blocks)
 alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
 
 var out_tensor = OutTensor(out_buffer)
@@ -709,8 +717,8 @@ with out_buffer.map_to_host() as host_buffer:
 ```text
 thread: 0 value: 6
 thread: 1 value: 6
-thread: 2 value: 5
-thread: 3 value: 3
+thread: 2 value: 6
+thread: 3 value: 6
 HostBuffer([6, 22, 38, 54])
 ```
 
@@ -731,7 +739,7 @@ Now that we've covered some of the core primitives for GPU programming, here's
 an exercise to solidify your understanding. Feel free to revisit the examples as
 you work through it the first time, then challenge yourself to write the code
 independently. Experimenting with the code and observing the results is also a
-highly valuable way to deepen your skills, don’t hesitate to tweak things and
+highly valuable way to deepen your skills, don't hesitate to tweak things and
 see what happens!
 
 1. Create a host buffer for the input of `DType` `Float32`, with 32 elements,
@@ -739,7 +747,7 @@ and initialize the numbers ordered sequentially. Copy the host buffer to the
 device.
 2. Create a in_tensor that wraps the host buffer, with the dimensions (8, 4)
 3. Create an host and device buffer for the output of `DType` `Float32`, with 8
-elements, don't forget to zero the values with `enqueue_memset()`.
+elements, don't forget to zero the values with `enqueue_fill()`.
 4. Launch a GPU kernel with 8 blocks and 4 threads that reduce sums the values,
 using your preferred method to write to the output buffer.
 5. Copy the device buffer to the host buffer, and print it out on the CPU.
@@ -810,11 +818,11 @@ To continue learning how to write Mojo for GPUs, check out the following
 resources:
 
 - [GPU puzzles](https://builds.modular.com/puzzles/):
-Learn how to program for GPUs by solving increasingly challenging puzzles.
+  Learn how to program for GPUs by solving increasingly challenging puzzles.
 
 - [Build custom ops for GPUs](/max/tutorials/build-custom-ops): Learn to write
-custom ops for MAX graphs that can execute on both CPUs and GPUs.
+  custom ops for MAX graphs that can execute on both CPUs and GPUs.
 
-- [GPU programming examples
-in GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions):
-A variety of GPU code examples, from simple to complex.
+- [GPU programming examples in
+  GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions):
+  A variety of GPU code examples, from simple to complex.

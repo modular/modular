@@ -50,7 +50,7 @@ bit different than Rust.
 For example, we expect this to behave like the comments indicate:
 
 ```mojo
-    var some_str = String("hello")
+    var some_str = "hello"
 
     # The StringRef contains a reference to the some_str value
     var some_str_ref = StringRef(some_str)

@@ -9,7 +9,6 @@ modular_py_binary(
         "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    use_sitecustomize = True,
     deps = [
         "//SDK/lib/API/python/max/mojo",
     ],

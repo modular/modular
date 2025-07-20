@@ -158,7 +158,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(owned handle: Coroutine[*_], out result: handle.type):
+fn _run(var handle: Coroutine[*_], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
@@ -201,7 +201,7 @@ struct Task[type: AnyType, origins: OriginSet]:
     """Storage for the result value produced by the task."""
 
     @implicit
-    fn __init__(out self, owned handle: Coroutine[type, origins]):
+    fn __init__(out self, var handle: Coroutine[type, origins]):
         """Initialize a task with a coroutine.
 
         Takes ownership of the provided coroutine and sets up the task to receive
@@ -304,7 +304,7 @@ struct _TaskGroupBox(Copyable, Movable):
 
     var handle: AnyCoroutine
 
-    fn __init__[type: AnyType](out self, owned coro: Coroutine[type]):
+    fn __init__[type: AnyType](out self, var coro: Coroutine[type]):
         var handle = coro._handle
         __disable_del coro
         self.handle = handle

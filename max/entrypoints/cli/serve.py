@@ -16,18 +16,18 @@
 
 import functools
 import logging
-import os
 import signal
+import sys
 from typing import Optional, Union
 
 import uvloop
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
-from max.pipelines.core import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
@@ -35,7 +35,6 @@ from max.serve.api_server import (
     fastapi_config,
 )
 from max.serve.config import Settings
-from max.serve.pipelines.llm import batch_config_from_pipeline_config
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
     get_performance_fake,
@@ -45,11 +44,28 @@ from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
 
+# Global reference to server for graceful shutdown
+_server_instance: Optional[Server] = None
 
-def sigterm_handler(sig, frame):
-    # We handle SIGINT gracefully, so piggyback on that
-    logger.info("Got SIGTERM, terminating...")
-    os.kill(os.getpid(), signal.SIGINT)
+
+def sigterm_handler(sig, frame) -> None:  # noqa: ANN001
+    # If we have a server instance, trigger its shutdown
+    if _server_instance is not None:
+        _server_instance.should_exit = True
+        logger.info("Server shutdown triggered")
+
+    # Exit cleanly with code 0 to indicate successful completion
+    # This addresses the batch job completion scenario
+    logger.info("Graceful shutdown complete, exiting with success code")
+    sys.exit(0)
+
+
+def sigint_handler(sig, frame) -> None:  # noqa: ANN001
+    """Handle SIGINT by raising KeyboardInterrupt to allow lifespan to handle it."""
+    # Trigger server shutdown
+    if _server_instance is not None:
+        _server_instance.should_exit = True
+    raise KeyboardInterrupt("SIGINT received")
 
 
 def serve_pipeline(
@@ -61,7 +77,9 @@ def serve_pipeline(
     experimental_enable_kvcache_agent: bool = False,
     port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-):
+) -> None:
+    global _server_instance
+
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
 
@@ -117,11 +135,6 @@ def serve_pipeline(
             KVCacheStrategy.CONTINUOUS
         )
 
-    # Load batch config.
-    batch_config = batch_config_from_pipeline_config(
-        pipeline_config=pipeline_config, pipeline_task=pipeline_task
-    )
-
     # If explicit model name is not provided, set to model_path.
     if model_name is None:
         model_name = pipeline_config.model_config.model_path
@@ -129,7 +142,7 @@ def serve_pipeline(
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=pipeline_factory,
-        pipeline_config=batch_config,
+        pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
     )
@@ -138,8 +151,20 @@ def serve_pipeline(
     app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
 
+    # Set up signal handler for Ctrl+C graceful shutdown
     signal.signal(signal.SIGTERM, sigterm_handler)
+    signal.signal(signal.SIGINT, sigint_handler)
 
     server = Server(config)
-    with Tracer("openai_compatible_frontend_server"):
-        uvloop.run(server.serve())
+    _server_instance = server
+
+    try:
+        # Run the server and let KeyboardInterrupt propagate to lifespan
+        with Tracer("openai_compatible_frontend_server"):
+            uvloop.run(server.serve())
+    except KeyboardInterrupt:
+        logger.debug(
+            "KeyboardInterrupt caught at server level, exiting gracefully"
+        )
+    finally:
+        _server_instance = None

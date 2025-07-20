@@ -10,10 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo %s
 
-from math import floor, log2
-
+from math import floor, ceil, log2
 from bit import (
     bit_not,
     bit_reverse,
@@ -22,6 +20,7 @@ from bit import (
     count_leading_zeros,
     count_trailing_zeros,
     log2_floor,
+    log2_ceil,
     next_power_of_two,
     pop_count,
     prev_power_of_two,
@@ -475,23 +474,129 @@ fn _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
+@always_inline
+fn _log2_ceil(n: Int) -> Int:
+    """Computes ceil(log_2(d))."""
+
+    return Int(_log2_ceil(Scalar[DType.index](n)))
+
+
+@always_inline
+fn _log2_ceil(n: Scalar) -> __type_of(n):
+    return __type_of(n)(ceil(log2(Float64(n))))
+
+
 def test_log2_floor():
     assert_equal(log2_floor(0), 0)
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
             _log2_floor(i),
-            msg=String("mismatching value for the input value of ", i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_floor(i),
+                " but got ",
+                log2_floor(i),
+            ),
         )
 
     fn _check_alias[n: Int](expected: Int) raises:
         alias res = log2_floor(n)
-        assert_equal(res, expected)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
 
     _check_alias[0](0)
     _check_alias[1](0)
     _check_alias[2](1)
     _check_alias[15](3)
+    _check_alias[32](5)
+
+
+def test_log2_ceil():
+    assert_equal(log2_ceil(0), 0)
+    for i in range(1, 100):
+        assert_equal(
+            log2_ceil(i),
+            _log2_ceil(i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_ceil(i),
+                " but got ",
+                log2_ceil(i),
+            ),
+        )
+
+    fn _check_alias[n: Int](expected: Int) raises:
+        alias res = log2_ceil(n)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
+
+    _check_alias[0](0)
+    _check_alias[1](0)
+    _check_alias[2](1)
+    _check_alias[15](4)
+    _check_alias[32](5)
+
+
+def test_log2_ceil_int32():
+    assert_equal(log2_ceil(Int32(0)), 0)
+    for i in range(Int32(1), Int32(100)):
+        assert_equal(
+            log2_ceil(i),
+            _log2_ceil(i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_ceil(i),
+                " but got ",
+                log2_ceil(i),
+            ),
+        )
+
+    fn _check_alias[n: Int32](expected: Int32) raises:
+        alias res = log2_ceil(n)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
+
+    _check_alias[0](0)
+    _check_alias[1](0)
+    _check_alias[2](1)
+    _check_alias[15](4)
     _check_alias[32](5)
 
 
@@ -516,3 +621,5 @@ def main():
     test_pop_count_simd()
     test_bit_not_simd()
     test_log2_floor()
+    test_log2_ceil()
+    test_log2_ceil_int32()

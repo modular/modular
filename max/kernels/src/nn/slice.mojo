@@ -41,10 +41,10 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 
 @always_inline
 fn slice_dim_as_view[
-    type: DType, rank: Int, dim: Int
+    dtype: DType, rank: Int, dim: Int
 ](
-    tensor: NDBuffer[type, rank, *_, **_], start: Int, end: Int, step: Int
-) -> NDBuffer[type, rank, tensor.origin]:
+    tensor: NDBuffer[dtype, rank, *_, **_], start: Int, end: Int, step: Int
+) -> NDBuffer[dtype, rank, tensor.origin]:
     var new_shape = tensor.get_shape()
     var new_stride = tensor.get_strides()
 
@@ -70,7 +70,7 @@ fn slice_dim_as_view[
     new_shape[dim] = len(range(clamped_start, clamped_stop, step))
 
     # Create the new view
-    return NDBuffer[type, rank, address_space = tensor.address_space](
+    return NDBuffer[dtype, rank, address_space = tensor.address_space](
         new_data, new_shape, new_stride
     )
 
@@ -82,17 +82,17 @@ fn slice_dim_as_view[
 
 @always_inline
 fn slice_as_view[
-    type: DType,
+    dtype: DType,
     start_type: DType,
     end_type: DType,
     step_type: DType,
     rank: Int,
 ](
-    tensor: NDBuffer[type, rank, *_, **_],
+    tensor: NDBuffer[dtype, rank, *_, **_],
     starts: NDBuffer[start_type, 1, *_, **_],
     ends: NDBuffer[end_type, 1, *_, **_],
     steps: NDBuffer[step_type, 1, *_, **_],
-) -> NDBuffer[type, rank, tensor.origin]:
+) -> NDBuffer[dtype, rank, tensor.origin]:
     var new_shape = IndexList[rank]()
     var new_stride = IndexList[rank]()
 
@@ -124,7 +124,7 @@ fn slice_as_view[
         new_shape[i] = len(range(start, stop, step))
 
     # Create the new view
-    return NDBuffer[type, rank, address_space = tensor.address_space](
+    return NDBuffer[dtype, rank, address_space = tensor.address_space](
         new_data, new_shape, new_stride
     )
 
@@ -136,15 +136,15 @@ fn slice_as_view[
 
 @always_inline
 fn copy_to_slice[
-    type: DType,
+    dtype: DType,
     start_type: DType,
     end_type: DType,
     step_type: DType,
     in_rank: Int,
     target: StaticString = "cpu",
 ](
-    buffer: NDBuffer[mut=True, type, in_rank],
-    in_slice: NDBuffer[type, in_rank],
+    buffer: NDBuffer[mut=True, dtype, in_rank],
+    in_slice: NDBuffer[dtype, in_rank],
     start: NDBuffer[start_type, 1],
     end: NDBuffer[end_type, 1],
     step: NDBuffer[step_type, 1],
@@ -184,10 +184,10 @@ fn copy_to_slice[
 
 @always_inline
 fn slice_as_copy[
-    type: DType, index_type: DType, in_rank: Int
+    dtype: DType, index_type: DType, in_rank: Int
 ](
-    output: NDBuffer[mut=True, type, in_rank],
-    tensor: NDBuffer[type, in_rank],
+    output: NDBuffer[mut=True, dtype, in_rank],
+    tensor: NDBuffer[dtype, in_rank],
     start: NDBuffer[index_type, 1],
     end: NDBuffer[index_type, 1],
     step: NDBuffer[index_type, 1],

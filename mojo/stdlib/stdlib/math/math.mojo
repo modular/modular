@@ -32,7 +32,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
-from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize
 from bit import count_leading_zeros, count_trailing_zeros
@@ -734,7 +734,7 @@ fn frexp[
     alias mantissa_width = FPUtils[dtype].mantissa_width()
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
-    var x_int = x.to_bits()
+    var x_int = x._to_bits_signed()
     var selector = x != zero
     var exp = selector.select(
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
@@ -1159,10 +1159,7 @@ fn iota[
 
     alias step_dtype = dtype if dtype.is_integral() else DType.index
     var step: SIMD[step_dtype, width]
-    alias is_amd = is_amd_gpu()
-    # We can't use llvm.stepvector on AMD GPUs, because of a bug in the
-    # amd backend. See https://github.com/llvm/llvm-project/issues/139317
-    if is_amd or is_compile_time():
+    if is_compile_time():
         step = 0
 
         @parameter
@@ -2511,7 +2508,9 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(0 <= n <= 20, "input value causes an overflow")
+    debug_assert(
+        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
+    )
     return table[n]
 
 

@@ -17,15 +17,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 from max.driver import DeviceStream, Tensor
 from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.interfaces import (
+    GenerationStatus,
+    TextGenerationResponse,
+    TextResponse,
+)
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import (
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
     TTSContext,
 )
 from max.profiler import Tracer, traced
@@ -120,6 +121,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             ).to(self._devices[0])
 
         else:
+            self._check_need_penalties(context_batch)
             frequency_data = None
             frequency_penalty = None
             presence_penalty = None
@@ -153,7 +155,10 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         ).to(self._devices[0])
         seed = Tensor.from_numpy(
             np.array(
-                [context.sampling_params.seed for context in context_batch],
+                [
+                    context.sampling_params.seed + context.current_length
+                    for context in context_batch
+                ],
                 dtype=np.uint64,
             )
         ).to(self._devices[0])
@@ -174,18 +179,20 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 new_tokens_np = new_tokens.to_numpy()  # type: ignore
                 seq_has_eos |= np.isin(new_tokens_np, eos_token_list)
 
+            tensor_bitmask = None
             if bitmask is not None:
                 assert self.vocab_size is not None
-                bits = 2 ** torch.arange(32, dtype=torch.int32)
-                bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
+                bits = 2 ** np.arange(32, dtype=np.int32)
+                bitmask = (bitmask[..., np.newaxis] & bits) != 0
+                bitmask = bitmask.reshape(len(context_batch), -1).astype(
+                    np.bool_
+                )
                 bitmask = bitmask[:, 0 : self.vocab_size]
-
-                bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
+                tensor_bitmask = Tensor.from_numpy(bitmask).to(self._devices[0])
 
             # Sample next token.
             tracer.next("sample_next_token")
-            new_tokens, new_generated_tokens = self.sample_logits(
+            new_tokens, new_generated_tokens, new_seed = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
                 top_k,
@@ -194,7 +201,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 top_p,
                 seed,
                 logit_offsets=model_outputs.logit_offsets,
-                bitmask=bitmask,
+                bitmask=tensor_bitmask,
                 frequency_data=frequency_data,
                 min_tokens_mask=min_tokens_masks[i]
                 if min_tokens_masks
@@ -206,7 +213,9 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
             assert isinstance(new_tokens, Tensor)
             assert isinstance(new_generated_tokens, Tensor)
+            assert isinstance(new_seed, Tensor)
             generated_tokens = new_generated_tokens
+            seed = new_seed
 
             # Check if we're on our last iteration. If so, skip preparing the next batch
             if i == num_steps - 1 or seq_has_eos.all():
@@ -249,7 +258,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = TextGenerationStatus.ACTIVE
+            status = GenerationStatus.ACTIVE
             res[request_id] = TextGenerationResponse([], status)
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
             for step in range(num_valid_tokens):

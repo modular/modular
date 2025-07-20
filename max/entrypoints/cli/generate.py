@@ -22,13 +22,13 @@ from collections.abc import Iterable
 from typing import Optional
 
 import requests
+from max.interfaces import TokenGenerator
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
-    TokenGenerator,
     TokenGeneratorRequest,
 )
 
@@ -75,7 +75,7 @@ async def stream_text_to_console(
                 pipeline_request, num_steps=num_steps
             )
 
-            for request_idx, response in responses.items():
+            for request_idx, response in responses.items():  # noqa: B007
                 if response.is_done:
                     generate_again = False
 

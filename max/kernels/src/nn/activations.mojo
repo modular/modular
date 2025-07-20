@@ -24,15 +24,15 @@ from utils.numerics import get_accum_type
 
 @always_inline("nodebug")
 fn _is_neg[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    dtype: DType, simd_width: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Returns True if the input value is negative.
 
     The value is computed separately for each element in the SIMD vector. For
-    unsigned types the result is always a SIMD vector filled with False.
+    unsigned dtypes the result is always a SIMD vector filled with False.
 
     Parameters:
-        type: dtype used for the computation.
+        dtype: dtype used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -44,19 +44,19 @@ fn _is_neg[
     """
 
     @parameter
-    if type.is_unsigned():
+    if dtype.is_unsigned():
         return False
     return val < 0
 
 
 @always_inline
 fn sign[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the sign (0, 1) of the input value.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -67,7 +67,7 @@ fn sign[
     """
     var is_neg_mask = _is_neg(x)
     var is_zero_mask = x == 0
-    return is_neg_mask.select[type](-1, is_zero_mask.select[type](0, 1))
+    return is_neg_mask.select[dtype](-1, is_zero_mask.select[dtype](0, 1))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -77,12 +77,12 @@ fn sign[
 
 @always_inline
 fn elu[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -101,12 +101,12 @@ fn elu[
 
 @always_inline
 fn relu[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu Op using the equation $max(0, x)$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -125,12 +125,12 @@ fn relu[
 
 @always_inline
 fn relu_n1[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -149,13 +149,13 @@ fn relu_n1[
 
 @always_inline
 fn gelu[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
@@ -165,22 +165,22 @@ fn gelu[
         The result of the GELU operation.
 
     Constraints:
-        Type must be a floating point type.
+        Type must be a floating point dtype.
     """
     # Perform the intermediate computation in `accum_type` to match
     # torch.nn.functional.gelu:
     # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[type]()
+    alias accum_type = get_accum_type[dtype]()
     alias inv_SQRT_2 = 0.70710678118654752440
     constrained[
-        type.is_floating_point(),
-        "dtype must be a floating point type",
+        dtype.is_floating_point(),
+        "dtype must be a floating point dtype",
     ]()
 
     var val = x.cast[accum_type]()
     var val_half = 0.5 * val
     var erf_res = math.erf(val * inv_SQRT_2)
-    return val_half.fma(erf_res, val_half).cast[type]()
+    return val_half.fma(erf_res, val_half).cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -190,20 +190,20 @@ fn gelu[
 
 @always_inline
 fn gelu_approximate[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the approximate GELU Op using the equation
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
 
     Parameters:
-        type: The `DType` used for the computation.
+        dtype: The `DType` used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
         x: The value to compute the GELU operation on.
 
     Constraints:
-        Type must be a floating point type.
+        Type must be a floating point dtype.
 
     Returns:
         The result of the approximate GELU operation.
@@ -211,11 +211,11 @@ fn gelu_approximate[
     # Perform the intermediate computation in `accum_type` to match
     # torch.nn.functional.gelu:
     # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[type]()
+    alias accum_type = get_accum_type[dtype]()
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     constrained[
-        type.is_floating_point(),
-        "dtype must be a floating point type",
+        dtype.is_floating_point(),
+        "dtype must be a floating point dtype",
     ]()
 
     var val = x.cast[accum_type]()
@@ -223,4 +223,4 @@ fn gelu_approximate[
     var val3 = val * val * val
     return (
         0.5 * val * (1 + math.tanh(SQRT_TWO_OVER_PI * (val + 0.044715 * val3)))
-    ).cast[type]()
+    ).cast[dtype]()

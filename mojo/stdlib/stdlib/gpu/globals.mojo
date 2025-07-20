@@ -22,6 +22,7 @@ are used to optimize code generation and ensure hardware compatibility.
 """
 
 from sys.info import (
+    CompilationTarget,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     _is_amd_rdna,
@@ -69,6 +70,29 @@ fn _resolve_warp_size() -> Int:
 
 
 # ===-----------------------------------------------------------------------===#
+# WARPGROUP_SIZE
+# ===-----------------------------------------------------------------------===#
+
+
+alias WARPGROUP_SIZE = _resolve_warpgroup_size()
+"""The number of threads in a warpgroup on Nvidia GPUs.
+
+On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps
+i.e. 128 threads. The first warp id must be multiple of 4.
+
+Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
+"""
+
+
+fn _resolve_warpgroup_size() -> Int:
+    # We can't constrain it here because the constant is used on host for
+    # compilation test w/o nvidia GPUs.
+    # constrained[is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."]()
+
+    return 128
+
+
+# ===-----------------------------------------------------------------------===#
 # MAX_THREADS_PER_BLOCK_METADATA
 # ===-----------------------------------------------------------------------===#
 
@@ -84,5 +108,7 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return "rocdl.flat_work_group_size".value
     else:
-        constrained[False, "no accelerator detected"]()
-        return "".value
+        return CompilationTarget.unsupported_target_error[
+            __mlir_type.`!kgen.string`,
+            operation="MAX_THREADS_PER_BLOCK_METADATA",
+        ]()

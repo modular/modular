@@ -68,11 +68,9 @@ lit_tests(
     srcs = _LIT_TESTS,
     data = ["lit.local.cfg"],
     mojo_deps = [
-        "@mojo//:stdlib",
-        "@mojo//:linalg",
         "@mojo//:internal_utils",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
     ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
+    tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
 )

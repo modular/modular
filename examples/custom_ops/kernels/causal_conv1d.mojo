@@ -26,7 +26,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.id import block_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from runtime.asyncrt import DeviceContextPtr

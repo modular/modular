@@ -22,11 +22,13 @@ from time import sleep, time
 from typing import Literal, Optional, Union
 
 import numpy as np
-from max.pipelines.core import (
+from max.interfaces import (
+    GenerationStatus,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
+)
+from max.pipelines.core import (
     TokenGeneratorRequest,
 )
 from max.pipelines.lib.tokenizer import PreTrainedPipelineTokenizer
@@ -215,7 +217,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             self._record_batch_info(batch.values(), num_steps)
 
         response = {}
-        for step in range(num_steps):
+        for step in range(num_steps):  # noqa: B007
             context_lengths = [x.context_len for x in batch.values()]
             if sum(context_lengths) == 0:
                 self.logger.debug(
@@ -253,7 +255,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             for request_id, context in batch.items():
                 if request_id not in response:
                     response[request_id] = TextGenerationResponse(
-                        [], TextGenerationStatus.ACTIVE
+                        [], GenerationStatus.ACTIVE
                     )
 
                 if (
@@ -261,7 +263,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                     >= context.max_tokens
                 ):
                     response[request_id].update_status(
-                        TextGenerationStatus.MAXIMUM_LENGTH
+                        GenerationStatus.MAXIMUM_LENGTH
                     )
                     break
 

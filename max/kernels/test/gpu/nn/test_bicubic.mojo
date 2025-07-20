@@ -42,13 +42,13 @@ test assertions.
 fn test_bicubic_kernel[
     input_dim: DimList,
     output_dim: DimList,
-    type: DType,
+    dtype: DType,
 ](ctx: DeviceContext) raises:
     var input_dim_flattened = input_dim.product().get()
     var output_dim_flattened = output_dim.product().get()
-    var input_host = HostNDBuffer[type, 4, input_dim](input_dim)
-    var output_host = HostNDBuffer[type, 4, output_dim](output_dim)
-    var output_ref_host = HostNDBuffer[type, 4, output_dim](output_dim)
+    var input_host = HostNDBuffer[dtype, 4, input_dim](input_dim)
+    var output_host = HostNDBuffer[dtype, 4, output_dim](output_dim)
+    var output_ref_host = HostNDBuffer[dtype, 4, output_dim](output_dim)
     print("input_dim_flattened: ", input_dim_flattened)
     print("output_dim_flattened: ", output_dim_flattened)
     print("input_dim: ", input_dim)
@@ -122,7 +122,7 @@ fn test_bicubic_kernel[
     for c in range(3):  # 3 channels
         for h in range(5):
             for w in range(5):
-                input_host.tensor[0, c, h, w] = SIMD[type, 1](
+                input_host.tensor[0, c, h, w] = SIMD[dtype, 1](
                     channel_values[c][h][w]
                 )
 
@@ -585,8 +585,8 @@ fn test_bicubic_kernel[
         "--------------------------------now we want to call the gpu bicubic"
         " upsampling kernel--------------------------------"
     )
-    var input_dev = DeviceNDBuffer[type, 4, input_dim](input_dim, ctx=ctx)
-    var output_dev = DeviceNDBuffer[type, 4, output_dim](output_dim, ctx=ctx)
+    var input_dev = DeviceNDBuffer[dtype, 4, input_dim](input_dim, ctx=ctx)
+    var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
 
@@ -627,23 +627,23 @@ fn test_bicubic_kernel[
     )
 
 
-fn test_large_image_gpu_launch[type: DType](ctx: DeviceContext) raises:
+fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
     """
     # Test with 64x64 output which would exceed 1024 threads/block limit.
     alias input_dim = DimList(1, 3, 32, 32)
     alias output_dim = DimList(1, 3, 64, 64)
 
-    var input_host = HostNDBuffer[type, 4, input_dim](input_dim)
-    var output_host = HostNDBuffer[type, 4, output_dim](output_dim)
-    var output_gpu_host = HostNDBuffer[type, 4, output_dim](output_dim)
+    var input_host = HostNDBuffer[dtype, 4, input_dim](input_dim)
+    var output_host = HostNDBuffer[dtype, 4, output_dim](output_dim)
+    var output_gpu_host = HostNDBuffer[dtype, 4, output_dim](output_dim)
 
     # Fill input with simple pattern
     for n in range(1):
         for c in range(3):
             for h in range(32):
                 for w in range(32):
-                    input_host.tensor[n, c, h, w] = SIMD[type, 1](
+                    input_host.tensor[n, c, h, w] = SIMD[dtype, 1](
                         Float32(h * 32 + w) / 1024.0
                     )
 
@@ -651,13 +651,13 @@ fn test_large_image_gpu_launch[type: DType](ctx: DeviceContext) raises:
     cpu_bicubic_kernel(output_host.tensor, input_host.tensor)
 
     # Run GPU version.
-    var input_dev = DeviceNDBuffer[type, 4, input_dim](input_dim, ctx=ctx)
-    var output_dev = DeviceNDBuffer[type, 4, output_dim](output_dim, ctx=ctx)
+    var input_dev = DeviceNDBuffer[dtype, 4, input_dim](input_dim, ctx=ctx)
+    var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
-    ctx.enqueue_function[gpu_bicubic_kernel[type, rank=4]](
+    ctx.enqueue_function[gpu_bicubic_kernel[dtype, rank=4]](
         output_dev.tensor,
         input_dev.tensor,
         grid_dim=(1, 3),

@@ -21,11 +21,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import load_weights
+from max.interfaces import EmbeddingsResponse, InputContext
 from max.nn import ReturnLogits
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    EmbeddingsResponse,
-    InputContext,
 )
 from max.profiler import Tracer, traced
 
@@ -56,6 +55,8 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Download weight files if not existent
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id

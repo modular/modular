@@ -22,13 +22,12 @@ class Scheduler(ABC):
     """Abstract base class defining the interface for schedulers."""
 
     @abstractmethod
-    def run(self):
-        """The main scheduler loop that creates and executes batches.
+    def run_iteration(self):
+        """The core scheduler routine that creates and executes batches.
 
         This method should implement the core scheduling logic including:
         - Batch creation and management
         - Request scheduling
-        - Error handling
         """
         pass
 

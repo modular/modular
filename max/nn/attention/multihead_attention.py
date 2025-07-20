@@ -44,7 +44,8 @@ class MultiheadAttention(Module):
         devices: Sequence[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         scale: float | None = None,
-        has_bias: bool = False,
+        qkv_has_bias: bool = False,
+        o_proj_has_bias: bool = False,
         stacked_qkv: bool = False,
     ) -> None:
         """Initializes the attention layer.
@@ -78,11 +79,9 @@ class MultiheadAttention(Module):
         self.scale = (
             scale if scale is not None else 1.0 / math.sqrt(self.head_dim)
         )
-        self.has_bias = has_bias
+        self.qkv_has_bias = qkv_has_bias
+        self.o_proj_has_bias = o_proj_has_bias
         self.stacked_qkv = stacked_qkv
-
-        if stacked_qkv and has_bias:
-            raise ValueError("Bias is not supported with stacked_qkv=True.")
 
         # Initialize weights
         self._init_weights(dtype)
@@ -100,25 +99,33 @@ class MultiheadAttention(Module):
                 shape=(3 * self.embed_dim, self.embed_dim),
                 device=self.devices[0],
             )
+
+            if self.qkv_has_bias:
+                self.qkv_proj_bias = Weight(
+                    name="qkv_proj.bias",
+                    dtype=dtype,
+                    shape=(3 * self.embed_dim,),
+                    device=self.devices[0],
+                )
         else:
             self.q_proj = Linear(
                 in_dim=self.embed_dim,
                 out_dim=self.embed_dim,
-                has_bias=self.has_bias,
+                has_bias=self.qkv_has_bias,
                 dtype=dtype,
                 device=self.devices[0],
             )
             self.k_proj = Linear(
                 in_dim=self.embed_dim,
                 out_dim=self.embed_dim,
-                has_bias=self.has_bias,
+                has_bias=self.qkv_has_bias,
                 dtype=dtype,
                 device=self.devices[0],
             )
             self.v_proj = Linear(
                 in_dim=self.embed_dim,
                 out_dim=self.embed_dim,
-                has_bias=self.has_bias,
+                has_bias=self.qkv_has_bias,
                 dtype=dtype,
                 device=self.devices[0],
             )
@@ -126,7 +133,7 @@ class MultiheadAttention(Module):
         self.o_proj = Linear(
             in_dim=self.embed_dim,
             out_dim=self.embed_dim,
-            has_bias=self.has_bias,
+            has_bias=self.o_proj_has_bias,
             dtype=dtype,
             device=self.devices[0],
         )
@@ -146,6 +153,10 @@ class MultiheadAttention(Module):
             self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
+            if self.qkv_has_bias:
+                self.qkv_proj_bias.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
         else:
             self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
@@ -177,13 +188,15 @@ class MultiheadAttention(Module):
                 if hasattr(self, "q_proj")
                 else self.qkv_proj.dtype,
                 scale=self.scale,
-                has_bias=self.has_bias,
+                has_bias=self.qkv_has_bias,
                 stacked_qkv=self.stacked_qkv,
             )
 
             # Shard weights to this device
             if self.stacked_qkv:
                 module.qkv_proj = self.qkv_proj.shard(n, device)
+                if self.qkv_has_bias:
+                    module.qkv_proj_bias = self.qkv_proj_bias.shard(n, device)
             else:
                 module.q_proj = self.q_proj.shard(n, device)
                 module.k_proj = self.k_proj.shard(n, device)
@@ -215,14 +228,11 @@ class MultiheadAttention(Module):
     @property
     def wqkv_bias(self) -> TensorValue | None:
         """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
+        if not self.qkv_has_bias:
             return None
 
         if self.stacked_qkv:
-            raise ValueError(
-                "Cannot access wqkv_bias when stacked_qkv=True. "
-                "Bias is not supported with stacked QKV configuration."
-            )
+            return self.qkv_proj_bias
 
         if (
             self.q_proj.bias is None

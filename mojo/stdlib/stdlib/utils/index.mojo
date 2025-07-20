@@ -20,7 +20,7 @@ from utils import IndexList
 ```
 """
 
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
@@ -164,11 +164,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Comparable,
     Copyable,
     Defaultable,
+    Hashable,
     Movable,
     Sized,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """A base struct that implements size agnostic index functions.
 
@@ -788,12 +788,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
                 result.element_type
             ]()
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
-
         Parameters:
             H: The hasher type.
-
         Args:
             hasher: The hasher instance.
         """

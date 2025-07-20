@@ -13,6 +13,7 @@
 
 import logging
 from functools import lru_cache
+from typing import Optional
 
 import numpy as np
 import requests
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class SmartKnowledgeBase:
-    def __init__(self, endpoint: str = "http://localhost:8000/v1/embeddings"):
+    def __init__(
+        self, endpoint: str = "http://localhost:8000/v1/embeddings"
+    ) -> None:
         self.endpoint = endpoint
         self.documents: list[str] = []
         self.doc_titles: list[str] = []
@@ -51,17 +54,17 @@ class SmartKnowledgeBase:
                 )
             except Exception as e:
                 if attempt == max_retries - 1:
-                    raise Exception(
+                    raise Exception(  # noqa: B904
                         f"Failed to get embeddings after {max_retries} attempts: {e}"
                     )
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
 
-    @lru_cache(maxsize=1000)
+    @lru_cache(maxsize=1000)  # noqa: B019
     def _get_embedding_cached(self, text: str) -> np.ndarray:
         """Cached version for single text embedding."""
         return self._get_embedding([text])[0]
 
-    def add_document(self, title: str, content: str):
+    def add_document(self, title: str, content: str) -> None:
         """Add a single document with title."""
         self.doc_titles.append(title)
         self.documents.append(content)
@@ -78,7 +81,7 @@ class SmartKnowledgeBase:
         if len(self.documents) >= 3:
             self._cluster_documents()
 
-    def _cluster_documents(self, n_clusters: int = None):
+    def _cluster_documents(self, n_clusters: Optional[int] = None) -> None:
         """Cluster documents into topics."""
         if n_clusters is None:
             n_clusters = max(2, len(self.documents) // 5)

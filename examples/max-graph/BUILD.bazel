@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
 
 modular_py_binary(
     name = "addition",
@@ -6,6 +6,13 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//SDK/lib/API/python/max",
+        # FIXME: Hack, not used directly. Nightly tests fail without this dep.
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         requirement("numpy"),
     ],
+)
+
+modular_run_binary_test(
+    name = "addition_test",
+    binary = "addition",
 )

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections.dict import OwnedKwargsDict
 
 from test_utils import CopyCounter
+from hashlib import Hashable, Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -24,7 +24,7 @@ def test_dict_construction():
 
 
 def test_dict_literals():
-    a = {String("foo"): 1, String("bar"): 2}
+    a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
     b = {1: 4, 2: 7, 3: 18}
@@ -244,6 +244,15 @@ def test_iter_items():
     assert_equal(sum, 3)
 
 
+def test_dict_contains():
+    var dict: Dict[String, Int] = {}
+    dict["abc"] = 1
+    dict["def"] = 2
+    assert_true("abc" in dict)
+    assert_true("def" in dict)
+    assert_false("c" in dict)
+
+
 def test_dict_copy():
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
@@ -405,8 +414,8 @@ struct DummyKey(KeyElement):
     fn __init__(out self, *, other: Self):
         self = other
 
-    fn __hash__(self) -> UInt:
-        return self.value
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        return hasher.update(self.value)
 
     fn __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value
@@ -459,6 +468,7 @@ def test_dict():
     test["test_iter_values", test_iter_values]()
     test["test_iter_values_mut", test_iter_values_mut]()
     test["test_iter_items", test_iter_items]()
+    test["test_dict_contains", test_dict_contains]()
     test["test_dict_copy", test_dict_copy]()
     test["test_dict_copy_add_new_item", test_dict_copy_add_new_item]()
     test["test_dict_copy_delete_original", test_dict_copy_delete_original]()
@@ -474,7 +484,7 @@ def test_dict():
     test["test dict popitem", test_dict_popitem]()
 
 
-def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
+def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -612,8 +622,8 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict():
     alias N = 10
 
-    fn _get_dict() -> Dict[String, Int32]:
-        var res = Dict[String, Int32]()
+    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = i
         return res
@@ -642,12 +652,12 @@ def test_dict_comprehension():
     var d1 = {x: x * x for x in range(10) if x & 1}
     assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
 
-    var s2 = {a * b: b for a in [String("foo"), String("bar")] for b in [1, 2]}
+    var s2 = {a * b: b for a in ["foo", "bar"] for b in [1, 2]}
     var d1reference = {
-        String("foo"): 1,
-        String("bar"): 1,
-        String("foofoo"): 2,
-        String("barbar"): 2,
+        "foo": 1,
+        "bar": 1,
+        "foofoo": 2,
+        "barbar": 2,
     }
     assert_true(is_equal(s2, d1reference))
 

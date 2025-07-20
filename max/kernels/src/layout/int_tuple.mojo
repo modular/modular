@@ -557,6 +557,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """
         self._store = IntArray(non_owned=non_owned)
 
+    @always_inline("nodebug")
+    fn __init__(out self, *, var _owned: IntArray):
+        """Initialize an `IntTuple` taking the values of an `IntArray`.
+
+        Args:
+            _owned: The `IntArray` to use as storage.
+        """
+        self._store = _owned^
+
     @always_inline
     fn __init__(out self, existing: Self, rng: _StridedRange):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
@@ -811,7 +820,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 count += self[i].count_values()
         return count
 
-    fn _fill(mut self, src: IntTuple, owned i: Int = 1) -> Int:
+    fn _fill(mut self, src: IntTuple, var i: Int = 1) -> Int:
         for j in range(len(src)):
             if src.is_value(j):
                 self._store[i] = src.value(j)
@@ -1360,6 +1369,23 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             If the `IntTuple` is not a single value, the behavior is undefined.
         """
         return self.value()
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(IntTuple[_]),
+    ](var self) -> IntTuple[__origin_of(origin, other_type.origin)]:
+        """Returns an IntTuple with merged origins.  Used for if/then and
+        list literals.
+
+        Parameters:
+            other_type: The type of the IntTuple to merge with.
+
+        Returns:
+            An IntTuple that will work.
+        """
+        return IntTuple[__origin_of(origin, other_type.origin)](
+            _owned=self._store
+        )
 
 
 @always_inline("nodebug")

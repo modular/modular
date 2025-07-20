@@ -14,7 +14,15 @@
 # DOC: max/tutorials/custom-ops-matmul.mdx
 
 import compiler
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp_id
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx,
+    warp_id,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
@@ -38,7 +46,16 @@ from tensor_internal import (
     ManagedTensorSlice,
     OutputTensor,
 )
+from utils import StaticTuple
 from utils.index import Index
+
+# The number of threads per block to use for the optimized kernels.
+# Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA.
+# Not the most performant for all kernels, used sparingly on nvidia accelerators.
+alias OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
+
+# The block size to use for the optimized kernels.
+alias OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 
 # ===-----------------------------------------------------------------------===#
 # Naive matrix multiplication (CPU)
@@ -66,6 +83,7 @@ fn naive_matrix_multiplication_cpu(
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -130,6 +148,9 @@ fn naive_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+)
 fn coalescing_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -194,6 +215,9 @@ fn coalescing_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+)
 fn tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -287,6 +311,7 @@ fn tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tiled_register_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -392,6 +417,7 @@ fn tiled_register_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -486,6 +512,7 @@ fn block_tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_vectorized_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -606,6 +633,7 @@ fn block_tiled_vectorized_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
@@ -821,8 +849,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # compiled and enqueued to run on the GPU.
             @parameter
             if algorithm == "naive":
-                alias BM = 32
-                alias BN = 32
+                alias BM = 16
+                alias BN = 16
                 gpu_ctx.enqueue_function[
                     naive_matrix_multiplication[
                         output.dtype,
@@ -840,8 +868,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif algorithm == "coalescing":
-                alias BM = 32
-                alias BN = 32
+                alias BM = OPTIMIZED_BLOCK_SIZE
+                alias BN = OPTIMIZED_BLOCK_SIZE
                 gpu_ctx.enqueue_function[
                     coalescing_matrix_multiplication[
                         output.dtype,
@@ -859,9 +887,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif algorithm == "tiled":
-                alias BM = 32
-                alias BN = 32
-                alias BK = 32
+                alias BM = OPTIMIZED_BLOCK_SIZE
+                alias BN = OPTIMIZED_BLOCK_SIZE
+                alias BK = OPTIMIZED_BLOCK_SIZE
                 alias NUM_THREADS = BM * BN
                 gpu_ctx.enqueue_function[
                     tiled_matrix_multiplication[
@@ -885,7 +913,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BM = 64
                 alias BN = 64
                 alias BK = 8
-                alias TM = 8
+                alias TM = 16
                 alias NUM_THREADS = (BM * BN) // TM
                 gpu_ctx.enqueue_function[
                     tiled_register_matrix_multiplication[
@@ -966,7 +994,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     alias BM = 64
                     alias BN = 64
-                    alias BK = 32
+                    alias BK = OPTIMIZED_BLOCK_SIZE
                     alias WM = 32
                     alias WN = WARP_SIZE
                     # different MMA shapes for AMD and NVIDIA, see:

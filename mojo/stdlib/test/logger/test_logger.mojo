@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
-
 
 from logger import Level, Logger
 
 
-def main():
+# CHECK-LABEL: Test logging at info level
+def test_log_info():
+    print("=== Test logging at info level")
     var log = Logger[Level.INFO]()
 
     # CHECK-NOT: DEBUG::: hello world
@@ -24,3 +24,20 @@ def main():
 
     # CHECK: INFO::: hello
     log.info("hello")
+
+
+# CHECK-LABEL: Test no logging by default
+fn test_log_noset():
+    print("=== Test no logging by default")
+    var log = Logger()
+
+    # CHECK-NOT: DEBUG::: hello world
+    log.debug("hello", "world")
+
+    # CHECK-NOT: INFO::: hello
+    log.info("hello")
+
+
+def main():
+    test_log_info()
+    test_log_noset()

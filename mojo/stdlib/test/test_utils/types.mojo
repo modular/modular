@@ -46,7 +46,7 @@ struct MoveOnly[T: Movable](Movable):
     """Test data payload."""
 
     @implicit
-    fn __init__(out self, owned i: T):
+    fn __init__(out self, var i: T):
         """Construct a MoveOnly providing the payload data.
 
         Args:
@@ -171,7 +171,7 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
     var move_count: Int
 
     @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Construct a new instance of this type. This initial move is not counted.
         """
         self.value = value^

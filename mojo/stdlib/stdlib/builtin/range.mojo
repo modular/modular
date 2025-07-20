@@ -41,7 +41,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(IteratorTrait, Movable, ReversibleRange, Sized):
+struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
     alias Element = Int
     var curr: Int
     var end: Int
@@ -82,7 +82,7 @@ struct _ZeroStartingRange(IteratorTrait, Movable, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(IteratorTrait, ReversibleRange, Sized):
+struct _SequentialRange(Iterator, ReversibleRange, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -117,7 +117,7 @@ struct _SequentialRange(IteratorTrait, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(IteratorTrait, Sized):
+struct _StridedRangeIterator(Iterator, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -145,7 +145,7 @@ struct _StridedRangeIterator(IteratorTrait, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(IteratorTrait, ReversibleRange, Sized):
+struct _StridedRange(Iterator, ReversibleRange, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -385,7 +385,7 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(IteratorTrait, UIntSized):
+struct _UIntZeroStartingRange(Iterator, UIntSized):
     alias Element = UInt
     var curr: UInt
     var end: UInt
@@ -422,7 +422,7 @@ struct _UIntZeroStartingRange(IteratorTrait, UIntSized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(IteratorTrait, UIntSized):
+struct _UIntStridedRangeIterator(Iterator, UIntSized):
     alias Element = UInt
     var start: UInt
     var end: UInt
@@ -444,7 +444,7 @@ struct _UIntStridedRangeIterator(IteratorTrait, UIntSized):
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(IteratorTrait, UIntSized):
+struct _UIntStridedRange(Iterator, UIntSized):
     alias Element = UInt
     var start: UInt
     var end: UInt
@@ -528,7 +528,7 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 
 @register_passable("trivial")
-struct _ZeroStartingScalarRange[dtype: DType]:
+struct _ZeroStartingScalarRange[dtype: DType](Iterator & Copyable):
     alias Element = Scalar[dtype]
     var curr: Scalar[dtype]
     var end: Scalar[dtype]
@@ -572,7 +572,7 @@ struct _ZeroStartingScalarRange[dtype: DType]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialScalarRange[dtype: DType]:
+struct _SequentialScalarRange[dtype: DType](Iterator & Copyable):
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
@@ -601,13 +601,16 @@ struct _SequentialScalarRange[dtype: DType]:
         return self.start + idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedRange:
-        return range(self.end - 1, self.start - 1, -1)
+    fn __reversed__(self) -> _StridedScalarRange[dtype]:
+        constrained[
+            not dtype.is_unsigned(), "cannot reverse an unsigned range"
+        ]()
+        return range(self.end - 1, self.start - 1, Scalar[dtype](-1))
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[dtype: DType]:
+struct _StridedScalarRangeIterator[dtype: DType](Iterator & Copyable):
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]

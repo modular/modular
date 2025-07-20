@@ -22,7 +22,7 @@ from max.serve.telemetry.stopwatch import StopWatch
 logger = logging.getLogger("max.serve")
 
 
-def register_request(app: FastAPI):
+def register_request(app: FastAPI) -> None:
     @app.middleware("http")
     async def request_session(request: Request, call_next: Callable):
         request_id = uuid.uuid4().hex

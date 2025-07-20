@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from os import Atomic
 
@@ -21,8 +20,8 @@ from testing import assert_true
 def test_compile_atomic():
     @parameter
     fn my_add_function[
-        type: DType
-    ](mut x: Atomic[type, scope="agent"]) -> Scalar[type]:
+        dtype: DType
+    ](mut x: Atomic[dtype, scope="agent"]) -> Scalar[dtype]:
         return x.fetch_add(1)
 
     var asm = compile_info[

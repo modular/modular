@@ -17,12 +17,12 @@ from nn.gather_scatter import gather_elements
 
 
 fn test_case[
-    type: DType
+    dtype: DType
 ](
     axis: Int,
-    data: TestTensor[type, 2],
+    data: TestTensor[dtype, 2],
     indices: TestTensor[DType.int32, 2],
-    output: TestTensor[type, 2],
+    output: TestTensor[dtype, 2],
 ) raises:
     var output_ref = output
 

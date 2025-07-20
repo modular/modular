@@ -60,7 +60,7 @@ struct UnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[type](),
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
     ImplicitlyBoolable,
     Copyable,
@@ -184,31 +184,6 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    @always_inline("nodebug")
-    @deprecated("Use UnsafePointer(to=...) constructor instead.")
-    fn address_of(
-        ref [address_space]arg: type,
-        out result: UnsafePointer[
-            type,
-            address_space=address_space,
-            alignment=1,
-            mut = Origin(__origin_of(arg)).mut,
-            origin = __origin_of(arg),
-        ],
-    ):
-        """Gets the address of the argument.
-
-        Args:
-            arg: The value to get the address of.
-
-        Returns:
-            An UnsafePointer which contains the address of the argument.
-        """
-        return __type_of(result)(
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg))
-        )
 
     @staticmethod
     @always_inline
@@ -992,7 +967,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,

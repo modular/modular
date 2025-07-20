@@ -59,7 +59,6 @@ fn test_max_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.MAX, ctx)
 
 
-# CHECK-LABEL: test_avg_pool_2d
 fn test_avg_pool_2d(ctx: DeviceContext) raises:
     print("== test_avg_pool_2d")
 

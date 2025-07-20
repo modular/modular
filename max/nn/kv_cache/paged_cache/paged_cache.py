@@ -19,13 +19,11 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
 from functools import reduce
 from operator import mul
 from typing import Any, TypeVar, cast
 
 import numpy as np
-import torch
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -43,7 +41,6 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
-from torch.utils.dlpack import from_dlpack
 
 from ..cache_params import KVCacheParams
 from ..context import KVCacheAwareContext
@@ -60,11 +57,6 @@ from .block_manager import BlockManager, SwappingStrategy
 logger = logging.getLogger("max.pipelines")
 
 T = TypeVar("T", bound=KVCacheAwareContext)
-
-
-class KeyOrValue(Enum):
-    KEY = 0
-    VALUE = 1
 
 
 @dataclass
@@ -203,7 +195,7 @@ class PagedKVCacheManager(KVCacheManager):
         cache_memory: int,
         page_size: int = 128,
         enable_runtime_checks: bool = False,
-    ):
+    ) -> None:
         """
         Args:
             params: The KVCacheParams for the given pipeline.
@@ -493,7 +485,10 @@ class PagedKVCacheManager(KVCacheManager):
 
     def _get_num_req_slots(self, seq_id: int) -> int:
         """Get the number of KV slots available for a request."""
-        return len(self.block_manager.req_to_blocks[seq_id]) * self.page_size
+        return (
+            len(self.block_manager.current_blocks_per_request[seq_id])
+            * self.page_size
+        )
 
     @traced
     def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:
@@ -535,7 +530,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_copy_engine.wait_for_completion()
 
         max_seq_len = -1
-        for batch_idx, ctx in enumerate(batch):
+        for batch_idx, ctx in enumerate(batch):  # noqa: B007
             seq_id = ctx.cache_seq_id
 
             # Allocate blocks for request if we need more.
@@ -738,79 +733,3 @@ class PagedKVCacheManager(KVCacheManager):
         if self.block_copy_engine is None:
             return
         self.block_copy_engine.blocks_copied.reset()
-
-    def _dump_k_cache_to_torch_tensor(
-        self, ctx: T, device_id: int = 0
-    ) -> torch.Tensor:
-        """
-        Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
-
-        This should only be used for testing purposes.
-        """
-        return self._dump_k_or_v_cache_to_torch_tensor(
-            ctx, device_id, KeyOrValue.KEY
-        )
-
-    def _dump_v_cache_to_torch_tensor(
-        self, ctx: T, device_id: int = 0
-    ) -> torch.Tensor:
-        """
-        Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
-
-        This should only be used for testing purposes.
-        """
-        return self._dump_k_or_v_cache_to_torch_tensor(
-            ctx, device_id, KeyOrValue.VALUE
-        )
-
-    def _dump_k_or_v_cache_to_torch_tensor(
-        self,
-        ctx: T,
-        device_id: int = 0,
-        key_or_value: KeyOrValue = KeyOrValue.KEY,
-    ) -> torch.Tensor:
-        """
-        Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
-
-        This should only be used for testing purposes.
-        """
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.block_manager.get_req_blocks(seq_id)
-
-        torch_dtype = self.params.dtype.to_torch()
-
-        # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
-        device_tensor = self.device_tensors[device_id]
-        device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
-
-        # [total_num_pages, num_layers, page_size, n_heads, head_dim]
-        device_tensor_torch = device_tensor_torch[
-            :, key_or_value.value, :, :, :, :
-        ]
-
-        # [seq_len, num_layers, n_heads, head_dim]
-        seq_len = ctx.start_idx
-        res = torch.empty(
-            (
-                seq_len,
-                self.num_layers,
-                self.params.n_kv_heads_per_device,
-                self.params.head_dim,
-            ),
-            dtype=torch_dtype,
-        )
-
-        for start_idx in range(0, seq_len, self.page_size):
-            end_idx = min(start_idx + self.page_size, seq_len)
-
-            block_id = req_blocks[start_idx // self.page_size]
-
-            # [num_layers, page_size, n_heads, head_dim]
-            block_torch = device_tensor_torch[block_id, :]
-
-            for token_idx in range(start_idx, end_idx):
-                res[token_idx, :, :, :] = block_torch[
-                    :, token_idx % self.page_size, :, :
-                ]
-
-        return res

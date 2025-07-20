@@ -6,6 +6,7 @@ mojo_library(
     name = "linalg",
     srcs = glob(["**/*.mojo"]),
     deps = [
+        "@mojo//:internal_utils",
         "@mojo//:layout",
         "@mojo//:register",
         "@mojo//:stdlib",

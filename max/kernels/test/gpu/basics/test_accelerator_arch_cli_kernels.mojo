@@ -16,7 +16,7 @@
 
 from sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from testing import *
 
@@ -38,7 +38,7 @@ def main():
     # CHECK-NV90: ret i1 true
     # CHECK-NV120: ret i1 false
     print(
-        _compile_code_asm[
+        _compile_code[
             check_sm9x,
             emission_kind="llvm",
             target = get_gpu_target[_accelerator_arch()](),
@@ -49,7 +49,7 @@ def main():
     # CHECK-NV90: ret i1 true
     # CHECK-NV120: ret i1 true
     print(
-        _compile_code_asm[
+        _compile_code[
             check_sm9x_or_newer,
             emission_kind="llvm",
             target = get_gpu_target[_accelerator_arch()](),

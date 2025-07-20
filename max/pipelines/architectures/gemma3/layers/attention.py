@@ -59,7 +59,7 @@ class _Gemma3Attention(Module):
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -242,7 +242,7 @@ class _Gemma3Attention(Module):
         # Calculate Flash Attention.
         mask_variant = (
             MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if bool((layer_idx + 1) % self.sliding_window_pattern)
+            if bool((self.layer_idx + 1) % self.sliding_window_pattern)
             else MHAMaskVariant.CAUSAL_MASK
         )
         attn_out = flash_attention_ragged(

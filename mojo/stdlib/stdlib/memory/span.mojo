@@ -22,6 +22,7 @@ from memory import Span
 
 from sys.info import simdwidthof
 
+from collections._index_normalization import normalize_index
 from memory import Pointer
 from memory.unsafe_pointer import _default_alignment
 
@@ -98,9 +99,9 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin].result]
+    alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
     # Fields
     var _data: UnsafePointer[
@@ -127,7 +128,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(
         other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin].result],
+        out self: Span[T, ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -222,15 +223,10 @@ struct Span[
         Returns:
             An element reference.
         """
-        # TODO: Simplify this with a UInt type.
-        debug_assert(
-            -self._len <= Int(idx) < self._len, "index must be within bounds"
+        var normalized_idx = normalize_index["Span", assert_always=False](
+            idx, len(self)
         )
-        # TODO(MSTDL-1086): optimize away SIMD/UInt normalization check
-        var offset = Int(idx)
-        if offset < 0:
-            offset += len(self)
-        return self._data[offset]
+        return self._data[normalized_idx]
 
     @always_inline
     fn __getitem__(self, slc: Slice) -> Self:

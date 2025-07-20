@@ -12,18 +12,26 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.intrinsics import _type_is_eq
+from os import abort
 
 from python import PythonObject as PO  # for brevity of signatures below
 from python.bindings import check_arguments_arity
 
 
-struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
+struct PyObjectFunction[
+    func_type: AnyTrivialRegType, self_type: AnyType = NoneType
+]:
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 
     This currently supports function types with up to 6 positional arguments,
     as well as raising functions, and both functions that return a PythonObject
     or nothing.
+
+    The self_type parameter controls self parameter handling:
+    - NoneType (default): No self parameter expected
+    - PythonObject: Self parameter is a PythonObject (for methods)
+    - Other types: Self parameter will be auto-downcast from PythonObject
 
     Note:
         This is a private implementation detail of the Python bindings, and have
@@ -44,22 +52,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0er, False], f: Self._0er):
+    fn __init__(out self: PyObjectFunction[Self._0er, NoneType], f: Self._0er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0r, False], f: Self._0r):
+    fn __init__(out self: PyObjectFunction[Self._0r, NoneType], f: Self._0r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0e, False], f: Self._0e):
+    fn __init__(out self: PyObjectFunction[Self._0e, NoneType], f: Self._0e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0, False], f: Self._0):
+    fn __init__(out self: PyObjectFunction[Self._0, NoneType], f: Self._0):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -73,22 +81,170 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1er, is_method], f: Self._1er):
+    fn __init__(out self: PyObjectFunction[Self._1er, self_type], f: Self._1er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1r, is_method], f: Self._1r):
+    fn __init__(out self: PyObjectFunction[Self._1r, self_type], f: Self._1r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1e, is_method], f: Self._1e):
+    fn __init__(out self: PyObjectFunction[Self._1e, self_type], f: Self._1e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1, is_method], f: Self._1):
+    fn __init__(out self: PyObjectFunction[Self._1, self_type], f: Self._1):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 1 argument (typed self methods - 0 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    alias _1er_self = fn (UnsafePointer[self_type]) raises -> PO
+    alias _1r_self = fn (UnsafePointer[self_type]) -> PO
+    alias _1e_self = fn (UnsafePointer[self_type]) raises
+    alias _1_self = fn (UnsafePointer[self_type])
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1er_self, self_type], f: Self._1er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1r_self, self_type], f: Self._1r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1e_self, self_type], f: Self._1e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1_self, self_type], f: Self._1_self
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 2 arguments (typed self methods - 1 additional argument)
+    # ===-------------------------------------------------------------------===#
+
+    alias _2er_self = fn (UnsafePointer[self_type], PO) raises -> PO
+    alias _2r_self = fn (UnsafePointer[self_type], PO) -> PO
+    alias _2e_self = fn (UnsafePointer[self_type], PO) raises
+    alias _2_self = fn (UnsafePointer[self_type], PO)
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2er_self, self_type], f: Self._2er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2r_self, self_type], f: Self._2r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2e_self, self_type], f: Self._2e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2_self, self_type], f: Self._2_self
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 3 arguments (typed self methods - 2 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    alias _3er_self = fn (UnsafePointer[self_type], PO, PO) raises -> PO
+    alias _3r_self = fn (UnsafePointer[self_type], PO, PO) -> PO
+    alias _3e_self = fn (UnsafePointer[self_type], PO, PO) raises
+    alias _3_self = fn (UnsafePointer[self_type], PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3er_self, self_type], f: Self._3er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3r_self, self_type], f: Self._3r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3e_self, self_type], f: Self._3e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3_self, self_type], f: Self._3_self
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 4 arguments (typed self methods - 3 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    alias _4er_self = fn (UnsafePointer[self_type], PO, PO, PO) raises -> PO
+    alias _4r_self = fn (UnsafePointer[self_type], PO, PO, PO) -> PO
+    alias _4e_self = fn (UnsafePointer[self_type], PO, PO, PO) raises
+    alias _4_self = fn (UnsafePointer[self_type], PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4er_self, self_type], f: Self._4er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4r_self, self_type], f: Self._4r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4e_self, self_type], f: Self._4e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4_self, self_type], f: Self._4_self
+    ):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -102,22 +258,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2er, is_method], f: Self._2er):
+    fn __init__(out self: PyObjectFunction[Self._2er, self_type], f: Self._2er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2r, is_method], f: Self._2r):
+    fn __init__(out self: PyObjectFunction[Self._2r, self_type], f: Self._2r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2e, is_method], f: Self._2e):
+    fn __init__(out self: PyObjectFunction[Self._2e, self_type], f: Self._2e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2, is_method], f: Self._2):
+    fn __init__(out self: PyObjectFunction[Self._2, self_type], f: Self._2):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -131,22 +287,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3er, is_method], f: Self._3er):
+    fn __init__(out self: PyObjectFunction[Self._3er, self_type], f: Self._3er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3r, is_method], f: Self._3r):
+    fn __init__(out self: PyObjectFunction[Self._3r, self_type], f: Self._3r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3e, is_method], f: Self._3e):
+    fn __init__(out self: PyObjectFunction[Self._3e, self_type], f: Self._3e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3, is_method], f: Self._3):
+    fn __init__(out self: PyObjectFunction[Self._3, self_type], f: Self._3):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -160,22 +316,59 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4er, is_method], f: Self._4er):
+    fn __init__(out self: PyObjectFunction[Self._4er, self_type], f: Self._4er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4r, is_method], f: Self._4r):
+    fn __init__(out self: PyObjectFunction[Self._4r, self_type], f: Self._4r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4e, is_method], f: Self._4e):
+    fn __init__(out self: PyObjectFunction[Self._4e, self_type], f: Self._4e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4, is_method], f: Self._4):
+    fn __init__(out self: PyObjectFunction[Self._4, self_type], f: Self._4):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 5 arguments (typed self methods - 4 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    alias _5er_self = fn (UnsafePointer[self_type], PO, PO, PO, PO) raises -> PO
+    alias _5r_self = fn (UnsafePointer[self_type], PO, PO, PO, PO) -> PO
+    alias _5e_self = fn (UnsafePointer[self_type], PO, PO, PO, PO) raises
+    alias _5_self = fn (UnsafePointer[self_type], PO, PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5er_self, self_type], f: Self._5er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5r_self, self_type], f: Self._5r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5e_self, self_type], f: Self._5e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5_self, self_type], f: Self._5_self
+    ):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -189,22 +382,61 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5er, is_method], f: Self._5er):
+    fn __init__(out self: PyObjectFunction[Self._5er, self_type], f: Self._5er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5r, is_method], f: Self._5r):
+    fn __init__(out self: PyObjectFunction[Self._5r, self_type], f: Self._5r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5e, is_method], f: Self._5e):
+    fn __init__(out self: PyObjectFunction[Self._5e, self_type], f: Self._5e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5, is_method], f: Self._5):
+    fn __init__(out self: PyObjectFunction[Self._5, self_type], f: Self._5):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 6 arguments (typed self methods - 5 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    alias _6er_self = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, PO
+    ) raises -> PO
+    alias _6r_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO) -> PO
+    alias _6e_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO) raises
+    alias _6_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6er_self, self_type], f: Self._6er_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6r_self, self_type], f: Self._6r_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6e_self, self_type], f: Self._6e_self
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6_self, self_type], f: Self._6_self
+    ):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -218,23 +450,61 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6er, is_method], f: Self._6er):
+    fn __init__(out self: PyObjectFunction[Self._6er, self_type], f: Self._6er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6r, is_method], f: Self._6r):
+    fn __init__(out self: PyObjectFunction[Self._6r, self_type], f: Self._6r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6e, is_method], f: Self._6e):
+    fn __init__(out self: PyObjectFunction[Self._6e, self_type], f: Self._6e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6, is_method], f: Self._6):
+    fn __init__(out self: PyObjectFunction[Self._6, self_type], f: Self._6):
         self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # Helper utilities
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn _get_self_arg(py_self: PythonObject) -> UnsafePointer[self_type]:
+        """Get the appropriate self argument for method calls with automatic downcasting.
+
+        Args:
+            py_self: The Python object representing self.
+
+        Returns:
+            The self argument to pass to the method - downcasted pointer.
+
+        Note:
+            This function will abort if downcasting fails for non-PythonObject types.
+        """
+
+        @parameter
+        if _type_is_eq[self_type, NoneType]():
+            constrained[False, "Cannot get self arg for NoneType"]()
+            # This line should never be reached due to the constraint
+            return abort[UnsafePointer[self_type]]("Unreachable code")
+        else:
+            try:
+                return py_self.downcast_value_ptr[self_type]()
+            except e:
+                return abort[UnsafePointer[self_type]](
+                    String(
+                        (
+                            "Python method receiver object did not have the"
+                            " expected type: "
+                        ),
+                        e,
+                    )
+                )
 
     # ===-------------------------------------------------------------------===#
     # Compile-time check utilities
@@ -261,6 +531,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._1r]()
             or Self._has_type[Self._1e]()
             or Self._has_type[Self._1]()
+            or Self._has_type[Self._1er_self]()
+            or Self._has_type[Self._1r_self]()
+            or Self._has_type[Self._1e_self]()
+            or Self._has_type[Self._1_self]()
         ):
             return arity == 1
         elif (
@@ -268,6 +542,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._2r]()
             or Self._has_type[Self._2e]()
             or Self._has_type[Self._2]()
+            or Self._has_type[Self._2er_self]()
+            or Self._has_type[Self._2r_self]()
+            or Self._has_type[Self._2e_self]()
+            or Self._has_type[Self._2_self]()
         ):
             return arity == 2
         elif (
@@ -275,6 +553,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._3r]()
             or Self._has_type[Self._3e]()
             or Self._has_type[Self._3]()
+            or Self._has_type[Self._3er_self]()
+            or Self._has_type[Self._3r_self]()
+            or Self._has_type[Self._3e_self]()
+            or Self._has_type[Self._3_self]()
         ):
             return arity == 3
         elif (
@@ -282,6 +564,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._4r]()
             or Self._has_type[Self._4e]()
             or Self._has_type[Self._4]()
+            or Self._has_type[Self._4er_self]()
+            or Self._has_type[Self._4r_self]()
+            or Self._has_type[Self._4e_self]()
+            or Self._has_type[Self._4_self]()
         ):
             return arity == 4
         elif (
@@ -289,6 +575,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._5r]()
             or Self._has_type[Self._5e]()
             or Self._has_type[Self._5]()
+            or Self._has_type[Self._5er_self]()
+            or Self._has_type[Self._5r_self]()
+            or Self._has_type[Self._5e_self]()
+            or Self._has_type[Self._5_self]()
         ):
             return arity == 5
         elif (
@@ -296,6 +586,10 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._6r]()
             or Self._has_type[Self._6e]()
             or Self._has_type[Self._6]()
+            or Self._has_type[Self._6er_self]()
+            or Self._has_type[Self._6r_self]()
+            or Self._has_type[Self._6e_self]()
+            or Self._has_type[Self._6_self]()
         ):
             return arity == 6
         else:
@@ -448,6 +742,18 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._1e](self._func)(py_self)
             elif self._has_type[Self._1]():
                 return rebind[Self._1](self._func)(py_self)
+            elif self._has_type[Self._1er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1er_self](self._func)(self_arg)
+            elif self._has_type[Self._1r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1r_self](self._func)(self_arg)
+            elif self._has_type[Self._1e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1e_self](self._func)(self_arg)
+            elif self._has_type[Self._1_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1_self](self._func)(self_arg)
         elif Self._has_arity(2):
             check_arguments_arity(1, py_args)
             var arg0 = py_args[0]
@@ -461,6 +767,18 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._2e](self._func)(py_self, arg0)
             elif self._has_type[Self._2]():
                 return rebind[Self._2](self._func)(py_self, arg0)
+            elif self._has_type[Self._2er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2er_self](self._func)(self_arg, arg0)
+            elif self._has_type[Self._2r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2r_self](self._func)(self_arg, arg0)
+            elif self._has_type[Self._2e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2e_self](self._func)(self_arg, arg0)
+            elif self._has_type[Self._2_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2_self](self._func)(self_arg, arg0)
         elif Self._has_arity(3):
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -475,6 +793,18 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._3e](self._func)(py_self, arg0, arg1)
             elif self._has_type[Self._3]():
                 return rebind[Self._3](self._func)(py_self, arg0, arg1)
+            elif self._has_type[Self._3er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3er_self](self._func)(self_arg, arg0, arg1)
+            elif self._has_type[Self._3r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3r_self](self._func)(self_arg, arg0, arg1)
+            elif self._has_type[Self._3e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3e_self](self._func)(self_arg, arg0, arg1)
+            elif self._has_type[Self._3_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3_self](self._func)(self_arg, arg0, arg1)
         elif Self._has_arity(4):
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -490,6 +820,26 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._4e](self._func)(py_self, arg0, arg1, arg2)
             elif self._has_type[Self._4]():
                 return rebind[Self._4](self._func)(py_self, arg0, arg1, arg2)
+            elif self._has_type[Self._4er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4er_self](self._func)(
+                    self_arg, arg0, arg1, arg2
+                )
+            elif self._has_type[Self._4r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4r_self](self._func)(
+                    self_arg, arg0, arg1, arg2
+                )
+            elif self._has_type[Self._4e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4e_self](self._func)(
+                    self_arg, arg0, arg1, arg2
+                )
+            elif self._has_type[Self._4_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4_self](self._func)(
+                    self_arg, arg0, arg1, arg2
+                )
         elif Self._has_arity(5):
             check_arguments_arity(4, py_args)
             var arg0 = py_args[0]
@@ -513,6 +863,26 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             elif self._has_type[Self._5]():
                 return rebind[Self._5](self._func)(
                     py_self, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5er_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5r_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5e_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3
                 )
 
         elif Self._has_arity(6):
@@ -539,6 +909,26 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             elif self._has_type[Self._6]():
                 return rebind[Self._6](self._func)(
                     py_self, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6er_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6er_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6r_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6r_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6e_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6e_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6_self]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6_self](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4
                 )
 
         constrained[False, "unsupported arity or signature"]()

@@ -1,0 +1,76 @@
+load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary", "mojo_test")
+
+mojo_binary(
+    name = "handle_error",
+    srcs = [
+        "handle_error.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+modular_run_binary_test(
+    name = "handle_error_test",
+    size = "small",
+    binary = "handle_error",
+)
+
+mojo_test(
+    name = "incr_test",
+    size = "small",
+    srcs = [
+        "handle_error.mojo",
+        "test_incr.mojo",
+    ],
+    main = "test_incr.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "context_mgr",
+    srcs = [
+        "context_mgr.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "context_mgr_test",
+    size = "small",
+    srcs = [
+        "context_mgr.mojo",
+        "test_context_mgr.mojo",
+    ],
+    main = "test_context_mgr.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "conditional_context_mgr",
+    srcs = [
+        "conditional_context_mgr.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "conditional_context_mgr_test",
+    size = "small",
+    srcs = [
+        "conditional_context_mgr.mojo",
+        "test_conditional_context_mgr.mojo",
+    ],
+    main = "test_conditional_context_mgr.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

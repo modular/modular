@@ -5,7 +5,7 @@ sidebar_label: Errors and context managers
 
 This page discusses how to raise errors in Mojo programs and how to detect and
 handle error conditions. It also discusses how you can use context managers to
-allocate and release resources such as files correctly, even when error
+correctly allocate and release resources such as files, even when error
 conditions occur. Finally, it shows you how to implement context managers for
 your own custom resources.
 
@@ -37,7 +37,7 @@ conditions is the error message that you provide.
 
 :::
 
-An error interrupts the current execution flow of your program. If you provide
+An error interrupts the execution flow of your program. If you provide
 an error handler (as described in [Handle an error](#handle-an-error)) in the
 current function, execution resumes with that handler. If the error isn't
 handled in the current function, it propagates to the calling function and so
@@ -48,8 +48,11 @@ a non-zero exit code and prints the error message. For example:
 Unhandled exception caught during execution: integer overflow
 ```
 
-If a function you define using the `fn` keyword can raise an error, you must
-include the `raises` keyword in the function definition. For example:
+## Declare a raising function
+
+A function defined using the `fn` keyword is *non-raising* by default. So if it
+can raise an error, you must include the `raises` keyword in the function
+definition. For example:
 
 ```mojo
 fn incr(n: Int) raises -> Int:
@@ -59,9 +62,9 @@ fn incr(n: Int) raises -> Int:
         return n + 1
 ```
 
-If you don't include the `raises` keyword when defining a function with `fn`,
-then the function must explicitly handle any errors that might occur in code
-that it executes. For example:
+If you don't include the `raises` keyword on an `fn` function,
+then the function must explicitly handle any errors that might occur in the code
+it executes. For example:
 
 ```mojo
 # This function doesn't compile because of the unhandled error
@@ -76,10 +79,9 @@ fn handled_error(n: Int):
         print("Handled an error:", e)
 ```
 
-In contrast, you **cannot** use the `raises` keyword when defining a
-function using the `def` keyword, because `def` always implies that the
-function might raise an error. So the following is equivalent to the `incr`
-function defined above with `fn`:
+In contrast, a `def` function is *raising* by default. So the following
+`incr()` function is equivalent to the `incr()` function defined above with
+`fn`:
 
 ```mojo
 def incr(n: Int) -> Int:
@@ -92,7 +94,7 @@ def incr(n: Int) -> Int:
 ## Handle an error
 
 Mojo allows you to detect and handle error conditions using the `try-except`
-control flow structure, whose full syntax is:
+control flow structure. The full syntax is:
 
 ```mojo
 try:
@@ -148,14 +150,14 @@ not occur in the `try` clause. Note that the `else` clause is *skipped* if the
 
 If the `finally` clause is present, its code block executes after the `try`
 clause and the `except` or `else` clause, if applicable. The `finally` clause
-executes even if one of the other code blocks exit by executing a `continue`,
+executes even if one of the other code blocks exits by executing a `continue`,
 `break`, or `return` statement or by raising an error. The `finally` clause is
 often used to release resources used by the `try` clause (such as a file handle)
-regardless of whether or not an error occurred.
+regardless of whether an error occurred.
 
 As an example, consider the following program:
 
-```mojo
+```mojo title="handle_error.mojo"
 def incr(n: Int) -> Int:
     if n == Int.MAX:
         raise "inc: integer overflow"
@@ -169,14 +171,13 @@ def main():
             print("try     =>", value)
             if value == 1:
                 continue
-            result = StaticString("{} incremented is {}").format(value, incr(value))
+            result = "{} incremented is {}".format(value, incr(value))
         except e:
             print("except  =>", e)
         else:
             print("else    =>", result)
         finally:
             print("finally => ====================")
-
 ```
 
 Running this program generates the following output:
@@ -224,8 +225,8 @@ lost instead of being written to storage.
 
 The example above actually includes the call to `close()`, but it ignores the
 possibility that [`read()`](/mojo/stdlib/builtin/file/FileHandle#read) could
-raise an error, which would result in the program not executing the `close()`.
-To handle this scenario you could rewrite the code to use `try` like this:
+raise an error, which would prevent the `close()` from executing.
+To handle this scenario, you could rewrite the code to use `try` like this:
 
 ```mojo
 # Obtain a file handle to read from storage
@@ -241,12 +242,12 @@ finally:
 
 However, the [`FileHandle`](/mojo/stdlib/builtin/file/FileHandle) struct
 returned by [`open()`](/mojo/stdlib/builtin/file/open) is a context manager.
-When used in conjunction with Mojo's `with` statement, a context manager ensures
-that the resources it manages are properly released at the end of the block,
-even if an error occurs. In the case of a `FileHandle`, that means that the call
-to `close()` takes place automatically. So you could rewrite the example above
-to take advantage of the context manager—and omit the explicit call to
-`close()`—like this:
+When used with Mojo's `with` statement, a context manager ensures that the
+resources it manages are properly released at the end of the block, even if an
+error occurs. In the case of a `FileHandle`, that means the call to `close()`
+takes place automatically. So you could rewrite the example above to take
+advantage of the context manager (and omit the explicit call to `close()`)
+like this:
 
 ```mojo
 with open(input_file, "r") as f:
@@ -260,10 +261,10 @@ its entire content, converts it to upper case, and then writes the result to a
 different file:
 
 ```mojo
-    with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
-        input_text = f_in.read()
-        output_text = input_text.upper()
-        f_out.write(output_text)
+with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
+    input_text = f_in.read()
+    output_text = input_text.upper()
+    f_out.write(output_text)
 ```
 
 `FileHandle` is perhaps the most commonly used context manager. Other examples
@@ -312,7 +313,7 @@ import sys
 import time
 
 @fieldwise_init
-struct Timer:
+struct Timer(Copyable, Movable):
     var start_time: Int
 
     fn __init__(out self):
@@ -330,10 +331,10 @@ struct Timer:
 def main():
     with Timer():
         print("Beginning execution")
-        time.sleep(1)
+        time.sleep(1.0)
         if len(sys.argv()) > 1:
             raise "simulated error"
-        time.sleep(1)
+        time.sleep(1.0)
         print("Ending execution")
 ```
 
@@ -371,7 +372,8 @@ in the `with` code block:
 fn __exit__(self, error: Error) raises -> Bool
 ```
 
-Given the `Error` that occurred as an argument, the method can:
+Given the `Error` that occurred as an argument, the method can do any of the
+following actions:
 
 - Return `True` to suppress the error
 - Return `False` to re-raise the error
@@ -384,7 +386,8 @@ type of error condition and propagates all others:
 import sys
 import time
 
-struct ConditionalTimer:
+@fieldwise_init
+struct ConditionalTimer(Copyable, Movable):
     var start_time: Int
 
     fn __init__(out self):

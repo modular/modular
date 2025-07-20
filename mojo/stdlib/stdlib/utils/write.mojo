@@ -212,15 +212,29 @@ struct _WriteBufferHeap(Writable, Writer):
             Span[Byte, __origin_of(self)](ptr=self.data, length=self.pos)
         )
 
+    fn nul_terminate(mut self):
+        if self.pos + 1 > HEAP_BUFFER_BYTES:
+            _printf[
+                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
+                " HEAP_BUFFER_BYTES=4096`\n"
+            ]()
+            abort()
+        self.data[self.pos] = 0
+        self.pos += 1
 
-struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
-    var data: InlineArray[UInt8, STACK_BUFFER_BYTES]
+
+struct _WriteBufferStack[
+    origin: MutableOrigin,
+    W: Writer, //,
+    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+](Writer):
+    var data: InlineArray[UInt8, stack_buffer_bytes]
     var pos: Int
     var writer: Pointer[W, origin]
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, STACK_BUFFER_BYTES](uninitialized=True)
+        self.data = InlineArray[UInt8, stack_buffer_bytes](uninitialized=True)
         self.pos = 0
         self.writer = Pointer(to=writer)
 
@@ -244,16 +258,43 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > STACK_BUFFER_BYTES:
+        if len_bytes > stack_buffer_bytes:
             self.flush()
             self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > STACK_BUFFER_BYTES:
+        elif self.pos + len_bytes > stack_buffer_bytes:
             self.flush()
         # Continue writing to buffer
         memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
         self.pos += len_bytes
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
+struct _TotalWritableBytes(Writer):
+    var size: Int
+
+    fn __init__(out self):
+        self.size = 0
+
+    fn __init__[
+        T: Copyable & Movable & Writable, //
+    ](out self, values: List[T, *_], sep: String = String()):
+        self.size = 0
+        var length = len(values)
+        if length == 0:
+            return
+        self.write(values[0])
+        if length > 1:
+            for i in range(1, length):
+                self.write(sep, values[i])
+
+    fn write_bytes(mut self, bytes: Span[UInt8, _]):
+        self.size += len(bytes)
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
@@ -301,16 +342,9 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     ```
     .
     """
-
     alias size = decimal.dtype.sizeof()
-    var data: SIMD[DType.uint8, size]
-
-    @parameter
-    if size == 1:
-        data = bitcast[DType.uint8, size](decimal)
-    else:
-        data = bitcast[DType.uint8, size](byte_swap(decimal))
-    var nibbles = (data >> 4).interleave(data & 0xF)
+    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))
 
 

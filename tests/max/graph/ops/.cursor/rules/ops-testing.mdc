@@ -1,0 +1,62 @@
+---
+description: Rules for generating tests for graph API operations
+globs: 
+alwaysApply: false
+---
+# Unit Test Guidelines for Graph API Operations
+
+## Core Testing Principles
+
+1. **Test Location & Scope:**
+   - All op tests must be placed in `SDK/lib/API/python/tests/graph/ops/`
+   - Tests should only build graphs, not execute them
+   - Graph execution tests belong in `SDK/integration-test/python/graph/`
+
+2. **Required Test Components:**
+   - Hypothesis-based tests for valid input ranges
+   - Hypothesis-based tests for invalid inputs
+   - Specific test cases for error message validation
+
+3. **Test Structure:**
+   - Each op should have its own test file (e.g., `test_<op_name>.py`)
+   - Tests should be fast to run
+   - Focus on input validation and error handling
+
+## Testing Requirements
+
+1. **Valid Input Testing:**
+   - Use hypothesis to test valid input ranges
+   - Assert expected invariants for valid inputs
+   - Cover edge cases within valid ranges
+
+2. **Invalid Input Testing:**
+   - Use hypothesis to test invalid inputs
+   - Assert Python exceptions are raised
+   - Focus on behavior, not specific error messages
+
+3. **Error Message Testing:**
+   - Test specific error messages without hypothesis
+   - Use concrete test cases
+   - Ensure error messages are user-friendly and actionable
+
+## Documentation Reference
+
+For detailed testing principles and examples, refer to:
+`SDK/docs/GraphAPITesting.md`
+
+## Quality Guidelines
+
+1. **Error Messages:**
+   - Must be informative and actionable
+   - Should help users understand how to fix the issue
+   - Must be validated through specific test cases
+
+2. **Test Coverage:**
+   - Cover all valid input ranges
+   - Test all known invalid inputs
+   - Validate all error messages
+
+3. **Performance:**
+   - Tests should be fast to run
+   - Avoid unnecessary test cases
+   - Focus on critical paths and edge cases

@@ -29,6 +29,7 @@ from sys import (
     llvm_intrinsic,
     os_is_linux,
     os_is_windows,
+    CompilationTarget,
 )
 
 
@@ -131,10 +132,21 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 @always_inline
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = StaticString(
-        "llvm.nvvm.read.ptx.sreg.clock64"
-    ) if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
+    alias asm = _gpu_clock_inst()
     return Int(llvm_intrinsic[asm, Int64]())
+
+
+fn _gpu_clock_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.read.ptx.sreg.clock64"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.s.memtime"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="_gpu_clock",
+        ]()
 
 
 @always_inline
@@ -333,9 +345,7 @@ fn sleep(sec: Float64):
     @parameter
     if is_gpu():
         var nsec = sec * 1.0e9
-        alias intrinsic = StaticString(
-            "llvm.nvvm.nanosleep"
-        ) if is_nvidia_gpu() else "llvm.amdgcn.s.sleep"
+        alias intrinsic = _gpu_sleep_inst()
         llvm_intrinsic[intrinsic, NoneType](nsec.cast[DType.int32]())
         return
 
@@ -351,6 +361,19 @@ fn sleep(sec: Float64):
     _ = tv_spec
     _ = req
     _ = rem
+
+
+fn _gpu_sleep_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.nanosleep"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.s.sleep"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="sleep",
+        ]()
 
 
 fn sleep(sec: UInt):

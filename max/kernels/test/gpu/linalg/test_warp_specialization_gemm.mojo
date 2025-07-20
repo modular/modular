@@ -30,9 +30,6 @@ from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
-
 
 def test_warp_specialize_gemm[
     wgmma_n: Int,
@@ -41,7 +38,7 @@ def test_warp_specialize_gemm[
     c_type: DType,
     num_consumer: Int = 1,
     transpose_b: Bool = True,
-    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -96,7 +93,6 @@ def test_warp_specialize_gemm[
     zero(c_host_ref.tensor)
 
     # Move operands to the Device
-
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
@@ -107,7 +103,7 @@ def test_warp_specialize_gemm[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(128, wgmma_n, 64)
+    alias block_tile_shape = Index(64 * num_consumer, wgmma_n, 64)
 
     alias matmul_config = MatmulConfig[
         a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
@@ -127,9 +123,6 @@ def test_warp_specialize_gemm[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 
@@ -173,13 +166,67 @@ def test_warp_specialize_gemm[
 
 def main():
     with DeviceContext() as ctx:
+        alias wgmma_n = List[Int](128, 256)
+
+        @parameter
+        for i in range(len(wgmma_n)):
+
+            @parameter
+            for j in range(1, 3):
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
+                ](ctx, static[1024](), static[512](), static[128]())
+
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
+                ](ctx, dynamic(99), static[1024](), static[1024]())
+
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
+                ](ctx, dynamic(100), static[512](), static[256]())
+
+                # Test K not multiple of tile size.
+                test_warp_specialize_gemm[
+                    wgmma_n[i],
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
+                ](ctx, dynamic(201), static[2048](), static[200]())
+
+        # K is aligned by 8B
+        test_warp_specialize_gemm[
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
+        ](ctx, dynamic(150), static[3200](), static[588]())
+
+        # K is aligned by 4B
         test_warp_specialize_gemm[
             256,
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
             num_consumer=2,
-        ](ctx, dynamic(8192), static[2560](), static[8192]())
+        ](ctx, dynamic(90), static[256](), static[270]())
 
         test_warp_specialize_gemm[
             128,
@@ -187,90 +234,4 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_consumer=2,
-        ](ctx, static[128](), static[128](), static[128]())
-
-        test_warp_specialize_gemm[
-            64, DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, static[128](), static[64](), static[64]())
-
-        alias wgmma_n = List[Int](128, 256)
-        alias schedules = List[MatmulSchedule](
-            MatmulSchedule.TILE1D, MatmulSchedule.TILE2D
-        )
-
-        @parameter
-        for j in range(len(schedules)):
-
-            @parameter
-            for i in range(len(wgmma_n)):
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
-                ](ctx, static[1024](), static[512](), static[128]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, static[1024](), static[512](), static[128]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
-                ](ctx, dynamic(99), static[1024](), static[1024]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(99), static[1024](), static[1024]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
-                ](ctx, dynamic(100), static[512](), static[256]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(100), static[512](), static[256]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
-                ](ctx, dynamic(201), static[2048](), static[256]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(201), static[2048](), static[256]())
+        ](ctx, dynamic(213), static[1111](), static[128]())

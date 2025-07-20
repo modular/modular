@@ -23,6 +23,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
+from random import randint
 from time import perf_counter_ns
 from typing import Any, Literal, Optional, Union, cast
 from urllib.parse import unquote, urlparse
@@ -31,6 +32,7 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
+from max.interfaces import SamplingParams
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
@@ -40,7 +42,6 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
@@ -48,6 +49,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.router.json_utils import parse_json_from_text
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
@@ -101,7 +103,7 @@ _NUM_CONCURRENT_PARSING_TASKS = int(
 _request_parsing_semaphore = asyncio.Semaphore(_NUM_CONCURRENT_PARSING_TASKS)
 
 
-def record_request_start():
+def record_request_start() -> None:
     METRICS.reqs_running(1)
 
 
@@ -119,7 +121,7 @@ class OpenAIResponseGenerator(ABC):
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAIResponseGenerator"
         )
@@ -325,21 +327,8 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
 
     def _parse_resp_to_json(self, text: str) -> Optional[list[dict]]:
         """Parse the response message to valid tool call JSON objects."""
-        segments = [
-            segment.strip() for segment in text.splitlines() if segment.strip()
-        ]
-        split_segments = []
-        for segment in segments:
-            split_segments.extend(segment.split(";"))
 
-        # Filter out empty segments and parse as JSON
-        json_objects = []
-        for segment in split_segments:
-            if segment.strip():  # Ignore empty segments
-                try:
-                    json_objects.append(json.loads(segment))
-                except json.JSONDecodeError as e:
-                    return None
+        json_objects = parse_json_from_text(text)
 
         if not json_objects:
             return None
@@ -387,7 +376,7 @@ class OpenAIEmbeddingsResponseGenerator:
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
+    ) -> None:
         self.pipeline = pipeline
 
     async def encode(
@@ -435,7 +424,7 @@ class OpenAISpeechResponseGenerator:
     def __init__(
         self,
         pipeline: AudioGeneratorPipeline,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAISpeechResponseGenerator"
         )
@@ -446,7 +435,7 @@ class OpenAISpeechResponseGenerator:
     ) -> CreateAudioGenerationResponse:
         self.logger.debug("Streaming: Start: %s", request)
         response = await self.pipeline.generate_full_audio(request)
-        audio_data = response.audio_data.numpy().tobytes()
+        audio_data = response.audio_data.tobytes()
         response = CreateAudioGenerationResponse(
             audio_data=base64.b64encode(audio_data), metadata=response.metadata
         )
@@ -632,9 +621,18 @@ async def openai_create_chat_completion(
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
         sampling_params = SamplingParams(
+            top_k=completion_request.top_k,
+            top_p=completion_request.top_p,
+            temperature=completion_request.temperature,
+            frequency_penalty=completion_request.frequency_penalty,
+            presence_penalty=completion_request.presence_penalty,
+            repetition_penalty=completion_request.repetition_penalty,
             max_new_tokens=completion_request.max_tokens,
-            stop=completion_request.stop,
+            min_new_tokens=completion_request.min_tokens,
             ignore_eos=completion_request.ignore_eos,
+            seed=completion_request.seed or randint(0, 2**63 - 1),
+            stop_token_ids=completion_request.stop_token_ids,
+            stop=completion_request.stop,
         )
         token_request = TokenGeneratorRequest(
             id=request_id,
@@ -721,7 +719,7 @@ def _create_response_format(
         return None
 
     response_type = response_format.type
-    # We don't have XGrammar grammar for generic JSON output.
+    # We don't have llguidance grammar for generic JSON output.
     # Only json_schema is supported for structured output.
     if response_type == "json_object":
         raise ValueError(
@@ -1037,8 +1035,18 @@ async def openai_create_completion(
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
             sampling_params = SamplingParams(
+                top_k=completion_request.top_k,
+                top_p=completion_request.top_p,
+                temperature=completion_request.temperature,
+                frequency_penalty=completion_request.frequency_penalty,
+                presence_penalty=completion_request.presence_penalty,
+                repetition_penalty=completion_request.repetition_penalty,
                 max_new_tokens=completion_request.max_tokens,
+                min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
+                seed=completion_request.seed or randint(0, 2**63 - 1),
+                stop_token_ids=completion_request.stop_token_ids,
+                stop=completion_request.stop,
             )
             tgr = TokenGeneratorRequest(
                 # Generate a unique id for each prompt in the request

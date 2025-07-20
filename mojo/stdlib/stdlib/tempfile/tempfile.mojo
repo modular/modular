@@ -30,7 +30,7 @@ alias TMP_MAX = 10_000
 
 
 fn _get_random_name(size: Int = 8) -> String:
-    alias characters = String("abcdefghijklmnopqrstuvwxyz0123456789_")
+    alias characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
@@ -56,7 +56,7 @@ fn _candidate_tempdir_list() -> List[String]:
             dirlist.append(dirname^)
 
     # Failing that, try OS-specific locations.
-    dirlist.extend([String("/tmp"), String("/var/tmp"), String("/usr/tmp")])
+    dirlist.extend(["/tmp", "/var/tmp", "/usr/tmp"])
 
     # As a last resort, the current directory if possible,
     # os.path.getcwd() could raise
@@ -432,7 +432,7 @@ struct NamedTemporaryFile:
         """
         self._file_handle.write_bytes(bytes)
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:

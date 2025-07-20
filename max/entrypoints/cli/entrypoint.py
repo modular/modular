@@ -18,7 +18,7 @@ import click
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
             return rv
@@ -30,5 +30,5 @@ class ModelGroup(click.Group):
 
 
 @click.command(cls=ModelGroup)
-def run_cli():
+def run_cli() -> None:
     pass

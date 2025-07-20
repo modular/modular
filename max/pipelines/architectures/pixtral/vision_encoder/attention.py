@@ -13,27 +13,50 @@
 
 
 import math
-from dataclasses import dataclass
 
-from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.layer import Layer
-from max.nn.linear import LinearV1
+from max.dtype import DType
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.nn import Linear
+from max.nn.layer import Module
 
 from .attention_utils import rotate_half
 
 
-@dataclass
-class Attention(Layer):
+class Attention(Module):
     n_heads: int
     dim: int
     head_dim: int  # hidden_size // self.n_heads
 
-    dropout: float
+    k_proj: Linear
+    v_proj: Linear
+    q_proj: Linear
+    o_proj: Linear
 
-    wq: LinearV1
-    wk: LinearV1
-    wv: LinearV1
-    wo: LinearV1
+    def __init__(
+        self,
+        n_heads: int,
+        dim: int,
+        head_dim: int,
+        dtype: DType,
+        device: DeviceRef,
+    ) -> None:
+        super().__init__()
+
+        self.n_heads = n_heads
+        self.dim = dim
+        self.head_dim = head_dim
+        self.q_proj = Linear(
+            dim, dim, dtype=dtype, device=device, has_bias=False
+        )
+        self.k_proj = Linear(
+            dim, dim, dtype=dtype, device=device, has_bias=False
+        )
+        self.v_proj = Linear(
+            dim, dim, dtype=dtype, device=device, has_bias=False
+        )
+        self.o_proj = Linear(
+            dim, dim, dtype=dtype, device=device, has_bias=False
+        )
 
     def apply_rotary_embedding(
         self,
@@ -41,7 +64,7 @@ class Attention(Layer):
         xk: TensorValue,
         cos: TensorValue,
         sin: TensorValue,
-        unsqueeze_dim=0,
+        unsqueeze_dim=0,  # noqa: ANN001
     ) -> tuple[TensorValue, TensorValue]:
         """Applies Rotary Position Embedding to the query and key tensors.
 
@@ -88,9 +111,12 @@ class Attention(Layer):
         # scores between all patches in pixel_values.
         # attn_mask shape = ("n_images", 1, "num_patches_in_image", "num_patches_in_image")
         # scores shape = ("n_images", "n_heads", "num_patches_in_image", "num_patches_in_image")
+        attn_mask = TensorValue(attn_mask)
+
         attn_mask = ops.rebind(
             attn_mask, (scores.shape[0], 1, scores.shape[2], scores.shape[3])
         )
+        # This avoids the symbolic dimension mismatch issue
         scores = ops.softmax(scores * scale + attn_mask)
 
         return scores @ xv
@@ -114,9 +140,9 @@ class Attention(Layer):
 
         batch_size, n_patches = x.shape[0], x.shape[1]
         # matmul weights
-        xq = self.wq(x)
-        xk = self.wk(x)
-        xv = self.wv(x)
+        xq = self.q_proj(x)
+        xk = self.k_proj(x)
+        xv = self.v_proj(x)
 
         xq = ops.reshape(
             xq, [batch_size, n_patches, self.n_heads, self.head_dim]
@@ -136,4 +162,4 @@ class Attention(Layer):
             .transpose(1, 2)
             .reshape([batch_size, n_patches, -1])
         )
-        return self.wo(output)
+        return self.o_proj(output)

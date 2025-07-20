@@ -140,7 +140,7 @@ def max_tokens_to_generate(
     return min(max_new_tokens, _difference_between_max_and_prompt)
 
 
-async def run_with_default_executor(fn, *args):
+async def run_with_default_executor(fn, *args):  # noqa: ANN001
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args)
 
@@ -362,6 +362,7 @@ class TextTokenizer(
         )
 
         context = TextContext(
+            request_id=request.id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             eos_sequences=eos_sequences,
@@ -373,6 +374,7 @@ class TextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            model_name=request.model_name,
         )
         context.assign_to_cache(request.index)
         return context
@@ -568,7 +570,7 @@ class TextAndVisionTokenizer(
         # Load images.
         images = (
             [
-                Image.open(io.BytesIO(image_data))
+                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
                 for image_data in request.images
             ]
             if request.images
@@ -648,6 +650,7 @@ class TextAndVisionTokenizer(
             eos_token_ids = self._default_eos_token_ids
 
         context = TextAndVisionContext(
+            request_id=request.id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
@@ -660,3 +663,23 @@ class TextAndVisionTokenizer(
         )
         context.assign_to_cache(request.index)
         return context
+
+
+def _rgba_to_rgb(
+    image: Image.Image,
+    background_color=(255, 255, 255),  # noqa: ANN001
+) -> Image.Image:
+    """Convert an RGBA image to RGB with filled background color."""
+    assert image.mode == "RGBA"
+    converted = Image.new("RGB", image.size, background_color)
+    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+    return converted
+
+
+def _convert_image_mode(image: Image.Image, to_mode: str):
+    if image.mode == to_mode:
+        return image
+    elif image.mode == "RGBA" and to_mode == "RGB":
+        return _rgba_to_rgb(image)
+    else:
+        return image.convert(to_mode)

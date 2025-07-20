@@ -132,35 +132,35 @@ fn test_gelu_float64():
 
 @always_inline
 fn erf_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    var eval = libm_call[type, simd_width, "erff", "err"](arg)
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    var eval = libm_call[dtype, simd_width, "erff", "err"](arg)
     return eval
 
 
 @always_inline
 fn gelu_libm[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf_libm(x / sqrt(2)))$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
         x: The value to compute the GELU operation on.
 
     Returns:
-        SIMD[type, size]: The result of the GELU operation.
+        SIMD[dtype, size]: The result of the GELU operation.
 
     Constraints:
         Type must be a floating point type.
     """
     alias inv_SQRT_2 = 0.70710678118654752440
     constrained[
-        type.is_floating_point(),
+        dtype.is_floating_point(),
         "dtype must be a floating point type",
     ]()
     # 0.5 * x * (1 + erf(x / SQRT_2))

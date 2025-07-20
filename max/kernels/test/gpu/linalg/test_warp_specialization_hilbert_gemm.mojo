@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: AMD-GPU
-# REQUIRES: H100-GPU
+
 from gpu.host.info import H100
 
 import linalg.vendor_blas
@@ -31,9 +30,6 @@ from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index
-
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
 
 
 def test_warp_specialize_gemm[
@@ -138,9 +134,6 @@ def test_warp_specialize_gemm[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 

@@ -66,27 +66,6 @@ fn _compile_code[
     ]()
 
 
-@always_inline
-fn _compile_code_asm[
-    func_type: AnyTrivialRegType, //,
-    func: func_type,
-    /,
-    *,
-    emission_kind: StaticString = "asm",
-    target: __mlir_type.`!kgen.target` = get_gpu_target(),
-    compile_options: StaticString = HardwareInfo.from_target[
-        target
-    ]().compile_options,
-]() -> StaticString:
-    var asm = compile_info[
-        func,
-        emission_kind=emission_kind,
-        compile_options=compile_options,
-        target=target,
-    ]().asm
-    return asm
-
-
 # ===-----------------------------------------------------------------------===#
 # _to_sass
 # ===-----------------------------------------------------------------------===#

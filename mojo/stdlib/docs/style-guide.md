@@ -376,6 +376,53 @@ fn _test_cpu() capturing -> Bool:
 debug_assert[_test_cpu]("This code is only runnable on CPU")
 ```
 
+### Target Specific Code
+
+When writing code that uses `@parameter if` to tailor logic based on the target
+hardware platform or features, do not use trailing `else` statements that
+"fallthrough" to a particular hardware vendor.
+
+This leads to poor error messages when an unsupported hardware vendor is
+targeted.
+
+```mojo
+# 🔴 Avoid
+@parameter
+if is_nvidia_gpu():
+    return "llvm.nvvm..."
+else:
+    # BAD: Assumes only non-NVIDIA target is AMD
+    return "llvm.amdgcn..."
+```
+
+Always gate hardware-specific logic on an explicit check that that vendor or
+feature is being targeted:
+
+```mojo
+# 🟢 Prefer
+
+@parameter
+if is_nvidia_gpu():
+    ...
+elif is_amd_gpu():
+    ...
+else:
+    return CompilationTarget.unsupported_target_error[Foo]()
+```
+
+In cases where a generic, cross-platform compatible fallback implementation
+is available, it is okay to use an unguarded `else` condition:
+
+```mojo
+@always_inline("nodebug")
+fn prefetch[...](...):
+    @parameter
+    if is_nvidia_gpu():
+        inlined_assembly["prefetch.global.L2 [$0];", ...](...)
+    else:
+        llvm_intrinsic["llvm.prefetch", NoneType](...)
+```
+
 ### Testing
 
 #### Unit test filenames

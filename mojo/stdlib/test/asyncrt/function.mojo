@@ -127,8 +127,55 @@ fn test_function_checked(ctx: DeviceContext) raises:
             out_host[i] = length + i
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
+    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
     ctx.enqueue_function_checked(
+        compiled_vec_func,
+        in0,
+        in1,
+        out,
+        ones,
+        length,
+        grid_dim=(length // block_dim),
+        block_dim=(block_dim),
+    )
+
+    with out.map_to_host() as out_host:
+        for i in range(length):
+            if i < 10:
+                print("at index", i, "the value is", out_host[i])
+            expect_eq(
+                out_host[i],
+                i + 5,
+                "at index ",
+                i,
+                " the value is ",
+                out_host[i],
+            )
+
+    print("Done.")
+
+
+fn test_function_experimental(ctx: DeviceContext) raises:
+    print("-------")
+    print("Running test_function_experimental(" + ctx.name() + "):")
+
+    alias length = 1024
+    alias block_dim = 32
+
+    var scalar: S = 2
+    var ones = OneS(scalar)
+
+    # Initialize the input and outputs with known values.
+    var in0 = ctx.enqueue_create_buffer[T](length)
+    var out = ctx.enqueue_create_buffer[T](length)
+    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
+        for i in range(length):
+            in0_host[i] = i
+            out_host[i] = length + i
+    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+
+    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
+    ctx.enqueue_function_experimental(
         compiled_vec_func,
         in0,
         in1,
@@ -159,3 +206,4 @@ fn main() raises:
     var ctx = create_test_device_context()
     test_function_unchecked(ctx)
     test_function_checked(ctx)
+    test_function_experimental(ctx)

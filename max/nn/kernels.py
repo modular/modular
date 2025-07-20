@@ -670,15 +670,11 @@ def fused_qk_ragged_rope(
         interleaved:
 
     `input` and `input_row_offsets` are used together to implement the ragged tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    `input_row_offsets` indicates where each batch starts and ends in `input`. If `input`
+    is not of the same dtype as `freqs_cis`, it will be cast to the dtype of `freqs_cis`
+    for the computation, and cast back to the original dtype after the computation is
+    finished.
     """
-
-    if input.dtype != freqs_cis.dtype:
-        msg = (
-            "expected input and freqs_cis to share a dtype, but got"
-            f" {input.dtype} and {freqs_cis.dtype} respectively"
-        )
-        raise ValueError(msg)
 
     if input_row_offsets.dtype != DType.uint32:
         msg = (
@@ -2394,3 +2390,216 @@ def topk_fused_sampling(
             )
         ],
     )[0].tensor
+
+
+def sgmv_kernel(
+    input: TensorValue,
+    lora: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    input_row_offsets: TensorValue,
+    max_lora_seq_len: int,
+    bias: TensorValue | None = None,
+):
+    """
+    Performs the SGMV kernel for LoRA. This is LoRA agnostic, meaning that
+    we can perform LoRA A or B from this kernel call.
+    Args:
+        input: The input tensor
+        lora: The LoRA tensor
+        lora_ids: Ids of the LoRAs used for each sequence
+        lora_ranks: The ranks of the LoRAs ihn the batch
+        input_row_offsets: The sequence offsets that use LoRA
+        max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
+        bias: The LoRA bias
+    """
+    out = ops.custom(
+        "mo.lora_sgmv.ragged",
+        device=input.device,
+        values=[
+            input,
+            lora,
+            input_row_offsets,
+            lora_ids,
+            ops.constant(
+                max_lora_seq_len,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[input.shape[0], lora.shape[1]],
+                device=input.device,
+            ),
+        ],
+    )[0].tensor
+
+    return out
+
+
+def sgmv_lora_kernel(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_b: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    input_row_offsets: TensorValue,
+    max_lora_seq_len: int,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """
+    Computes the SGMV LoRA kernel for some number of LoRAs A and B given the input.
+
+    out = Wx + xAB
+
+    SGMV can be explained by two independent kernels:
+        - shrink -> shrinks high-dimensional tensor to low-rank tensor
+        - expand -> expands low-rank tensor to high-dimensional tensor
+
+    where v = [0, ...] and y = (some output tensor)
+
+    SGMV-shrink:
+        v += xA
+
+    SGMV-expand:
+        y += vB
+
+    Args:
+        input: The input tensor
+        lora_a: The LoRA tensor for A
+        lora_b: The LoRA tensor for B
+        lora_ids: Ids of the LoRAs used for each sequence
+        lora_ranks: The ranks of the LoRAs ihn the batch
+        input_row_offsets: The sequence offsets that use LoRA
+        max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
+        bias: The LoRA bias
+    """
+    v = sgmv_kernel(
+        input,
+        lora_a,
+        lora_ids,
+        lora_ranks,
+        input_row_offsets,
+        max_lora_seq_len,
+        bias,
+    )
+
+    output = sgmv_kernel(
+        v,
+        lora_b,
+        lora_ids,
+        lora_ranks,
+        input_row_offsets,
+        max_lora_seq_len,
+        bias,
+    )
+
+    return output
+
+
+def sgmv_qkv_lora_kernel(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_b: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection | ContinuousBatchingKVCacheCollection,
+    kv_params: KVCacheParams,
+    layer_idx: TensorValue,
+    max_lora_seq_len: int,
+    max_rank: int,
+    q_dim: int,
+    kv_dim: int,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """
+    Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
+
+    Args:
+        input: The input tensor
+        lora_a: The LoRA tensor for A
+        lora_b: The LoRA tensor for B
+        lora_ids: Ids of the LoRAs used for each sequence
+        lora_ranks: The ranks of the LoRAs ihn the batch
+        input_row_offsets: The sequence offsets that use LoRA
+        kv_collection: The KV cache
+        kv_params: The KV params
+        layer_idx: The layer index to retrieve the KV cache
+        max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
+        max_rank: The maximum rank for the LoRAs
+        q_dim: The q dimension
+        kv_dim: The kv dimension
+        bias: Optional LoRA bias
+    """
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError("KV cache SGMV only supports Paged KV cache.")
+
+    parameters: dict[str, int | str | DType | bool] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+    }
+    assert kv_params.page_size is not None
+    parameters["page_size"] = int(kv_params.page_size)
+
+    v_qkv = sgmv_kernel(
+        input,
+        lora_a,
+        lora_ids,
+        lora_ranks,
+        input_row_offsets,
+        max_lora_seq_len,
+        bias,
+    )
+
+    q_out = sgmv_kernel(
+        v_qkv[:, :max_rank],
+        lora_b[:, :q_dim, :],
+        lora_ids,
+        lora_ranks,
+        input_row_offsets,
+        max_lora_seq_len,
+        bias,
+    )
+
+    ops.inplace_custom(
+        "mo.k_grouped.matmul.ragged.paged",
+        device=input.device,
+        values=[
+            v_qkv[:, max_rank : 2 * max_rank],
+            lora_b[:, q_dim : q_dim + kv_dim, :],
+            input_row_offsets,
+            lora_ids,
+            ops.constant(
+                max_lora_seq_len,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+            kv_collection,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+    ops.inplace_custom(
+        "mo.v_grouped.matmul.ragged.paged",
+        device=input.device,
+        values=[
+            v_qkv[:, 2 * max_rank :],
+            lora_b[:, q_dim + kv_dim :, :],
+            input_row_offsets,
+            lora_ids,
+            ops.constant(
+                max_lora_seq_len,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+            kv_collection,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+    return q_out

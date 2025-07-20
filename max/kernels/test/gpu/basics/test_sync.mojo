@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.sync import (
     cp_async_bulk_commit_group,
@@ -31,7 +31,7 @@ fn test_cp_async_bulk_wait_group():
         cp_async_bulk_wait_group[n, False]()
 
     print(
-        _compile_code_asm[
+        _compile_code[
             cp_async_bulk_wait_group_kernel[2],
             target = get_gpu_target["sm_90"](),
         ]()
@@ -47,7 +47,7 @@ fn test_cp_async_bulk_commit_group():
         cp_async_bulk_commit_group()
 
     print(
-        _compile_code_asm[
+        _compile_code[
             cp_async_bulk_commit_group_kernel,
             target = get_gpu_target["sm_90"](),
         ]()
@@ -59,11 +59,11 @@ fn test_named_barrier():
     print("== test_named_barrier")
 
     fn test_test_named_barrier_kernel():
-        # CHECK: bar.sync 10 256
-        named_barrier[256, 10]()
+        # CHECK: bar.sync 10, 256
+        named_barrier[256,](10)
 
     print(
-        _compile_code_asm[
+        _compile_code[
             test_test_named_barrier_kernel,
             target = get_gpu_target["sm_90"](),
         ]()

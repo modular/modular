@@ -57,7 +57,7 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    constrained[size > 0, "number of elements in `InlineArray` must be > 0"]()
+    constrained[size >= 0, "number of elements in `InlineArray` must be >= 0"]()
 
 
 struct InlineArray[
@@ -176,7 +176,7 @@ struct InlineArray[
             )
 
     @always_inline
-    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
+    fn __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -237,7 +237,7 @@ struct InlineArray[
 
     @always_inline
     fn __init__(
-        out self, owned *elems: Self.ElementType, __list_literal__: () = ()
+        out self, var *elems: Self.ElementType, __list_literal__: () = ()
     ):
         """Constructs an array from a variadic list of elements.
 
@@ -253,7 +253,7 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
         ```
         """
-
+        debug_assert(len(elems) == size, "No. of elems must match array size")
         self = Self(storage=elems^)
 
     @always_inline
@@ -290,7 +290,7 @@ struct InlineArray[
         # Do not destroy the elements when their backing storage goes away.
         __disable_del storage
 
-    fn copy(self) -> Self:
+    fn copy(self, out copy: Self):
         """Creates a deep copy of the array.
 
         Returns:
@@ -304,13 +304,11 @@ struct InlineArray[
         ```
         """
 
-        var copy = Self(uninitialized=True)
+        copy = Self(uninitialized=True)
 
         for idx in range(size):
             var ptr = copy.unsafe_ptr() + idx
-            ptr.init_pointee_copy(self[idx])
-
-        return copy^
+            ptr.init_pointee_copy(self.unsafe_get(idx))
 
     fn __copyinit__(out self, other: Self):
         """Copy constructs the array from another array.
@@ -323,6 +321,22 @@ struct InlineArray[
         """
 
         self = other.copy()
+
+    fn __moveinit__(out self, owned other: Self):
+        """Move constructs the array from another array.
+
+        Args:
+            other: The array to move from.
+
+        Notes:
+            Moves the elements from the source array into this array.
+        """
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        for idx in range(size):
+            var other_ptr = other.unsafe_ptr() + idx
+            other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
 
     fn __del__(owned self):
         """Deallocates the array and destroys its elements.
@@ -495,12 +509,13 @@ struct InlineArray[
         return UnsafePointer(ptr)[]
 
     @always_inline
-    fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
         Self.ElementType,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut = origin.mut,
+        origin=origin,
+        address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
@@ -530,9 +545,8 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[
-                mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-            ]()
+            .origin_cast[origin.mut, origin]()
+            .address_space_cast[address_space]()
         )
 
     @always_inline

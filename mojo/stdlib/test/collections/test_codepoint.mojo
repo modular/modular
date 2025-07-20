@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -177,7 +175,7 @@ alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
 )
 
 
-fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
+fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 

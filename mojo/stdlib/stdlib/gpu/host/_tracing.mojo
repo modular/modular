@@ -134,7 +134,7 @@ struct Color(Intable):
     var _value: Int
 
     alias FORMAT = 1  # ARGB
-    alias MODULAR_MAX = Self(0xB5BAF5)
+    alias MODULAR_PURPLE = Self(0xB5BAF5)
     alias BLUE = Self(0x0000FF)
     alias GREEN = Self(0x008000)
     alias ORANGE = Self(0xFFA500)
@@ -149,8 +149,8 @@ struct Color(Intable):
         Args:
             colorname: The name of the color to use.
         """
-        if colorname == "modular_max":
-            self = Color.MODULAR_MAX
+        if colorname == "modular_purple":
+            self = Color.MODULAR_PURPLE
         elif colorname == "blue":
             self = Color.BLUE
         elif colorname == "green":
@@ -166,8 +166,8 @@ struct Color(Intable):
         elif colorname == "yellow":
             self = Color.YELLOW
         else:
-            # Default to MODULAR_MAX for unknown color names
-            self = Color.MODULAR_MAX
+            # Default to MODULAR_PURPLE for unknown color names
+            self = Color.MODULAR_PURPLE
 
     fn __int__(self) -> Int:
         return self._value
@@ -210,7 +210,7 @@ struct _C_EventAttributes:
 @always_inline
 fn color_from_category(category: Int) -> Color:
     if category == _TraceType_MAX:
-        return Color.MODULAR_MAX
+        return Color.MODULAR_PURPLE
     if category == _TraceType_KERNEL:
         return Color.GREEN
     if category == _TraceType_ASYNCRT:

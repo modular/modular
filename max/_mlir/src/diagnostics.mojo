@@ -183,9 +183,7 @@ struct ErrorCapturingDiagnosticHandler:
     fn __exit__(mut self, error: Error) raises -> Bool:
         self.handler.unsafe_take().detach()
         self.handler = None
-        raise String("MLIR Diagnostic: {}\nError: {}").format(
-            self.error, String(error)
-        )
+        raise "MLIR Diagnostic: {}\nError: {}".format(self.error, error)
 
     @staticmethod
     fn set_error(diagnostic: Diagnostic, mut error: String) -> Bool:

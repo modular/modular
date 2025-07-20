@@ -27,7 +27,7 @@ ops = CustomOpLibrary(mojo_kernels)
 
 
 @torch.compile
-def grayscale(pic):
+def grayscale(pic):  # noqa: ANN001
     output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
     ops.grayscale(output, pic)  # Call our custom Mojo operation
     return output
@@ -44,7 +44,7 @@ def create_test_image():
     return Image.fromarray(test_array, mode="RGB")
 
 
-def main():
+def main() -> None:
     # Create test image
     image = create_test_image()
     # Convert to numpy array and then to PyTorch tensor

@@ -30,10 +30,7 @@ from utils import IndexList, StaticTuple
 struct Dim(
     Defaultable,
     EqualityComparable,
-    EqualityComparable,
     ImplicitlyBoolable,
-    ImplicitlyBoolable,
-    Indexer,
     Indexer,
     Intable,
     Stringable,
@@ -337,7 +334,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Indexer](out self, values: (I,)):
+    fn __init__[I: Indexer & Copyable & Movable](out self, values: (I,)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -350,7 +347,10 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I0: Indexer, I1: Indexer](out self, values: (I0, I1)):
+    fn __init__[
+        I0: Indexer & Copyable & Movable,
+        I1: Indexer & Copyable & Movable,
+    ](out self, values: (I0, I1)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -365,7 +365,9 @@ struct DimList(Representable, Sized, Stringable, Writable):
     @always_inline("nodebug")
     @implicit
     fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer
+        I0: Indexer & Copyable & Movable,
+        I1: Indexer & Copyable & Movable,
+        I2: Indexer & Copyable & Movable,
     ](out self, values: (I0, I1, I2)):
         """Creates a dimension list from the given list of values.
 
@@ -382,7 +384,10 @@ struct DimList(Representable, Sized, Stringable, Writable):
         )
 
     @always_inline("nodebug")
-    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
+    fn __init__[
+        I0: Indexer & Copyable & Movable,
+        I1: Indexer & Copyable & Movable,
+    ](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
         Parameters:

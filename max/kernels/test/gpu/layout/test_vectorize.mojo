@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from layout import *
 from layout.int_tuple import product
@@ -99,20 +98,12 @@ fn test_vectorize_2() raises:
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
     var heap = UnsafePointer[Int32, alignment=8].alloc(64)
-    var runtime_layout = RuntimeLayout[
-        layout_unknown,
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ](
-        RuntimeTuple[layout_unknown.shape, element_type = DType.int32](8, 8),
-        RuntimeTuple[layout_unknown.stride, element_type = DType.int32](8, 1),
-    )
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,
         linear_idx_type = DType.int32,
         layout_int_type = DType.int32,
-    ](heap, runtime_layout)
+    ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
         tensor4.ptr[i] = i
     var frag4 = tensor4._vectorize_2[2]()

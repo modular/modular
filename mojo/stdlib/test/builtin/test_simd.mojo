@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
+from sys import sizeof
 from sys.info import CompilationTarget
 
 from bit import count_leading_zeros
@@ -122,6 +122,72 @@ def test_init_from_index():
     assert_equal(a_str, String(Int128(a)))
     assert_equal(a_str, String(UInt256(a)))
     assert_equal(a_str, String(Int256(a)))
+
+
+def test_from_bits():
+    assert_true(Scalar[DType.bool].from_bits(UInt8(0x01)))
+    assert_false(Scalar[DType.bool].from_bits(UInt8(0x00)))
+
+    assert_equal(Int64.from_bits(UInt64(0xFFFFFFFFFFFFFFFF)), -1)
+    assert_equal(UInt128.from_bits(Int128(-1)), -1)
+
+    assert_equal(Float32.from_bits(UInt32(0x3F800000)), 1.0)
+    assert_equal(Float32.from_bits(UInt32(0xBF800000)), -1.0)
+
+
+def test_to_bits():
+    assert_equal(Scalar[DType.bool](True).to_bits(), 0x01)
+    assert_equal(Scalar[DType.bool](False).to_bits(), 0x00)
+    assert_equal(Scalar[DType.bool](True).to_bits[DType.uint8](), UInt8(0x01))
+
+    assert_equal(Float32(1.0).to_bits(), 0x3F800000)
+    assert_equal(Float32(-1.0).to_bits(), 0xBF800000)
+    assert_equal(Float32(1.0).to_bits[DType.uint32](), UInt32(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[DType.uint64](), UInt64(0x3F800000))
+
+
+def test_from_to_bits_roundtrip():
+    alias dtypes = [
+        DType.bool,
+        DType.index,
+        DType.uint8,
+        DType.int8,
+        DType.uint16,
+        DType.int16,
+        DType.uint32,
+        DType.int32,
+        DType.uint64,
+        DType.int64,
+        DType.uint128,
+        DType.int128,
+        DType.uint256,
+        DType.int256,
+    ]
+
+    @parameter
+    for dt in dtypes:
+        alias S = Scalar[dt]
+        for n in range(-5, 5):
+            var res = S.from_bits(S(n).to_bits())
+            assert_equal(res, S(n))
+
+    fn floating_point_dtypes() -> List[DType]:
+        var res = [DType.float16, DType.float32, DType.float64]
+
+        @parameter
+        if not CompilationTarget.has_neon():
+            res.append(DType.bfloat16)
+        return res
+
+    alias fp_dtypes = floating_point_dtypes()
+
+    @parameter
+    for dt in fp_dtypes:
+        alias S = Scalar[dt]
+        for i in range(-10, 10):
+            var v = 1 / S(i)
+            var res = S.from_bits(S(v).to_bits())
+            assert_equal(res, S(v))
 
 
 def test_simd_variadic():
@@ -1864,9 +1930,9 @@ def test_float_conversion():
 
 
 def test_from_bytes_as_bytes():
-    alias TwoBytes = InlineArray[Byte, DType.int16.sizeof()]
-    alias TwoUBytes = InlineArray[Byte, DType.uint16.sizeof()]
-    alias FourBytes = InlineArray[Byte, DType.int32.sizeof()]
+    alias TwoBytes = InlineArray[Byte, sizeof[Int16]()]
+    alias TwoUBytes = InlineArray[Byte, sizeof[UInt16]()]
+    alias FourBytes = InlineArray[Byte, sizeof[Int32]()]
 
     assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
     assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)
@@ -1906,9 +1972,62 @@ def test_from_bytes_as_bytes():
             )
 
 
+def test_vector_from_bytes_as_bytes():
+    var v8_u8 = SIMD[DType.uint8, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    assert_equal(v8_u8, SIMD[DType.uint8, 8].from_bytes(v8_u8.as_bytes()))
+
+    var v8_u16 = SIMD[DType.uint16, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    # fmt: off
+    var expected_v8_u16_be_bytes = [
+        0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
+    ]
+    # fmt: on
+    var actual_v8_u16_be_bytes = v8_u16.as_bytes[big_endian=True]()
+    for i in range(len(expected_v8_u16_be_bytes)):
+        assert_equal(
+            Int(actual_v8_u16_be_bytes[i]), expected_v8_u16_be_bytes[i]
+        )
+    # fmt: off
+    var expected_v8_u16_le_bytes = [
+        1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0,
+    ]
+    # fmt: on
+    var actual_v8_u16_le_bytes = v8_u16.as_bytes[big_endian=False]()
+    for i in range(len(expected_v8_u16_le_bytes)):
+        assert_equal(
+            Int(actual_v8_u16_le_bytes[i]), expected_v8_u16_le_bytes[i]
+        )
+
+    var v8_i64 = SIMD[DType.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
+    assert_equal(
+        v8_i64,
+        SIMD[DType.int64, 8].from_bytes[big_endian=False](
+            v8_i64.as_bytes[big_endian=False]()
+        ),
+    )
+    assert_equal(
+        v8_i64,
+        SIMD[DType.int64, 8].from_bytes[big_endian=True](
+            v8_i64.as_bytes[big_endian=True]()
+        ),
+    )
+
+    var v8_f64 = SIMD[DType.float64, 8](
+        1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8
+    )
+    assert_equal(v8_f64, SIMD[DType.float64, 8].from_bytes(v8_f64.as_bytes()))
+
+    var v8_bool = SIMD[DType.bool, 8](
+        True, True, False, True, False, True, True, True
+    )
+    assert_equal(v8_bool, SIMD[DType.bool, 8].from_bytes(v8_bool.as_bytes()))
+
+
 def test_reversed():
-    fn test[D: DType]() raises:
-        assert_equal(SIMD[D, 4](1, 2, 3, 4).reversed(), SIMD[D, 4](4, 3, 2, 1))
+    fn test[dtype: DType]() raises:
+        assert_equal(
+            SIMD[dtype, 4](1, 2, 3, 4).reversed(), SIMD[dtype, 4](4, 3, 2, 1)
+        )
 
     test[DType.uint8]()
     test[DType.uint16]()
@@ -2005,6 +2124,9 @@ def main():
     test_cast()
     test_cast_init()
     test_list_literal_ctor()
+    test_from_bits()
+    test_to_bits()
+    test_from_to_bits_roundtrip()
     test_ceil()
     test_convert_simd_to_string()
     test_simd_repr()
@@ -2014,6 +2136,7 @@ def main():
     test_floor()
     test_floordiv()
     test_from_bytes_as_bytes()
+    test_vector_from_bytes_as_bytes()
     test_iadd()
     test_indexing()
     test_init_from_index()

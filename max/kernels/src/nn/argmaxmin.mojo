@@ -97,8 +97,8 @@ fn _argn[
         @parameter
         @always_inline
         fn cmpeq[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter
@@ -110,8 +110,8 @@ fn _argn[
         @parameter
         @always_inline
         fn cmp[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter

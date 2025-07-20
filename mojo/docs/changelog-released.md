@@ -13,7 +13,7 @@ To check your current version, run `mojo --version`.
 
 This version is still a work in progress.
 
-See how to [install the nightly release](/max/packages#nightly-release).
+See how to [install the nightly release](/max/packages#install).
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
@@ -57,17 +57,8 @@ See how to [install the nightly release](/max/packages#nightly-release).
   See [Language enhancements](#25-4-language-enhancements) and
   [Standard library changes](#25-4-standard-library-changes) for more details.
 
-- The MAX Kernel library is now fully open sourced!
-  Additional packages and directories that are open source now include:
-  - [`kv_cache`](/mojo/kernels/kv_cache/)
-  - [`nvml`](/mojo/kernels/nvml/)
-  - [`quantization`](/mojo/kernels/quantization/)
-  - [`benchmarks`](https://github.com/modular/modular/tree/main/max/kernels/benchmarks)
-    directory
-  - [`Mogg`](https://github.com/modular/modular/tree/main/max/kernels/src/Mogg)
-    directory, which contains registration of kernels with the Graph Compiler
-
-  For more information, see the
+- The entire MAX Kernel library is now fully open sourced! For more information,
+  see the
   [MAX AI kernels library reference](/mojo/lib#max-ai-kernels-library) and the
   [MAX AI kernels source](https://github.com/modular/modular/tree/main/max/kernels).
 
@@ -292,7 +283,8 @@ See how to [install the nightly release](/max/packages#nightly-release).
     [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) moved to the
     new [`variadics`](/mojo/stdlib/builtin/variadics/) module.
 
-  - The `CollectionElement` trait has been removed.
+  - The `CollectionElement` trait has been removed. You can replace any use of
+    it with `Copyable & Movable`.
 
 Python-Mojo interoperability enhancements and changes:
 
@@ -4919,7 +4911,7 @@ Special thanks to our community contributors:
   ```
 
 - [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) now conforms
-  to the [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, meaning
+  to the [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, meaning
   that it can be used as key type for
   [`Dict`](/mojo/stdlib/collections/dict/Dict). This allows you to easily build
   and interact with Python dictionaries in Mojo:
@@ -6152,7 +6144,7 @@ experience without dedicated sugar.
   `Dict` stores values that conform to the
   [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
   trait. Keys need to conform to the new
-  [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, which is
+  [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, which is
   not yet implemented by other standard library types. In the short term, you
   can create your own wrapper types to use as keys. For example, the following
   sample defines a `StringKey` type and uses it to create a dictionary that maps

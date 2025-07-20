@@ -152,7 +152,7 @@ class ProfilingConfig(MAXConfig):
                 self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
             except ValueError:
                 valid_values = [mode.value for mode in GPUProfilingMode]
-                raise ValueError(
+                raise ValueError(  # noqa: B904
                     "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
 
@@ -179,11 +179,15 @@ class LoRAConfig(MAXConfig):
             raise ValueError(
                 "Number of statically defined LoRAs exceeds the number of maximum loadable LoRAs."
             )
+        # TODO: Remove hack when we have proper LoRA kernel support.
+        #  We add one to the end of max_num_loras so it is a zero
+        #  tensor for requests without LoRA.
+        self.max_num_loras += 1
 
     @staticmethod
     def help() -> dict[str, str]:
         return {
             "lora_paths": "List of paths to the LoRAs.",
-            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16",
-            "max_num_loras": "The maximum number of active LoRAs in a batch",
+            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
+            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
         }

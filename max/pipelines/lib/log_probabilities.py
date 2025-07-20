@@ -13,52 +13,75 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 
 import numpy as np
-from max.pipelines.core import LogProbabilities
+from max.driver import Device, Tensor
+from max.dtype import DType
+from max.engine import Model
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.interfaces import LogProbabilities
 
-logger = logging.getLogger("max.pipelines")
 
+def log_probabilities_ragged_graph(device: DeviceRef, *, levels: int) -> Graph:
+    """Create a graph to compute log probabilities over ragged inputs.
 
-def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
-    """Compute the logarithm of the softmax function.
-
-    This implementation uses the identity log(softmax(x)) = x - log(sum(exp(x)))
-    with numerical stability improvements to prevent overflow/underflow.
+    A model obtained by this graph is a required input to
+    'compute_log_probabilities_ragged'.
 
     Args:
-        x: Input array
-        axis: Axis to compute values along
-
-    Returns:
-        Array with same shape as x, representing log(softmax(x))
+        device: The type of device this graph will need to run on.
+        levels: log2(max_k+1) for the desired maximum top-k you'd like to
+            support.  To support the OpenAI API maximum of 5 logprobs, use
+            levels=3.  Higher levels can be used to support higher k.
     """
-    # Subtract max value for numerical stability (prevents exp overflow)
-    x_max = np.amax(x, axis=axis, keepdims=True)
-
-    # Compute exp(x - x_max) which is now safe from overflow
-    shifted_x = x - x_max
-    exp_shifted = np.exp(shifted_x)
-
-    # Suppress -inf warnings from log(0)
-    # This can happen when input contains extreme negative values (-inf),
-    # which become 0 after exp() operation
-    with np.errstate(divide="ignore"):
-        sum_exp = np.sum(exp_shifted, axis=axis, keepdims=True)
-        log_sum_exp = np.log(sum_exp)
-
-    # Final result: x - x_max - log(sum(exp(x - x_max)))
-    # This is mathematically equivalent to log(softmax(x))
-    return shifted_x - log_sum_exp
+    out_per_token = 2**levels if levels > 0 else 1
+    logit_dtype = DType.float32
+    token_dtype = DType.uint32
+    offset_dtype = DType.uint32
+    host_device = DeviceRef.CPU()
+    with Graph(
+        "ragged_logprobs",
+        input_types=[
+            TensorType(logit_dtype, ("bseq_or_b", "vocab"), device),  # logits
+            TensorType(token_dtype, ("batch_seq",), device),  # tokens
+            TensorType(token_dtype, ("batch",), device),  # sampled_tokens
+            TensorType(offset_dtype, ("batchp1",), device),  # logit_row_offsets
+            TensorType(offset_dtype, ("batchp1",), device),  # token_row_offsets
+            TensorType(offset_dtype, ("batchp1",), device),  # lp_output_offsets
+            TensorType(offset_dtype, ("batchp1",), host_device),  # ^ for host
+        ],
+    ) as g:
+        g.output(
+            *ops.custom(
+                "compute_log_probabilities_ragged",
+                device,
+                list(g.inputs),
+                [
+                    TensorType(  # lp_logits
+                        logit_dtype, ("out_batch_seq", out_per_token), device
+                    ),
+                    TensorType(  # lp_tokens
+                        # TODO(GEX-2198): out_batch_seq2 should be the same as
+                        # out_batch_seq, but doing so causes a failure in KGEN.
+                        token_dtype,
+                        ("out_batch_seq2", out_per_token),
+                        device,
+                    ),
+                ],
+                {"levels": levels},
+            )
+        )
+        return g
 
 
 def compute_log_probabilities_ragged(
+    device: Device,
+    model: Model,
     *,
     input_row_offsets: np.ndarray,
-    logits: np.ndarray | None,
-    next_token_logits: np.ndarray,
+    logits: Tensor | None,
+    next_token_logits: Tensor,
     tokens: np.ndarray,
     sampled_tokens: np.ndarray,
     batch_top_n: Sequence[int],
@@ -67,13 +90,19 @@ def compute_log_probabilities_ragged(
     """Computes the log probabilities for ragged model outputs.
 
     Args:
+        device: Device on which to do the bulk of the log probabilities
+            computation.  A small amount of computation still occurs on the
+            host regardless of this setting.
+        model: A compiled version of a graph from the
+            'log_probabilities_ragged_graph' function.
         input_row_offsets: Token offsets into token-indexed buffers, by batch
             index.  Should have 1 more element than there are batches (batch n
             is token indices [input_row_offsets[n], input_row_offsets[n+1])).
         logits: (tokens, vocab_dim) tensor full of tensor logits.  Token
-            dimension mapped to batches using input_row_offsets.
-        next_token_logits: (batch, vocab_dim) tensor full of logits for next
-            tokens per batch.
+            dimension mapped to batches using input_row_offsets.  May be
+            omitted only if all 'batch_echo' values are False.
+        next_token_logits: (batch_dim, vocab_dim) tensor full of tensor logits
+            for the next token in each batch item.
         sampled_tokens: (batch_dim,) tensor of sampled token per batch
         batch_top_n: Number of top log probabilities to return per input in
             the batch. For any element where `top_n == 0`, the
@@ -84,75 +113,100 @@ def compute_log_probabilities_ragged(
     Returns:
         Computed log probabilities for each item in the batch.
     """
+    assert len(input_row_offsets.shape) == 1
+    if logits is not None:
+        assert len(logits.shape) == 2
+    assert len(next_token_logits.shape) == 2
+    assert len(tokens.shape) == 1
+    assert len(sampled_tokens.shape) == 1
+    assert (
+        len(batch_top_n)
+        == len(batch_echo)
+        == input_row_offsets.shape[0] - 1
+        == next_token_logits.shape[0]
+        == sampled_tokens.shape[0]
+    )
+    batch_size = len(batch_top_n)
+    if logits is not None:
+        assert logits.shape[0] == tokens.shape[0]
+        assert logits.shape[1] == next_token_logits.shape[1]
+    vocab_size = next_token_logits.shape[1]
+    if logits is not None:
+        assert logits.device == device
+        assert logits.dtype == DType.float32
+    assert next_token_logits.device == device
+    assert next_token_logits.dtype == DType.float32
+    if logits is None:
+        assert not any(batch_echo)
+        kernel_logits = next_token_logits
+        logit_row_offsets = np.arange(batch_size + 1, dtype=np.uint32)
+    else:
+        kernel_logits = logits
+        logit_row_offsets = input_row_offsets
+    output_counts = np.array(
+        [
+            input_row_offsets[i + 1] - input_row_offsets[i] if echo else 1
+            for i, echo in enumerate(batch_echo)
+        ],
+        dtype=np.uint32,
+    )
+    output_row_offsets = np.concatenate(
+        [np.zeros(1, dtype=output_counts.dtype), np.cumsum(output_counts)]
+    )
+    token_row_offsets = input_row_offsets
+    assert kernel_logits.dtype == DType.float32
+    model_outputs = model.execute(
+        kernel_logits,
+        Tensor.from_numpy(tokens.astype(np.uint32)).to(device),
+        Tensor.from_numpy(sampled_tokens.astype(np.uint32)).to(device),
+        Tensor.from_numpy(logit_row_offsets.astype(np.uint32)).to(device),
+        Tensor.from_numpy(token_row_offsets.astype(np.uint32)).to(device),
+        Tensor.from_numpy(output_row_offsets.astype(np.uint32)).to(device),
+        Tensor.from_numpy(output_row_offsets.astype(np.uint32)),  # for host
+    )
+    assert isinstance(model_outputs[0], Tensor)
+    assert isinstance(model_outputs[1], Tensor)
+    lp_logits = model_outputs[0].to_numpy()
+    lp_tokens = model_outputs[1].to_numpy()
 
-    if logits is None and any(batch_echo):
-        logger.warning(
-            "Could not get logprobs with echo because the full logits "
-            "were not returned by the model. Please ensure that the model is "
-            "started with `--enable-echo`."
-        )
-
-    log_probabilities: list[LogProbabilities | None] = []
-    for batch, (top_n, echo) in enumerate(zip(batch_top_n, batch_echo)):
-        if top_n == 0:
-            log_probabilities.append(None)
-            continue
-
-        start_offset = input_row_offsets[batch]
-        end_offset = input_row_offsets[batch + 1]
-        if echo:
-            if logits is None:
-                # Insufficient data to fulfill this request -- warned earlier.
-                log_probabilities.append(None)
-                continue
-            batch_logits = logits[start_offset:end_offset]
-            samples = np.concatenate(
-                (
-                    tokens[start_offset + 1 : end_offset],
-                    sampled_tokens[batch : batch + 1],
-                )
+    def compute_top(output_index: int, top_n: int) -> dict[int, float]:
+        if top_n > lp_logits.shape[1] - 1:
+            raise ValueError(
+                "top_n too large for this graph -- "
+                "rebuild with larger levels & rerun"
             )
-        else:
-            batch_logits = next_token_logits[batch : batch + 1]
-            samples = sampled_tokens[batch : batch + 1]
-
-        log_probs = log_softmax(batch_logits, axis=-1)
-
-        # Get top n tokens.
-        top_n_indices = np.argpartition(log_probs, -top_n, axis=-1)[
-            ..., -top_n:
+        top_assoc = [
+            (int(token), float(logit))
+            for token, logit in zip(
+                lp_tokens[output_index, :-1], lp_logits[output_index, :-1]
+            )
+            if token < vocab_size
         ]
+        top_assoc.sort(key=lambda item: item[1], reverse=True)
+        del top_assoc[top_n:]
+        top = dict(top_assoc)
+        # Special case: If sampled token not in top-n, include it anyway.
+        top[int(lp_tokens[output_index, -1])] = float(
+            lp_logits[output_index, -1]
+        )
+        return top
 
-        # Get the log probabilities of each sampled token.
-        sampled_log_probs = np.take_along_axis(
-            log_probs, samples.reshape(-1, 1), axis=1
-        ).reshape(-1)
-
-        # Store the stats for each sample token.
-        num_tokens = log_probs.shape[0]
-        token_log_probabilities = []
-        top_log_probabilities = []
-        for i in range(num_tokens):
-            token_log_probabilities.append(sampled_log_probs[i].item())
-
-            # Compute top n log probs.
-            top_tokens = {}
-            for n in range(top_n):
-                top_token = top_n_indices[i][n]
-                top_token_logits = log_probs[i][top_token]
-                top_tokens[top_token] = top_token_logits.item()
-
-            # Include sampled token in the top tokens.
-            sampled_token = samples[i].item()
-            top_tokens[sampled_token] = sampled_log_probs[i].item()
-
-            top_log_probabilities.append(top_tokens)
-
-        log_probabilities.append(
+    outputs: list[LogProbabilities | None] = []
+    for batch_index in range(input_row_offsets.shape[0] - 1):
+        if batch_top_n[batch_index] == 0:
+            outputs.append(None)
+            continue
+        start = output_row_offsets[batch_index]
+        end = output_row_offsets[batch_index + 1]
+        outputs.append(
             LogProbabilities(
-                token_log_probabilities=token_log_probabilities,
-                top_log_probabilities=top_log_probabilities,
+                token_log_probabilities=list(
+                    map(float, lp_logits[start:end, -1])
+                ),
+                top_log_probabilities=[
+                    compute_top(i, batch_top_n[batch_index])
+                    for i in range(start, end)
+                ],
             )
         )
-
-    return log_probabilities
+    return outputs

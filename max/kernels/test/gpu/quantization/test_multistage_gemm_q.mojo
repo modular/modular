@@ -427,7 +427,7 @@ fn test_repack_Q4_0_for_sm8x(
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[type: DType](array: InlineArray[Scalar[type]]):
+    fn fill_random[dtype: DType](array: InlineArray[Scalar[dtype]]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):
@@ -607,7 +607,7 @@ fn test_repack_Q4_0_for_sm8x(
 
 
 fn test_quantized[
-    type: DType
+    dtype: DType
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     # quantization configs
     alias group_size = 128
@@ -640,7 +640,7 @@ fn test_quantized[
     var dynamic_c_shape = DimList(m.value, n.value)
 
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
+    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
     var c_host = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
     var c_host_ref = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
 
@@ -665,7 +665,7 @@ fn test_quantized[
     var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[type, 2, shape=static_b_shape](
+    var b_device = DeviceNDBuffer[dtype, 2, shape=static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
     var b_device_ref = DeviceNDBuffer[a_type, 2, static_b_ref_shape](
@@ -680,7 +680,7 @@ fn test_quantized[
 
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
-    alias b_tensor_type = LayoutTensor[type, b_layout]
+    alias b_tensor_type = LayoutTensor[dtype, b_layout]
     alias b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
 
     var b_tensor = b_tensor_type(
@@ -710,7 +710,7 @@ fn test_quantized[
         dynamic_c_shape, ctx=ctx
     )
 
-    alias kernels = MatmulKernels[a_type, type, a_type, True]()
+    alias kernels = MatmulKernels[a_type, dtype, a_type, True]()
     alias config = kernels.ampere_128x128_4
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -750,7 +750,7 @@ fn test_quantized[
     ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
     alias dequan = create_ref_b[
-        type,
+        dtype,
         a_type,
         b_tensor.layout,
         b_ref_tensor.layout,

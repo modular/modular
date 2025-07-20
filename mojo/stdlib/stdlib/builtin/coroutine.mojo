@@ -127,13 +127,13 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         self._handle = handle
 
     @always_inline
-    fn force_destroy(owned self):
+    fn force_destroy(var self):
         """Destroy the coroutine object."""
         __mlir_op.`co.destroy`(self._handle)
         __disable_del self
 
     @always_inline
-    fn __await__(owned self, out result: type):
+    fn __await__(var self, out result: type):
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:
@@ -214,13 +214,13 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         self._handle = handle
 
     @always_inline
-    fn force_destroy(owned self):
+    fn force_destroy(var self):
         """Destroy the coroutine object."""
         __mlir_op.`co.destroy`(self._handle)
         __disable_del self
 
     @always_inline
-    fn __await__(owned self, out result: type) raises:
+    fn __await__(var self, out result: type) raises:
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:

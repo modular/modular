@@ -54,6 +54,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     var block_dim = 32
 
     alias kernel = vec_func[add_with_captured]
+    # TODO(MAXPLAT-335): Make compile_function_experimental support this case.
     var kernel_func = ctx.compile_function_checked[kernel, kernel]()
     ctx.enqueue_function_checked(
         kernel_func,

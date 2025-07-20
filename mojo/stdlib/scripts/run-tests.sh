@@ -16,25 +16,5 @@ set -euo pipefail
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 REPO_ROOT="${SCRIPT_DIR}"/../../..
-BUILD_DIR="${REPO_ROOT}"/build
 
-echo "Creating build directory for building the stdlib running the tests in."
-mkdir -p "${BUILD_DIR}"
-
-source "${SCRIPT_DIR}"/build-stdlib.sh
-
-echo "Packaging up the test_utils."
-TEST_UTILS_PATH="${REPO_ROOT}/stdlib/test/test_utils"
-# This is needed to compile test_utils.mojopkg correctly, otherwise it
-# uses the stdlib that's given in the nightly, and will fail compilation
-# if some breaking changes are made.
-mojo package "${TEST_UTILS_PATH}" -I ${BUILD_DIR} -o "${BUILD_DIR}/test_utils.mojopkg"
-
-TEST_PATH="${REPO_ROOT}/stdlib/test"
-if [[ $# -gt 0 ]]; then
-  # If an argument is provided, use it as the specific test file or directory
-  TEST_PATH=$1
-fi
-
-# Run the tests
-lit -sv "${TEST_PATH}"
+exec "$REPO_ROOT"/bazelw test //mojo/stdlib/test/...

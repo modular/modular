@@ -242,6 +242,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
     print("compiling vec_func")
+    # TODO(MAXPLAT-333): Make compile_function_experimental support this case.
     var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
     print("calling vec_func")
     ctx.enqueue_function_checked(

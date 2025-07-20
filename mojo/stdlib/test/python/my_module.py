@@ -14,12 +14,12 @@
 from abc import ABC, abstractmethod
 
 
-class Person(ABC):
+class Person(ABC):  # noqa: B024
     pass
 
 
 class Foo:
-    def __init__(self, bar):
+    def __init__(self, bar) -> None:  # noqa: ANN001
         self.bar = bar
 
 
@@ -28,9 +28,9 @@ class AbstractPerson(ABC):
     def method(self): ...
 
 
-def my_function(name):
+def my_function(name) -> str:  # noqa: ANN001
     return f"Formatting the string from Lit with Python: {name}"
 
 
-def eat_it_all(veggie, *args, fruit, **kwargs):
+def eat_it_all(veggie, *args, fruit, **kwargs) -> str:  # noqa: ANN001
     return f"{veggie} {args} fruit={fruit} {kwargs}"

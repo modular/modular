@@ -26,7 +26,7 @@ fn to_string(mut x: IntOrString) -> String:
 
 # They have to be mutable for now, and implement Copyable & Movable
 var an_int = IntOrString(4)
-var a_string = IntOrString(String("I'm a string!"))
+var a_string = IntOrString("I'm a string!")
 var who_knows = IntOrString(0)
 import random
 if random.random_ui64(0, 1):
@@ -60,7 +60,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         - use `[T]` to get a value out of a variant
             - This currently does an extra copy/move until we have origins
             - It also temporarily requires the value to be mutable
-        - use `set[T](owned new_value: T)` to reset the variant to a new value
+        - use `set[T](var new_value: T)` to reset the variant to a new value
         - use `is_type_supported[T]` to check if the variant permits the type `T`
 
     Example:
@@ -75,7 +75,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
 
     # They have to be mutable for now, and implement Copyable & Movable
     var an_int = IntOrString(4)
-    var a_string = IntOrString(String("I'm a string!"))
+    var a_string = IntOrString("I'm a string!")
     var who_knows = IntOrString(0)
     import random
     if random.random_ui64(0, 1):
@@ -110,7 +110,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @implicit
-    fn __init__[T: Copyable & Movable](out self, owned value: T):
+    fn __init__[T: Copyable & Movable](out self, var value: T):
         """Create a variant with one of the types.
 
         Parameters:
@@ -270,7 +270,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
     @always_inline
     fn replace[
         Tin: Copyable & Movable, Tout: Copyable & Movable
-    ](mut self, owned value: Tin) -> Tout:
+    ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -297,7 +297,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
     @always_inline
     fn unsafe_replace[
         Tin: Copyable & Movable, Tout: Copyable & Movable
-    ](mut self, owned value: Tin) -> Tout:
+    ](mut self, var value: Tin) -> Tout:
         """Unsafely replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -323,7 +323,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         self.set[Tin](value^)
         return x^
 
-    fn set[T: Copyable & Movable](mut self, owned value: T):
+    fn set[T: Copyable & Movable](mut self, var value: T):
         """Set the variant value.
 
         This will call the destructor on the old value, and update the variant's

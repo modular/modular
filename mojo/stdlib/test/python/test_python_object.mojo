@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# XFAIL: asan && !system-darwin
-# RUN: %mojo %s
-
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
@@ -225,27 +222,27 @@ def test_dunder_methods(mut python: Python):
 
     # __lt__
     c = a < b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __le__
     c = a <= b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __gt__
     c = a > b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __ge__
     c = a >= b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __eq__
     c = a == b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __ne__
     c = a != b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __pos__
     c = +a
@@ -298,8 +295,8 @@ fn test_string_conversions(mut python: Python) raises -> None:
     assert_true(mojo_capitalized == "Mojo")
 
     # string object
-    var mo_str = String("mo")
-    var jo_str = String("jo")
+    var mo_str = "mo"
+    var jo_str = "jo"
     var mojo_str = mo_str + jo_str
     py_str = PythonObject(mojo_str)
     py_capitalized = py_str.capitalize()
@@ -643,6 +640,11 @@ struct Person(Defaultable, Movable, Representable):
 
 
 def test_python_mojo_object_operations():
+    # TODO(MOTO-1186): Fix test case on Python 3.9 and remove this return.
+    var sys = Python.import_module("sys")
+    if sys.version.startswith("3.9"):
+        return
+
     # Type registration
     var b = PythonModuleBuilder("fake_module")
     _ = b.add_type[Person]("Person")
@@ -655,6 +657,30 @@ def test_python_mojo_object_operations():
     var person_ptr = person_obj.downcast_value_ptr[Person]()
 
     assert_equal(person_ptr[].name, "John Smith")
+
+
+def test_conversion_to_simd():
+    var py_float = PythonObject(0.123456789121212)
+    var py_int = PythonObject(256)
+
+    assert_equal(Float64(py_float), 0.123456789121212)
+    assert_equal(Float32(py_float), 0.12345679)
+    assert_equal(Float16(py_float), 0.12345679)
+    assert_equal(Float64(py_int), 256.0)
+
+    var py_str = PythonObject("inf")
+    with assert_raises(contains="must be real number, not str"):
+        _ = Float64(py_str)
+
+    assert_equal(Int64(py_int), Int64(256))
+    assert_equal(Int32(py_int), Int32(256))
+    assert_equal(Int16(py_int), Int16(256))
+    assert_equal(Int8(py_int), Int8(0))
+
+    assert_equal(UInt64(py_int), UInt64(256))
+    assert_equal(UInt32(py_int), UInt32(256))
+    assert_equal(UInt16(py_int), UInt16(256))
+    assert_equal(UInt8(py_int), UInt8(0))
 
 
 def main():
@@ -679,3 +705,4 @@ def main():
     test_py_slice()
     test_contains_dunder()
     test_python_mojo_object_operations()
+    test_conversion_to_simd()

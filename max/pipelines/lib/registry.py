@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 import torch
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    PipelineTask,
     PipelineTokenizer,
 )
 from transformers import (
@@ -108,7 +108,7 @@ class SupportedArchitecture:
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
-    ):
+    ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
 
         This class defines all the necessary components and settings required to
@@ -175,7 +175,7 @@ class SupportedArchitecture:
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other) -> bool:  # noqa: ANN001
         if other.__class__ == self.__class__:
             for field in [
                 "name",
@@ -208,7 +208,7 @@ class SupportedArchitecture:
 
 
 class PipelineRegistry:
-    def __init__(self, architectures: list[SupportedArchitecture]):
+    def __init__(self, architectures: list[SupportedArchitecture]) -> None:
         self.architectures = {arch.name: arch for arch in architectures}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
         self._cached_huggingface_tokenizers: dict[
@@ -355,10 +355,8 @@ class PipelineRegistry:
         quantization_encoding_str = str(
             pipeline_config.model_config.quantization_encoding
         )
-        if pipeline_config.model_config.applied_bfloat16_downcast:
-            quantization_encoding_str = (
-                f"{quantization_encoding_str} (downcasted from float32)"
-            )
+        if pipeline_config.model_config._applied_dtype_cast_from:
+            quantization_encoding_str = f"{quantization_encoding_str} (cast from {pipeline_config.model_config._applied_dtype_cast_from})"
 
         message = f"""
 
@@ -592,6 +590,30 @@ class PipelineRegistry:
             raise ValueError(msg)
 
         return tokenizer, pipeline_factory
+
+    def retrieve_pipeline_task(
+        self, pipeline_config: PipelineConfig
+    ) -> PipelineTask:
+        """
+        Retrieve the pipeline task associated with the architecture for the given pipeline configuration.
+
+        Args:
+            pipeline_config (PipelineConfig): The configuration for the pipeline.
+
+        Returns:
+            PipelineTask: The task associated with the architecture.
+
+        Raises:
+            ValueError: If no supported architecture is found for the given model repository.
+        """
+        if arch := self.retrieve_architecture(
+            huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+        ):
+            return arch.task
+
+        raise ValueError(
+            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+        )
 
     def retrieve(
         self,

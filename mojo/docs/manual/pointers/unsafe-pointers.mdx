@@ -167,7 +167,7 @@ type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
 `Int`) or a newly-constructed, "owned" value:
 
 ```mojo
-str_ptr.init_pointee_move(String("Owned string"))
+str_ptr.init_pointee_move("Owned string")
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
@@ -326,7 +326,7 @@ the origin of the pointee. For example, in the following code, `s_ptr.origin` is
 the same as the origin of `s`:
 
 ```mojo
-s = String("Testing")
+s = "Testing"
 s_ptr = UnsafePointer(to=s)
 ```
 
@@ -451,7 +451,7 @@ Each chunk begins with an 8-bit integer that identifies the number of values
 in the chunk.
 
 ```mojo
-def read_chunks(owned ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
+def read_chunks(var ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
