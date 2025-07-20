@@ -34,9 +34,10 @@ doubling the number of relevant functions. It can also lead to boilerplate or
 near-duplicate code across the safe and unsafe variants.
 
 We need a mechanism that:
-1.  Allows opt-in to unsafe, specialized behavior for performance.
-2.  Clearly signals the associated risks and responsibilities to the developer.
-3.  Minimizes API surface bloat.
+
+1. Allows opt-in to unsafe, specialized behavior for performance.
+2. Clearly signals the associated risks and responsibilities to the developer.
+3. Minimizes API surface bloat.
 
 ---
 
@@ -79,10 +80,10 @@ without these explicit parameters retain current safe behavior.
     `unsafe_assume_ascii` and `unsafe_assume_capacity` parameters. This keeps
     the API surface cleaner and more focused.
 - **Improved Code Maintainability**:
-    - Consolidates related logic within a single function definition, making it
+  - Consolidates related logic within a single function definition, making it
         easier to understand the relationship between the general case and
         optimized variants.
-    - Reduces boilerplate that might arise from creating many separate, largely
+  - Reduces boilerplate that might arise from creating many separate, largely
         similar `unsafe_` functions. Common setup, teardown, or non-optimized
         parts of the logic can be shared, with only the assumption-specific
         sections varying based on compile-time parameters.
@@ -90,6 +91,7 @@ without these explicit parameters retain current safe behavior.
 ---
 
 ### 4. Concrete Examples
+
 - *Please note that these are merely examples, and that this pattern could be
   implemented in many other places as well*.
 
@@ -125,6 +127,7 @@ specific log formats, may operate on inputs known to be ASCII.
     optimizations by bypassing checks and code branches.
 
 #### Example 2: List Operations - `unsafe_assume_capacity` & `unsafe_assume_in_bounds`
+
 Mojo's List type already suffers from fragmentation.
 
 - **Proposed Parameterization**:
