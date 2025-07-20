@@ -67,9 +67,6 @@ custom_op_example_py_binary(
 mojo_binary(
     name = "benchmarks",
     srcs = ["benchmarks.mojo"],
-    data = [
-        "//GenericML:DeviceDriver",
-    ],
     deps = [
         ":kernels",
         "@mojo//:compiler",
