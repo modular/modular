@@ -444,19 +444,19 @@ struct Operation(Copyable, Movable, Stringable, Writable):
                 UnsafePointer(to=state),
                 len(attributes),
                 # This technically works as long as `Attribute` is only `MlirAttribute`.
-                attributes.data.bitcast[NamedAttribute.cType](),
+                attributes.unsafe_ptr().bitcast[NamedAttribute.cType](),
             )
         if operands:
             _c.IR.mlirOperationStateAddOperands(
                 UnsafePointer(to=state),
                 len(operands),
-                operands.data.bitcast[Value.cType](),
+                operands.unsafe_ptr().bitcast[Value.cType](),
             )
         if results:
             _c.IR.mlirOperationStateAddResults(
                 UnsafePointer(to=state),
                 len(results),
-                results.data.bitcast[Type.cType](),
+                results.unsafe_ptr().bitcast[Type.cType](),
             )
         # TODO: how to express to the caller that we're taking ownership
         #       over Regions.
@@ -464,13 +464,13 @@ struct Operation(Copyable, Movable, Stringable, Writable):
             _c.IR.mlirOperationStateAddOwnedRegions(
                 UnsafePointer(to=state),
                 len(regions),
-                regions.data.bitcast[Region.cType](),
+                regions.unsafe_ptr().bitcast[Region.cType](),
             )
         if successors:
             _c.IR.mlirOperationStateAddSuccessors(
                 UnsafePointer(to=state),
                 len(successors),
-                successors.data.bitcast[Block.cType](),
+                successors.unsafe_ptr().bitcast[Block.cType](),
             )
 
     @staticmethod
@@ -760,8 +760,8 @@ struct Block(Copyable, Movable, Stringable, Writable):
         )
         self.c = _c.IR.mlirBlockCreate(
             len(args),
-            args.data.bitcast[Type.cType](),
-            locations.data.bitcast[Location.cType](),
+            args.unsafe_ptr().bitcast[Type.cType](),
+            locations.unsafe_ptr().bitcast[Location.cType](),
         )
 
     fn region(self) -> Region:

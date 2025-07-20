@@ -301,7 +301,7 @@ fn _top_k_cpu[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = idxs.data + i
+                        var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, __origin_of(idxs)](
                                 ptr=ptr, length=num_equal

@@ -244,7 +244,7 @@ fn non_max_suppression[
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
                 sort[_greater_than](
                     Span[box_idxs.T, __origin_of(box_idxs)](
-                        ptr=box_idxs.data + pred_idx,
+                        ptr=box_idxs.unsafe_ptr() + pred_idx,
                         length=num_boxes_curr_pred,
                     )
                 )

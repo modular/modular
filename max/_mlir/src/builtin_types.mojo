@@ -39,9 +39,9 @@ struct FunctionType(Copyable, DialectType, Movable):
         return _c.BuiltinTypes.mlirFunctionTypeGet(
             self.ctx.c,
             len(self.inputs),
-            self.inputs.data.bitcast[Type.cType](),
+            self.inputs.unsafe_ptr().bitcast[Type.cType](),
             len(self.results),
-            self.results.data.bitcast[Type.cType](),
+            self.results.unsafe_ptr().bitcast[Type.cType](),
         )
 
     @staticmethod
