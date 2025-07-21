@@ -52,11 +52,7 @@ class ValidationResultCollection:
         self,
     ) -> bool:
         """Returns true if any entry failed in the collection, False otherwise"""
-        for result in self._results.values():
-            if not result.success:
-                return True
-
-        return False
+        return any(not result.success for result in self._results.values())
 
     def get_failure_messages(
         self,

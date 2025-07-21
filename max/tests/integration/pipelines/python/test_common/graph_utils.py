@@ -26,43 +26,28 @@ def is_h100_h200() -> bool:
 def are_all_tensors_iterable(
     it: Iterable[Tensor | MojoValue],
 ) -> TypeGuard[Iterable[Tensor]]:
-    for value in it:
-        if not isinstance(value, Tensor):
-            return False
-    return True
+    return all(isinstance(value, Tensor) for value in it)
 
 
 def are_all_tensors_sequence(
     it: Sequence[Tensor | MojoValue],
 ) -> TypeGuard[Sequence[Tensor]]:
-    for value in it:
-        if not isinstance(value, Tensor):
-            return False
-    return True
+    return all(isinstance(value, Tensor) for value in it)
 
 
 def are_all_buffer_values_sequence(
     it: Sequence[Value],
 ) -> TypeGuard[Sequence[BufferValue]]:
-    for value in it:
-        if not isinstance(value, BufferValue):
-            return False
-    return True
+    return all(isinstance(value, BufferValue) for value in it)
 
 
 def are_all_tensor_values_iterable(
     it: Iterable[Value],
 ) -> TypeGuard[Iterable[TensorValue]]:
-    for value in it:
-        if not isinstance(value, TensorValue):
-            return False
-    return True
+    return all(isinstance(value, TensorValue) for value in it)
 
 
 def are_all_tensor_values_sequence(
     it: Sequence[Value],
 ) -> TypeGuard[Sequence[TensorValue]]:
-    for value in it:
-        if not isinstance(value, TensorValue):
-            return False
-    return True
+    return all(isinstance(value, TensorValue) for value in it)
