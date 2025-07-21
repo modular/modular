@@ -132,6 +132,8 @@ PINS = {
     "uvicorn": "uvicorn@0.30.6",
     "uvloop": "uvloop@0.21.0",
     "wheel": "wheel@0.45.1",
+    "zhconv": "zhconv@1.4.3",
+    "zhon": "zhon@2.1.1",
 }
 
 # buildifier: disable=unnamed-macro
@@ -7418,6 +7420,44 @@ def targets():
         wheel = ":_wheel_yarl@1.9.4",
     )
 
+    _zhconv_1_4_3_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_zhconv@1.4.3",
+        actual = "@pycross_lock_file_sdist_zhconv_1.4.3//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_zhconv@1.4.3",
+        sdist = ":_sdist_zhconv@1.4.3",
+        target_environment = _target,
+        deps = _zhconv_1_4_3_build_deps,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_zhconv@1.4.3",
+        actual = ":_build_zhconv@1.4.3",
+    )
+
+    pycross_wheel_library(
+        name = "zhconv@1.4.3",
+        wheel = ":_wheel_zhconv@1.4.3",
+    )
+
+    native.alias(
+        name = "_wheel_zhon@2.1.1",
+        actual = "@pycross_lock_file_wheel_zhon_2.1.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "zhon@2.1.1",
+        wheel = ":_wheel_zhon@2.1.1",
+    )
+
     native.alias(
         name = "_wheel_zipp@3.20.1",
         actual = "@pycross_lock_file_wheel_zipp_3.20.1_py3_none_any//file",
@@ -7680,6 +7720,16 @@ def repositories():
         ],
         sha256 = "70e27a5d387f67b04c71fbb7621c05930b19bfd26efd6851e6e0f9969dcde7d0",
         downloaded_file_path = "word2number-1.1.zip",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_sdist_zhconv_1.4.3",
+        urls = [
+            "https://files.pythonhosted.org/packages/25/47/c8ae2d5d4025e253211ff3d8c163f457db1da94976cb582337a5ab76cb87/zhconv-1.4.3.tar.gz",
+        ],
+        sha256 = "ad42d9057ca0605f8e41d62b67ca797f879f58193ee6840562c51459b2698c45",
+        downloaded_file_path = "zhconv-1.4.3.tar.gz",
     )
 
     maybe(
@@ -18820,6 +18870,16 @@ def repositories():
         ],
         sha256 = "928cecb0ef9d5a7946eb6ff58417ad2fe9375762382f1bf5c55e61645f2c43ad",
         downloaded_file_path = "yarl-1.9.4-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_zhon_2.1.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/be/13/b8d6ca3a41bf5959bc3915678837385bf668162a7295140d81ccae0b96b7/zhon-2.1.1-py3-none-any.whl",
+        ],
+        sha256 = "9ec0d42229ae60708a045270f755ccefb48f2689f2a6ce0bc6597abf6c4a9871",
+        downloaded_file_path = "zhon-2.1.1-py3-none-any.whl",
     )
 
     maybe(

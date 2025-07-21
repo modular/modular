@@ -127,6 +127,10 @@ dependencies = [
   "types-PyYAML",
   "types-setuptools",
   "types-tabulate",
+
+  # tts
+  "zhon",
+  "zhconv",
 ]
 
 [dependency-groups]

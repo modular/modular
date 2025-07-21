@@ -593,6 +593,8 @@ dependencies = [
     { name = "uvicorn", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "uvloop", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "wheel", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "zhconv", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "zhon", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
 
 [package.dev-dependencies]
@@ -753,6 +755,8 @@ requires-dist = [
     { name = "uvicorn" },
     { name = "uvloop", specifier = ">=0.21.0" },
     { name = "wheel" },
+    { name = "zhconv" },
+    { name = "zhon" },
 ]
 
 [package.metadata.requires-dev]
@@ -7724,6 +7728,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/5f/156e00c7bdc6d84efc7615fe0e14b2febf8ea360a8e1307fb3ba9cc14b73/yarl-1.9.4-cp39-cp39-win32.whl", hash = "sha256:c7224cab95645c7ab53791022ae77a4509472613e839dab722a72abe5a684575", size = 70773, upload-time = "2023-12-06T12:52:58.756Z" },
     { url = "https://files.pythonhosted.org/packages/a4/e0/5b4376d7361fe09a46dbb206131e8d85b1cb845da03c212a620d5b6b98d8/yarl-1.9.4-cp39-cp39-win_amd64.whl", hash = "sha256:824d6c50492add5da9374875ce72db7a0733b29c2394890aef23d533106e2b15", size = 76935, upload-time = "2023-12-06T12:53:00.796Z" },
     { url = "https://files.pythonhosted.org/packages/4d/05/4d79198ae568a92159de0f89e710a8d19e3fa267b719a236582eee921f4a/yarl-1.9.4-py3-none-any.whl", hash = "sha256:928cecb0ef9d5a7946eb6ff58417ad2fe9375762382f1bf5c55e61645f2c43ad", size = 31638, upload-time = "2023-12-06T12:53:02.709Z" },
+]
+
+[[package]]
+name = "zhconv"
+version = "1.4.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/47/c8ae2d5d4025e253211ff3d8c163f457db1da94976cb582337a5ab76cb87/zhconv-1.4.3.tar.gz", hash = "sha256:ad42d9057ca0605f8e41d62b67ca797f879f58193ee6840562c51459b2698c45", size = 211571, upload-time = "2021-10-31T05:59:44.096Z" }
+
+[[package]]
+name = "zhon"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/8d/e6c8ee4df75940ddecb6f5e7b2753a9a3914e6cd357e7238987661723d81/zhon-2.1.1.tar.gz", hash = "sha256:c8da424fad4aa698ddd3e1735515b49ff522c84dd1091e8fafd986ac7c6898f0", size = 84448, upload-time = "2024-11-20T00:29:10.119Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/13/b8d6ca3a41bf5959bc3915678837385bf668162a7295140d81ccae0b96b7/zhon-2.1.1-py3-none-any.whl", hash = "sha256:9ec0d42229ae60708a045270f755ccefb48f2689f2a6ce0bc6597abf6c4a9871", size = 83933, upload-time = "2024-11-20T00:29:08.209Z" },
 ]
 
 [[package]]
