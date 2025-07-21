@@ -86,6 +86,8 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
   return success();
 }
 
+static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg);
+
 /// Set up the ORC platform for the various different binary formats/platforms
 /// we support. This requires that we have an ExecutionSession *and* an
 /// ObjectLinkingLayer.
@@ -93,8 +95,7 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
 /// The main reason to use the platform like this is that it automatically sets
 /// up the various symbols that complex code will need to execute on a target.
 static ErrorOrSuccess
-setupPlatform(const std::optional<BufferRef> &orcRTBuf,
-              const llvm::DataLayout &dataLayout,
+setupPlatform(MojoConfig &cfg, const llvm::DataLayout &dataLayout,
               llvm::orc::JITDylib &platformStdlib,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
@@ -112,18 +113,26 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
     platformStdlib.addGenerator(std::move(*generator));
   }
 
-  // No orc runtime, exit early.
-  if (!orcRTBuf)
-    return success();
-
   // Disable the runtime on Linux, since there are issues with multi-tenancy
   // and memory leaks. Disable the runtime on MacOS due to issues with
   // libunwind.
   if (tt.isOSBinFormatELF() || tt.isOSBinFormatMachO())
     return success();
 
+  // Everything below this is Windows-only
+
+  // Get the ORC runtime binary.
+  auto orcRTBuf = initializeOrcRT(cfg);
+  if (orcRTBuf.isError())
+    return orcRTBuf.takeError();
+  std::optional<BufferRef> rtBuf = orcRTBuf.takeValue();
+
+  // Windows *requires* the orc runtime.
+  if (!rtBuf && tt.isOSBinFormatCOFF())
+    return Error("unable to locate orc_rt");
+
   auto orcRTMemBuf =
-      llvm::MemoryBuffer::getMemBufferCopy((*orcRTBuf)->getBuffer());
+      llvm::MemoryBuffer::getMemBufferCopy((*rtBuf)->getBuffer());
   if (tt.isOSBinFormatMachO()) {
     if (auto error = setUnixPlatform<llvm::orc::MachOPlatform>(
             platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
@@ -278,16 +287,6 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return cfgOr.takeError();
   MojoConfig cfg = std::move(*cfgOr);
 
-  // Get the ORC runtime binary.
-  auto orcRTBuf = initializeOrcRT(cfg);
-  if (orcRTBuf.isError())
-    return orcRTBuf.takeError();
-  std::optional<BufferRef> rtBuf = orcRTBuf.takeValue();
-
-  // Windows *requires* the orc runtime.
-  if (!rtBuf && tt.isOSBinFormatCOFF())
-    return Error("unable to locate orc_rt");
-
   // Construct the object linking layer.
   ee->objectLayer =
       std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee->executionSession);
@@ -301,7 +300,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // compilation target to be a subset of the host process, so disable it for
   // cross-compilation.
   if (!options.crossCompiling) {
-    if (auto err = setupPlatform(rtBuf, ee->dataLayout, platformStdlib,
+    if (auto err = setupPlatform(cfg, ee->dataLayout, platformStdlib,
                                  *ee->executionSession, *ee->objectLayer))
       return err.takeError();
   }
