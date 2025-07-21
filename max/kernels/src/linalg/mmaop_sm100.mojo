@@ -10,14 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from gpu.cluster import cluster_mask_base
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.id import block_id_in_cluster
 from gpu.memory import AddressSpace
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce
 from layout.tensor_core_async import tile_to_descriptor
 
-from utils.index import Index, IndexList
+from utils.index import Index, IndexList, product
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 from sys import sizeof
 
@@ -79,15 +83,20 @@ struct MmaOpSM100_SS[
     *,
     accum_type: DType = DType.float32,
     cta_group: Int = 1,
+    cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
 ](Defaultable):
     var idesc: UMMAInsDescriptor[UMMAKind.KIND_F16]
+    var mask: UInt16
 
     @always_inline
     fn __init__(out self):
         constrained[transpose_b, "MmaOpSM100 only supports transposed B"]()
+        constrained[
+            cta_group in (1, 2), "MmaOpSM100 only supports cta_group 1 or 2"
+        ]()
 
         self.idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
             accum_type,
@@ -96,6 +105,36 @@ struct MmaOpSM100_SS[
             Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
             transpose_b=transpose_b,
         ]()
+
+        self.mask = 0
+
+        # Here we compute the mask inside mma object to hide the complexity.
+        # We may get better asm if the mask if computed outside from TMA masks,
+        # and passed to `commit`, need to verify.
+        @parameter
+        if product(cluster_shape) > 1:
+            alias dim0_mask = cluster_mask_base[cluster_shape, 0]()
+            alias dim1_mask = cluster_mask_base[cluster_shape, 1]()
+
+            # The mask includes ctas on the same row and column in the cluster
+            # Example mask for cta (0, 1) is cluster (4,4)
+            #             x x x x
+            #             o x o o
+            #             o x o o
+            #             o x o o
+            self.mask = (
+                dim0_mask << (block_id_in_cluster.y * cluster_shape[0])
+            ) | (dim1_mask << block_id_in_cluster.x)
+
+            # Include peer cta's row
+            # Example mask for cta (0, 1) is cluster (4,4)
+            #             x x x x
+            #             x x x x
+            #             o x o o
+            #             o x o o
+            @parameter
+            if cta_group == 2:
+                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
 
     @always_inline
     fn mma(
@@ -136,7 +175,7 @@ struct MmaOpSM100_SS[
 
             var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
-            mma(
+            mma[cta_group](
                 a_desc + a_offset,
                 b_desc + b_offset,
                 c_tmem,
@@ -150,8 +189,10 @@ struct MmaOpSM100_SS[
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
     ):
         @parameter
-        if cta_group == 1:
+        if product(cluster_shape) == 1:
             mma_arrive(ptr_mbar)
+        else:
+            mma_arrive_multicast[cta_group](ptr_mbar, self.mask)
 
     @always_inline
     fn wait(self):

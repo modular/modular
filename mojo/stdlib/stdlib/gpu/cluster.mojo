@@ -26,6 +26,7 @@ from sys.info import _is_sm_100x_or_newer
 from sys._assembly import inlined_assembly
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from sys import sizeof, _RegisterPackType
+from utils.index import IndexList, product
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
@@ -383,3 +384,51 @@ fn clusterlaunchcontrol_try_cancel[
         has_side_effect=True,
         constraints="r,r",
     ](Int32(Int(result)), Int32(Int(mbar)))
+
+
+@always_inline("nodebug")
+fn cluster_mask_base[
+    cluster_shape: IndexList[3],
+    axis: Int,
+]() -> UInt16:
+    """Computes the base mask for a cluster. Base mask in an axis masks
+    the first cta in cluster and all ctas along the same axis.
+    Example for cluster shape (4, 4, 1), note that cta rank is contiguous
+    along the first cluster axis.
+
+         x o o o                       x x x x
+         x o o o                       o o o o
+         x o o o                       o o o o
+         x o o o                       o o o o
+    base mask in axis 0          base mask in axis 1
+
+
+    Parameters:
+        cluster_shape: The shape of the cluster.
+        axis: The axis to compute the base mask for.
+
+    Returns:
+        The base mask for the cluster.
+
+    """
+    constrained[
+        axis in (0, 1),
+        "axis must be one of 0, 1",
+    ]()
+
+    constrained[
+        product(cluster_shape) <= 16,
+        "cluster size must be less than or equal to 16",
+    ]()
+
+    @parameter
+    if axis == 0:
+        return (1 << cluster_shape[0]) - 1
+
+    var mask: UInt16 = 1
+
+    @parameter
+    for i in range(cluster_shape[1]):
+        mask |= mask << (i * cluster_shape[0])
+
+    return mask
