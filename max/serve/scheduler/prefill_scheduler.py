@@ -312,10 +312,6 @@ class PrefillScheduler(Scheduler):
 
         self.schedule()
 
-    def needs_dispatcher_client(self) -> bool:
-        """Whether the scheduler needs a dispatcher client."""
-        return True
-
 
 def load_prefill_scheduler(
     zmq_ctx: zmq.Context,

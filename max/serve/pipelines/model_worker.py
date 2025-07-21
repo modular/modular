@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import asyncio
 import ctypes
@@ -95,7 +96,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        dispatcher_factory: DispatcherFactory,
+        dispatcher_factory: DispatcherFactory | None = None,
     ) -> None:
         """Runs a model worker process.
 
@@ -128,7 +129,26 @@ class ModelWorker:
             zmq_ctx = zmq.Context(io_threads=2)
 
             # create dispatcher client
-            dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
+            pipeline_role = pipeline_config.pipeline_role
+
+            if (
+                not pipeline_role.needs_dispatcher_client()
+                and dispatcher_factory is not None
+            ):
+                logger.info(
+                    f"Dispatcher factory is not required for {pipeline_role}. Overriding with None."
+                )
+                dispatcher_factory = None
+
+            dispatcher_client = None
+            if pipeline_role.needs_dispatcher_client():
+                if dispatcher_factory is None:
+                    raise ValueError(
+                        f"Dispatcher factory is required for {pipeline_role} but was not provided"
+                    )
+                logger.debug(f"Starting dispatcher client for {pipeline_role}")
+                dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
+                dispatcher_client.start()
 
             # Retrieve Scheduler.
             scheduler = load_scheduler(
@@ -138,13 +158,6 @@ class ModelWorker:
                 settings,
                 dispatcher_client,
             )
-
-            if scheduler.needs_dispatcher_client():
-                # Create a dispatcher client
-                logger.debug(
-                    "Scheduler needs dispatcher client, starting dispatcher client"
-                )
-                dispatcher_client.start()
 
             # Mark the start of the process, and run the scheduler.
             pc.set_started()
@@ -218,9 +231,9 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    dispatcher_factory: DispatcherFactory,
     pipeline_task: PipelineTask,
     zmq_io_threads: int = 1,
+    dispatcher_factory: DispatcherFactory | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -229,9 +242,9 @@ async def start_model_worker(
         pipeline_config: The config for the pipeline
         settings: Global server settings
         metric_client: Metric client for recording metrics
-        dispatcher_factory: Factory for creating dispatcher client instances
         pipeline_task: The task for the pipeline
         zmq_io_threads: Number of IO threads for ZMQ
+        dispatcher_factory: Factory for creating dispatcher client instances
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.

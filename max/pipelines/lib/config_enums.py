@@ -66,6 +66,29 @@ class PipelineRole(str, Enum):
     PrefillOnly = "prefill_only"
     DecodeOnly = "decode_only"
 
+    def needs_dispatcher_client(self) -> bool:
+        """Whether the scheduler needs a dispatcher client to be started.
+
+        The dispatcher is a message routing system that enables communication between
+        components across instances. It handles:
+        - Request forwarding between schedulers on different instances
+        - Reply routing for request-response patterns
+
+        Schedulers that operate in isolation don't need the dispatcher client.
+        However, schedulers that are part of a distributed pipeline require the
+        dispatcher client to communicate with their counterparts.
+
+        When this method returns True, the ModelWorker will start the dispatcher client
+        before running the scheduler, enabling distributed message passing.
+
+        Returns:
+            bool: True if the scheduler requires dispatcher client startup, False otherwise.
+        """
+        return self in (
+            PipelineRole.PrefillOnly,
+            PipelineRole.DecodeOnly,
+        )
+
 
 class SupportedEncoding(str, Enum):
     """All possible encodings which may be supported by a particular model."""

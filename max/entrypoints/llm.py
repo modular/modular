@@ -203,8 +203,8 @@ async def _async_worker(
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
-            dispatcher_factory=dispatcher_factory,
             pipeline_task=pipeline_task,
+            dispatcher_factory=dispatcher_factory,
         ) as engine_queue,
         TokenGeneratorPipeline(
             model_name=model_name,

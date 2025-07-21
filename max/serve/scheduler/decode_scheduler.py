@@ -472,9 +472,6 @@ class DecodeScheduler(Scheduler):
         # Schedule Batch
         self.schedule(num_steps)
 
-    def needs_dispatcher_client(self) -> bool:
-        return True
-
 
 def load_decode_scheduler(
     zmq_ctx: zmq.Context,
