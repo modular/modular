@@ -13,7 +13,8 @@
 
 from math import align_up
 from sys import sizeof
-
+from layout._fillers import random
+from utils.numerics import min_finite, max_finite
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -68,6 +69,14 @@ fn tma_umma_kernel_pair_cta[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
+    constrained[
+        a_type == b_type and a_type in (DType.float8_e4m3fn, DType.bfloat16),
+        (
+            "a_type and b_type must be the same and either float8_e4m3fn or"
+            " bfloat16"
+        ),
+    ]()
+
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -182,7 +191,8 @@ fn tma_umma_kernel_pair_cta[
         b_smem_tile.ptr
     )
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    alias mma_kind = UMMAKind.KIND_F8F6F4 if a_type == DType.float8_e4m3fn else UMMAKind.KIND_F16
+    idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
         a_type,
         b_type,
@@ -349,7 +359,7 @@ def test_tma_umma_pair_cta[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext, handle: vendor_blas.Handle):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -361,7 +371,13 @@ def test_tma_umma_pair_cta[
     print(
         "mma_"
         + "s"
-        + "s_bf16_bf16_f32 block tile "
+        + "s_"
+        + String(a_type)
+        + "_"
+        + String(b_type)
+        + "_"
+        + String(c_type)
+        + " block tile "
         + String(block_tile_shape)
         + " transb="
         + String(transpose_b)
@@ -381,13 +397,24 @@ def test_tma_umma_pair_cta[
         a_type,
         Layout.row_major(M, K),
     ](ctx)
-    arange(a.tensor[update=False]())
+
+    random(
+        a.tensor[update=False](),
+        min=min_finite[a_type](),
+        max=max_finite[a_type](),
+    )
 
     alias b_layout = Layout.row_major(
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
-    arange(b.tensor[update=False]())
+    var b_col_major = ManagedLayoutTensor[b_type, Layout.row_major(N, K)](ctx)
+
+    random(
+        b.tensor[update=False](),
+        min=min_finite[b_type](),
+        max=max_finite[b_type](),
+    )
 
     var c = ManagedLayoutTensor[
         c_type,
@@ -449,14 +476,48 @@ def test_tma_umma_pair_cta[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
     )
 
-    vendor_blas.matmul(
-        ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
+    @parameter
+    if a_type == DType.float8_e4m3fn:
+
+        @parameter
+        if transpose_b:
+            vendor_blas.matmul(
+                ctx,
+                handle,
+                c_ref.device_buffer(),
+                a.device_buffer[update=False](),
+                b.device_buffer[update=False](),
+                c_row_major=True,
+                transpose_b=True,
+            )
+
+        else:
+            # NOTE: Matrix B should always be in col-major layout for cublasLt to work
+            var b_host_col_major = b_col_major.tensor()
+            var b_tensor = b.tensor()
+            for i in range(N):
+                for j in range(K):
+                    b_host_col_major[i, j] = b_tensor[j, i]
+
+            vendor_blas.matmul(
+                ctx,
+                handle,
+                c_ref.device_buffer(),
+                a.device_buffer[update=False](),
+                b_col_major.device_buffer[update=True](),
+                c_row_major=True,
+                transpose_b=True,
+            )
+    else:
+        vendor_blas.matmul(
+            ctx,
+            handle,
+            c_ref.device_buffer(),
+            a.device_buffer[update=False](),
+            b.device_buffer[update=False](),
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
 
     ctx.synchronize()
 
@@ -474,99 +535,115 @@ def test_tma_umma_pair_cta[
 
     _ = a^
     _ = b^
+    _ = b_col_major^
     _ = c^
     _ = c_ref^
 
 
 def main():
     with DeviceContext() as ctx:
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(256, 512, 128),
-            Index(64, 64, 64),
-            Index(128, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(256, 1024, 128),
-            Index(64, 128, 64),
-            Index(128, 256, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+        @parameter
+        for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
+            alias handle_type = vendor_blas.Backend.CUBLASLT if dtype == DType.float8_e4m3fn else vendor_blas.Backend.CUBLAS
+            alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 512, 128),
-            Index(64, 128, 64),
-            Index(128, 256, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+            @parameter
+            for swizzle in [
+                TensorMapSwizzle.SWIZZLE_32B,
+                TensorMapSwizzle.SWIZZLE_64B,
+                TensorMapSwizzle.SWIZZLE_128B,
+            ]:
+                alias BK = (swizzle.bytes() // sizeof[dtype]())
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(128, 256, 128),
-            Index(64, 128, 64),
-            Index(128, 256, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+                with vendor_blas.Handle[handle_type]() as cublas_handle:
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(256, 512, 2 * BK),
+                        Index(64, 64, BK),
+                        Index(128, 128, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(256, 128, 128),
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(256, 1024, 2 * BK),
+                        Index(64, 128, BK),
+                        Index(128, 256, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(256, 256, 128),
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(128, 512, 2 * BK),
+                        Index(64, 128, BK),
+                        Index(128, 256, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
 
-        test_tma_umma_pair_cta[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(512, 512, 128),
-            Index(128, 64, 64),
-            Index(256, 128, 16),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            cta_group=2,
-        ](ctx)
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(128, 256, 2 * BK),
+                        Index(64, 128, BK),
+                        Index(128, 256, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
+
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(256, 128, 2 * BK),
+                        Index(128, 64, BK),
+                        Index(256, 128, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
+
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(256, 256, 2 * BK),
+                        Index(128, 64, BK),
+                        Index(256, 128, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
+
+                    test_tma_umma_pair_cta[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        Index(512, 512, 2 * BK),
+                        Index(128, 64, BK),
+                        Index(256, 128, MMA_K),
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        cta_group=2,
+                    ](ctx, cublas_handle)
