@@ -133,6 +133,19 @@ mutation.
 
 - Python interop changes:
 
+  - Mojo functions can now natively accept
+    keyword arguments from Python using `OwnedKwargsDict[PythonObject]` as the
+    last parameter. This enables direct calling from Python with keyword
+    arguments without requiring wrapper functions.
+
+    ```mojo
+    from collections import OwnedKwargsDict
+
+    # Callable from Python as `foo(10, y=20)`
+    fn foo(x: PythonObject, kwargs: OwnedKwargsDict[PythonObject]):
+        y = kwargs["y"]
+    ```
+
   - The `PythonTypeBuilder` utility now allows:
     - registering bindings for Python static methods, i.e. methods that don't
       require an instance of the class.

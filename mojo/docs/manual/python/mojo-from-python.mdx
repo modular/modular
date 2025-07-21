@@ -354,30 +354,28 @@ fn foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
 
 ## Keyword arguments
 
-Keyword arguments are not currently supported natively in Python Mojo bindings,
-but a simple pattern can be used to provide them to users of your library, using
-a Python wrapper function that passes keyword arguments into Mojo using a dict.
+You can define Mojo functions that accept keyword arguments using
+[`OwnedKwargsDict[PythonObject]`](/mojo/stdlib/collections/dict/OwnedKwargsDict) as the last argument.
 
-A simple example of this pattern looks like:
+A simple example looks like:
 
 ```python
 import mojo_module
 
-def supports_kwargs(pos, *, kw1 = None, kw2 = None):
-    mojo_module.supports_kwargs(pos, { "kw1": kw1, "kw2": kw2})
+result = mojo_module.sum_kwargs_ints(a=10, b=20, c=30)  # returns 60
 ```
 
 ```mojo
-fn supports_kwargs(pos: PythonObject, kwargs: PythonObject) raises:
-    var kw1 = kwargs["kw1"]
-    var kw2 = kwargs["kw2"]
+from collections import OwnedKwargsDict
+
+ def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject:
+    var total = 0
+    for entry in kwargs.items():
+        total += Int(entry.value)
+    return PythonObject(total)
 ```
 
-Because keyword argument validation and default values are handled within the
-Python wrapper function, callers will get the standard argument errors they
-expect.
-And the Mojo code stays simple, as getting the keyword argument is a simple
-dictionary lookup.
+Getting keyword arguments is a dictionary lookup on the `OwnedKwargsDict`.
 
 ## Variadic functions
 
