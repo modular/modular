@@ -74,7 +74,7 @@ def is_mojo_source_package_path(path: Path) -> bool:
     Returns:
         bool: True if the path is a Mojo source package directory
     """
-    return _mojo_source_package_root_file(path) != None
+    return _mojo_source_package_root_file(path) is not None
 
 
 def find_mojo_module_in_dir(

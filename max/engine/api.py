@@ -272,7 +272,8 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ) -> None:
-        """
+        """Construct an inference session.
+
         Args:
             num_threads: Number of threads to use for the inference session.
               This defaults to the number of physical cores on your machine.
