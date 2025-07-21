@@ -12,7 +12,7 @@ from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
     AudioGeneratorOutput,
-    EmbeddingsResponse,
+    EmbeddingsOutput,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -22,7 +22,7 @@ from .task import PipelineTask
 __all__ = [
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
-    "EmbeddingsResponse",
+    "EmbeddingsOutput",
     "EngineResult",
     "EngineStatus",
     "GenerationStatus",

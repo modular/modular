@@ -9,8 +9,22 @@ import msgspec
 import numpy as np
 
 
-class EmbeddingsResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """Response structure for embedding generation."""
+class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
+    """
+    Response structure for embedding generation.
+
+    Configuration:
+        embeddings: The generated embeddings as a NumPy array.
+    """
 
     embeddings: np.ndarray
-    """The generated embeddings as a NumPy array."""
+
+    @property
+    def is_done(self) -> bool:
+        """
+        Indicates whether the embedding generation process is complete.
+
+        Returns:
+            bool: Always True, as embedding generation is a single-step operation.
+        """
+        return True
