@@ -58,10 +58,14 @@ alias Py_TPFLAGS_DEFAULT = 0
 #   This should be a C ABI function pointer, not a Mojo ABI function.
 # ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunction
 alias PyCFunction = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
+alias PyCFunctionWithKeywords = fn (
+    PyObjectPtr, PyObjectPtr, PyObjectPtr
+) -> PyObjectPtr
 
 # Flag passed to newmethodobject
 # ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
 alias METH_VARARGS = 0x01
+alias METH_KEYWORDS = 0x02
 alias METH_STATIC = 0x20
 
 
@@ -298,8 +302,7 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         called `ml_name` in CPython.
     """
 
-    # TODO(MSTDL-887): Support keyword-argument only methods
-    var method_impl: PyCFunction
+    var method_impl: OpaquePointer
     """A function pointer to the implementation of the method."""
 
     var method_flags: c_int
@@ -323,7 +326,7 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         This is suitable for use terminating an array of PyMethodDef values.
         """
         self.method_name = UnsafePointer[c_char]()
-        self.method_impl = _null_fn_ptr[PyCFunction]()
+        self.method_impl = OpaquePointer()
         self.method_flags = 0
         self.method_docstring = UnsafePointer[c_char]()
 
@@ -363,7 +366,26 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         alias flags = METH_VARARGS | (METH_STATIC if static_method else 0)
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
-            func,
+            rebind[OpaquePointer](func),
+            flags,
+            docstring.unsafe_ptr().bitcast[c_char](),
+        )
+
+    @staticmethod
+    fn function[
+        static_method: Bool = False
+    ](
+        func: PyCFunctionWithKeywords,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Create a PyMethodDef for a function with keyword arguments."""
+        alias flags = METH_VARARGS | METH_KEYWORDS | (
+            METH_STATIC if static_method else 0
+        )
+        return PyMethodDef(
+            func_name.unsafe_ptr().bitcast[c_char](),
+            rebind[OpaquePointer](func),
             flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )

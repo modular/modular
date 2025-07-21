@@ -29,6 +29,11 @@ fn PyInit_mojo_module() -> PythonObject:
             "mojo_count_args",
             docstring="Count the provided arguments",
         )
+        b.def_py_c_function_with_kwargs(
+            mojo_count_args_with_kwargs,
+            "mojo_count_args_with_kwargs",
+            docstring="Count the provided arguments and keyword arguments",
+        )
         return b.finalize()
     except e:
         return abort[PythonObject](
@@ -41,3 +46,16 @@ fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     var cpython = Python().cpython()
 
     return PythonObject(cpython.PyObject_Length(args))._obj_ptr
+
+
+@export
+fn mojo_count_args_with_kwargs(
+    py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
+) -> PyObjectPtr:
+    var cpython = Python().cpython()
+    if kwargs:
+        return PythonObject(
+            cpython.PyObject_Length(args) + cpython.PyObject_Length(kwargs)
+        )._obj_ptr
+    else:
+        return PythonObject(cpython.PyObject_Length(args))._obj_ptr

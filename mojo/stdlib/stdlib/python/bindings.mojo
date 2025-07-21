@@ -27,6 +27,7 @@ from python._cpython import (
     Py_tp_methods,
     Py_tp_repr,
     PyCFunction,
+    PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
     PyObjectPtr,
@@ -342,6 +343,25 @@ struct PythonModuleBuilder:
         docstring: StaticString = "",
     ):
         """Declare a binding for a function with PyCFunction signature in the
+        module.
+
+        Args:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
+    # TODO(MOCO-2212): Make this an overload of `def_py_c_function`.
+    fn def_py_c_function_with_kwargs(
+        mut self,
+        func: PyCFunctionWithKeywords,
+        func_name: StaticString,
+        docstring: StaticString = "",
+    ):
+        """Declare a binding for a function with PyCFunctionWithKeywords signature in the
         module.
 
         Args:
