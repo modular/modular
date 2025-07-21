@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 from max.driver import DeviceStream, Tensor
@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     GenerationStatus,
-    TextGenerationResponse,
-    TextResponse,
+    LogProbabilities,
+    TextGenerationOutput,
 )
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import (
@@ -59,7 +59,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         batch: dict[str, TTSContext],
         num_steps: int,
         tokens_to_generate: dict[str, int],
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -255,11 +255,20 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         num_steps = i + 1
 
         # Prepare the response, pruning away completed requests as we go.
-        res: dict[str, TextGenerationResponse] = {}
+        res: dict[str, TextGenerationOutput] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
             status = GenerationStatus.ACTIVE
-            res[request_id] = TextGenerationResponse([], status)
+            start_log_probs: Optional[list[LogProbabilities]] = None
+            if context.log_probabilities:
+                start_log_probs = []
+
+            res[request_id] = TextGenerationOutput(
+                request_id=request_id,
+                tokens=[],
+                final_status=status,
+                log_probabilities=start_log_probs,
+            )
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
             for step in range(num_valid_tokens):
                 # Convert to a Python scalar to improve serialization performance.
@@ -267,13 +276,15 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
                 context.update(new_token=next_token)
 
-                res[request_id].update_status(context.speech_token_status)
+                res[request_id].final_status = context.speech_token_status
                 if context.speech_token_status.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.
             for token, log_probs in context.outstanding_completion_tokens():
-                res[request_id].append_token(TextResponse(token, log_probs))
+                res[request_id].tokens.append(token)
+                if log_probs and res[request_id].log_probabilities is not None:
+                    res[request_id].log_probabilities.append(log_probs)  # type: ignore
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

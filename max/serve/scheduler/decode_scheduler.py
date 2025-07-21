@@ -21,8 +21,7 @@ from typing import Union
 import zmq
 from max.interfaces import (
     EngineResult,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.nn.kv_cache import (
@@ -90,9 +89,9 @@ class DecodeScheduler(Scheduler):
                 tuple[str, Union[TextContext, TextAndVisionContext]]
             ),
         )
-        self.response_push_socket = ZmqPushSocket[tuple[str, TextResponse]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
-        )
+        self.response_push_socket = ZmqPushSocket[
+            tuple[str, TextGenerationOutput]
+        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
         self.cancel_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ](
@@ -171,7 +170,7 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: dict[str, EngineResult[TextResponse]]
+        self, responses: dict[str, EngineResult[TextGenerationOutput]]
     ) -> None:
         """Pushes response messages to the response socket.
 
@@ -398,7 +397,7 @@ class DecodeScheduler(Scheduler):
 
     @traced
     def stream_responses_to_frontend(
-        self, responses: dict[str, TextGenerationResponse]
+        self, responses: dict[str, TextGenerationOutput]
     ) -> None:
         """Streams text generation responses to the frontend by converting them into a format suitable for streaming.
 
@@ -408,7 +407,7 @@ class DecodeScheduler(Scheduler):
         if not responses:
             return
 
-        stream_responses: dict[str, EngineResult[TextResponse]] = {}
+        stream_responses: dict[str, EngineResult[TextGenerationOutput]] = {}
         for request_id, response in responses.items():
             if response.is_done:
                 stream_responses[request_id] = EngineResult.complete(response)
@@ -418,7 +417,7 @@ class DecodeScheduler(Scheduler):
         self.push_to_response_socket(stream_responses)
 
     def _handle_terminated_responses(
-        self, responses: dict[str, TextGenerationResponse]
+        self, responses: dict[str, TextGenerationOutput]
     ) -> None:
         """Handles cleanup for completed text generation responses by releasing cache and removing from active batch.
 

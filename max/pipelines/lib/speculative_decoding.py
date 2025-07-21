@@ -32,8 +32,7 @@ from max.graph.weights import (
 from max.interfaces import (
     GenerationStatus,
     InputContext,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.nn import ReturnLogits
@@ -626,7 +625,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def next_token(
         self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.
@@ -777,7 +776,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: dict[str, T],
         context_batch: list[T],
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Build response from updated contexts.
 
         Args:
@@ -785,13 +784,15 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             context_batch: The list of context objects
 
         Returns:
-            Dictionary mapping request IDs to TextGenerationResponse objects
+            Dictionary mapping request IDs to TextGenerationOutput objects
         """
-        res: dict[str, TextGenerationResponse] = {}
+        res: dict[str, TextGenerationOutput] = {}
         request_ids = list(batch.keys())
 
-        for idx, context in enumerate(context_batch):
-            res[request_ids[idx]] = TextGenerationResponse([], context.status)
+        for _, context in enumerate(context_batch):
+            tokens = []
+            log_probabilities = []
+            final_status = context.status
 
             # Identify the Max Length
             context_max_length = upper_bounded_default(
@@ -808,16 +809,25 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
                 if current_length >= context_max_length:
                     context.update_status(GenerationStatus.MAXIMUM_LENGTH)
-                    res[request_ids[idx]].update_status(context.status)
-
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
+                    final_status = context.status
+                    tokens.append(token)
+                    if log_probs is not None:
+                        log_probabilities.append(log_probs)
                     break
                 else:
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
+                    tokens.append(token)
+                    if log_probs is not None:
+                        log_probabilities.append(log_probs)
+
+            # Create TextGenerationOutput
+            res[context.request_id] = TextGenerationOutput(
+                request_id=context.request_id,
+                tokens=tokens,
+                final_status=final_status,
+                log_probabilities=log_probabilities
+                if log_probabilities
+                else None,
+            )
 
         return res
 

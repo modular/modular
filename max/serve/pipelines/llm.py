@@ -142,7 +142,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         tracer = Tracer("tokenizer.decode")
                         decoded_token = await self.tokenizer.decode(
                             context,
-                            token.next_token,
+                            token,
                             skip_special_tokens=skip_special_tokens,
                         )
                         del tracer  # tokenizer.decode
@@ -166,7 +166,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
                         token_log_probabilities = None
                         top_log_probabilities = None
-                        if log_prob := token.log_probabilities:
+                        if response.log_probabilities:
+                            log_prob = response.log_probabilities[i]
                             tracer = Tracer("collect_log_probs")
                             (
                                 token_log_probabilities,

@@ -21,7 +21,11 @@ from enum import Enum
 from typing import Any, Generic, TypeVar, Union
 
 import zmq
-from max.interfaces import EngineResult, TextGenerationResponse, TokenGenerator
+from max.interfaces import (
+    EngineResult,
+    TextGenerationOutput,
+    TokenGenerator,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
@@ -177,7 +181,7 @@ class TokenGenerationScheduler(Scheduler):
             ),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[TextGenerationResponse]]
+            dict[str, EngineResult[TextGenerationOutput]]
         ](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
@@ -676,7 +680,7 @@ class TokenGenerationScheduler(Scheduler):
     def _handle_terminated_responses(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationResponse],
+        batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Task that handles responses"""
         if batch_responses is None:
@@ -698,7 +702,7 @@ class TokenGenerationScheduler(Scheduler):
     def _handle_chunked_requests(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationResponse],
+        batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Handle chunked requests"""
         # Only the last request in a batch could be chunked. We discard its response
@@ -736,12 +740,12 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _stream_responses_to_frontend(
-        self, batch_responses: dict[str, TextGenerationResponse]
+        self, batch_responses: dict[str, TextGenerationOutput]
     ) -> None:
         if not batch_responses:
             return
 
-        responses: dict[str, EngineResult[TextGenerationResponse]] = {}
+        responses: dict[str, EngineResult[TextGenerationOutput]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:
                 responses[request_id] = EngineResult.complete(response)

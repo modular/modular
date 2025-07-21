@@ -79,10 +79,9 @@ async def stream_text_to_console(
                 if response.is_done:
                     generate_again = False
 
-                for text_response in response.tokens:
-                    encoded_text = text_response.next_token
+                for encoded_token in response.tokens:
                     response_text = await tokenizer.decode(
-                        context, encoded_text
+                        context, encoded_token
                     )
                     if metrics:
                         if first_token:
