@@ -8,7 +8,7 @@ import asyncio
 import time
 from datetime import datetime
 from multiprocessing import Process, Queue
-from typing import Callable, Union, cast
+from typing import Callable, Union
 from unittest.mock import Mock
 
 import numpy as np
@@ -17,7 +17,7 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import InputContext, TextGenerationResponse, TextResponse
+from max.interfaces import InputContext, TextGenerationOutput
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -55,18 +55,26 @@ from max.serve.scheduler.prefill_scheduler import (
 def mock_pipeline():
     def next_token_behavior(
         batch: dict[str, TextContext],
-        num_steps=1,  # noqa: ANN001
-    ) -> dict[str, TextGenerationResponse]:
+        num_steps: int = 1,
+    ) -> dict[str, TextGenerationOutput]:
+        from max.interfaces import GenerationStatus
+
         responses = {}
 
         for request_id, request in batch.items():
-            responses[request_id] = Mock()
-            responses[request_id].tokens = []
-            responses[request_id].is_done = False
+            tokens = []
             for _ in range(num_steps):
                 request.update(new_token=1)
+                tokens.append(1)
 
-        return cast(dict[str, TextGenerationResponse], responses)
+            responses[request_id] = TextGenerationOutput(
+                request_id=request_id,
+                tokens=tokens,
+                final_status=GenerationStatus.ACTIVE,
+                log_probabilities=None,
+            )
+
+        return responses
 
     pipeline = Mock()
     pipeline.next_token = Mock(side_effect=next_token_behavior)
@@ -297,7 +305,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     )
 
     # Create response pull socket
-    response_pull_socket = ZmqPullSocket[tuple[str, TextResponse]](
+    response_pull_socket = ZmqPullSocket[tuple[str, TextGenerationOutput]](
         zmq_ctx, zmq_endpoint=decode_response_zmq_path
     )
 

@@ -15,8 +15,7 @@ import zmq
 from max.interfaces import (
     EngineResult,
     GenerationStatus,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
 )
 from max.pipelines.core import (
     TextAndVisionContext,
@@ -46,23 +45,19 @@ def mock_pipeline():
     def next_token_behavior(
         batch: dict[str, TextContext],
         num_steps=1,  # noqa: ANN001
-    ) -> dict[str, TextGenerationResponse]:
-        responses: dict[str, TextGenerationResponse] = {}
+    ) -> dict[str, TextGenerationOutput]:
+        responses: dict[str, TextGenerationOutput] = {}
 
         for request_id, request in batch.items():
             # Update the InputContext.
             request.update(0)
 
             # Return a valid response.
-            responses[request_id] = TextGenerationResponse(
-                tokens=[
-                    TextResponse(
-                        next_token=0,
-                        log_probabilities=None,
-                    ),
-                    TextResponse(next_token=0, log_probabilities=None),
-                ],
+            responses[request_id] = TextGenerationOutput(
+                request_id=request_id,
+                tokens=[0, 0],  # Two tokens with ID 0
                 final_status=GenerationStatus.ACTIVE,
+                log_probabilities=None,
             )
 
         return responses
@@ -236,7 +231,7 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationOutput]]
     ](
         zmq_ctx,
         scheduler.response_q.zmq_endpoint,
@@ -270,7 +265,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_ce(sch_output)
@@ -299,7 +294,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     request_push_socket.put(("req1", mock_request))
@@ -350,7 +345,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
@@ -389,7 +384,7 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationResponse]]
+        dict[str, EngineResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_tg(sch_output)
