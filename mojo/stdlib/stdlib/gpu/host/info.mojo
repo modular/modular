@@ -24,7 +24,7 @@ from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
-alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
+alias DEFAULT_GPU = GPUInfo.from_name[DEFAULT_GPU_ARCH]()
 alias DEFAULT_GPU_TARGET = DEFAULT_GPU.target()
 
 alias _KB = 1024
@@ -154,7 +154,7 @@ fn _get_empty_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias NoGPU = Info(
+alias NoGPU = GPUInfo(
     name="NoGPU",
     vendor=Vendor.NO_GPU,
     api="none",
@@ -214,7 +214,7 @@ fn _get_a100_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias A100 = Info(
+alias A100 = GPUInfo(
     name="A100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -266,7 +266,7 @@ fn _get_a10_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias A10 = Info(
+alias A10 = GPUInfo(
     name="A10",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -318,7 +318,7 @@ fn _get_orin_nano_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias OrinNano = Info(
+alias OrinNano = GPUInfo(
     name="Orin Nano",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -371,7 +371,7 @@ fn _get_l4_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias L4 = Info(
+alias L4 = GPUInfo(
     name="L4",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -423,7 +423,7 @@ fn _get_rtx4090m_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias RTX4090m = Info(
+alias RTX4090m = GPUInfo(
     name="RTX4090m",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -475,7 +475,7 @@ fn _get_rtx4090_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias RTX4090 = Info(
+alias RTX4090 = GPUInfo(
     name="RTX4090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -529,7 +529,7 @@ fn _get_h100_target() -> __mlir_type.`!kgen.target`:
 
 
 # https://resources.nvidia.com/en-us-tensor-core/gtc22-whitepaper-hopper
-alias H100 = Info(
+alias H100 = GPUInfo(
     name="H100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -584,7 +584,7 @@ fn _get_b100_target() -> __mlir_type.`!kgen.target`:
 
 # https://resources.nvidia.com/en-us-blackwell-architecture
 # TODO: Update once we have B100 access.
-alias B100 = Info(
+alias B100 = GPUInfo(
     name="B100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -611,7 +611,7 @@ alias B100 = Info(
     max_thread_block_size=1024,
 )
 
-alias B200 = Info(
+alias B200 = GPUInfo(
     name="B200",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -664,7 +664,7 @@ fn _get_rtx5090_target() -> __mlir_type.`!kgen.target`:
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
-alias RTX5090 = Info(
+alias RTX5090 = GPUInfo(
     name="RTX5090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -717,7 +717,7 @@ fn _get_rtx2060_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias RTX2060 = Info(
+alias RTX2060 = GPUInfo(
     name="RTX2060",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -769,7 +769,7 @@ fn _get_mi300x_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias MI300X = Info(
+alias MI300X = GPUInfo(
     name="MI300X",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -916,7 +916,7 @@ fn _get_780m_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias Radeon9070 = Info(
+alias Radeon9070 = GPUInfo(
     name="Radeon 9070",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -943,7 +943,7 @@ alias Radeon9070 = Info(
     max_thread_block_size=1024,
 )
 
-alias Radeon9060 = Info(
+alias Radeon9060 = GPUInfo(
     name="Radeon 9060",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -970,7 +970,7 @@ alias Radeon9060 = Info(
     max_thread_block_size=1024,
 )
 
-alias Radeon7900 = Info(
+alias Radeon7900 = GPUInfo(
     name="Radeon 7900",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -997,7 +997,7 @@ alias Radeon7900 = Info(
     max_thread_block_size=1024,
 )
 
-alias Radeon7800 = Info(
+alias Radeon7800 = GPUInfo(
     name="Radeon 7800/7700",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1024,7 +1024,7 @@ alias Radeon7800 = Info(
     max_thread_block_size=1024,
 )
 
-alias Radeon7600 = Info(
+alias Radeon7600 = GPUInfo(
     name="Radeon 7600",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1052,7 +1052,7 @@ alias Radeon7600 = Info(
 )
 
 
-alias Radeon780m = Info(
+alias Radeon780m = GPUInfo(
     name="Radeon 780M",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1081,13 +1081,13 @@ alias Radeon780m = Info(
 
 
 # ===-----------------------------------------------------------------------===#
-# Info
+# GPUInfo
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
 @register_passable
-struct Info(Stringable, Writable):
+struct GPUInfo(Stringable, Writable):
     """
     Comprehensive information about a GPU architecture.
 
@@ -1214,7 +1214,7 @@ struct Info(Stringable, Writable):
     @staticmethod
     fn from_target[target: __mlir_type.`!kgen.target`]() -> Self:
         """
-        Creates an Info instance from an MLIR target.
+        Creates a `GPUInfo` instance from an MLIR target.
 
         Parameters:
             target: MLIR target configuration.
@@ -1227,7 +1227,7 @@ struct Info(Stringable, Writable):
     @staticmethod
     fn from_name[name: StaticString]() -> Self:
         """
-        Creates an Info instance from a GPU architecture name.
+        Creates a `GPUInfo` instance from a GPU architecture name.
 
         Parameters:
             name: GPU architecture name (e.g., "sm_80", "gfx942").
@@ -1450,7 +1450,7 @@ struct Info(Stringable, Writable):
         Compares if this GPU has lower compute capability than another.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if this GPU has lower compute capability, False otherwise.
@@ -1466,7 +1466,7 @@ struct Info(Stringable, Writable):
         Compares if this GPU has lower or equal compute capability.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if this GPU has lower or equal compute capability.
@@ -1482,7 +1482,7 @@ struct Info(Stringable, Writable):
         Compares if this GPU has higher compute capability than another.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if this GPU has higher compute capability, False otherwise.
@@ -1496,7 +1496,7 @@ struct Info(Stringable, Writable):
         Compares if this GPU has higher or equal compute capability.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if this GPU has higher or equal compute capability.
@@ -1507,10 +1507,10 @@ struct Info(Stringable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         """
-        Checks if two GPU Info instances represent the same GPU model.
+        Checks if two `GPUInfo` instances represent the same GPU model.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if both instances represent the same GPU model.
@@ -1519,10 +1519,10 @@ struct Info(Stringable, Writable):
 
     fn __ne__(self, other: Self) -> Bool:
         """
-        Checks if two GPU Info instances represent different GPU models.
+        Checks if two `GPUInfo` instances represent different GPU models.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if instances represent different GPU models.
@@ -1531,10 +1531,10 @@ struct Info(Stringable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         """
-        Identity comparison operator for GPU Info instances.
+        Identity comparison operator for `GPUInfo` instances.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if both instances represent the same GPU model.
@@ -1543,10 +1543,10 @@ struct Info(Stringable, Writable):
 
     fn __isnot__(self, other: Self) -> Bool:
         """
-        Negative identity comparison operator for GPU Info instances.
+        Negative identity comparison operator for `GPUInfo` instances.
 
         Args:
-            other: Another GPU Info instance to compare against.
+            other: Another `GPUInfo` instance to compare against.
 
         Returns:
             True if instances represent different GPU models.
@@ -1654,18 +1654,18 @@ struct Info(Stringable, Writable):
 
 
 @always_inline
-fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
+fn _get_info_from_compute_capability[compute_capability: Int]() -> GPUInfo:
     """
-    Gets GPU Info for a specific compute capability (compile-time version).
+    Gets `GPUInfo` for a specific compute capability (compile-time version).
 
-    Maps compute capability numbers to corresponding GPU Info instances at
+    Maps compute capability numbers to corresponding `GPUInfo` instances at
     compile time.
 
     Parameters:
         compute_capability: The compute capability as an integer.
 
     Returns:
-        Info instance for the specified compute capability.
+        `GPUInfo` instance for the specified compute capability.
     """
     constrained[
         compute_capability in (0, 75, 80, 86, 87, 89, 90, 94, 100, 110, 120),
@@ -1695,22 +1695,22 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         return RTX5090
     elif compute_capability == 94:
         return MI300X
-    return abort[Info]("invalid compute capability")
+    return abort[GPUInfo]("invalid compute capability")
 
 
 @always_inline
-fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
+fn _get_info_from_compute_capability(compute_capability: Int) raises -> GPUInfo:
     """
-    Gets GPU Info for a specific compute capability (runtime version).
+    Gets `GPUInfo` for a specific compute capability (runtime version).
 
-    Maps compute capability numbers to corresponding GPU Info instances at
+    Maps compute capability numbers to corresponding `GPUInfo` instances at
     runtime.
 
     Args:
         compute_capability: The compute capability as an integer.
 
     Returns:
-        Info instance for the specified compute capability.
+        `GPUInfo` instance for the specified compute capability.
     """
     if compute_capability == 0:
         return _get_info_from_compute_capability[0]()
@@ -1738,17 +1738,17 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
 
 
 @always_inline
-fn _get_info_from_target[target_arch0: StaticString]() -> Info:
+fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """
-    Gets GPU Info for a specific target architecture.
+    Gets `GPUInfo` for a specific target architecture.
 
-    Maps target architecture strings to corresponding GPU Info instances.
+    Maps target architecture strings to corresponding `GPUInfo` instances.
 
     Parameters:
         target_arch0: Target architecture string (e.g., "sm_80", "gfx942").
 
     Returns:
-        Info instance for the specified target architecture.
+        `GPUInfo` instance for the specified target architecture.
     """
     alias target_arch = target_arch0.replace("sm_", "").replace(
         "nvidia:", ""
