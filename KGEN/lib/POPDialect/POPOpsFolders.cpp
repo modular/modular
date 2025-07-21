@@ -937,7 +937,9 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       typeValues.push_back(DTypeValue(value, outputDType));
     }
   };
-  bool isLittleEndian = target ? target.getTriple().isLittleEndian() : true;
+
+  bool isLittleEndian =
+      target ? target.getDataLayout().getIsLittleEndian() : true;
   if (inWidth < outWidth) {
     unsigned elementsPerOutput = outWidth / inWidth;
     for (unsigned outIdx = 0; outIdx < outSize; outIdx++) {
@@ -976,13 +978,16 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       typeValues, SIMDType::get(operand.getContext(), outSize, outputDType));
 }
 
-OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
+OpFoldResult evaluate(BitcastOp bitcastOp, TargetInfoAttr target,
+                      Attribute operand) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
-  std::optional<KGENDType> inputDType = getInput().getType().getResolvedDType();
-  std::optional<unsigned> inputSize = getInput().getType().getResolvedSize();
-  std::optional<unsigned> outputSize = getType().getResolvedSize();
+  std::optional<KGENDType> dtype = bitcastOp.getType().getResolvedDType();
+  std::optional<KGENDType> inputDType =
+      bitcastOp.getInput().getType().getResolvedDType();
+  std::optional<unsigned> inputSize =
+      bitcastOp.getInput().getType().getResolvedSize();
+  std::optional<unsigned> outputSize = bitcastOp.getType().getResolvedSize();
   if (!dtype || !inputDType || !inputSize || !outputSize)
     return {};
 
@@ -990,8 +995,6 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
       dtype->isBool()) // Modeling bool bitcast requires packing.
     return {};
 
-  TargetInfoAttr target = lookupTargetInfo(*this);
-  auto operand = adaptor.getOperands().front();
   if (isa_and_nonnull<SIMDAttr>(operand) && inputSize != outputSize &&
       operand) {
     return reshape(cast<SIMDAttr>(operand), *inputDType, *inputSize, *dtype,
@@ -999,7 +1002,7 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   }
   if (dtype->isInt()) {
     return bitcastSIMDIndex(
-        adaptor.getOperands(), *inputDType, *dtype, target,
+        operand, *inputDType, *dtype, target,
         [&](const APSInt &in) { return APSInt(in, dtype->isUInt()); },
         [&](const APFloat &in) {
           return APSInt(in.bitcastToAPInt(), dtype->isUInt());
@@ -1007,7 +1010,7 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   }
   if (dtype->isIndex()) {
     return foldSIMDOpResult<::Detail::kOtherResult>(
-        adaptor.getOperands(), *dtype,
+        operand, *dtype,
         [&](const APSInt &in) -> APSInt {
           // Must zero extend to 64bit, otherwise there will be segfault during
           // SIMDAttr construction as it expects 64bit index by default.
@@ -1025,9 +1028,24 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   if (!sem)
     return {};
   return bitcastSIMDIndex(
-      adaptor.getOperands(), *inputDType, *dtype, target,
+      operand, *inputDType, *dtype, target,
       [&](const APSInt &in) { return APFloat(*sem, in); },
       [&](const APFloat &in) { return APFloat(*sem, in.bitcastToAPInt()); });
+}
+
+ErrorTreeOrSuccess BitcastOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  OpFoldResult result = evaluate(*this, state.getTarget(), operands.front());
+  if (result && isa<Attribute>(result)) {
+    state.mapResults(cast<Attribute>(result));
+    return success();
+  }
+  return ErrorTree(getLoc(), "failed to interpret bitcast");
+}
+
+OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
+  return evaluate(*this, lookupTargetInfo(*this),
+                  adaptor.getOperands().front());
 }
 
 //===----------------------------------------------------------------------===//

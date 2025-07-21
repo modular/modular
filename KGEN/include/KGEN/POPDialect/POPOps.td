@@ -471,7 +471,7 @@ def POP_SIMDXOrOp : POP_BitwiseOp<"simd.xor"> {
 // BitCastOp
 //===----------------------------------------------------------------------===//
 
-def POP_BitcastOp : POPOp<"bitcast", [Pure]> {
+def POP_BitcastOp : POPOp<"bitcast", [Pure, DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "scalar and simd bitcast";
   let description = [{
     Bitcast an integer or floating point value to an integer or floating point
