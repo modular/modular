@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "pkg_files", "strip_prefix")
 
 modular_py_library(
     name = "support",
@@ -6,10 +6,6 @@ modular_py_library(
     data = ["modular/utils/debuglib/py.typed"],
     imports = ["."],
     visibility = ["//visibility:public"],
-    deps = [
-        requirement("numpy"),
-        requirement("pyyaml"),
-    ],
 )
 
 modular_py_test(
