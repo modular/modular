@@ -514,7 +514,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
-                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+                strict=True,
             )
 
             self.state_dict = nn_model.state_dict()
@@ -560,7 +560,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
-                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+                strict=True,
             )
 
             self.state_dict = nn_model.state_dict()
