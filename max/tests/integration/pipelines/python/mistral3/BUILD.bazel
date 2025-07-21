@@ -1,0 +1,18 @@
+# Mistral3 integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_test(
+    name = "tests",
+    size = "medium",
+    srcs = glob(["test_*.py"]),
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        requirement("pytest-mock"),
+    ],
+)
