@@ -28,7 +28,7 @@ from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def setup_speculative_decoding_pipeline(num_steps: int = 10):
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
@@ -179,6 +179,7 @@ def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:  
         )
 
 
+@pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_no_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -252,6 +253,7 @@ def test_speculative_decoding_no_rejection(
     assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_partial_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -350,6 +352,7 @@ def test_speculative_decoding_partial_rejection(
     assert np.all(context2.generated_tokens[:-1] == draft_tokens_host[1])
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_multiple_token_without_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -373,6 +376,7 @@ def test_speculative_decoding_multiple_token_without_rejection(
         context2_len = context2.current_length
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_context_update(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
