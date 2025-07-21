@@ -394,14 +394,14 @@ class InternVisionEmbeddings(Module, Shardable):
             "class_embedding",
             dtype=self.dtype,
             shape=(1, 1, self.embed_dim),
-            device=DeviceRef.CPU() if not device else device,
+            device=device if device else DeviceRef.CPU(),
         )
 
         self.position_embedding = Weight(
             "position_embedding",
             dtype=self.dtype,
             shape=(1, self.num_positions, self.embed_dim),
-            device=DeviceRef.CPU() if not device else device,
+            device=device if device else DeviceRef.CPU(),
         )
 
     @property

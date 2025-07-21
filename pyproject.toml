@@ -71,7 +71,17 @@ ignore = [
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
   "RUF009", # Do not perform function call in dataclass defaults
+  "SIM101", # Duplicate isinstance
+  "SIM102", # Collapsible if
+  "SIM105", # Suppressible exception
+  "SIM108", # Use ternary operator
+  "SIM114", # Combine arms with or
+  "SIM115", # Use context manager for opening files
+  "SIM117", # Merge with statements
+  "SIM300", # YODA conditions
+  "SIM905", # Use a list literal instead of str.split
   "UP007", # TODO: Enable when we drop 3.9
+
 ]
 extend-select = [
   "ANN", # Require function type annotations
@@ -80,8 +90,7 @@ extend-select = [
   "FURB", # Refurb lints for modernization
   "I", # Import sorting lints
   "RUF", # Ruff specific lints
-  "SIM103", # Return condition directly instead of using if/else
-  "SIM118", # Use `key in dict` instead of `key in dict.keys()`
+  "SIM", # Simplify lints
   "T10", # Checks for the presence of debugger calls and imports.
   "UP", # Type annotations should not use Union, Optional, etc
 ]

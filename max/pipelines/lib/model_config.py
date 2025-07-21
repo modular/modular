@@ -539,7 +539,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
                 self.quantization_encoding = supported_encodings[0]
-            elif not self.default_device_spec.device_type == "cpu":
+            elif self.default_device_spec.device_type != "cpu":
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
                 if SupportedEncoding.float8_e4m3fn in supported_encodings:

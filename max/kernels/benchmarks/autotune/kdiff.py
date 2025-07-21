@@ -73,7 +73,7 @@ def check_argo_workflow_exists(git_sha):  # noqa: ANN001
     result = shell(
         f'argo list --prefix "kernels-{git_sha}" --completed -o yaml'
     )
-    if not result[0] == "[]":
+    if result[0] != "[]":
         result_yaml = yaml.safe_load("\n".join(result))
         return result_yaml
     return None

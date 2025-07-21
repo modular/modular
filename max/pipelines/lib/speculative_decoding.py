@@ -218,7 +218,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
-            adapter=weight_adapters.get(_target_weights_format, None),
+            adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
         )
 
@@ -321,7 +321,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
-            adapter=weight_adapters.get(_draft_weights_format, None),
+            adapter=weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
         )
 
