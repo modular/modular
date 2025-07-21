@@ -69,7 +69,6 @@ def _sdk_default_env() -> dict[str, str]:
         # env["MODULAR_MOJO_MAX_LLDB_VSCODE_PATH"] = str(bin / "mojo-lldb-dap")
         "MODULAR_MOJO_MAX_LSP_SERVER_PATH": str(bin / "mojo-lsp-server"),
         # MODULAR_MOJO_MAX_MBLACK_PATH
-        "MODULAR_MOJO_MAX_ORCRT_PATH": str(lib / "liborc_rt.a"),
         "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
         "MODULAR_MOJO_MAX_LLD_PATH": str(bin / "lld"),
         "MODULAR_MOJO_MAX_SYSTEM_LIBS": (

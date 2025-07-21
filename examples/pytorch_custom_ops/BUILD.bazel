@@ -16,7 +16,6 @@ custom_op_example_py_binary(
         ":operations",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -32,7 +31,6 @@ custom_op_example_py_binary(
         ":operations",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -49,7 +47,6 @@ custom_op_example_py_binary(
         ":operations",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -67,7 +64,6 @@ custom_op_example_py_binary(
     extra_data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
