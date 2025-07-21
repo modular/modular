@@ -68,9 +68,6 @@ public:
   /// Return the path to the kgen-compiler-rt library.
   StringRef getCompilerRTPath();
 
-  /// Return the path to the orc-rt library.
-  StringRef getOrcRTPath();
-
   /// Return the path to the mgp-rt library.
   StringRef getMGPRTPath();
 
