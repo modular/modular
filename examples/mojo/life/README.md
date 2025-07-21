@@ -45,7 +45,8 @@ This displays a window that shows an initial random state for the grid and then
 automatically updates it with subsequent generations. Quit the program by
 pressing the `q` or `<Escape>` key or by closing the window.
 
-You can execute version 2 or version 3 of the program by running the following command:
+You can execute version 2 or version 3 of the program by running one of the
+following commands:
 
 ```bash
 pixi run lifev2
