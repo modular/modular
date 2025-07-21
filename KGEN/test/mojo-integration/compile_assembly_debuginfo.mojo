@@ -20,8 +20,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
 
 fn main():
     alias myCompiledFn = compiled_fn[DType.uint32]
-    var myAsm = compile_info[myCompiledFn, emission_kind="llvm"]()
-    print(myAsm)
+    print(compile_info[myCompiledFn, emission_kind="llvm"]())
 
 
 # CHECK: define {{.*}} @"compile_assembly_debuginfo::compiled_fn{{.*}} !dbg ![[SP:[0-9]+]]

@@ -18,5 +18,4 @@ fn param_fn[x: Int, y: Int]() -> Int:
 def main():
     # intentionally missing one parameter
     alias myInstantiatedFn = param_fn[2]
-    var asm = compile_info[myInstantiatedFn]()
-    print(asm)
+    print(compile_info[myInstantiatedFn]())
