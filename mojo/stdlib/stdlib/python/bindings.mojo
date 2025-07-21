@@ -235,6 +235,15 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
+alias PyFunctionWithKeywords = fn (
+    mut PythonObject, mut PythonObject, mut PythonObject
+) -> PythonObject
+"""The generic function type for non-raising Python bindings with keyword arguments.
+
+The first argument is the self object, the second argument is a tuple of the
+positional arguments, and the third argument is a dictionary of the keyword arguments.
+"""
+
 alias PyFunctionRaising = fn (
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
@@ -243,6 +252,15 @@ alias PyFunctionRaising = fn (
 The first argument is the self object, and the second argument is a tuple of the
 positional arguments. These functions always return a Python object (could be a
 `None` object).
+"""
+
+alias PyFunctionWithKeywordsRaising = fn (
+    mut PythonObject, mut PythonObject, mut PythonObject
+) raises -> PythonObject
+"""The generic function type for raising Python bindings with keyword arguments.
+
+The first argument is the self object, the second argument is a tuple of the
+positional arguments, and the third argument is a dictionary of the keyword arguments.
 """
 
 
@@ -409,6 +427,44 @@ struct PythonModuleBuilder:
 
         self.def_py_c_function(
             _py_c_function_wrapper[func], func_name, docstring
+        )
+
+    fn def_py_function[
+        func: PyFunctionWithKeywords
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
+        """Declare a binding for a function with PyFunctionWithKeywords signature in
+        the module.
+
+        Parameters:
+            func: The function to declare a binding for.
+
+        Args:
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.def_py_c_function_with_kwargs(
+            _py_c_function_with_kwargs_wrapper[func], func_name, docstring
+        )
+
+    fn def_py_function[
+        func: PyFunctionWithKeywordsRaising
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
+        """Declare a binding for a function with PyFunctionWithKeywordsRaising signature in
+        the module.
+
+        Parameters:
+            func: The function to declare a binding for.
+
+        Args:
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.def_py_c_function_with_kwargs(
+            _py_c_function_with_kwargs_wrapper[func], func_name, docstring
         )
 
     fn def_function[
@@ -1075,6 +1131,52 @@ fn _py_c_function_wrapper[
     #   `@always_inline`?
     # Call the non-`raises` overload of `_py_c_function_wrapper`.
     return _py_c_function_wrapper[wrapper](py_self_ptr, py_args_ptr)
+
+
+fn _py_c_function_with_kwargs_wrapper[
+    user_func: PyFunctionWithKeywords
+](
+    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> PyObjectPtr:
+    """Wrapper function that adapts a Mojo `PyFunction` to be callable from
+    Python.
+    """
+
+    var py_self = PythonObject(from_borrowed_ptr=py_self_ptr)
+    var kwargs = PythonObject(from_borrowed_ptr=kwargs_ptr)
+    var args = PythonObject(from_borrowed_ptr=args_ptr)
+
+    return user_func(py_self, args, kwargs).steal_data()
+
+
+fn _py_c_function_with_kwargs_wrapper[
+    user_func: PyFunctionWithKeywordsRaising
+](
+    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> PyObjectPtr:
+    """Wrapper function that adapts a Mojo `PyFunction` to be callable from
+    Python.
+    """
+
+    fn wrapper(
+        mut py_self: PythonObject,
+        mut args: PythonObject,
+        mut kwargs: PythonObject,
+    ) -> PythonObject:
+        var cpython = Python().cpython()
+
+        with GILAcquired(cpython):
+            try:
+                return user_func(py_self, args, kwargs)
+            except e:
+                var error_type = cpython.get_error_global("PyExc_Exception")
+
+                cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+                return PythonObject()
+
+    return _py_c_function_with_kwargs_wrapper[wrapper](
+        py_self_ptr, args_ptr, kwargs_ptr
+    )
 
 
 # ===-----------------------------------------------------------------------===#
