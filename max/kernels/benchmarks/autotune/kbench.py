@@ -780,7 +780,8 @@ class Scheduler:
     output_dir: Path
     num_specs: int
 
-    CHUNKSIZE: int = 4
+    CHUNK_SIZE: int = 1
+    EXEC_STRIDE: int = 100
 
     def __init__(
         self,
@@ -830,7 +831,7 @@ class Scheduler:
 
     def get_chunksize(self, num_elements: int) -> int:
         elements_per_cpu = math.ceil(num_elements / self.num_cpu)
-        return min(elements_per_cpu, self.CHUNKSIZE)
+        return min(elements_per_cpu, self.CHUNK_SIZE)
 
     def mk_output_dirs(self) -> None:
         """
@@ -841,7 +842,7 @@ class Scheduler:
         for r in self.cpu_pool.imap(
             self.kbench_mkdir,
             output_dir_list,
-            chunksize=self.get_chunksize(len(output_dir_list)),
+            chunksize=self.CHUNK_SIZE,
         ):
             logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
@@ -916,11 +917,13 @@ class Scheduler:
                 auto_refresh=False,
             )
 
-            # TODO: revise chunk-size
-            for b in self.cpu_pool.imap(
-                self._pool_build_wrapper,
-                unique_build_items,
-                chunksize=self.CHUNKSIZE,
+            for cnt, b in enumerate(
+                self.cpu_pool.imap(
+                    self._pool_build_wrapper,
+                    unique_build_items,
+                    chunksize=self.CHUNK_SIZE,
+                    # alternatively: self.get_chunksize(len(unique_build_items))
+                )
             ):
                 build_output = b.build_output
                 # update the data with build_output result
@@ -934,6 +937,11 @@ class Scheduler:
                 self.progress.update(
                     build_progress,
                     description=f"build [ {b.idx} ][ {bin_name} ] finished",
+                )
+
+                num_unique_build_items = len(unique_build_items)
+                logging.info(
+                    f"build [{b.idx}][{bin_name}] ({_percentage(cnt + 1, num_unique_build_items)}%)"
                 )
 
                 # print build_output stdout and stderr using log function.
@@ -955,8 +963,9 @@ class Scheduler:
             )
         return unique_build_paths
 
-    def execute_all(
+    def execute_item(
         self,
+        build_item: BuildItem,
         unique_build_paths,  # noqa: ANN001
         profile,  # noqa: ANN001
         exec_prefix,  # noqa: ANN001
@@ -964,66 +973,196 @@ class Scheduler:
     ) -> None:
         """Execute all the items in the scheduler"""
 
-        num_build_items = len(self.build_items)
+        bin_name = build_item.spec_instance.hash(with_variables=False)
+        bin_path = unique_build_paths.get(bin_name, None)
 
-        exec_progress = self.progress.add_task(
-            "run",
-            total=num_build_items,
-        )
+        exec_prefix_item = copy.deepcopy(exec_prefix)
+        exec_suffix_item = copy.deepcopy(exec_suffix)
 
-        exec_prefix_in = copy.deepcopy(exec_prefix)
-        exec_suffix_in = copy.deepcopy(exec_suffix)
-
-        for b in self.build_items:
-            s = b.spec_instance
-            bin_name = s.hash(with_variables=False)
-            bin_path = unique_build_paths.get(bin_name, None)
-
-            self.progress.update(exec_progress, description=f"run [ {str(s)} ]")
-
-            exec_prefix = copy.deepcopy(exec_prefix_in)
-            exec_suffix = copy.deepcopy(exec_suffix_in)
-
-            profile_output = f"{b.output_dir}/{bin_name}_profile"
-            if profile in ["ncu", "ncu-single"]:
-                exec_prefix.extend(["ncu", "-o", profile_output])
-                if profile == "ncu-single":
-                    exec_suffix.extend(
-                        ["--bench-max-iters=0", "--bench-max-batch-size=1"]
-                    )
-            if profile in ["rocm", "rocprof-compute"]:
-                exec_prefix.extend(
-                    f"rocprof-compute profile --name NAME -p {profile_output} --".split()
+        profile_output = f"{build_item.output_dir}/{bin_name}_profile"
+        if profile in ["ncu", "ncu-single"]:
+            exec_prefix_item.extend(["ncu", "-o", profile_output])
+            if profile == "ncu-single":
+                exec_suffix_item.extend(
+                    ["--bench-max-iters=0", "--bench-max-batch-size=1"]
                 )
-                logging.info(f"writing profiling results to {profile_output}")
+        if profile in ["rocm", "rocprof-compute"]:
+            exec_prefix_item.extend(
+                f"rocprof-compute profile --name NAME -p {profile_output} --".split()
+            )
+            logging.info(f"writing profiling results to {profile_output}")
 
-            if bin_path:
-
-                def _percentage(x: int, y: int) -> int:
-                    if x > 0 and y > 0:
-                        return int((x / y) * 100.0)
-                    return 0
-
-                logging.info(
-                    f"running binary [{b.idx}/{num_build_items}] ({_percentage(b.idx, num_build_items)}%)"
-                )
-                exec_output = s.execute(
-                    bin_path,
-                    b.output_path,
-                    dryrun=b.dryrun,
-                    exec_prefix=exec_prefix,
-                    exec_suffix=exec_suffix,
-                )
-                b.exec_output = b.exec_output
-                exec_output.log()
-            else:
-                logging.error(f"Could not find binary [{bin_name}]")
-
-            self.progress.update(exec_progress, advance=1)
+        if bin_path:
+            exec_output = build_item.spec_instance.execute(
+                bin_path,
+                build_item.output_path,
+                dryrun=build_item.dryrun,
+                exec_prefix=exec_prefix_item,
+                exec_suffix=exec_suffix_item,
+            )
+            build_item.exec_output = build_item.exec_output
+            exec_output.log()
+        else:
+            logging.error(f"Could not find binary [{bin_name}]")
 
     def close_pool(self) -> None:
         self.cpu_pool.close()
         self.cpu_pool.join()
+
+    @staticmethod
+    def get_build_df(bi_list: list[BuildItem]) -> pd.DataFrame:
+        build_df = pd.DataFrame(
+            {
+                "name": ["build" for b in bi_list],
+                "spec": [f"{str(b.spec_instance)}" for b in bi_list],
+            }
+        )
+        build_elapsed_time_list = [b.build_elapsed_time for b in bi_list]
+        build_df.insert(
+            len(build_df.columns),
+            "met (ms)",
+            pd.Series(build_elapsed_time_list),
+        )
+        build_df.insert(len(build_df.columns), "iters", 1)
+        build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
+
+        return pd.DataFrame(
+            build_df.loc[:, ["name", "met (ms)", "iters", "spec"]]
+        )
+
+    # Retrieve, sort, and pick top choices
+    @staticmethod
+    def get_valid_specs(bi_list: list[BuildItem], spec: Spec):
+        valid_specs = []
+        invalid_specs: list[list] = []
+        for b in bi_list:
+            try:
+                df = pd.read_csv(b.output_path, index_col=None, header=0)
+                if not df.empty:
+                    df.insert(0, "mesh_idx", b.idx)
+                    df.insert(len(df.columns), "spec", str(spec.mesh[b.idx]))
+                    valid_specs.append(df)
+                else:
+                    invalid_specs.append([b.idx, b.build_output])
+
+            except:
+                invalid_specs.append([b.idx, b.build_output])
+        return valid_specs, invalid_specs
+
+    @staticmethod
+    def dump(
+        bi_list: list[BuildItem],
+        spec: Spec,
+        output_path: Path = Path(),
+        mode: KBENCH_MODE = KBENCH_MODE.RUN,
+        t_elapsed_total: float = 0.0,
+        verbose: bool = False,
+    ):
+        output_lines = []
+        output_dict: dict[str, Any] = {}
+
+        build_df = Scheduler.get_build_df(bi_list)
+
+        output_dict["build_df"] = build_df
+        if verbose:
+            output_lines += [LINE]
+            output_lines += ["Build time stats:"]
+            output_lines += [build_df.to_string(index=False)]
+
+        ###############################
+        output_lines += [LINE]
+        output_lines += [f"Running ['{spec.file}']"]
+
+        ###############################
+        valid_specs, invalid_specs = Scheduler.get_valid_specs(bi_list, spec)
+
+        if invalid_specs:
+            output_lines += [LINE]
+            output_lines += [
+                f"Number of invalid specs: {len(invalid_specs)} (out of {len(spec)})"
+            ]
+            for idx, msg in invalid_specs:
+                s = bi_list[idx].spec_instance
+                output_lines += [LINE]
+                output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
+                if msg.stdout:
+                    output_lines.append(msg.stdout)
+                if msg.stderr:
+                    output_lines.append(msg.stderr)
+
+        output_lines += [LINE]
+        output_lines += [
+            f"Number of valid executed specs: {len(valid_specs)} (out of {len(spec)})"
+        ]
+
+        if valid_specs:
+            merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
+
+            ###############################
+            # Get the name of column 2 (met (ms))
+            output_dict["merged_df"] = merged_df
+            met_col = str(merged_df.columns[2])
+            if mode == KBENCH_MODE.TUNE:
+                tune_df = merged_df.sort_values([met_col], ascending=True)
+
+                output_dict["tune_df"] = tune_df
+                output_lines += [tune_df.to_string(index=False)]
+                # Index to top spec after sort
+                top_spec_idx = tune_df.iloc[0].mesh_idx
+                runtime = tune_df.iloc[0][met_col]
+
+                output_lines += [LINE]
+                output_lines += ["Spec with the best measured time:"]
+                output_lines += [
+                    f"mesh_idx: {top_spec_idx} measured time: {runtime:6f} (ms)"
+                ]
+                output_lines += [bi_list[top_spec_idx].spec_instance.to_obj()]
+                output_lines += [LINE]
+            else:
+                output_lines += [merged_df.to_string(index=False)]
+                output_lines += [LINE]
+            ###############################
+
+        output_lines += [
+            f"Total elapsed running time: {t_elapsed_total:.3f} (s)"
+        ]
+        output_str = "\n".join([str(x) for x in output_lines])
+        print(output_str)
+
+        if output_path:
+            output_dict["name"] = spec.name
+            output_dict["file"] = spec.file
+            pkl_path = Path(output_path).with_suffix(".pkl")
+            csv_path = Path(output_path).with_suffix(".csv")
+            txt_path = Path(output_path).with_suffix(".txt")
+
+            print(pkl_path, csv_path, txt_path)
+            store_pickle(f"{pkl_path}", output_dict)
+
+            # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
+            # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
+            if mode == KBENCH_MODE.RUN and valid_specs:
+                merged_df.drop(columns=["mesh_idx"]).to_csv(
+                    csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                )
+                logging.info(f"wrote results to [{csv_path}]")
+            elif mode == KBENCH_MODE.BUILD:
+                build_df.to_csv(
+                    csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                )
+                logging.info(f"wrote results to [{csv_path}]")
+
+            with open(txt_path, "w") as f:
+                f.write(output_str + "\n")
+
+            logging.info(f"wrote results to [{txt_path}]")
+            logging.info(f"wrote results to [{pkl_path}]")
+
+
+def _percentage(x: int, y: int) -> int:
+    if x > 0 and y > 0:
+        return int((x / y) * 100.0)
+    return 0
 
 
 def run(
@@ -1117,141 +1256,75 @@ def run(
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
             scheduler.close_pool()
-            if mode == KBENCH_MODE.RUN:
-                scheduler.execute_all(
-                    unique_build_paths,
-                    profile=profile,
-                    exec_prefix=exec_prefix,
-                    exec_suffix=exec_suffix,
+
+            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
+                num_build_items = len(scheduler.build_items)
+                exec_progress = scheduler.progress.add_task(
+                    "run",
+                    total=num_build_items,
                 )
+
+                # execute build items in batches of size Scheduler.EXEC_STRIDE
+                for lower_bound in range(
+                    0, num_build_items, Scheduler.EXEC_STRIDE
+                ):
+                    upper_bound = min(
+                        lower_bound + Scheduler.EXEC_STRIDE, num_build_items
+                    )
+
+                    for b in scheduler.build_items[lower_bound:upper_bound]:
+                        logging.info(
+                            f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
+                        )
+
+                        scheduler.progress.update(
+                            exec_progress,
+                            description=f"run [ {str(b.spec_instance)} ]",
+                        )
+
+                        scheduler.execute_item(
+                            b,
+                            unique_build_paths,
+                            profile=profile,
+                            exec_prefix=exec_prefix,
+                            exec_suffix=exec_suffix,
+                        )
+
+                        scheduler.progress.update(exec_progress, advance=1)
+
+                    t_elapsed_total = time() - t_start_total
+
+                    # dump results that have been executed so far
+                    # ensure there are more than one iterations of stride loop.
+                    if num_build_items >= Scheduler.EXEC_STRIDE:
+                        Scheduler.dump(
+                            scheduler.build_items[0:upper_bound],
+                            spec,
+                            Path(
+                                str(output_path.with_suffix(""))
+                                + f"-{lower_bound // Scheduler.EXEC_STRIDE}"
+                            ),
+                            mode,
+                            t_elapsed_total,
+                            verbose=verbose,
+                        )
+                logging.info("finished running all binaries")
         except KeyboardInterrupt:
             scheduler.close_pool()
             obj_cache.dump()
             sys.exit(0)
 
+    ###############################
+    # dump all the details
     t_elapsed_total = time() - t_start_total
-    output_lines = []
-    output_dict: dict[str, Any] = {}
-    ########################################################
-    # Elapsed time per spec
-    build_df = pd.DataFrame(
-        {
-            "name": ["build" for b in scheduler.build_items],
-            "spec": [f"{str(b.spec_instance)}" for b in scheduler.build_items],
-        }
+    Scheduler.dump(
+        scheduler.build_items,
+        spec,
+        output_path,
+        mode,
+        t_elapsed_total,
+        verbose=verbose,
     )
-    build_elapsed_time_list = [
-        b.build_elapsed_time for b in scheduler.build_items
-    ]
-    build_df.insert(
-        len(build_df.columns), "met (ms)", pd.Series(build_elapsed_time_list)
-    )
-    build_df.insert(len(build_df.columns), "iters", 1)
-    build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
-
-    build_df = build_df.loc[:, ["name", "met (ms)", "iters", "spec"]]
-
-    output_dict["build_df"] = build_df
-    if verbose:
-        output_lines += [LINE]
-        output_lines += ["Build time stats:"]
-        output_lines += [build_df.to_string(index=False)]
-
-    ########################################################
-    # Retrieve, sort, and pick top choices
-    valid_specs = []
-    invalid_specs: list[list] = []
-    for b in scheduler.build_items:
-        i = b.idx
-        try:
-            df = pd.read_csv(b.output_path, index_col=None, header=0)
-            if not df.empty:
-                df.insert(0, "mesh_idx", i)
-                df.insert(len(df.columns), "spec", str(spec.mesh[i]))
-                valid_specs.append(df)
-            else:
-                invalid_specs.append([i, b.build_output])
-
-        except:
-            invalid_specs.append([i, b.build_output])
-
-    output_lines += [LINE]
-    output_lines += [f"Running ['{spec.file}']"]
-
-    if invalid_specs:
-        output_lines += [LINE]
-        output_lines += [
-            f"Number of invalid specs: {len(invalid_specs)} (out of {len(spec)})"
-        ]
-        for idx, msg in invalid_specs:
-            s = scheduler.build_items[idx].spec_instance
-            output_lines += [LINE]
-            output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
-            if msg.stdout:
-                output_lines.append(msg.stdout)
-            if msg.stderr:
-                output_lines.append(msg.stderr)
-
-    output_lines += [LINE]
-    output_lines += [
-        f"Number of valid executed specs: {len(valid_specs)} (out of {len(spec)})"
-    ]
-
-    if valid_specs:
-        merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
-        ########################################################
-        # Get the name of column 2 (met (ms))
-        output_dict["merged_df"] = merged_df
-        met_col = merged_df.columns[2]
-        if mode == KBENCH_MODE.TUNE:
-            tune_df = merged_df.sort_values([met_col], ascending=True)
-
-            output_dict["tune_df"] = tune_df
-            output_lines += [tune_df.to_string(index=False)]
-            # Index to top spec after sort
-            top_spec_idx = tune_df.iloc[0].mesh_idx
-            runtime = tune_df.iloc[0][met_col]
-
-            output_lines += [LINE]
-            output_lines += ["Spec with the best measured time:"]
-            output_lines += [LINE]
-            output_lines += [f"mesh_idx: {top_spec_idx} Runtime: {runtime}"]
-            s = scheduler.build_items[top_spec_idx].spec_instance
-            output_lines += [s.to_obj()]
-            output_lines += [LINE]
-        else:
-            output_lines += [merged_df.to_string(index=False)]
-            output_lines += [LINE]
-        ########################################################
-
-    output_lines += [f"Total elapsed running time: {t_elapsed_total:.3f} (s)"]
-    output_str = "\n".join([str(x) for x in output_lines])
-    print(output_str)
-
-    if output_path:
-        output_dict["name"] = spec.name
-        output_dict["file"] = spec.file
-        pkl_path = Path(output_path).with_suffix(".pkl")
-        csv_path = Path(output_path).with_suffix(".csv")
-        txt_path = Path(output_path).with_suffix(".txt")
-        store_pickle(f"{pkl_path}", output_dict)
-
-        # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
-        # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
-        if mode == KBENCH_MODE.RUN and valid_specs:
-            merged_df.drop(columns=["mesh_idx"]).to_csv(
-                csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-            logging.info(f"wrote results to [{csv_path}]")
-        elif mode == KBENCH_MODE.BUILD:
-            build_df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
-            logging.info(f"wrote results to [{csv_path}]")
-
-        with open(txt_path, "w") as f:
-            f.write(output_str + "\n")
-
-        logging.info(f"wrote results to [{txt_path}]")
-        logging.info(f"wrote results to [{pkl_path}]")
     logging.info(f"output-dir: [{output_dir}]")
     print(LINE + "\n\n")
 
@@ -1369,7 +1442,7 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     "tune",
     is_flag=True,
     default=False,
-    help="Tune by running and finding the best running time.",
+    help="Sort results by running time.",
 )
 @click.option(
     "--build",
