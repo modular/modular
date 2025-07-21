@@ -1010,32 +1010,16 @@ fn _py_c_function_wrapper[
     #   >
     #   >  -- https://docs.python.org/3/extending/extending.html#ownership-rules
 
-    # SAFETY:
-    #   Here we illegally (but carefully) construct _owned_ `PythonObject`
-    #   values from the read-only object reference arguments. We are careful
-    #   down below to prevent the destructor for these objects from running
-    #   so that we do not illegally decrement the reference count of these
-    #   objects we do not own.
-    #
-    #   This is valid to do, because these are passed using the `read-only`
-    #   argument convention to `user_func`, so logically they are treated
-    #   as Python read-only references.
-    var py_self = PythonObject(from_owned_ptr=py_self_ptr)
-    var args = PythonObject(from_owned_ptr=args_ptr)
+    # We turn these into owned references, knowing that their destructors will
+    # appropriately decrement the reference count.
+
+    var py_self = PythonObject(from_borrowed_ptr=py_self_ptr)
+    var args = PythonObject(from_borrowed_ptr=args_ptr)
 
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
-    var result = user_func(py_self, args).steal_data()
-
-    # Do not destroy the provided PyObjectPtr arguments, since they
-    # actually have ownership of the underlying object.
-    __disable_del py_self
-
-    # SAFETY:
-    #   Prevent `args` from being destroyed, since we don't own it.
-    __disable_del args
-    return result
+    return user_func(py_self, args).steal_data()
 
 
 # Wrap a `raises` function
