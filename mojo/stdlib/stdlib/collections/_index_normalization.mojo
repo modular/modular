@@ -38,6 +38,8 @@ fn normalize_index[
         The normalized index value.
     """
 
+    alias assert_mode = "safe" if assert_always else "none"
+
     @parameter
     if (
         _type_is_eq[I, UInt]()
@@ -51,7 +53,6 @@ fn normalize_index[
         var i = UInt(index(idx))
         # TODO: Consider a way to construct the error message after the assert has failed
         # something like "Indexing into an empty container" if length == 0 else "..."
-        alias assert_mode = "safe" if assert_always else "none"
         debug_assert[assert_mode=assert_mode, cpu_only=True](
             i < length,
             container_name,
@@ -81,7 +82,7 @@ fn normalize_index[
         #     Which means UInt(idx + length) signed bit is off
         #     therefore idx + length >= 0
         # in either case we can infer 0 <= idx + length < length
-        debug_assert[assert_mode="safe", cpu_only=True](
+        debug_assert[assert_mode=assert_mode, cpu_only=True](
             i < length,
             container_name,
             " index out of bounds: index (",
