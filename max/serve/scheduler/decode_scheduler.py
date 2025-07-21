@@ -19,11 +19,7 @@ from dataclasses import dataclass
 from typing import Union
 
 import zmq
-from max.interfaces import (
-    EngineResult,
-    TextGenerationOutput,
-    TokenGenerator,
-)
+from max.interfaces import EngineResult, TextGenerationOutput, TokenGenerator
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -33,6 +29,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
     msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -90,8 +87,12 @@ class DecodeScheduler(Scheduler):
             ),
         )
         self.response_push_socket = ZmqPushSocket[
-            tuple[str, TextGenerationOutput]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
+            dict[str, EngineResult[TextGenerationOutput]]
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
         self.cancel_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ](
