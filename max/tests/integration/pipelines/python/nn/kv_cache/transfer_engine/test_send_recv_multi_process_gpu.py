@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 import pytest
-from common import get_unique_port
+from common import available_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import KVTransferEngine
@@ -38,7 +38,7 @@ def transfer_routine_sender(
 
     # Create engine
     engine = KVTransferEngine(
-        "engine_1", blocks, total_num_pages, listen_port=get_unique_port()
+        "engine_1", blocks, total_num_pages, listen_port=available_port()
     )
 
     # Connect with peer
@@ -90,7 +90,7 @@ def transfer_routine_receiver(
 
     # Create engine
     engine = KVTransferEngine(
-        "engine_2", blocks, total_num_pages, listen_port=get_unique_port()
+        "engine_2", blocks, total_num_pages, listen_port=available_port()
     )
 
     # Connect with peer

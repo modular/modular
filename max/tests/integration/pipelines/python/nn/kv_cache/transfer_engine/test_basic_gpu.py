@@ -7,7 +7,7 @@
 
 import numpy as np
 import pytest
-from common import get_unique_port
+from common import available_port
 from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 from max.dtype import DType
@@ -22,13 +22,13 @@ def test_constructor() -> None:
         "abc",
         tensor,
         total_num_pages=2,
-        listen_port=get_unique_port(),
+        listen_port=available_port(),
     )
     _ = KVTransferEngine(
         "abc",
         tensor.to(Accelerator()),
         total_num_pages=2,
-        listen_port=get_unique_port(),
+        listen_port=available_port(),
     )
 
     # total_num_pages is 0
@@ -37,7 +37,7 @@ def test_constructor() -> None:
             "abc",
             tensor,
             total_num_pages=0,
-            listen_port=get_unique_port(),
+            listen_port=available_port(),
         )
 
     # bytes is not divisible by total_num_pages
@@ -46,7 +46,7 @@ def test_constructor() -> None:
             "abc",
             tensor,
             total_num_pages=3,
-            listen_port=get_unique_port(),
+            listen_port=available_port(),
         )
 
 
@@ -64,10 +64,10 @@ def test_initiate_send_xfer() -> None:
     )
 
     engine_1 = KVTransferEngine(
-        "engine_1", blocks_1, total_num_pages, listen_port=get_unique_port()
+        "engine_1", blocks_1, total_num_pages, listen_port=available_port()
     )
     engine_2 = KVTransferEngine(
-        "engine_2", blocks_2, total_num_pages, listen_port=get_unique_port()
+        "engine_2", blocks_2, total_num_pages, listen_port=available_port()
     )
 
     engine_1.connect(engine_2.metadata)

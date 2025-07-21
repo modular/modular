@@ -9,7 +9,7 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
-from common import get_unique_port
+from common import available_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
@@ -40,7 +40,10 @@ def test_send_recv_basic() -> None:
 
         # Create engine
         engine = KVTransferEngine(
-            "engine_1", blocks, total_num_pages, listen_port=get_unique_port()
+            "engine_1",
+            blocks,
+            total_num_pages,
+            listen_port=available_port(),
         )
 
         # Connect with peer
@@ -75,7 +78,10 @@ def test_send_recv_basic() -> None:
 
         # Create engine
         engine = KVTransferEngine(
-            "engine_2", blocks, total_num_pages, listen_port=get_unique_port()
+            "engine_2",
+            blocks,
+            total_num_pages,
+            listen_port=available_port(),
         )
 
         # Connect with peer
