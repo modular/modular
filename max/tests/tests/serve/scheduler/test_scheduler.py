@@ -129,7 +129,7 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN
         scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
-    request_push_socket.put(("req1", create_mock_request(cache_seq_id=None)))
+    request_push_socket.put(("req1", create_mock_request()))
     time.sleep(1)
     assert not scheduler._should_schedule_ce()
 
@@ -146,12 +146,10 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
         serialize=msgpack_numpy_encoder(),
     )
 
-    request_push_socket.put_nowait(
-        ("req1", create_mock_request(cache_seq_id=None))
-    )
+    request_push_socket.put_nowait(("req1", create_mock_request()))
     time.sleep(1)
 
-    batch = scheduler._try_create_ce_batch().batch_inputs
+    batch = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
@@ -172,12 +170,10 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN00
         serialize=msgpack_numpy_encoder(),
     )
 
-    request_push_socket.put_nowait(
-        ("req1", create_mock_request(cache_seq_id=None))
-    )
+    request_push_socket.put_nowait(("req1", create_mock_request()))
     time.sleep(1)
 
-    batch = scheduler._try_create_ce_batch().batch_inputs
+    batch = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
@@ -221,7 +217,7 @@ def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:  # noqa:
 
     assert "req2" not in batch_executed
     assert "req2" not in batch_responses
-    assert not scheduler.request_q.empty()
+    assert scheduler.pending_reqs
 
 
 def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
@@ -299,7 +295,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
 
     request_push_socket.put(("req1", mock_request))
     time.sleep(1)
-    batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
+    batch_to_execute = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch_to_execute) > 0
     sch_output = SchedulerOutput(
         batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
@@ -314,8 +310,8 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
         response_pull_socket.get_nowait()
 
     # check req1 is put back in the request queue with the correct active_idx and active_length
-    assert not scheduler.request_q.empty()
-    req_id, data = scheduler.request_q.get_nowait()
+    assert scheduler.pending_reqs
+    req_id, data = scheduler.pending_reqs.pop()
     assert req_id == "req1"
     assert data.start_idx == 20
     assert data.active_idx == 30
@@ -348,7 +344,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
         dict[str, EngineResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
-    batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
+    batch_to_execute = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch_to_execute) == 1
     sch_output = SchedulerOutput(
         batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
@@ -360,7 +356,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_request_ce = create_mock_request(cache_seq_id=1, seq_len=30)
     request_push_socket.put(("req2", mock_request_ce))
     time.sleep(1)
-    batch = scheduler._try_create_ce_batch().batch_inputs
+    batch = scheduler._create_batch_to_execute().batch_inputs
 
     # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
     assert len(batch) == 2
