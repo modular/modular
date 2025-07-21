@@ -709,7 +709,7 @@ struct ValueSet {
   // Get the location of the function we're scanning.
   Location getFuncLocation() { return func.getLoc(); }
 
-  // private:
+private:
   /// This is the function we're analyzing.
   FunctionLikeOp func;
   /// These are all of the value infos, indexed by ID #.
