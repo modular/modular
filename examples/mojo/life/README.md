@@ -21,7 +21,7 @@ This directory contains the following files:
 - The source files `lifev3.mojo` and `gridv3.mojo` provide a subsequent version
   of the project to parallelize the evolution of rows across available CPU
   cores.
- 
+
 - The `benchmark.mojo` file performs a simple performance benchmark of the three
   versions by running 1,000 evolutions of each `Grid` implementation using a
   1,024 x 1,024 grid.
@@ -46,7 +46,7 @@ automatically updates it with subsequent generations. Quit the program by
 pressing the `q` or `<Escape>` key or by closing the window.
 
 You can execute version 2 or version 3 of the program by running one of the
-following commands:
+following two commands:
 
 ```bash
 pixi run lifev2
