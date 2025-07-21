@@ -25,11 +25,24 @@ mojo_binary(
 )
 
 mojo_binary(
+    name = "lifev3",
+    srcs = [
+        "gridv3.mojo",
+        "lifev3.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+        requirement("pygame"),
+    ],
+)
+
+mojo_binary(
     name = "benchmark",
     srcs = [
         "benchmark.mojo",
         "gridv1.mojo",
         "gridv2.mojo",
+        "gridv3.mojo",
     ],
     deps = [
         "@mojo//:stdlib",
