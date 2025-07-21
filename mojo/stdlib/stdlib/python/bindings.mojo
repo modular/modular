@@ -469,21 +469,24 @@ struct PythonModuleBuilder:
 
     fn def_function[
         func_type: AnyTrivialRegType, //,
-        func: PyObjectFunction[func_type, NoneType],
+        func: PyObjectFunction[func_type, has_kwargs=_],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a module-level function.
 
         Accepts functions with PythonObject arguments (up to 6), can optionally
-        return a PythonObject, and can raise.
+        return a PythonObject, and can raise. Functions can also accept keyword
+        arguments if their last parameter is OwnedKwargsDict[PythonObject].
 
         Example signatures:
         ```mojo
         fn func(arg1: PythonObject) -> PythonObject
         fn func(arg1: PythonObject, arg2: PythonObject) raises
+        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject
+        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises
         ```
 
         Parameters:
-            func_type: The type of the function to declare a binding for.
+            func_type: The type of the function to declare a binding for (inferred).
             func: The function to declare a binding for. Users can pass their
                 function directly, and it will be implicitly converted to a
                 PyObjectFunction if and only if its signature is supported.
@@ -494,13 +497,27 @@ struct PythonModuleBuilder:
             docstring: The docstring for the function in the module.
         """
 
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            return func._call_func(py_args)
+        @parameter
+        if func.has_kwargs:
 
-        self.def_py_function[wrapper](func_name, docstring)
+            @always_inline
+            fn wrapper_with_kwargs(
+                mut py_self: PythonObject,
+                mut py_args: PythonObject,
+                mut py_kwargs: PythonObject,
+            ) raises -> PythonObject:
+                return func._call_func(py_args, py_kwargs)
+
+            self.def_py_function[wrapper_with_kwargs](func_name, docstring)
+        else:
+
+            @always_inline
+            fn wrapper(
+                mut py_self: PythonObject, mut py_args: PythonObject
+            ) raises -> PythonObject:
+                return func._call_func(py_args)
+
+            self.def_py_function[wrapper](func_name, docstring)
 
     fn finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
