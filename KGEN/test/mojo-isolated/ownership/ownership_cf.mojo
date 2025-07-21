@@ -449,7 +449,6 @@ struct TrivialRange(Iterator):
 fn mojo98(n: Int):
     var a = MemExample()
     for i in TrivialRange():
-        # expected-warning @+1 {{assignment to 'a.x' was never used}}
         a.x = i
 
 

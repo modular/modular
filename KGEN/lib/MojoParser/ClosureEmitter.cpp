@@ -789,21 +789,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
 
-  // Populate move constructor.
-  {
-    // Take the impl from the existing.
-    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (shared.diBuilder)
-      diScopeGuard = shared.diBuilder->pushScopeGuard(moveCtr.getLocScope());
-    ImplicitLocOpBuilder b =
-        ImplicitLocOpBuilder::atBlockBegin(moveCtr.getLoc(), moveCtr.getBody());
-    Value moveExisting = moveCtr.getBody()->getArgument(0);
-    auto opaquePointerTypeAttr = M::PointerAttr::get(ctx, 0, opaquePtrType);
-    Value nullPtr =
-        b.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
-    storeField(b, moveExisting, nullPtr, impl);
-  }
-  // Move all the fields over as well.
+  // Populate move constructor
   if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
 

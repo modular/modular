@@ -568,7 +568,6 @@ fn bigreg_test():
   # CHECK-NEXT: lit.ref.store [[TMP]], [[AREF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
-  # expected-warning @+1 {{assignment to 'varThing.a' was never used}}
   varThing.a = RegExample()
 
   # Must drop the value in a register to pass by-ref
@@ -780,7 +779,6 @@ fn variadic_field_sensitivity():
   # Need to restore 'a' so memPair may destruct.
   # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
-  # expected-warning @+1 {{assignment to 'memPair.a' was never used}}
   memPair.a = MemExample()
 
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%memPair)
@@ -995,7 +993,6 @@ fn overwrite(y: MemExample, x: Bool) raises:
    # CHECK-NEXT: hlcf.yield
    # CHECK-NEXT: }
    # CHECK: lit.call @{{.*}}::@MemPair::@"__del__{{.*}}(%foo)
-   # expected-warning @+1 {{assignment to 'foo.a' was never used; assign to '_' instead?}}
    foo.a = MemExample()
 
 

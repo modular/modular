@@ -496,6 +496,9 @@ struct ValueInfo {
   /// Return a ValueRef that covers this whole value.  The caller must provide
   /// the valueId.
   ValueRef getFullValueRef(unsigned valueId) const;
+
+  /// Return true if this value should emit a warning on unused assignment.
+  bool shouldWarnOnUnusedAssignment() const;
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -600,6 +603,21 @@ ValueRef ValueInfo::getFullValueRef(unsigned valueId) const {
   return ValueRef{valueId, startValueBit, endValueBit, isIndirect};
 }
 
+/// Return true if this value should emit a warning on unused assignment.
+bool ValueInfo::shouldWarnOnUnusedAssignment() const {
+  // VarDecls can warn about unused assignments.
+  if (auto varDecl = value.getDefiningOp<VarDeclOp>())
+    // Don't warn about temporaries etc.
+    return varDecl.shouldWarnAboutUnused();
+
+  // 'var' / owned arguments should also warn.
+  if (isa<BlockArgument>(value) &&
+      endInitState == OriginTrackable::ExitInitState::EndsUninit)
+    return true;
+
+  return false;
+}
+
 /// This tracks the values in a function (including nested functions) that are
 /// relevant for ownership - that needs to be tracked for uses without being
 /// initialized, or that need a destructor to be run.
@@ -691,7 +709,7 @@ struct ValueSet {
   // Get the location of the function we're scanning.
   Location getFuncLocation() { return func.getLoc(); }
 
-private:
+  // private:
   /// This is the function we're analyzing.
   FunctionLikeOp func;
   /// These are all of the value infos, indexed by ID #.
@@ -3392,6 +3410,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
     bool isFullUseDestroy = scheduleNeededDtors(direct, dtorInserter, value);
 
+    // Emit a lifetime start for the value if this is a var decl.
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
       // Emit this above the operation.
       ImplicitLocOpBuilder builder(op.getLoc(), &op);
@@ -3403,10 +3422,12 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
     // warn about the useless store.
     if (!dryRun && isFullUseDestroy) {
       ValueInfo &valueEntry = valueSet.getValueInfo(direct.valueId);
+
       // Don't warn about assignments into synthesized temporaries or arguments.
-      auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>();
-      if (varDecl && varDecl.shouldWarnAboutUnused()) {
-        if (varDecl.getKind() == VarDeclKind::Ref) {
+      if (valueEntry.shouldWarnOnUnusedAssignment()) {
+        // Specialize the message for 'ref' values.
+        auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>();
+        if (varDecl && varDecl.getKind() == VarDeclKind::Ref) {
           // Ref's can only have a single store - their initializer. If unused,
           // then the ref is never used.
           mlir::emitWarning(varDecl.getLoc())
@@ -3613,6 +3634,7 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
   // If we were passed in a field that matches what we need, use it to avoid
   // inserting additional GER operations.  Otherwise we re-derive from the root.
+  bool didAdjustUse = use != adjustedUse;
   if (!value || use != adjustedUse) {
     value = valueInfo.value;
     use = adjustedUse;
@@ -3621,6 +3643,13 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
     for (StructFieldOp subfield : accessPath)
       value = dtorInserter.builder.create<RefStructGEROp>(value, subfield);
   }
+
+  // If this is a store to a subfield of a non-trivial value being destroyed,
+  // then the store may not be dead: it can affect the behavior of the
+  // destructor. Let the caller know about this so we don't warn about dead
+  // stores.
+  if (didAdjustUse && !valueSet.isTrivial(value, use.isIndirect))
+    isFullObjectDestroy = false;
 
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
