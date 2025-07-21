@@ -59,7 +59,7 @@ class PipelineTask(str, Enum):
         from .engine import EngineResult
         from .pipeline_variants import (
             AudioGenerationResponse,
-            EmbeddingsResponse,
+            EmbeddingsOutput,
             TextGenerationOutput,
         )
 
@@ -69,7 +69,7 @@ class PipelineTask(str, Enum):
         ]:
             return dict[str, EngineResult[TextGenerationOutput]]
         elif self == PipelineTask.EMBEDDINGS_GENERATION:
-            return dict[str, EngineResult[EmbeddingsResponse]]
+            return dict[str, EngineResult[EmbeddingsOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
             return dict[str, EngineResult[AudioGenerationResponse]]
         else:

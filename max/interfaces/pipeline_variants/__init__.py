@@ -9,7 +9,7 @@ from .audio_generation import (
     AudioGenerationResponse,
     AudioGeneratorOutput,
 )
-from .embeddings_generation import EmbeddingsResponse
+from .embeddings_generation import EmbeddingsOutput
 from .text_generation import (
     TextGenerationOutput,
     TokenGenerator,
@@ -19,7 +19,7 @@ __all__ = [
     "AudioGenerationMetadata",
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
-    "EmbeddingsResponse",
+    "EmbeddingsOutput",
     "TextGenerationOutput",
     "TextResponse",
     "TokenGenerator",
