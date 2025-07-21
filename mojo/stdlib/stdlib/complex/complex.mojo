@@ -174,6 +174,49 @@ struct ComplexSIMD[dtype: DType, size: Int](Stringable, Writable, _Expable):
         )
 
     @always_inline
+    fn __mul__(self, rhs: Scalar[dtype]) -> Self:
+        """Multiplies a complex value to a scalar.
+
+        Args:
+            rhs: Scalar value to multiply with.
+
+        Returns:
+            A product of self and rhs.
+        """
+        return Self(self.re * rhs, self.im * rhs)
+
+    @always_inline
+    fn __rmul__(self, lhs: Scalar[dtype]) -> Self:
+        """Multiplies a complex value to a scalar.
+
+        Args:
+            lhs: Scalar value to multiply with.
+
+        Returns:
+            A product of self and lhs.
+        """
+        return Self(self.re * lhs, self.im * lhs)
+
+    @always_inline
+    fn __imul__(mut self, rhs: Self):
+        """Multiplies two complex values inplace.
+
+        Args:
+            rhs: Complex value to multiply with.
+        """
+        self = self * rhs
+
+    @always_inline
+    fn __imul__(mut self, rhs: Scalar[dtype]):
+        """Multiplies a complex value to a scalar inplace.
+
+        Args:
+            rhs: Scalar value to multiply with.
+        """
+        self.re *= rhs
+        self.im *= rhs
+
+    @always_inline
     fn __sub__(self, rhs: Self) -> Self:
         """Subtracts two complex values.
 
