@@ -73,7 +73,7 @@ def test_gemma3_rms_norm(
     """Test `Gemma3RMSNorm` against HuggingFace implementation."""
     torch_output = generate_torch_outputs(text_config, input_tensor, rms_weight)
     max_output = generate_max_outputs(text_config, input_tensor, rms_weight)
-    # Note: This test uses bfloat16, which has limited precision (only ~2–3
+    # Note: This test uses bfloat16, which has limited precision (only ~2-3
     # decimal digits). Small differences (e.g. 0.03125 or 0.0625) are expected
     # and can arise from rounding during intermediate steps like `rsqrt` or
     # `x^2`. Because of this, we use relaxed tolerances.

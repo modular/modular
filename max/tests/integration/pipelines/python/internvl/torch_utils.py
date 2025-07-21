@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# SPDX-FileCopyrightText: 2025 Modular
+# SPDX-FileCopyrightText: 2025 Modular
 # SPDX-FileCopyrightText: Copyright (c) 2024 OpenGVLab
 # SPDX-License-Identifier: MIT
 

@@ -47,7 +47,7 @@ def test_pipelines_cli__smollm_float32(capsys) -> None:  # noqa: ANN001
         )
     captured = capsys.readouterr()
     assert (
-        "The sky is blue because of the scattering of light by the Earth’s"
+        "The sky is blue because of the scattering of light by the Earth’s"  # noqa: RUF001
         in captured.out
     )
 
