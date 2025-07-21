@@ -33,7 +33,7 @@ from transformers import (
 if TYPE_CHECKING:
     from .config import PipelineConfig
 from max.interfaces import (
-    EmbeddingsResponse,
+    EmbeddingsOutput,
     GenerationStatus,
     TextGenerationOutput,
     TokenGenerator,
@@ -360,7 +360,7 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
 
     def encode(
         self, batch: dict[str, TextContext]
-    ) -> dict[str, EmbeddingsResponse]:
+    ) -> dict[str, EmbeddingsOutput]:
         """Encodes a batch of text inputs."""
 
         # Flatten our batch for consistent indexing.
@@ -378,10 +378,10 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
         )
 
         # Prepare the response.
-        res: dict[str, EmbeddingsResponse] = {}
+        res: dict[str, EmbeddingsOutput] = {}
         for batch_index, request_id in enumerate(batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
-            res[request_id] = EmbeddingsResponse(request_embeddings)
+            res[request_id] = EmbeddingsOutput(request_embeddings)
         return res
 
 
