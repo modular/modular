@@ -2684,6 +2684,7 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
+
 /// Run the elaborator as a pass. The elaborator requires imports to be
 /// resolved, so first resolve imports and then elaborate.
 class ElaborateGeneratorsPass
@@ -2698,21 +2699,22 @@ public:
         compileAsmFn(std::move(compileAsmFn)),
         compileOffloadFn(std::move(compileOffloadFn)) {}
 
-  LogicalResult initialize(MLIRContext *ctx) override {
-    // Default to the host target if one was not specified
-    if (!target) {
-      ErrorOr<TargetInfoAttr> targetOr =
-          getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
-                           llvm::sys::getHostCPUName(), getHostCPUFeatures());
-      if (targetOr.isError())
-        return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
-      target = targetOr.takeValue();
-    }
-    return success();
-  }
-
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
+    target = lookupTargetInfo(theModule);
+    // Default to the host target if one was not specified
+    if (!target) {
+      ErrorOr<TargetInfoAttr> targetOr = getTargetInfoFor(
+          theModule.getContext(), llvm::sys::getDefaultTargetTriple(),
+          llvm::sys::getHostCPUName(), getHostCPUFeatures());
+      if (targetOr.isError()) {
+        mlir::emitError(UnknownLoc::get(theModule.getContext()),
+                        targetOr.getError());
+        return signalPassFailure();
+      }
+
+      target = targetOr.takeValue();
+    }
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();

@@ -85,6 +85,8 @@ public:
   int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
   /// Get the default address space pointer ABI alignment in bytes.
   int32_t getPointerABIAlign() const { return ptrAbiAlign; }
+  /// Get the endianness
+  bool getIsLittleEndian() const { return isLittleEndian; }
 
   /// Attempt to parse a data layout from the specification string. Returns an
   /// error if parsing failed.
@@ -116,6 +118,9 @@ private:
   int32_t ptrAbiAlign;
   /// The default alloca address space.
   int32_t allocaAddrSpace = 0;
+
+  /// The endianness
+  bool isLittleEndian;
 
   /// The underlying string representation.
   std::string dlSpecStr;

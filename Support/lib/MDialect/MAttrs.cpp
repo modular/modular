@@ -741,6 +741,7 @@ ErrorOr<DataLayout> DataLayout::parse(StringRef desc) {
   DataLayout dl(desc);
   if (auto err = dl.parse())
     return err.takeError();
+
   return dl;
 }
 
@@ -803,8 +804,10 @@ ErrorOrSuccess DataLayout::parse() {
 
     switch (specifier) {
     case 'E':
+      isLittleEndian = false;
+      break;
     case 'e':
-      // Skip endianness.
+      isLittleEndian = true;
       break;
     case 'p': {
       // Address space.
