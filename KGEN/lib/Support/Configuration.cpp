@@ -91,10 +91,6 @@ StringRef MojoConfig::getCompilerRTPath() {
                  "lib/libKGENCompilerRTShared" EXT);
 }
 
-StringRef MojoConfig::getOrcRTPath() {
-  return getPath(STRINGIFY_MOJO_CONFIG(".orcrt_path"), "lib/liborc_rt.a");
-}
-
 StringRef MojoConfig::getMGPRTPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".mgprt_path"), "lib/libMGPRT" EXT);
 }

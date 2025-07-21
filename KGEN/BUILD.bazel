@@ -1164,7 +1164,6 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
     data = [
         ":CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     deps = [
         ":JIT",

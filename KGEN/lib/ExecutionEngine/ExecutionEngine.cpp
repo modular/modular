@@ -5,12 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
-#include "AsyncRT/Runtime/Algorithms.h"
-#include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/ErrorOr.h"
-#include "Support/FileSystemExtras.h"
 #include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -18,20 +15,15 @@
 #include "llvm/ExecutionEngine/Orc/Debugging/DebugInfoSupport.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupportPlugin.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/PerfSupportPlugin.h"
-#include "llvm/ExecutionEngine/Orc/ELFNixPlatform.h"
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
-#include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/MapperJITLinkMemoryManager.h"
-#include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/SelfExecutorProcessControl.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderPerf.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/Base64.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/Program.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
@@ -49,127 +41,24 @@ static constexpr StringLiteral mlirclibName = "$mlirc-lib";
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
-/// Create a unix-like system platform of the given type, and set that as the
-/// platform of the given session.
-template <typename T>
-static ErrorOrSuccess
-setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
-                llvm::orc::ExecutionSession &session,
-                llvm::orc::ObjectLinkingLayer &objLinkingLayer,
-                std::unique_ptr<llvm::MemoryBuffer> orcRTBuf) {
-  // Create a generator for the ORC runtime archive.
-  auto orcRuntimeArchiveGenerator =
-      toModularErrorOr(llvm::orc::StaticLibraryDefinitionGenerator::Create(
-          objLinkingLayer, std::move(orcRTBuf)));
-  if (orcRuntimeArchiveGenerator.isError())
-    return orcRuntimeArchiveGenerator.takeError();
-
-  // MachOPlatform::Create() does not require an ExecutionSession arg, but
-  // the other platforms do so we need a compile-time branch on the platform
-  // factory here.
-  if constexpr (std::is_same<T, llvm::orc::MachOPlatform>::value) {
-    auto platformOr = toModularErrorOr(
-        T::Create(cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-                  platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
-    if (platformOr.isError())
-      return platformOr.takeError();
-    session.setPlatform(std::move(*platformOr));
-  } else {
-    auto platformOr = toModularErrorOr(
-        T::Create(cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-                  platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
-    if (platformOr.isError())
-      return platformOr.takeError();
-    session.setPlatform(std::move(*platformOr));
-  }
-
-  return success();
-}
-
-static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg);
-
 /// Set up the ORC platform for the various different binary formats/platforms
 /// we support. This requires that we have an ExecutionSession *and* an
 /// ObjectLinkingLayer.
 ///
 /// The main reason to use the platform like this is that it automatically sets
 /// up the various symbols that complex code will need to execute on a target.
-static ErrorOrSuccess
-setupPlatform(MojoConfig &cfg, const llvm::DataLayout &dataLayout,
-              llvm::orc::JITDylib &platformStdlib,
-              llvm::orc::ExecutionSession &session,
-              llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
-  const llvm::Triple &tt = session.getTargetTriple();
-
+static ErrorOrSuccess setupPlatform(llvm::orc::JITDylib &platformStdlib,
+                                    llvm::orc::ExecutionSession &session) {
   // Add the current process symbols in.
   // NOTE: COFF JIT currently doesn't support in process symbols, as it can
   // currently hit conflicts with symbols in the current COFF ORC runtime.
-  if (!tt.isOSBinFormatCOFF()) {
-    auto generator = toModularErrorOr(
-        llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-            session));
-    if (generator.isError())
-      return generator.takeError();
-    platformStdlib.addGenerator(std::move(*generator));
-  }
+  auto generator = toModularErrorOr(
+      llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+          session));
+  if (generator.isError())
+    return generator.takeError();
+  platformStdlib.addGenerator(std::move(*generator));
 
-  // Disable the runtime on Linux, since there are issues with multi-tenancy
-  // and memory leaks. Disable the runtime on MacOS due to issues with
-  // libunwind.
-  if (tt.isOSBinFormatELF() || tt.isOSBinFormatMachO())
-    return success();
-
-  // Everything below this is Windows-only
-
-  // Get the ORC runtime binary.
-  auto orcRTBuf = initializeOrcRT(cfg);
-  if (orcRTBuf.isError())
-    return orcRTBuf.takeError();
-  std::optional<BufferRef> rtBuf = orcRTBuf.takeValue();
-
-  // Windows *requires* the orc runtime.
-  if (!rtBuf && tt.isOSBinFormatCOFF())
-    return Error("unable to locate orc_rt");
-
-  auto orcRTMemBuf =
-      llvm::MemoryBuffer::getMemBufferCopy((*rtBuf)->getBuffer());
-  if (tt.isOSBinFormatMachO()) {
-    if (auto error = setUnixPlatform<llvm::orc::MachOPlatform>(
-            platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
-      return error;
-  } else if (tt.isOSBinFormatELF()) {
-    if (auto error = setUnixPlatform<llvm::orc::ELFNixPlatform>(
-            platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
-      return error;
-  } else if (tt.isOSBinFormatCOFF()) {
-    // Windows needs some help to load dylibs, apparently.
-    auto loadDynamicLibrary = [&session](llvm::orc::JITDylib &jd,
-                                         StringRef dllName) -> llvm::Error {
-      if (!dllName.ends_with_insensitive(".dll"))
-        return llvm::make_error<llvm::StringError>(
-            "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
-
-      // Get or create a dylib for this DLL.
-      auto *libJD = session.getJITDylibByName(dllName);
-      if (!libJD) {
-        auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-            session, dllName.data());
-        if (!generatorOr)
-          return generatorOr.takeError();
-        libJD = &session.createBareJITDylib(dllName.str());
-        libJD->addGenerator(std::move(*generatorOr));
-      }
-      jd.addToLinkOrder(*libJD);
-      return llvm::Error::success();
-    };
-
-    auto platform = toModularErrorOr(llvm::orc::COFFPlatform::Create(
-        cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer), platformStdlib,
-        std::move(orcRTMemBuf), std::move(loadDynamicLibrary)));
-    if (platform.isError())
-      return platform.takeError();
-    session.setPlatform(std::move(*platform));
-  }
   return success();
 }
 
@@ -230,21 +119,6 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
   return success();
 }
 
-/// Grab a memory buffer for the Orc runtime.
-static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg) {
-  std::error_code ec;
-  std::string orcRTPath = cfg.getOrcRTPath().str();
-  if (!std::filesystem::exists(orcRTPath, ec) || ec) {
-    ErrorOr<std::filesystem::path> cfgPath = cfg.getConfigFilePath();
-    if (cfgPath.isError())
-      return cfgPath.takeError();
-    return Error("unable to locate orc_rt at " + Twine(orcRTPath) + ". " +
-                 "Tried reading the config from: " + cfgPath.get().c_str() +
-                 ".");
-  }
-  return Buffer::getFile(orcRTPath);
-}
-
 M::ErrorOr<std::unique_ptr<ExecutionEngine>>
 ExecutionEngine::create(ExecutionEngineOptions options,
                         const llvm::TargetMachine &tm) {
@@ -300,16 +174,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // compilation target to be a subset of the host process, so disable it for
   // cross-compilation.
   if (!options.crossCompiling) {
-    if (auto err = setupPlatform(cfg, ee->dataLayout, platformStdlib,
-                                 *ee->executionSession, *ee->objectLayer))
+    if (auto err = setupPlatform(platformStdlib, *ee->executionSession))
       return err.takeError();
-  }
-
-  // COFF format binaries (Windows) need special handling to deal with
-  // exported symbol visibility.
-  if (tt.isOSBinFormatCOFF()) {
-    ee->objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
-    ee->objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
   }
 
   if (options.registerDebugPlugins) {
