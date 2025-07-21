@@ -214,6 +214,8 @@ fn tma_umma_warp_specialized_gemm_kernel[
     alias b_expected_bytes = b_size * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
+    alias num_output_warps = 4
+
     if thread_idx.x == 0:
 
         @parameter
@@ -408,7 +410,7 @@ fn tma_umma_warp_specialized_gemm_kernel[
                     var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
 
                     st_matrix[simd_width=4](offset, d_reg_f32_packed)
-        named_barrier[WARP_GROUP_SIZE]()
+        named_barrier[num_output_warps * WARP_SIZE]()
 
         # SMEM -> GMEM: Direct TMA store
         # UMMA (tensor memory) → registers → shared memory → global memory
