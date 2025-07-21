@@ -21,7 +21,6 @@ import queue
 import tempfile
 import uuid
 import weakref
-from collections import deque
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import psutil
@@ -229,7 +228,6 @@ class ZmqPullSocket(Generic[T]):
             zmq_ctx, self.zmq_endpoint, mode=zmq.PULL
         )
         self.deserialize = deserialize
-        self.local_queue: deque[T] = deque()
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
@@ -245,12 +243,6 @@ class ZmqPullSocket(Generic[T]):
                 self.pull_socket.close()
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
-
-    def put_front_nowait(self, item: T) -> None:
-        """A new method that allows us to add requests to the front of the queue."""
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-        self.local_queue.append(item)
 
     def _pull_from_socket(self, **kwargs) -> T:
         if self._closed:
@@ -277,31 +269,10 @@ class ZmqPullSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
-        if self.local_queue:
-            return self.local_queue.pop()
-
         return self._pull_from_socket(**kwargs)
 
     def get_nowait(self, **kwargs) -> T:
         return self.get(flags=zmq.NOBLOCK, **kwargs)
-
-    def qsize(self) -> int:
-        """Return the size of the queue by repeatedly polling the ZmqSocket and
-        adding the items to the local queue."""
-        if self._closed:
-            return len(self.local_queue)
-
-        while True:
-            try:
-                item = self._pull_from_socket(flags=zmq.NOBLOCK)
-                self.local_queue.appendleft(item)
-            except queue.Empty:
-                break
-
-        return len(self.local_queue)
-
-    def empty(self) -> bool:
-        return self.qsize() == 0
 
 
 class ZmqRouterSocket(Generic[T]):
