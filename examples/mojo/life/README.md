@@ -18,7 +18,11 @@ This directory contains the following files:
   of the project, with a `Grid` struct representing the grid of cells as a block
   of memory managed by `UnsafePointer`.
 
-- The `benchmark.mojo` file performs a simple performance benchmark of the two
+- The source files `lifev3.mojo` and `gridv3.mojo` provide a subsequent version
+  of the project to parallelize the evolution of rows across available CPU
+  cores.
+ 
+- The `benchmark.mojo` file performs a simple performance benchmark of the three
   versions by running 1,000 evolutions of each `Grid` implementation using a
   1,024 x 1,024 grid.
 
@@ -41,10 +45,14 @@ This displays a window that shows an initial random state for the grid and then
 automatically updates it with subsequent generations. Quit the program by
 pressing the `q` or `<Escape>` key or by closing the window.
 
-You can execute version 2 of the program by running the following command:
+You can execute version 2 or version 3 of the program by running the following command:
 
 ```bash
 pixi run lifev2
+```
+
+```bash
+pixi run lifev3
 ```
 
 Just like for version 1, this displays a window that shows an initial random

@@ -59,3 +59,15 @@ mojo_test(
         "@mojo//:stdlib",
     ],
 )
+
+mojo_test(
+    name = "test_gridv3",
+    srcs = [
+        "gridv3.mojo",
+        "test/test_gridv3.mojo",
+    ],
+    main = "test/test_gridv3.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
