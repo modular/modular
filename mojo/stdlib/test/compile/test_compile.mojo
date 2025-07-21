@@ -27,9 +27,7 @@ def test_compile_llvm():
         return x + y
 
     alias func = my_add_function[DType.float32, 4]
-    var asm = compile_info[func, emission_kind="llvm"]()
-
-    assert_true("fadd" in asm)
+    assert_true("fadd" in compile_info[func, emission_kind="llvm"]())
 
 
 alias target_short_ptr = __mlir_attr[

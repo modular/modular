@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 from sys.info import _get_arch
 
-from compile import Info, compile_info
+from compile import CompiledFunctionInfo, compile_info
 
 from .info import A100, DEFAULT_GPU_ARCH
 from .info import GPUInfo
@@ -57,7 +57,7 @@ fn _compile_code[
     compile_options: StaticString = GPUInfo.from_target[
         target
     ]().compile_options,
-]() -> Info[func_type, func, target]:
+]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,
         emission_kind=emission_kind,
