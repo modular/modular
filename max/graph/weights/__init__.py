@@ -16,13 +16,11 @@ from ._loader_wrappers import GGUFWeights, PytorchWeights
 from .format import WeightsFormat, weights_format
 from .load import load_weights
 from .load_safetensors import SafetensorWeights
-from .random_weights import RandomWeights
 from .weights import WeightData, Weights, WeightsAdapter
 
 __all__ = [
     "GGUFWeights",
     "PytorchWeights",
-    "RandomWeights",
     "SafetensorWeights",
     "WeightData",
     "Weights",
