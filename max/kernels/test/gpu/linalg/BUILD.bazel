@@ -37,7 +37,6 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _FILECHECK_TESTS = [
-    "test_batched_matmul.mojo",
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
