@@ -60,14 +60,14 @@ class PipelineTask(str, Enum):
         from .pipeline_variants import (
             AudioGenerationResponse,
             EmbeddingsResponse,
-            TextGenerationResponse,
+            TextGenerationOutput,
         )
 
         if self in [
             PipelineTask.TEXT_GENERATION,
             PipelineTask.SPEECH_TOKEN_GENERATION,
         ]:
-            return dict[str, EngineResult[TextGenerationResponse]]
+            return dict[str, EngineResult[TextGenerationOutput]]
         elif self == PipelineTask.EMBEDDINGS_GENERATION:
             return dict[str, EngineResult[EmbeddingsResponse]]
         elif self == PipelineTask.AUDIO_GENERATION:
