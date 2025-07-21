@@ -7,11 +7,11 @@
 # RUN: mojo doc %s | FileCheck %s
 
 
-from gpu.host.info import Info, Vendor
+from gpu.host.info import GPUInfo, Vendor
 
 # CHECK: "name": "Radeon7600",
-# CHECK: "value": "Info(\"Radeon 7600\", Vendor(1), \"hip\", \"gfx1102\", \"\", 11, \"RDNA3\", 32, 32, 1024, 32, 32, 1024, 2, 32768, 32768, 256, \"warp\", 255, 32768, 2, 128, 4, 1024)"
-alias Radeon7600 = Info(
+# CHECK: "value": "GPUInfo(\"Radeon 7600\", Vendor(1), \"hip\", \"gfx1102\", \"\", 11, \"RDNA3\", 32, 32, 1024, 32, 32, 1024, 2, 32768, 32768, 256, \"warp\", 255, 32768, 2, 128, 4, 1024)"
+alias Radeon7600 = GPUInfo(
     name="Radeon 7600",
     vendor=Vendor.AMD_GPU,
     api="hip",
