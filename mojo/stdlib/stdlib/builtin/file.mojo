@@ -133,7 +133,7 @@ struct FileHandle(Defaultable, Movable, Writer):
           existing: The existing file handle.
         """
         self.handle = existing.handle
-        existing.handle = OpaquePointer()
+        # Destructor is already disabled on existing.
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
