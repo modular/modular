@@ -8,7 +8,6 @@ from typing import (
     Optional,
     Protocol,
     TypeVar,
-    Union,
     runtime_checkable,
 )
 
@@ -17,44 +16,33 @@ from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.status import GenerationStatus
 
 
-class TextResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """A base class for model responses, specifically for text model variants."""
+class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
+    """
+    Represents the output of a text generation operation, combining token IDs,
+    final generation status, request ID, and optional log probabilities for each token.
+    """
 
-    next_token: Union[int, str] = msgspec.field()
-    """Encoded predicted next token."""
-    log_probabilities: Optional[LogProbabilities] = msgspec.field(default=None)
-    """Log probabilities of each output token."""
+    request_id: str
+    """The unique identifier for the generation request."""
 
-    def __eq__(self, value: object) -> bool:
-        if not isinstance(value, TextResponse):
-            return False
+    tokens: list[int]
+    """List of generated token IDs."""
 
-        return (
-            self.next_token == value.next_token
-            and self.log_probabilities == value.log_probabilities
-        )
-
-
-class TextGenerationResponse(msgspec.Struct, tag=True, omit_defaults=True):
-    """Response structure for text generation."""
-
-    tokens: list[TextResponse] = msgspec.field()
-    """List of generated text responses."""
-    final_status: GenerationStatus = msgspec.field()
+    final_status: GenerationStatus
     """The final status of the generation process."""
+
+    log_probabilities: Optional[list[LogProbabilities]] = None
+    """Optional list of log probabilities for each token."""
 
     @property
     def is_done(self) -> bool:
-        """Returns True if the generation process is complete."""
+        """
+        Indicates whether the text generation process is complete.
+
+        Returns:
+            bool: True if the generation is done, False otherwise.
+        """
         return self.final_status.is_done
-
-    def append_token(self, token: TextResponse) -> None:
-        """Appends a token to the list of generated text responses."""
-        self.tokens.append(token)
-
-    def update_status(self, status: GenerationStatus) -> None:
-        """Updates the final status of the generation process."""
-        self.final_status = status
 
 
 T = TypeVar("T")
@@ -66,7 +54,7 @@ class TokenGenerator(Generic[T], Protocol):
 
     def next_token(
         self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Computes the next token response for a single batch.
 
         Args:
@@ -74,7 +62,7 @@ class TokenGenerator(Generic[T], Protocol):
             num_steps: Number of tokens to generate.
 
         Returns:
-            list[dict[str, TextResponse]]: List of encoded responses (indexed by req. ID)
+            dict[str, TextGenerationOutput]: Dictionary of responses indexed by request ID.
         """
         ...
 
