@@ -74,9 +74,6 @@ struct MemType(Copyable, Movable):
 # CHECK-NEXT:     [[M8:%.*]] = lit.ref.struct.ger %other[call]
 # CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
 # CHECK-NEXT:     lit.ref.store [[M9]], [[M7]]
-# CHECK-NEXT:     %pointer = kgen.param.constant: pointer<none> = <0>
-# CHECK-NEXT:     [[V0:%.*]] = lit.ref.struct.ger %other[field0]
-# CHECK-NEXT:     lit.ref.store %pointer, [[V0]]
 # CHECK-NEXT:     [[V3:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:     lit.ownership.mark_destroyed %other
 

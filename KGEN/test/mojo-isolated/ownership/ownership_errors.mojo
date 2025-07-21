@@ -328,6 +328,7 @@ fn fieldConsumeError(
 
     # This is ok because we replace the mem field.
     y.mem^.consume()
+
     y.mem = MemExample()
 
     z.mem^.consume()
@@ -386,7 +387,6 @@ fn testStructWithNoDel():
     var l = StructWithNoDel(100)
     # expected-error @below {{value 'l' cannot be consumed, because 'l.x' is used later}}
     take(l^)
-    # expected-warning @+1 {{assignment to 'l.x' was never used}}
     l.x = 10
 
 
@@ -432,7 +432,6 @@ struct TrivialRange(Copyable, Iterator):
 fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
     for _ in TrivialRange():
-        # expected-warning @+1 {{assignment to 'w.x.y' was never used}}
         w.x.y = 0
 
 
@@ -534,6 +533,10 @@ fn test_uninit_store_trivial():
     example.a = 1
     # expected-warning @+1 {{assignment to 'example.b' was never used}}
     example.b = 2
+
+fn test_owned_warning(var arg: TrivialAggregate):
+    # expected-warning @+1 {{assignment to 'arg' was never used}}
+    arg = TrivialAggregate()
 
 
 @register_passable("trivial")
