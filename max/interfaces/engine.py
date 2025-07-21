@@ -10,9 +10,10 @@ to communicate operation outcomes, including success and cancellation states.
 """
 
 from enum import Enum
-from typing import Generic, Optional, TypeVar
+from typing import Generic, Optional, Protocol, TypeVar, runtime_checkable
 
 import msgspec
+from typing_extensions import TypeAlias
 
 
 class EngineStatus(str, Enum):
@@ -33,6 +34,37 @@ class EngineStatus(str, Enum):
     """Indicates that the request was previously finished and no further data should be streamed."""
 
 
+@runtime_checkable
+class EngineOutput(Protocol):
+    """
+    Abstract base class representing the output of an engine operation.
+
+    Subclasses must implement the `is_done` property to indicate whether
+    the engine operation has completed.
+    """
+
+    @property
+    def is_done(self) -> bool:
+        """
+        Indicates whether the engine operation has completed.
+
+        Returns:
+            bool: True if the operation is done, False otherwise.
+        """
+        ...
+
+
+O = TypeVar("O", bound=EngineOutput)
+
+EngineOutputs: TypeAlias = dict[str, O]
+"""
+Type alias for a dictionary mapping string keys to EngineOutput instances.
+
+This is used to represent a collection of engine outputs, where each key
+identifies a specific output.
+"""
+
+# TODO: Make EngineOutputs bound to EngineOutput, and remove redundancy
 T = TypeVar("T")
 
 
