@@ -211,7 +211,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             existing: The list to copy.
         """
         self = Self(capacity=existing.capacity)
-        self.append(existing)
+        self.extend(Span(existing))
 
     fn __del__(owned self):
         """Destroy all elements in the list and free its memory."""
@@ -533,29 +533,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
-    fn append(mut self, elements: Span[T, _]):
-        """Appends elements to this list.
-
-        Args:
-            elements: The elements to append.
-        """
-        var elements_len = len(elements)
-        var new_num_elts = self._len + elements_len
-        if new_num_elts > self.capacity:
-            # Make sure our capacity at least doubles to avoid O(n^2) behavior.
-            self._realloc(max(self.capacity * 2, new_num_elts))
-
-        var i = self._len
-        self._len = new_num_elts
-
-        @parameter
-        if hint_trivial_type:
-            memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
-        else:
-            for elt in elements:
-                UnsafePointer(to=self[i]).init_pointee_copy(elt)
-                i += 1
-
     fn insert(mut self, i: Int, var value: T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
@@ -618,6 +595,31 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         # The elements of `other` are now consumed, so we mark it as empty so
         # they don't get destroyed when it goes out of scope.
         other._len = 0
+
+    fn extend(mut self, elements: Span[T, _]):
+        """Extend this list by copying elements from a `Span`.
+
+        The resulting list will have the length `len(self) + len(elements)`.
+
+        Args:
+            elements: The elements to copy into this list.
+        """
+        var elements_len = len(elements)
+        var new_num_elts = self._len + elements_len
+        if new_num_elts > self.capacity:
+            # Make sure our capacity at least doubles to avoid O(n^2) behavior.
+            self._realloc(max(self.capacity * 2, new_num_elts))
+
+        var i = self._len
+        self._len = new_num_elts
+
+        @parameter
+        if hint_trivial_type:
+            memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
+        else:
+            for elt in elements:
+                UnsafePointer(to=self[i]).init_pointee_copy(elt)
+                i += 1
 
     fn extend[
         dtype: DType, //

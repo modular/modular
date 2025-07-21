@@ -157,6 +157,12 @@ mutation.
   use `InlineArray` in situations where the number of elements is generic and
   could also be 0.
 
+- `List.append(Span)` has been renamed to `List.extend(Span)`. It is important
+  for readability and consistency that `append()` always grows the length of
+  the list by exactly 1. `extend()` in both Python and Rust is the variant of
+  this operation that takes an arbitrary-length number of additional elements
+  (possibly 0) to add to the list.
+
 ### Tooling changes
 
 - Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match
