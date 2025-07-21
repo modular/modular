@@ -1160,6 +1160,7 @@ async def create_streaming_audio_speech(
             sampling_params=sampling_params,
             audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
             audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
+            lora=audio_generation_request.lora,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,
