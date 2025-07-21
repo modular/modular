@@ -56,8 +56,7 @@ async def test_smollm2_with_lora_adapter() -> None:
         response = pipeline_with_lora.next_token(contexts, num_steps=1)
 
         for req_id, resp in response.items():
-            for token in resp.tokens:
-                generated_tokens.append(token.next_token)
+            generated_tokens.extend(resp.tokens)
 
             if resp.is_done:
                 del contexts[req_id]
@@ -116,8 +115,7 @@ async def test_lora_vs_base_comparison() -> None:
     while contexts:
         response = pipeline_base.next_token(contexts, num_steps=1)
         for req_id, resp in response.items():
-            for token in resp.tokens:
-                base_tokens.append(token.next_token)
+            base_tokens.extend(resp.tokens)
             if resp.is_done:
                 del contexts[req_id]
 
@@ -126,8 +124,7 @@ async def test_lora_vs_base_comparison() -> None:
     while contexts:
         response = pipeline_with_lora.next_token(contexts, num_steps=1)
         for req_id, resp in response.items():
-            for token in resp.tokens:
-                lora_tokens.append(token.next_token)
+            lora_tokens.extend(resp.tokens)
             if resp.is_done:
                 del contexts[req_id]
 
@@ -181,8 +178,7 @@ async def test_multiple_lora_adapters() -> None:
         response = pipeline.next_token(contexts, num_steps=1)
 
         for req_id, resp in response.items():
-            for token in resp.tokens:
-                results[req_id].append(token.next_token)
+            results[req_id].extend(resp.tokens)
 
             if resp.is_done:
                 pipeline.release(contexts[req_id])

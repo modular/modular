@@ -141,8 +141,7 @@ async def test_lora_vs_base_model_logits(
         response = pipeline.next_token(contexts, num_steps=1)
 
         for name, ctx in response.items():
-            for token in ctx.tokens:
-                tokens[name].append(token.next_token)
+            tokens[name].extend(ctx.tokens)
 
         for name, ctx in response.items():
             if ctx.is_done:

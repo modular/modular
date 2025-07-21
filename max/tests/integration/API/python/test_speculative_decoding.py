@@ -486,12 +486,8 @@ def test_speculative_decoding_context_update(
     assert len(response) == 2
     assert len(response[req_id1].tokens) == reject_token1_idx + 1
     assert len(response[req_id2].tokens) == reject_token2_idx + 1
-    response_tokens1 = np.array(
-        [t.next_token for t in response[req_id1].tokens]
-    )
-    response_tokens2 = np.array(
-        [t.next_token for t in response[req_id2].tokens]
-    )
+    response_tokens1 = response[req_id1].tokens
+    response_tokens2 = response[req_id2].tokens
 
     assert np.all(
         response_tokens1

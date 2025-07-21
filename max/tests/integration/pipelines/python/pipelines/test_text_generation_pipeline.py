@@ -117,7 +117,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  #
 
         length = [0 for _ in range(len(context_batch))]
         while True:
-            # This will generate a list[dict[request_id, TextResponse]] for each step
+            # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             output = pipeline.next_token(context_batch, num_steps=1)
             assert len(output) == len(context_batch)
 

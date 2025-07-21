@@ -8,7 +8,7 @@
 import time
 
 import pytest
-from max.interfaces import PipelineTask, TextGenerationResponse
+from max.interfaces import PipelineTask, TextGenerationOutput
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PipelineConfig
@@ -29,7 +29,7 @@ class MockPipelineConfig(PipelineConfig):
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int = 1
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         # Sleep for 1 ms - otherwise, the echo token generator
         # can break some separation of timescale assumptions
         time.sleep(1e-3)
