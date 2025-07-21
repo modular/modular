@@ -329,7 +329,6 @@ class TextTokenizer(
     async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information like
         cache_seq_id and prompt from TokenGeneratorRequest."""
-
         # Encode Prompt / Messages
         prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
@@ -375,6 +374,7 @@ class TextTokenizer(
             json_schema=json_schema,
             sampling_params=request.sampling_params,
             model_name=request.model_name,
+            lora_name=request.lora_name,
         )
         context.assign_to_cache(request.index)
         return context

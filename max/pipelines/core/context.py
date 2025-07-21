@@ -24,11 +24,7 @@ from typing import Any, Optional
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    GenerationStatus,
-    LogProbabilities,
-    SamplingParams,
-)
+from max.interfaces import GenerationStatus, LogProbabilities, SamplingParams
 
 CHUNK_SIZE = 128
 
@@ -82,6 +78,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     )
     streaming: bool = msgspec.field(default=False)
     model_name: str = msgspec.field(default="")
+    lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
     _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
     _cache_seq_id: int | None = msgspec.field(default=None)

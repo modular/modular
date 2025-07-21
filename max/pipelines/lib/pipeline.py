@@ -222,6 +222,7 @@ class PipelineModel(ABC, Generic[T]):
 
         self._lora_manager = (
             LoRAManager(
+                pipeline_config.model_config.model_path,
                 weights,
                 self.pipeline_config.lora_config.max_num_loras,
                 self.pipeline_config.lora_config.max_lora_rank,

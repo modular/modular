@@ -315,9 +315,9 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
-            model_names: list[str] = [ctx.model_name for ctx in context_batch]
+            lora_names = [ctx.lora_name for ctx in context_batch]
             lora_ids, lora_ranks = self._lora_manager.get_lora_graph_inputs(
-                model_names, self.devices[0]
+                lora_names, self.devices[0]
             )
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
