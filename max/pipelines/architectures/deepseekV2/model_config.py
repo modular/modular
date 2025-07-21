@@ -103,7 +103,7 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
         if self.tie_word_embeddings:
             raise ValueError("tie_word_embeddings is not supported yet")
 
-        if self.pad_token_id != None:
+        if self.pad_token_id is not None:
             raise ValueError("Padding token is not supported yet")
 
     @staticmethod

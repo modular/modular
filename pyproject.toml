@@ -50,15 +50,8 @@ ignore = [
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
   "D105", # undocumented-magic-method
-  "D106", # undocumented-public-nested-class
-  "D205", # missing-blank-line-after-summary
-  "D209", # new-line-after-last-paragraph
-  "D212", # multi-line-summary-first-line (to allow init with args only)
-  "E401", # multiple imports on one line
   "E402", # TODO: import top of file
-  "E711", # TODO: comparison to None
   "E712", # TODO: Unnecessary comparison to bool
-  "E721", # TODO: Use isinstance
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
@@ -67,10 +60,10 @@ ignore = [
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
   "RUF005", # Consider iterable unpacking instead of concatenation
+  "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
-  "RUF009", # Do not perform function call in dataclass defaults
   "SIM101", # Duplicate isinstance
   "SIM102", # Collapsible if
   "SIM105", # Suppressible exception

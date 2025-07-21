@@ -698,7 +698,7 @@ class Spec:
         return self
 
     def __next__(self) -> SpecInstance:
-        assert self.mesh != None, (
+        assert self.mesh is not None, (
             "Should call self.init_mesh after loading or in postinit."
         )
 
