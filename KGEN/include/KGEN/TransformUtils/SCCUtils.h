@@ -48,7 +48,7 @@ struct SCCNode : CallGraphNodeBase<DerivedT, FuncOpT, CallOpT> {
 // SCCGraph
 //===----------------------------------------------------------------------===//
 
-template <typename DerivedT, typename NodeT>
+template <typename DerivedT, typename NodeT, bool BottomUpRewrite = false>
 struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
   using SCC = typename NodeT::SCC;
   using FuncOpT = typename NodeT::FuncOpT;
@@ -94,12 +94,21 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
       return;
     doAnalysis(scc);
 
+    // For a bottom-up rewrite, perform rewriting as soon as the analysis is
+    // complete as rewriting is expected to complete before rewriting any
+    // callers are rewritten.
+    // Otherwise, queue the rewrites to occur asynchronously.
+    if constexpr (BottomUpRewrite) {
+      for (NodeT *node : scc->nodes)
+        ParentT::getDerived().doRewrite(node);
+    } else {
+      for (NodeT *node : scc->nodes)
+        state.fork([this, node] { ParentT::getDerived().doRewrite(node); });
+    }
+
     for (SCC *caller : scc->callers)
       if (++caller->numReady == caller->numCallees)
         state.fork([this, &state, caller] { doWork(caller, state); });
-
-    for (NodeT *node : scc->nodes)
-      state.fork([this, node] { ParentT::getDerived().doRewrite(node); });
   }
 
   /// This runs the analysis on the full call graph in post-order SCC. It starts
@@ -161,10 +170,12 @@ struct SCCGraph : public CallGraphBase<DerivedT, NodeT> {
 } // namespace M::KGEN
 
 namespace llvm {
-template <typename DerivedT, typename NodeT>
-struct GraphTraits<M::KGEN::SCCGraph<DerivedT, NodeT> *>
-    : public GraphTraits<typename M::KGEN::SCCGraph<DerivedT, NodeT>::BaseT *> {
-  static NodeT *getEntryNode(M::KGEN::SCCGraph<DerivedT, NodeT> *graph) {
+template <typename DerivedT, typename NodeT, bool BottomUpRewrite>
+struct GraphTraits<M::KGEN::SCCGraph<DerivedT, NodeT, BottomUpRewrite> *>
+    : public GraphTraits<typename M::KGEN::SCCGraph<DerivedT, NodeT,
+                                                    BottomUpRewrite>::BaseT *> {
+  static NodeT *
+  getEntryNode(M::KGEN::SCCGraph<DerivedT, NodeT, BottomUpRewrite> *graph) {
     return &graph->externalNode;
   }
 };
