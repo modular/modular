@@ -145,9 +145,12 @@ modular_py_test(
     ],
     deps = [
         ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         requirement("transformers"),
         requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
     ],
 )
 

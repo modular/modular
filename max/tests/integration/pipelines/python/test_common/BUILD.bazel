@@ -19,6 +19,7 @@ modular_py_library(
         ":evaluate_embeddings",
         ":github_utils",
         ":graph_utils",
+        ":lora_utils",
         ":mocks",
         ":ndarray_from_tensor_type",
         ":numerics",
@@ -229,5 +230,21 @@ modular_py_library(
         "//Support/python:support",
         requirement("rich"),
         requirement("scipy"),
+    ],
+)
+
+modular_py_library(
+    name = "lora_utils",
+    srcs = ["lora_utils.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

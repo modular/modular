@@ -25,6 +25,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/core",
         requirement("numpy"),
+        requirement("pytest-asyncio"),
     ],
 )
 
@@ -80,6 +81,6 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/pipelines/lib",
-        requirement("transformers"),
+        requirement("numpy"),
     ],
 )
