@@ -14,7 +14,6 @@
 
 """Utilities for serving cli."""
 
-import functools
 import logging
 import signal
 import sys
@@ -22,7 +21,6 @@ from typing import Optional, Union
 
 import uvloop
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
@@ -35,11 +33,6 @@ from max.serve.api_server import (
     fastapi_config,
 )
 from max.serve.config import Settings
-from max.serve.pipelines.performance_fake import (
-    PerformanceFakingPipelineTokenizer,
-    get_performance_fake,
-)
-from transformers import AutoTokenizer
 from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
@@ -70,7 +63,6 @@ def sigint_handler(sig, frame) -> None:  # noqa: ANN001
 
 def serve_pipeline(
     pipeline_config: PipelineConfig,
-    performance_fake: str = "none",
     profile: bool = False,
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
@@ -104,36 +96,15 @@ def serve_pipeline(
         assert isinstance(pipeline_config, AudioGenerationConfig)
         override_architecture = pipeline_config.audio_decoder
 
-    if performance_fake == "none":
-        logger.info(
-            f"Starting server using {pipeline_config.model_config.model_path}"
-        )
-        # Load tokenizer and pipeline from PIPELINE_REGISTRY.
-        tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-            pipeline_config,
-            task=pipeline_task,
-            override_architecture=override_architecture,
-        )
-    else:
-        logger.info(
-            f"Starting server using performance fake {performance_fake}."
-        )
-        tokenizer = PerformanceFakingPipelineTokenizer(
-            AutoTokenizer.from_pretrained(
-                pipeline_config.model_config.model_path
-            )
-        )
-        pipeline_factory = functools.partial(
-            get_performance_fake,
-            performance_fake,  # type: ignore
-            failure_percentage,
-        )
-
-        # TODO(AITLIB-320): Figure out a way to avoid monkey patching PipelineConfig
-        # here.
-        pipeline_config.model_config.kv_cache_config.cache_strategy = (
-            KVCacheStrategy.CONTINUOUS
-        )
+    logger.info(
+        f"Starting server using {pipeline_config.model_config.model_path}"
+    )
+    # Load tokenizer and pipeline from PIPELINE_REGISTRY.
+    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_config,
+        task=pipeline_task,
+        override_architecture=override_architecture,
+    )
 
     # If explicit model name is not provided, set to model_path.
     if model_name is None:

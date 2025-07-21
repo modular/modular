@@ -123,12 +123,6 @@ def common_server_options(func):  # noqa: ANN001
         ),
     )
     @click.option(
-        "--performance-fake",
-        type=click.Choice(["none", "no-op", "speed-of-light", "vllm"]),
-        default="none",
-        help="Fake the engine performance (for benchmarking)",
-    )
-    @click.option(
         "--model-name",
         type=str,
         help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
@@ -167,7 +161,6 @@ def common_server_options(func):  # noqa: ANN001
 )
 def cli_serve(
     profile_serve: bool,
-    performance_fake: str,
     model_name: str | None,
     sim_failure: int,
     experimental_enable_kvcache_agent: bool,
@@ -205,7 +198,6 @@ def cli_serve(
     serve_pipeline(
         pipeline_config=pipeline_config,
         profile=profile_serve,
-        performance_fake=performance_fake,
         model_name=model_name,
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
