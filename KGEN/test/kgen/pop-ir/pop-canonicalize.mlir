@@ -717,7 +717,7 @@ kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
 
 // CHECK-LABEL: @bitcast_size_change
 kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
-  // CHECK: pop.bitcast
+  // CHECK: <<1, 0, 2, 0>>
   %0 = kgen.param.constant: simd<2, si32> = <<1, 2>>
   %1 = pop.bitcast %0 : !pop.simd<2, si32> to !pop.simd<4, si16>
   kgen.return %1 : !pop.simd<4, si16>

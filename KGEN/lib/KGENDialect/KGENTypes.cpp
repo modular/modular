@@ -775,12 +775,12 @@ KGEN::NoneType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess KGEN::NoneType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
-  return writeSymbolicAttribute(*this, value, addr, state);
+  return success();
 }
 
 ErrorOr<TypedAttr> KGEN::NoneType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
-  return readSymbolicAttribute(*this, addr, state);
+  return KGEN::NoneAttr::get(state.getContext());
 }
 
 //===----------------------------------------------------------------------===//

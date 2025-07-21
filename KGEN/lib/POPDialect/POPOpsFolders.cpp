@@ -914,19 +914,89 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
                                               std::forward<OpsFns>(ops)...);
 }
 
+static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
+                            size_t inSize, KGENDType outputDType,
+                            size_t outSize, TargetInfoAttr target) {
+  if (!operand)
+    return {};
+
+  // The reshape is invalid.
+  ssize_t outWidth = outputDType.getWidthInBits();
+  ssize_t inWidth = inputDType.getWidthInBits();
+  if (inSize * inWidth != outSize * outWidth)
+    return {};
+
+  SmallVector<DTypeValue> typeValues;
+  auto addValue = [&outputDType, &typeValues](APInt value) -> void {
+    if (outputDType.isFloat()) {
+      const llvm::fltSemantics *sem = outputDType.getFloatSemantics();
+      unsigned floatBits = APFloat::semanticsSizeInBits(*sem);
+      APInt extractedBits = value.extractBits(floatBits, 0);
+      typeValues.push_back(DTypeValue(extractedBits, outputDType));
+    } else {
+      typeValues.push_back(DTypeValue(value, outputDType));
+    }
+  };
+  bool isLittleEndian = target ? target.getTriple().isLittleEndian() : true;
+  if (inWidth < outWidth) {
+    unsigned elementsPerOutput = outWidth / inWidth;
+    for (unsigned outIdx = 0; outIdx < outSize; outIdx++) {
+      APInt combined(outWidth, 0);
+
+      for (unsigned elemIdx = 0; elemIdx < elementsPerOutput; elemIdx++) {
+        unsigned inIdx = outIdx * elementsPerOutput + elemIdx;
+        APInt inputValue = operand.getValues()[inIdx].getData();
+
+        unsigned shiftAmount =
+            isLittleEndian ? (elemIdx * inWidth)
+                           : ((elementsPerOutput - 1 - elemIdx) * inWidth);
+
+        combined |= inputValue.zext(outWidth) << shiftAmount;
+      }
+      addValue(combined);
+    }
+  } else {
+    unsigned chunkSizeBits = outWidth;
+    unsigned numChunks = inWidth / outWidth;
+
+    for (unsigned i = 0; i < inSize; i++) {
+      APInt value = operand.getValues()[i].getData();
+      for (unsigned chunk = 0; chunk < numChunks; chunk++) {
+        unsigned bitPos = isLittleEndian
+                              ? (chunk * chunkSizeBits)
+                              : ((numChunks - 1 - chunk) * chunkSizeBits);
+
+        APInt extractedBits = value.extractBits(chunkSizeBits, bitPos);
+        addValue(extractedBits);
+      }
+    }
+  }
+
+  return SIMDAttr::get(
+      typeValues, SIMDType::get(operand.getContext(), outSize, outputDType));
+}
+
 OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
   std::optional<KGENDType> dtype = getType().getResolvedDType();
   std::optional<KGENDType> inputDType = getInput().getType().getResolvedDType();
-  if (!dtype || !inputDType || !getType().getResolvedSize() ||
-      getInput().getType().getResolvedSize() != getType().getResolvedSize())
+  std::optional<unsigned> inputSize = getInput().getType().getResolvedSize();
+  std::optional<unsigned> outputSize = getType().getResolvedSize();
+  if (!dtype || !inputDType || !inputSize || !outputSize)
     return {};
+
   if (inputDType->isBool() ||
       dtype->isBool()) // Modeling bool bitcast requires packing.
     return {};
 
   TargetInfoAttr target = lookupTargetInfo(*this);
+  auto operand = adaptor.getOperands().front();
+  if (isa_and_nonnull<SIMDAttr>(operand) && inputSize != outputSize &&
+      operand) {
+    return reshape(cast<SIMDAttr>(operand), *inputDType, *inputSize, *dtype,
+                   *outputSize, target);
+  }
   if (dtype->isInt()) {
     return bitcastSIMDIndex(
         adaptor.getOperands(), *inputDType, *dtype, target,

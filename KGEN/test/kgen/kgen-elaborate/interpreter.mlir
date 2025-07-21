@@ -868,3 +868,53 @@ kgen.generator export @top() -> () {
   >
   kgen.return
 }
+
+// -----
+
+// COM: Check integer bitcasting when sizes do not match.
+
+kgen.generator @check128to64(%arg0: !pop.simd<1, ui128>) -> !pop.simd<2, ui64> {
+  %0 = pop.bitcast %arg0 : !pop.simd<1, ui128> to !pop.simd<2, ui64>
+  kgen.return %0 : !pop.simd<2, ui64>
+}
+
+kgen.generator @check64to128(%arg0: !pop.simd<2, ui64>) -> !pop.simd<1, ui128> {
+  %0 = pop.bitcast %arg0 : !pop.simd<2, ui64> to !pop.simd<1, ui128>
+  kgen.return %0 : !pop.simd<1, ui128>
+}
+
+kgen.generator @callIt() -> !pop.simd<2, ui64> {
+  kgen.param.declare X: simd<1, ui128> = <<16622636600618719503991588326398409450>>
+  kgen.param.declare Y: simd<2, ui64> = <apply(:(!pop.simd<1, ui128>) -> !pop.simd<2, ui64> @check128to64, X)>
+  // CHECK: <<4225598797516028650, 901114935741393800>>
+  %0 = kgen.param.constant: !pop.simd<2, ui64> = <Y>
+  // CHECK: <16622636600618719503991588326398409450>
+  kgen.param.declare Z: simd<1, ui128> = <apply(:(!pop.simd<2, ui64>) -> !pop.simd<1, ui128> @check64to128, Y)>
+  %1 = kgen.param.constant: !pop.simd<2, ui64> = <Z>
+  kgen.return %0 : !pop.simd<2, ui64>
+}
+
+// -----
+
+// COM: Check float bitcasting when sizes do not match.
+
+kgen.generator @check64to32(%arg0: !pop.simd<1, f64>) -> !pop.simd<2, f32> {
+  %0 = pop.bitcast %arg0 : !pop.simd<1, f64> to !pop.simd<2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}
+
+kgen.generator @check32to64(%arg0: !pop.simd<2, f32>) -> !pop.simd<1, f64> {
+  %0 = pop.bitcast %arg0 : !pop.simd<2, f32> to !pop.simd<1, f64>
+  kgen.return %0 : !pop.simd<1, f64>
+}
+
+kgen.generator @callFloatBitcast() -> !pop.simd<2, f32> {
+  kgen.param.declare X: simd<1, f64> = <<"3.1415926535897931">>
+  kgen.param.declare Y: simd<2, f32> = <apply(:(!pop.simd<1, f64>) -> !pop.simd<2, f32> @check64to32, X)>
+  // CHECK: <<"3.37028055E+12", "2.142699">>
+  %0 = kgen.param.constant: !pop.simd<2, f32> = <Y>
+  // CHECK: <"3.1415926535897931">
+  kgen.param.declare Z: simd<1, f64> = <apply(:(!pop.simd<2, f32>) -> !pop.simd<1, f64> @check32to64, Y)>
+  %1 = kgen.param.constant: !pop.simd<1, f64> = <Z>
+  kgen.return %0 : !pop.simd<2, f32>
+}
