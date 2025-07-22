@@ -38,8 +38,6 @@ ssize_t DType::getWidthInBits() const {
     // Handle other types.
   case DType::kBool:
     return 8;
-  case DType::tf32:
-    return 19;
   }
 }
 
@@ -72,7 +70,7 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
 
     // Otherwise, we're growing this convert shift amount to byte shift amount.
     widthShift -= 3;
-  } else if (isFloat() && getValue() != DType::tf32) {
+  } else if (isFloat()) {
     ssize_t bitCount = getWidthInBits();
     assert(llvm::isPowerOf2_32(bitCount) && "all FP types are power of 2 size");
     widthShift = llvm::Log2_32(bitCount) - 3;
@@ -83,9 +81,6 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     // Handle other types.
     case DType::kBool:
       widthShift = 0; // kBool is stored in a single byte each.
-      break;
-    case DType::tf32: // tf32 has 19bits, store as 4 bytes.
-      widthShift = 2;
       break;
     }
   }
@@ -143,10 +138,6 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return getComplexChecked(*elt);
     }
     return failure();
-  case 't':
-    if (str == "tf32")
-      return DType(tf32);
-    return failure();
   case 'i':
     if (str == "invalid")
       return DType(invalid);
@@ -173,8 +164,6 @@ std::string DType::getAsString() const {
     return #SHORT_NAME;
 #include "Support/ML/FloatTypes.def"
 #undef DECLARE_FLOAT
-  case tf32:
-    return "tf32";
   case kBool:
     return "bool";
   case invalid:

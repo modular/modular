@@ -122,11 +122,6 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
     return buildIntFpDebugType<DIBasicSIntType>(ctx, targetInfo, dtype, 64, 64);
   case DType::ui64:
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 64, 64);
-    // Any integral type larger than 64 bits is handled generically in the
-    // `default` clause.
-  case DType::tf32:
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
-                                                 32);
 
   case DType::invalid:
     return DIUnspecifiedType::get(

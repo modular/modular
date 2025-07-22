@@ -338,10 +338,6 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <{{.*}}>
   kgen.param.constant = <apply(:() -> index @store_undef)>
 
-  // CHECK-NEXT: <tf32>
-  kgen.param.constant: dtype = <apply(
-    :(!kgen.dtype) -> !kgen.dtype @store_load<:type dtype>, tf32)>
-
   // CHECK-NEXT: <"hello world">
   kgen.param.constant: string = <apply(
     :(!kgen.string) -> !kgen.string @store_load<:type string>, "hello world")>

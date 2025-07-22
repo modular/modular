@@ -109,8 +109,6 @@ public:
     f32 = 8 | mIsFloat,
     f64 = 9 | mIsFloat,
 
-    tf32 = 10 | mIsFloat,
-
     // Helpers for common complex types.  We don't need to enumerate all of
     // them, though, use DType::getComplex(eltType) for generality.
     complex_f32 = f32 | mIsComplex,
@@ -166,8 +164,6 @@ public:
     return !isInt() && ((value & mIsFloat) != 0);
   }
   bool isFloat8() const;
-
-  constexpr bool isTF32() const { return value == DType::tf32; }
 
   constexpr bool isArithmetic() const { return isInt() || isFloat(); }
   constexpr bool isOther() const { return !isArithmetic(); }

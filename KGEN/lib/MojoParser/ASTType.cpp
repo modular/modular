@@ -508,8 +508,6 @@ static std::string getDTypeAsString(KGENDType dtype) {
     return "int64";
   case KGENDType::ui64:
     return "uint64";
-  case KGENDType::tf32:
-    return "tensor_float32";
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, ...)                              \
   case KGENDType::SHORT_NAME:                                                  \
     return #LONG_NAME;
