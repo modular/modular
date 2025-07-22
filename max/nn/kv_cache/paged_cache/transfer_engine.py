@@ -29,12 +29,6 @@ from max.driver.tensor import Tensor
 logger = logging.getLogger("max.pipelines")
 
 
-def _enable_ucx_logging() -> None:
-    import os
-
-    os.environ["UCX_LOG_LEVEL"] = "debug"
-
-
 def _get_tensor_base_addr(tensor: Tensor) -> int:
     """Get the base address of a tensor."""
     return torch.from_dlpack(tensor).data_ptr()
@@ -114,9 +108,6 @@ class KVTransferEngine:
         *,
         listen_port: int = 8040,
     ) -> None:
-        # Comment out the below to enable UCX logging
-        # _enable_ucx_logging()
-
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
