@@ -49,3 +49,68 @@ async def test_basic(
 
     # Check that the hash values are unique.
     assert len(set(hash_vals)) == len(hash_vals)
+
+
+def check_for_collisions(
+    prompt_1: np.ndarray, prompt_2: np.ndarray, block_size: int
+) -> None:
+    block_hashes_1 = hash_request_tokens(prompt_1, block_size, hash("None"))
+    block_hashes_2 = hash_request_tokens(prompt_2, block_size, hash("None"))
+
+    hash_vals_1 = [block_hash.value for block_hash in block_hashes_1]
+    hash_vals_2 = [block_hash.value for block_hash in block_hashes_2]
+
+    for i, x in enumerate(hash_vals_1):
+        if x in hash_vals_2:
+            j = hash_vals_2.index(x)
+            raise ValueError(
+                f"Collision found at idx={i} and idx={j} with hash value {x}"
+            )
+
+    # There should be no duplicate hashes.
+    assert len(hash_vals_1) + len(hash_vals_2) == len(
+        set(hash_vals_1) | set(hash_vals_2)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_mojo_hasher", [True, False])
+async def test_collision(use_mojo_hasher: bool) -> None:
+    if use_mojo_hasher:
+        pytest.skip(
+            "Mojo hasher fails this test as it results in hash collisions."
+        )
+
+    block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
+    block_size = 1
+
+    prompt_1 = np.array([1, 1, 0, 1, 0, 0, 0, 1, 1, 0])
+    prompt_2 = np.array([0, 1, 0, 1, 0, 0, 0, 1, 1, 0])
+
+    check_for_collisions(prompt_1, prompt_2, block_size)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_mojo_hasher", [False, True])
+@pytest.mark.parametrize("block_size", [1, 128])
+async def test_collision_random(use_mojo_hasher: bool, block_size: int) -> None:
+    if use_mojo_hasher:
+        pytest.skip(
+            "Mojo hasher fails this test as it results in hash collisions."
+        )
+
+    block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
+    # Picking too large of number of iterations can cause test to timeout.
+    iterations = 10
+
+    for _ in range(iterations):
+        # Generate arbitrary suffix
+        random_prompt = np.random.randint(0, 2, size=8192)
+
+        # Append either 0 or 1 to the beginning of the prompt so they result in
+        # unique hashes,
+        prompt_1 = np.concatenate([np.array([0]), random_prompt])
+        prompt_2 = np.concatenate([np.array([1]), random_prompt])
+
+        # Check for collisions
+        check_for_collisions(prompt_1, prompt_2, block_size)
