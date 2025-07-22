@@ -18,6 +18,7 @@ lit_tests(
         "@mojo//:_mlir",
         "@mojo//:stdlib",
     ],
+    tags = ["gpu"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
