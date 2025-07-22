@@ -22,7 +22,7 @@ from memory import memcmp
 
 from collections.string.string_slice import _get_kgen_string
 from math import align_down, iota
-from sys import _libc as libc
+from sys.ffi.c import _libc as libc
 from sys import (
     alignof,
     external_call,
