@@ -8,13 +8,13 @@
 from multiprocessing.reduction import ForkingPickler
 
 import numpy
-from max.pipelines.core import TokenGeneratorRequest
+from max.interfaces import TextGenerationRequest
 
 
 def test_reductions() -> None:
     # No extra reductions to register at the moment.
 
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         id="0", index=0, prompt="test", model_name="test"
     )
     context = {
