@@ -122,5 +122,5 @@ class MockTextTokenizer(
     ) -> np.ndarray:
         return np.array([self.char_to_int[c] for c in prompt])
 
-    async def decode(self, context: T, encoded: np.ndarray, **kwargs) -> str:  # type: ignore
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
         return "".join([self.int_to_char[c] for c in encoded])

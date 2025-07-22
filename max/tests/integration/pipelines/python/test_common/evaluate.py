@@ -114,7 +114,6 @@ async def run_model_async(
                 print(
                     "Output:",
                     await tokenizer.decode(
-                        context,
                         np.array(
                             [v["next_token"] for v in values[req_id]],
                             dtype=np.int64,

@@ -98,7 +98,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
 
     print("Final Response: ")
     response_content = asyncio.run(
-        tokenizer.decode(context, tokens, skip_special_tokens=True)
+        tokenizer.decode(tokens, skip_special_tokens=True)
     )
     print(response_content)
 
