@@ -1,3 +1,4 @@
+import * as assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import {
   ClientCapabilities,
@@ -11,12 +12,13 @@ import { createMessageConnection } from "vscode-languageserver-protocol/node";
 export class LanguageServer {
   public connection: MessageConnection;
   private serverProcess: ChildProcess;
+  private alive: boolean = true;
 
   constructor() {
     this.serverProcess = spawn(
       process.env["MODULAR_MOJO_MAX_LSP_SERVER_PATH"]!,
       {
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "inherit"],
       }
     );
 
@@ -24,9 +26,14 @@ export class LanguageServer {
       this.serverProcess.stdout!,
       this.serverProcess.stdin!
     );
-    this.connection.onError((error) => {
-      throw error;
+    this.connection.onError((err) => {
+      console.error(err);
+      this.alive = false;
     });
+
+    this.connection.onClose(() => (this.alive = false));
+    this.connection.onDispose(() => (this.alive = false));
+    this.serverProcess.on("exit", () => (this.alive = false));
 
     this.connection.listen();
   }
@@ -60,6 +67,8 @@ export class LanguageServer {
   }
 
   async stop() {
+    assert.ok(this.alive, "server terminated early");
+
     await this.connection.sendRequest("shutdown");
 
     this.serverProcess.kill();
