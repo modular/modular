@@ -17,7 +17,7 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import InputContext, TextGenerationOutput
+from max.interfaces import InputContext, SchedulerResult, TextGenerationOutput
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -26,6 +26,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import (
     TextContext,
+    msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
 from max.serve.kvcache_agent.dispatcher_factory import (
@@ -305,8 +306,14 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     )
 
     # Create response pull socket
-    response_pull_socket = ZmqPullSocket[tuple[str, TextGenerationOutput]](
-        zmq_ctx, zmq_endpoint=decode_response_zmq_path
+    response_pull_socket = ZmqPullSocket[
+        dict[str, SchedulerResult[TextGenerationOutput]]
+    ](
+        zmq_ctx,
+        zmq_endpoint=decode_response_zmq_path,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
     )
 
     # Create cancel push socket

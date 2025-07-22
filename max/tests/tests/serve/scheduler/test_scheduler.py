@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 import zmq
 from max.interfaces import (
-    EngineResult,
     GenerationStatus,
+    SchedulerResult,
     TextGenerationOutput,
 )
 from max.pipelines.core import (
@@ -227,7 +227,7 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationOutput]]
+        dict[str, SchedulerResult[TextGenerationOutput]]
     ](
         zmq_ctx,
         scheduler.response_q.zmq_endpoint,
@@ -261,7 +261,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationOutput]]
+        dict[str, SchedulerResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_ce(sch_output)
@@ -290,7 +290,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationOutput]]
+        dict[str, SchedulerResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     request_push_socket.put(("req1", mock_request))
@@ -341,7 +341,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationOutput]]
+        dict[str, SchedulerResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     batch_to_execute = scheduler._create_batch_to_execute().batch_inputs
@@ -380,7 +380,7 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
-        dict[str, EngineResult[TextGenerationOutput]]
+        dict[str, SchedulerResult[TextGenerationOutput]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     scheduler._schedule_tg(sch_output)
