@@ -20,11 +20,6 @@ from .embeddings_generation import EmbeddingsGenerator
 from .text_generation import (
     PipelineTokenizer,
     TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
 )
 
 __all__ = [
@@ -34,9 +29,4 @@ __all__ = [
     "EmbeddingsGenerator",
     "PipelineTokenizer",
     "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
 ]

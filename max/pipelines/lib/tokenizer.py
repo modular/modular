@@ -25,14 +25,16 @@ from typing import Any, Optional, Union, cast
 
 import numpy as np
 import torch
+from max.interfaces import (
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+)
 from max.pipelines.core import (
     PipelineTokenizer,
     TextAndVisionContext,
     TextContext,
     TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
 )
 from PIL import Image
 from transformers import (
@@ -50,7 +52,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 class IdentityPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, str, TokenGeneratorRequest],
+    PipelineTokenizer[TokenGeneratorContext, str, TextGenerationRequest],
 ):
     @property
     def eos(self) -> int:
@@ -77,7 +79,7 @@ class IdentityPipelineTokenizer(
 
 
 class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, np.ndarray, TokenGeneratorRequest],
+    PipelineTokenizer[TokenGeneratorContext, np.ndarray, TextGenerationRequest],
 ):
     def __init__(
         self,
@@ -89,7 +91,7 @@ class PreTrainedPipelineTokenizer(
         self.delegate = delegate
 
     def apply_chat_template(
-        self, messages: list[TokenGeneratorRequestMessage]
+        self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         try:
             templated_message = self.delegate.apply_chat_template(
@@ -146,7 +148,7 @@ async def run_with_default_executor(fn, *args):  # noqa: ANN001
 
 
 class TextTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -208,8 +210,8 @@ class TextTokenizer(
 
     def apply_chat_template(
         self,
-        messages: list[TokenGeneratorRequestMessage],
-        tools: Optional[list[TokenGeneratorRequestTool]],
+        messages: list[TextGenerationRequestMessage],
+        tools: Optional[list[TextGenerationRequestTool]],
         chat_template_options: Optional[dict[str, Any]] = None,
     ) -> str:
         chat_template_options = chat_template_options or {
@@ -287,8 +289,8 @@ class TextTokenizer(
     async def _generate_prompt_and_token_ids(
         self,
         prompt: Optional[Union[Sequence[int], str]],
-        messages: Optional[list[TokenGeneratorRequestMessage]],
-        tools: Optional[list[TokenGeneratorRequestTool]] = None,
+        messages: Optional[list[TextGenerationRequestMessage]],
+        tools: Optional[list[TextGenerationRequestTool]] = None,
         chat_template_options: Optional[dict[str, Any]] = None,
     ) -> tuple[Union[str, list[int]], np.ndarray]:
         if prompt and messages:
@@ -305,7 +307,7 @@ class TextTokenizer(
             return prompt, await self.encode(prompt, add_special_tokens=False)
         else:
             raise ValueError(
-                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TokenGeneratorRequestMessage]"
+                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
 
     async def _get_eos_variables(
@@ -326,9 +328,9 @@ class TextTokenizer(
 
         return eos_token_ids, eos_sequences
 
-    async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+        cache_seq_id and prompt from TextGenerationRequest."""
         # Encode Prompt / Messages
         prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
@@ -422,7 +424,7 @@ class TextTokenizer(
 
 
 class TextAndVisionTokenizer(
-    PipelineTokenizer[TextAndVisionContext, np.ndarray, TokenGeneratorRequest],
+    PipelineTokenizer[TextAndVisionContext, np.ndarray, TextGenerationRequest],
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -463,8 +465,8 @@ class TextAndVisionTokenizer(
         self._default_eos_token_ids = set([self.eos])
 
     def _wrap_str_message_content(
-        self, messages: list[TokenGeneratorRequestMessage]
-    ) -> list[TokenGeneratorRequestMessage]:
+        self, messages: list[TextGenerationRequestMessage]
+    ) -> list[TextGenerationRequestMessage]:
         # Wrap string type values of "content" key with "type": "text" and its
         # value. For example, if the message is {"content": "Hello, world!"},
         # it will be wrapped with {"type": "text", "text": "Hello, world!"}.
@@ -482,7 +484,7 @@ class TextAndVisionTokenizer(
         return messages
 
     def apply_chat_template(
-        self, messages: list[TokenGeneratorRequestMessage]
+        self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         # TODO: Refactor this.
         if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
@@ -552,10 +554,10 @@ class TextAndVisionTokenizer(
         return self.delegate.decode(encoded, **kwargs)
 
     async def new_context(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+        cache_seq_id and prompt from TextGenerationRequest."""
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True
         if request.prompt is not None:

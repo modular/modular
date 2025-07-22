@@ -24,11 +24,6 @@ from .interfaces import (
     EmbeddingsGenerator,
     PipelineTokenizer,
     TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
 )
 from .serialization import msgpack_numpy_decoder, msgpack_numpy_encoder
 
@@ -44,14 +39,10 @@ __all__ = [
     "PipelineTokenizer",
     "PipelinesFactory",
     "TTSContext",
+    "TTSContext",
     "TextAndVisionContext",
     "TextContext",
     "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
 ]

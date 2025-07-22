@@ -22,14 +22,13 @@ from collections.abc import Iterable
 from typing import Optional
 
 import requests
-from max.interfaces import TokenGenerator
+from max.interfaces import TextGenerationRequest, TokenGenerator
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
-    TokenGeneratorRequest,
 )
 
 from .metrics import TextGenerationMetrics
@@ -50,7 +49,7 @@ async def stream_text_to_console(
 ) -> None:
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id=req_id,
             index=0,
             prompt=prompt,

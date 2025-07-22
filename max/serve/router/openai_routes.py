@@ -32,15 +32,17 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
-from max.interfaces import SamplingParams
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
+)
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -129,12 +131,12 @@ class OpenAIResponseGenerator(ABC):
 
     @abstractmethod
     async def stream(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> AsyncGenerator[str, None]:
         pass
 
     @abstractmethod
-    async def complete(self, requests: list[TokenGeneratorRequest]) -> str:
+    async def complete(self, requests: list[TextGenerationRequest]) -> str:
         pass
 
 
@@ -157,7 +159,7 @@ def get_pipeline(
 
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
-    async def stream(self, request: TokenGeneratorRequest):
+    async def stream(self, request: TextGenerationRequest):
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -234,7 +236,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
 
     async def complete(
-        self, requests: list[TokenGeneratorRequest]
+        self, requests: list[TextGenerationRequest]
     ) -> CreateChatCompletionResponse:
         if len(requests) != 1:
             raise NotImplementedError(
@@ -382,7 +384,7 @@ class OpenAIEmbeddingsResponseGenerator:
         self.pipeline = pipeline
 
     async def encode(
-        self, requests: list[TokenGeneratorRequest]
+        self, requests: list[TextGenerationRequest]
     ) -> CreateEmbeddingResponse:
         if len(requests) == 0:
             raise ValueError("No requests provided.")
@@ -447,13 +449,13 @@ class OpenAISpeechResponseGenerator:
 def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
-) -> tuple[list[TokenGeneratorRequestMessage], list[AnyUrl]]:
-    """Parse the OpenAI ChatCompletionRequest to build TokenGeneratorRequestMessages.
+) -> tuple[list[TextGenerationRequestMessage], list[AnyUrl]]:
+    """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image references while we are here so they can be
     downloaded and bundled alongside the request for preprocessing by pipelines.
     """
-    messages: list[TokenGeneratorRequestMessage] = []
+    messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
     for m in completion_request.messages:
         if isinstance(m.root.content, list):
@@ -636,7 +638,7 @@ async def openai_create_chat_completion(
             stop_token_ids=completion_request.stop_token_ids,
             stop=completion_request.stop,
         )
-        token_request = TokenGeneratorRequest(
+        token_request = TextGenerationRequest(
             id=request_id,
             index=0,
             model_name=completion_request.model,
@@ -682,8 +684,8 @@ async def openai_create_chat_completion(
 
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Optional[list[ChatCompletionTool]],
-) -> Optional[list[TokenGeneratorRequestTool]]:
-    """Convert ChatCompletionTool list to TokenGeneratorRequestTool list."""
+) -> Optional[list[TextGenerationRequestTool]]:
+    """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
         return None
 
@@ -695,9 +697,9 @@ def _convert_chat_completion_tools_to_token_generator_tools(
             else {}
         )
 
-        token_generator_tool = TokenGeneratorRequestTool(
+        token_generator_tool = TextGenerationRequestTool(
             type=tool.type,
-            function=TokenGeneratorRequestFunction(
+            function=TextGenerationRequestFunction(
                 name=tool.function.name,
                 description=tool.function.description,
                 parameters=parameters,
@@ -716,8 +718,8 @@ def _create_response_format(
             ResponseFormatJsonSchema,
         ]
     ],
-) -> Optional[TokenGeneratorResponseFormat]:
-    """Convert OpenAI response format to TokenGeneratorResponseFormat."""
+) -> Optional[TextGenerationResponseFormat]:
+    """Convert OpenAI response format to TextGenerationResponseFormat."""
     if not response_format:
         return None
 
@@ -733,7 +735,7 @@ def _create_response_format(
     if response_type == "json_schema":
         json_schema = response_format.json_schema.schema_.model_dump()
 
-    return TokenGeneratorResponseFormat(
+    return TextGenerationResponseFormat(
         type=response_type, json_schema=json_schema
     )
 
@@ -759,7 +761,7 @@ async def openai_create_embeddings(
         )
 
         # We can support other types of inputs but it will require few more changes
-        # to TokenGeneratorRequest and tokenizer encode. Hence, only supporting
+        # to TextGenerationRequest and tokenizer encode. Hence, only supporting
         # string and list of strings for now.
         if not isinstance(embeddings_request.input, (str, list)):
             raise ValueError(
@@ -774,7 +776,7 @@ async def openai_create_embeddings(
         )
 
         embedding_requests = [
-            TokenGeneratorRequest(
+            TextGenerationRequest(
                 id=f"{request_id}_{idx}",
                 index=idx,
                 model_name=embeddings_request.model,
@@ -836,7 +838,7 @@ def _process_log_probabilities(
 
 
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
-    async def stream(self, request: TokenGeneratorRequest):
+    async def stream(self, request: TextGenerationRequest):
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -910,7 +912,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
 
     async def complete(
-        self, requests: list[TokenGeneratorRequest]
+        self, requests: list[TextGenerationRequest]
     ) -> CreateCompletionResponse:
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
@@ -1054,7 +1056,7 @@ async def openai_create_completion(
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=completion_request.stop,
             )
-            tgr = TokenGeneratorRequest(
+            tgr = TextGenerationRequest(
                 # Generate a unique id for each prompt in the request
                 id=f"{http_req_id}_{i}",
                 index=i,

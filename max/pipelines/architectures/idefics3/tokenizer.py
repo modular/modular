@@ -23,9 +23,9 @@ from typing import TYPE_CHECKING, Union
 
 import numpy as np
 import torch
+from max.interfaces import TextGenerationRequest
 from max.pipelines.core import (
     TextAndVisionContext,
-    TokenGeneratorRequest,
 )
 from max.pipelines.lib import TextAndVisionTokenizer
 from PIL import Image
@@ -98,10 +98,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         self._default_eos_token_ids = set([self.eos])
 
     async def new_context(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+        cache_seq_id and prompt from TextGenerationRequest."""
 
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True

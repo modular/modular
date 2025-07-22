@@ -72,7 +72,7 @@ class AudioGenerationRequest:
 
     prompt: Optional[list[int] | str] = field(default=None)
     """Optionally provide a preprocessed list of token ids or a prompt string to pass as input directly into the model.
-    This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
+    This replaces automatically generating TextGenerationRequestMessages given the input, audio prompt tokens,
     audio prompt transcription fields."""
 
     streaming: bool = True

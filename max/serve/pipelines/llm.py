@@ -23,11 +23,14 @@ from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
-from max.interfaces import AudioGenerationMetadata, AudioGeneratorOutput
+from max.interfaces import (
+    AudioGenerationMetadata,
+    AudioGeneratorOutput,
+    TextGenerationRequest,
+)
 from max.pipelines.core import (
     AudioGenerationRequest,
     PipelineTokenizer,
-    TokenGeneratorRequest,
 )
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
@@ -102,7 +105,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         return (token_log_probabilities, top_log_probabilities)
 
     async def next_token(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
         itl = StopWatch()
@@ -204,13 +207,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 )
 
     async def all_tokens(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> list[TokenGeneratorOutput]:
         """Generates all tokens for the provided request."""
         return [token async for token in self.next_token(request)]
 
     async def encode(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> Optional[EmbeddingsGeneratorOutput]:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()

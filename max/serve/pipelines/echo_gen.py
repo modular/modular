@@ -19,19 +19,19 @@ import numpy as np
 from max.interfaces import (
     GenerationStatus,
     TextGenerationOutput,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
     TokenGenerator,
 )
 from max.pipelines.core import (
     PipelineTokenizer,
     TextContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
 )
 
 
 @dataclass
 class EchoPipelineTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
 ):
     """Echo tokenizer that creates TextContext instances.
 
@@ -85,7 +85,7 @@ class EchoPipelineTokenizer(
             # Fallback for non-ASCII values
             return "".join(str(int(token_id)) for token_id in encoded)
 
-    async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Creates a new TextContext for echo generation."""
 
         # Extract prompt from request
@@ -97,7 +97,7 @@ class EchoPipelineTokenizer(
                 [
                     str(message["content"])
                     for message in cast(
-                        list[TokenGeneratorRequestMessage], request.messages
+                        list[TextGenerationRequestMessage], request.messages
                     )
                 ]
             )
