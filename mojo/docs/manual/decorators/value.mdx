@@ -5,6 +5,17 @@ codeTitle: true
 
 ---
 
+:::caution Deprecated
+
+The `@value` decorator has been deprecated. To generate a field-wise
+constructor, use the
+[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init/) decorator. To
+generate a default copy constructor, add the `Copyable` trait. To generate a
+default move constructor, add the `Movable` trait. For more information, see
+[Life of a value](/mojo/manual/lifecycle/life/).
+
+:::
+
 You can add the `@value` decorator on a struct to generate boilerplate
 lifecycle methods, including the member-wise `__init__()` constructor,
 `__copyinit__()` copy constructor, and `__moveinit__()` move constructor.

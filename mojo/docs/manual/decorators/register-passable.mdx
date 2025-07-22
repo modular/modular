@@ -62,29 +62,45 @@ You should be aware of a few other observable effects:
 3. `@register_passable` arguments and result are exposed to C and C++ directly,
    instead of being passed by-pointer.
 
-4. `@register_passable` types cannot have a [`__moveinit__()`
-   constructor](/mojo/manual/lifecycle/life#move-constructor), because
-   values passed in a register cannot be passed by reference.
+4. `@register_passable` types are always trivially movable by transferring the
+   register value around without side effects.  As such, they may not
+   define an explicit [move
+   constructor](/mojo/manual/lifecycle/life#move-constructor).
 
 ## `@register_passable("trivial")`
 
 Most types that use `@register_passable` are just "bags of bits," which we call
-"trivial" types. These trivial types are simple and should be copied, moved,
-and destroyed without any custom constructors or a destructor. For these types,
-you can add the `"trivial"` argument, and Mojo synthesizes all the lifecycle
-methods as appropriate for a trivial register-passable type:
+"trivial" types. These trivial types are simple and should be copied, moved, and
+destroyed without any custom copy or move constructors, or a destructor. For
+these types, you can add the `"trivial"` argument, and Mojo synthesizes all the
+lifecycle methods except for the constructor:
 
 ```mojo
+@fieldwise_init
 @register_passable("trivial")
 struct Pair:
     var a: Int
     var b: Int
 ```
 
-This is similar to the [`@value`](/mojo/manual/decorators/value) decorator,
-except when using `@register_passable("trivial")` the only lifecycle method
-you're allowed to define is the `__init__()` constructor (but you don't have
-to)—you *cannot* define any copy or move constructors or a destructor.
+A trivial type acts like a register-passable type, with a few extra
+characteristics:
+
+- Its fields must also be trivial types.
+
+- The type is _trivially copyable_. It conforms to the `Copyable` trait, and can
+  be copied by copying the bits from one location to another. As such, the type cannot
+   define an explicit [copy
+  constructor](/mojo/manual/lifecycle/life#copy-constructor).
+
+- The type is _trivially movable_. It conforms to the `Movable` trait, and can
+  be moved by moving the bits from one location to another. As such, the type cannot
+   define an explicit [move
+  constructor](/mojo/manual/lifecycle/life#move-constructor).
+
+- The type is _trivially destructible_. It conforms to the `AnyType` trait and
+  implements a trivial (no-op) destructor. As such, the type cannot define a
+  explicit [destructor](/mojo/manual/lifecycle/death/#destructor).
 
 Examples of trivial types include:
 

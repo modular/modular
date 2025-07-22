@@ -18,42 +18,45 @@ marked as `@nonmaterializable(Foo)`, then anywhere that it goes from a
 parameter value to a runtime value, it automatically converts into the `Foo`
 type.
 
-For example, the following `NmStruct` type can be used in the parameter domain,
-but the `converted_to_has_bool` instance of it is converted to `HasBool` when it's
-materialized as a runtime value:
+For example, the following `ParamStruct` type can be used in the parameter
+domain, but the `runtime_struct` instance of it is converted to a
+`RuntimeStruct` when it's materialized as a runtime value:
 
 ```mojo
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct HasBool:
-    var x: Bool
+struct RuntimeStruct:
+    var value: Int
 
-    fn __init__(out self, x: Bool):
-        self.x = x
+    @implicit
+    fn __init__(out self, nms: ParamStruct):
+        self.value = nms.param_value
 
-    @always_inline("nodebug")
-    fn __init__(out self, nms: NmStruct):
-        self.x = True if (nms.x == 77) else False
 
-@value
-@nonmaterializable(HasBool)
+@nonmaterializable(RuntimeStruct)
 @register_passable("trivial")
-struct NmStruct:
-    var x: Int
+struct ParamStruct[param_value: Int]:
+    fn __init__(out self):
+        pass
 
-    @always_inline("nodebug")
-    fn __add__(self, rhs: Self) -> Self:
-        return NmStruct(self.x + rhs.x)
+    fn __add__(
+        self, rhs: ParamStruct
+    ) -> ParamStruct[self.param_value + rhs.param_value]:
+        return ParamStruct[self.param_value + rhs.param_value]()
 
-alias still_nm_struct = NmStruct(1) + NmStruct(2)
-# When materializing to a run-time variable, it is automatically converted,
-# even without a type annotation.
-var converted_to_has_bool = still_nm_struct
+
+def main():
+    alias still_param_struct = ParamStruct[1]() + ParamStruct[2]()
+    print(still_param_struct.param_value)
+    # When materializing to a run-time variable, it is automatically converted,
+    # even without a type annotation.
+    var runtime_struct = still_param_struct
+    print(runtime_struct.value)
 ```
 
-:::note
+The materialized struct must have an `@implicit` conversion constructor that
+takes an instance of the non-materializable struct as input (as shown in the
+code example).
 
-A non-materializable struct must have all of its methods annotated
-as `@always_inline`, and it must be computable in the parameter domain.
-
-:::
+Also, since the non-materializable type only exists in the parameter domain, all
+of its methods must be able to run in the parameter domain.

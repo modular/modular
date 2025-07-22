@@ -1,6 +1,6 @@
-This directory contains code examples for the [Value
-semantics](../../../../docs/manual/values/value-semantics.mdx) section of the
-Mojo Manual.
+This directory contains code examples for the
+[Value semantics](../../../../../docs/manual/values/value-semantics.mdx) section
+of the Mojo Manual.
 
 Contents:
 

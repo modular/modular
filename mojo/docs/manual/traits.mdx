@@ -11,6 +11,10 @@ Traits are similar to Java *interfaces*, C++ *concepts*, Swift *protocols*, and
 Rust *traits*. If you're familiar with any of those features, Mojo traits solve
 the same basic problem.
 
+You've probably already seen some traits, like `Copyable` and `Movable`, used in
+example code. This section describes how traits work, how to use existing
+traits, and how to define your own traits.
+
 ## Background
 
 In dynamically-typed languages like Python, you don't need to explicitly declare
@@ -47,13 +51,13 @@ specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
 
 ```mojo title="🔥 Mojo"
-@value
-struct Duck:
+@@fieldwise_init
+struct Duck(Copyable, Movable):
     fn quack(self):
         print("Quack")
 
-@value
-struct StealthCow:
+@fieldwise_init
+struct StealthCow(Copyable, Movable):
     fn quack(self):
         print("Moo!")
 
@@ -117,13 +121,13 @@ the struct name. You can also include multiple traits, separated by commas.
 syntax.)
 
 ```mojo
-@value
-struct Duck(Quackable):
+@fieldwise_init
+struct Duck(Copyable, Movable, Quackable):
     fn quack(self):
         print("Quack")
 
-@value
-struct StealthCow(Quackable):
+@fieldwise_init
+struct StealthCow(Copyable, Movable, Quackable):
     fn quack(self):
         print("Moo!")
 ```
@@ -193,15 +197,13 @@ fn quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.quack()
     quacker.fly()
 
-@value
-struct FlyingDuck(Quackable & Flyable):
+@fieldwise_init
+struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
     fn quack(self):
-        print("quack")
+        print("Quack")
 
     fn fly(self):
-        print("whoosh!")
-
-quack_and_go(FlyingDuck())
+        print("Whoosh!")
 ```
 
 You can also use the `alias` keyword to create a shorthand name for a
@@ -230,7 +232,7 @@ that conforms to those two traits conforms to `DuckLike`. For example, our
 earlier `FlyingDuck` type:
 
 ```mojo
-struct FlyingDuck(Quackable & Flyable):
+struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
     # ... etc
 ```
 
@@ -277,7 +279,7 @@ trait Named:
     fn get_name(self) -> String:
         ...
 
-trait NamedAnimal(Animal & Named):
+trait NamedAnimal(Animal, Named):
     # ...
 ```
 
@@ -297,18 +299,25 @@ constructors, copy constructors and move constructors.
 
 For example, the following code creates a `MassProducible` trait. A
 `MassProducible` type has a default (no-argument) constructor and can be moved.
-It uses the built-in [`Movable`](/mojo/stdlib/builtin/value/Movable) trait,
-which requires the type to have a [move
+It uses two built-in traits:
+[`Defaultable`](/mojo/stdlib/builtin/value/Defaultable), which requires a default
+(no-argument) constructor, and
+[`Movable`](/mojo/stdlib/builtin/value/Movable),
+which requires the type to have a no-argument[move
 constructor](/mojo/manual/lifecycle/life#move-constructor).
 
 The `factory[]()` function returns a newly-constructed instance of a
-`MassProducible` type.
+`MassProducible` type. The following example shows the definitions of
+the `Defaultable` and `Movable` traits in comments for reference:
 
 ```mojo
-trait DefaultConstructible:
-    fn __init__(out self): ...
+# trait Defaultable
+#     fn __init__(out self): ...
 
-alias MassProducible = DefaultConstructible & Movable
+# trait Movable
+#     fn __moveinit__(out self, owned existing: Self): ...
+
+alias MassProducible = Defaultable & Movable
 
 fn factory[type: MassProducible]() -> type:
     return type()
@@ -397,7 +406,7 @@ function. For example, if you're writing a custom list type, you could
 implement this trait so your type works with `len()`:
 
 ```mojo
-struct MyList(Sized):
+struct MyList(Copyable, Movable, Sized):
     var size: Int
     # ...
 
@@ -417,7 +426,7 @@ print(len(MyList()))
 ### The `Intable` and `IntableRaising` traits
 
 The [`Intable`](/mojo/stdlib/builtin/int/Intable) trait identifies a type that
-can be implicitly converted to `Int`. The
+can be converted to `Int`. The
 [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising) trait describes a
 type can be converted to an `Int`, but the conversion might raise an error.
 
@@ -425,15 +434,15 @@ Both of these traits require the type to implement the `__int__()` method. For
 example:
 
 ```mojo
-@value
-struct Foo(Intable):
+@fieldwise_init
+struct IntLike(Intable):
     var i: Int
 
     fn __int__(self) -> Int:
         return self.i
 
-var foo = Foo(42)
-print(Int(foo) == 42)
+value = IntLike(42)
+print(Int(value) == 42)
 ```
 
 ```output
@@ -486,8 +495,8 @@ function to implement the type's `Stringable` implementation in terms of its
 all of the `Stringable`, `Representable`, and `Writable` traits:
 
 ```mojo
-@value
-struct Dog(Stringable, Representable, Writable):
+@fieldwise_init
+struct Dog(Copyable, Stringable, Representable, Writable):
     var name: String
     var age: Int
 
@@ -501,9 +510,11 @@ struct Dog(Stringable, Representable, Writable):
 
     # Alternative full representation when calling `repr`
     fn __repr__(self) -> String:
-        return String("Dog(name=", repr(self.name), ", age=", repr(self.age), ")")
+        return String(
+            "Dog(name=", repr(self.name), ", age=", repr(self.age), ")"
+        )
 
-var dog = Dog("Rex", 5)
+dog = Dog("Rex", 5)
 print(repr(dog))
 print(dog)
 
@@ -518,6 +529,38 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
+### Special lifecycle traits: `Copyable`, `Movable`, and `ExplicitlyCopyable`
+
+The three traits [`Copyable`](/mojo/stdlib/builtin/value/Copyable/),
+[`Movable`](/mojo/stdlib/builtin/value/Movable/), and
+[`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) are
+special traits in that the Mojo compiler can supply default implementations for
+the required methods if the struct doesn't define them itself.
+
+The `Copyable` trait describes a type that can be implicitly copied, using a
+[copy constructor](/mojo/manual/lifecycle/life#copy-constructor).
+
+The `Movable` trait defines a type that can be moved using a
+[move constructor](/mojo/manual/lifecycle/life#copy-constructor).
+
+The `ExplicitlyCopyable` trait defines a type that can be explicitly copied by
+calling its `copy()` method. If the type is already `Copyable`, this trait
+provides a default implementation for `copy()`. If the type is **not**
+`Copyable`, you need to implement the `copy()` method yourself. For more
+information, see
+[Explicitly copyable types](/mojo/manual/lifecycle/life#explicitly-copyable-types).
+
+:::note
+
+If your type contains any fields that aren't copyable, Mojo will not generate
+the copy constructor because it cannot copy those fields. In this case, you
+need to define a custom copy constructor if you want the type to be copyable.
+
+Further, if any of the fields are neither copyable nor movable, Mojo won't
+generate a move constructor for that type.
+
+:::
+
 ### The `AnyType` trait
 
 When building a generic container type, one challenge is knowing how to dispose
@@ -525,17 +568,28 @@ of the contained items when the container is destroyed. Any type that
 dynamically allocates memory needs to supply a
 [destructor](/mojo/manual/lifecycle/death#destructor) (`__del__()` method)
 that must be called to free the allocated memory. But not all types have a
-destructor, and your Mojo code has no way to determine which is which.
+destructor.
 
-The [`AnyType`](/mojo/stdlib/builtin/anytype/AnyType) trait solves this
-issue: every trait implicitly inherits from `AnyType`, and all structs conform
-to `AnyType`, which guarantees that the type has a destructor. For types that
-don't have one, Mojo adds a no-op destructor. This means you can call the
-destructor on any type.
+The [`AnyType`](/mojo/stdlib/builtin/anytype/AnyType) trait (also provided as
+the
+[`ImplicitlyDestructible`](/mojo/stdlib/builtin/anytype/#implicitlydestructible)
+alias) represents a type with a destructor. Almost all traits inherit from
+`AnyType`, and all structs conform to `AnyType` by default. For any type that
+conforms to `AnyType` and doesn't define a destructor, Mojo generates a no-op
+destructor. This means you can call the destructor on any type that inherits
+from `AnyType`/`ImplicitlyDestructible`.
 
-This makes it possible to build generic collections without leaking memory. When
-the collection's destructor is called, it can safely call the destructors on
-every item it contains.
+:::note TODO
+
+In the Mojo standard library docs you will also see a trait called
+[`UnknownDestructability`](/mojo/stdlib/builtin/anytype/UnknownDestructibility),
+which represents a type that may or may not have a destructor. All structs
+implicitly conform to this trait.
+
+This trait exists to support a planned future feature called *linear* or
+*explicitly-destroyed* types.
+
+:::
 
 ## Generic structs with traits
 
@@ -548,16 +602,23 @@ needs to copy a value, the compiler needs to verify that the type can be copied.
 
 The [`List`](/mojo/stdlib/collections/list) type is an example of a
 generic container. A single `List` can only hold a single type of data.
+The list elments must conform to the `Copyable` and `Movable` traits:
+
+```mojo
+struct List[T: Copyable & Movable, hint_trivial_type: Bool = False]:
+```
+
 For example, you can create a list of integer values like this:
 
 ```mojo
-var list = List[Int](1, 2, 3)  # or: var list = [1, 2, 3]
+var list: List[Int]
+list = [1, 2, 3, 4]
 for i in range(len(list)):
-    print(list[i], sep=" ", end="")
+    print(list[i], end=" ")
 ```
 
 ```output
-1  2  3
+1 2 3 4
 ```
 
 You can use traits to define requirements for elements that are stored in a
@@ -618,10 +679,10 @@ trait Stacklike:
     alias EltType: Copyable & Movable
 
     fn push(mut self, var item: Self.EltType):
-        pass
+        ...
 
     fn pop(mut self) -> Self.EltType:
-        pass
+        ...
 ```
 
 The following struct implements the `Stacklike` trait using a `List` as the
@@ -644,9 +705,13 @@ struct MyStack[type: Copyable & Movable](Stacklike):
     fn pop(mut self) -> Self.EltType:
         return self.list.pop()
 
-    fn dump[WritableEltType: Writable & Copyable & Movable](self: MyStack[WritableEltType]):
+    fn dump[
+        WritableEltType: Writable & Copyable & Movable
+    ](self: MyStack[WritableEltType]):
+        print("[", end="")
         for item in self.list:
-            print(item)
+            print(item, end=", ")
+        print("]")
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
@@ -667,6 +732,6 @@ def main():
     s = MyStack[Int]()
     add_to_stack(s, 12)
     add_to_stack(s, 33)
-    s.dump()             # [12, 33]
+    s.dump()             # [12, 33, ]
     print(s.pop())       # 33
 ```

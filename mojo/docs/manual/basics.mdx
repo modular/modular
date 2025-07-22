@@ -227,7 +227,7 @@ and `__copyinit__()`, the copy constructor. _Lifecycle methods_ like this
 control how a struct is created, copied, moved, and destroyed.
 
 For most simple types, you don't need to write the lifecycle methods. You can
-use the `@fieldwise_init` decorator to generate the boilerplate fieldwise
+use the `@fieldwise_init` decorator to generate the boilerplate field-wise
 initializer for you, and Mojo will synthesize copy and move constructors if you
 ask for them with trait conformance. So the
 `MyPair` struct can be simplified to this:
