@@ -692,6 +692,10 @@ class PrependPromptSpeechTokens(str, Enum):
     ONCE = "once"
     """Prepend the prompt speech tokens to the first block of the audio decoder."""
 
+    ROLLING = "rolling"
+    """Prepend the prompt speech tokens to the first block of the audio decoder,
+    and to later blocks to reach the requested buffer size."""
+
 
 class PrometheusMetricsMode(str, Enum):
     INSTRUMENT_ONLY = "instrument_only"

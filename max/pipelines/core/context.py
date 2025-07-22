@@ -786,7 +786,9 @@ class TTSContext(TextContext):
     ) -> tuple[np.ndarray, int]:
         """Returns a chunk of the next unseen speech tokens.
 
-        Calling this function will update the index of the last seen token.
+        Calling this function will *not* update the index of the last seen
+        token. This must be done by calling `set_decoded_index` after the chunk
+        is processed.
 
         Args:
             audio_chunk_size: The number of speech tokens to return.
