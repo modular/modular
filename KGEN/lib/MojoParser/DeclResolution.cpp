@@ -3048,10 +3048,6 @@ void DeclResolver::addParentDeclsToTrait(
             continue;
           }
 
-          // Resolve the override so we get the type.
-          if (failed(resolveSignature(*override, traitDecl.getLoc())))
-            continue;
-
           SyntheticNode synthNode(traitDecl.getLoc());
           auto overrideAliasType = overrideAliasDecl.getType();
           // Conjure a fake value here that we can hand to
@@ -3117,7 +3113,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
       }
     } else if (auto alias = dyn_cast_or_null<AliasDeclOp>(
                    decls.front()->getIfOperation())) {
-      if (failed(resolveBody(alias, lexer, *decls.front())))
+      if (failed(resolveBody(*decls.front(), decls.front()->getLoc())))
         return failure();
     }
   }
