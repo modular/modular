@@ -12,6 +12,11 @@ from .audio_generation import (
 from .embeddings_generation import EmbeddingsOutput
 from .text_generation import (
     TextGenerationOutput,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
     TokenGenerator,
 )
 
@@ -21,6 +26,11 @@ __all__ = [
     "AudioGeneratorOutput",
     "EmbeddingsOutput",
     "TextGenerationOutput",
+    "TextGenerationRequest",
+    "TextGenerationRequestFunction",
+    "TextGenerationRequestMessage",
+    "TextGenerationRequestTool",
+    "TextGenerationResponseFormat",
     "TextResponse",
     "TokenGenerator",
 ]
