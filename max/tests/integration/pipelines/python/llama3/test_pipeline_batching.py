@@ -10,7 +10,7 @@ from typing import Any
 
 import hf_repo_lock
 import pytest
-from max.interfaces import SamplingParams
+from max.interfaces import SamplingParams, TextGenerationRequest
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -18,7 +18,6 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.core import TokenGeneratorRequest
 from max.pipelines.lib import generate_local_model_path
 from test_common.evaluate import next_token_with_logits
 from test_common.test_data import DEFAULT_PROMPTS
@@ -103,7 +102,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     context_batch = {}
     for i in range(batch_size):
         context = await pipeline_tokenizer.new_context(
-            TokenGeneratorRequest(
+            TextGenerationRequest(
                 id="", index=i, prompt=prompt, model_name="llama3"
             )
         )
@@ -151,7 +150,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
         )
         sampling_params = SamplingParams(max_new_tokens=max_new_tokens)
         context = await pipeline_tokenizer.new_context(
-            TokenGeneratorRequest(
+            TextGenerationRequest(
                 id="",
                 index=i,
                 prompt=prompt,
@@ -223,7 +222,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         context_batch = {}
         for i in range(batch_size):
             context = await pipeline_tokenizer.new_context(
-                TokenGeneratorRequest(
+                TextGenerationRequest(
                     id="", index=i, prompt=prompt, model_name="llama3"
                 )
             )
@@ -271,7 +270,7 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="", index=0, prompt=prompt_a, model_name="llama3"
         )
     )
@@ -279,7 +278,7 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     # Send in B for context encoding
     context_b = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="", index=1, prompt=prompt_b, model_name="llama3"
         )
     )
@@ -292,7 +291,7 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     # Send in C for context encoding
     context_c = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="", index=2, prompt=prompt_c, model_name="llama3"
         )
     )

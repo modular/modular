@@ -10,7 +10,36 @@ Separates test data from business logic for better maintainability.
 
 from __future__ import annotations
 
-from test_common.evaluate import TextGenerationRequest
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class MockTextGenerationRequest:
+    """Request for text generation testing, supporting both text-only and multimodal inputs."""
+
+    prompt: str
+    """The text prompt to be processed by the model."""
+
+    images: list[str]
+    """List of image URLs or file paths. Empty for text-only requests."""
+
+    @property
+    def is_multimodal(self) -> bool:
+        """Returns True if this request includes images."""
+        return len(self.images) > 0
+
+    @classmethod
+    def text_only(cls, prompt: str) -> MockTextGenerationRequest:
+        """Creates a text-only generation request."""
+        return cls(prompt=prompt, images=[])
+
+    @classmethod
+    def with_images(
+        cls, prompt: str, images: list[str]
+    ) -> MockTextGenerationRequest:
+        """Creates a multimodal generation request."""
+        return cls(prompt=prompt, images=images)
+
 
 # Existing test data extracted from evaluate.py
 LONG_TEXT_PROMPT = """One of the most important aspects of performance benchmarking when it pertains to comparison of different implementations is making sure comparisons are fair. This is a place where most discussions occur, as deviation from best practices can make one’s performance claims easy to dismiss. For faster results of a given implementation (the Mojo implementation in our case) to be meaningful, the comparison needs to be apples-to-apples.
@@ -48,28 +77,35 @@ IDEFICS3_INSTRUCT_IMAGE = "https://cdn.britannica.com/47/195447-050-51296461/Mas
 
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]
 DEFAULT_TEXT_ONLY = [
-    TextGenerationRequest.text_only(prompt) for prompt in DEFAULT_PROMPTS
+    MockTextGenerationRequest.text_only(prompt=prompt)
+    for prompt in DEFAULT_PROMPTS
 ]
 
 DEFAULT_MULTIMODAL = [
-    TextGenerationRequest.with_images(MULTIMODAL_PROMPT, [MULTIMODAL_IMAGE])
+    MockTextGenerationRequest.with_images(
+        prompt=MULTIMODAL_PROMPT,
+        images=[MULTIMODAL_IMAGE],
+    )
 ]
 
 PIXTRAL_REQUESTS = [
-    TextGenerationRequest.with_images(PIXTRAL_PROMPT, [PIXTRAL_IMAGE])
+    MockTextGenerationRequest.with_images(
+        prompt=PIXTRAL_PROMPT, images=[PIXTRAL_IMAGE]
+    )
 ]
 
 INTERNVL_INSTRUCT_REQUESTS = [
-    TextGenerationRequest.with_images(
-        INTERNVL_INSTRUCT_PROMPT, [INTERNVL_INSTRUCT_IMAGE]
+    MockTextGenerationRequest.with_images(
+        prompt=INTERNVL_INSTRUCT_PROMPT,
+        images=[INTERNVL_INSTRUCT_IMAGE],
     )
 ]
 
 IDEFICS3_INSTRUCT_REQUESTS = [
-    TextGenerationRequest.with_images(
+    MockTextGenerationRequest.with_images(
         IDEFICS3_INSTRUCT_PROMPT, [MULTIMODAL_IMAGE]
     ),
-    TextGenerationRequest.with_images(
+    MockTextGenerationRequest.with_images(
         IDEFICS3_INSTRUCT_PROMPT, [IDEFICS3_INSTRUCT_IMAGE]
     ),
 ]

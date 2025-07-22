@@ -12,18 +12,17 @@ from collections.abc import Sequence
 from typing import TypeVar, Union
 
 import numpy as np
-from max.interfaces import InputContext
+from max.interfaces import InputContext, TextGenerationRequest
 from max.pipelines.core import (
     PipelineTokenizer,
     TextContext,
-    TokenGeneratorRequest,
 )
 
 T = TypeVar("T", bound=InputContext)
 
 
 class MockTextTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
 ):
     """Mock tokenizer for use in unit tests."""
 
@@ -59,7 +58,7 @@ class MockTextTokenizer(
     def eos(self) -> int:
         return self.vocab_size - 10
 
-    async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
         self.i += 1
 
         if request.prompt is None and request.messages is None:

@@ -58,9 +58,6 @@ modular_py_library(
     name = "test_data",
     srcs = ["test_data.py"],
     imports = [".."],
-    deps = [
-        ":evaluate",
-    ],
 )
 
 modular_py_library(
@@ -78,6 +75,7 @@ modular_py_library(
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
+        ":test_data",
         requirement("numpy"),
         requirement("requests"),
         "//SDK/lib/API/python/max/driver",
@@ -172,6 +170,7 @@ modular_py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":evaluate",
+        ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("pillow"),
         requirement("torch"),

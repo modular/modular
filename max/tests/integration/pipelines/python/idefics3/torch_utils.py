@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
-from test_common.evaluate import TextGenerationRequest
+from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store
 from transformers import (
     LogitsProcessorList,
@@ -46,7 +46,7 @@ def run_text_generation(
     | MllamaProcessor
     | PixtralProcessor,
     device: torch.device,
-    textgen_requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
@@ -54,7 +54,7 @@ def run_text_generation(
     """Run text generation using standard data processor for both text and images."""
 
     def idefics_request_processor(
-        request: TextGenerationRequest,
+        request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
         if request.is_multimodal:
             processed_images = [load_image(image) for image in request.images]
@@ -88,11 +88,11 @@ def run_text_generation_with_custom_image_processing(
     | MllamaProcessor
     | PixtralProcessor,
     device: torch.device,
-    textgen_requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int,
     print_outputs: bool,
     request_processor_fn: Callable[
-        [TextGenerationRequest], dict[str, torch.Tensor]
+        [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
 ):

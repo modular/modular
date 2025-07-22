@@ -12,17 +12,19 @@ import numpy as np
 import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
-from max.interfaces import SamplingParams
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
+)
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from test_common.mocks import mock_estimate_memory_footprint
@@ -64,12 +66,12 @@ def test_text_and_vision_tokenizer() -> None:
             content = [
                 {"type": "text", "text": "What is in this image?"},
             ] + [{"type": "image"} for _ in imgs_list]
-            request = TokenGeneratorRequest(
+            request = TextGenerationRequest(
                 id="request...",
                 index=0,
                 model_name=repo_id,
                 messages=[
-                    TokenGeneratorRequestMessage(
+                    TextGenerationRequestMessage(
                         role="user",
                         content=content,
                     )
@@ -99,20 +101,20 @@ def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
     model_path = llama_3_1_8b_instruct_local_path
     tokenizer = TextTokenizer(model_path)
 
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         id="request_with_tools",
         index=0,
         model_name=model_path,
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content="What is the weather in Toronto?",
             )
         ],
         tools=[
-            TokenGeneratorRequestTool(
+            TextGenerationRequestTool(
                 type="function",
-                function=TokenGeneratorRequestFunction(
+                function=TextGenerationRequestFunction(
                     name="get_current_weather",
                     description="Get the current weather for a given location.",
                     parameters={
@@ -149,7 +151,7 @@ def test_tokenizer__truncates_to_max_length(
         max_length=max_length,
     )
 
-    short_request = TokenGeneratorRequest(
+    short_request = TextGenerationRequest(
         id="request_with_short_message",
         index=0,
         model_name=llama_3_1_8b_instruct_local_path,
@@ -158,7 +160,7 @@ def test_tokenizer__truncates_to_max_length(
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
     assert context.current_length < 12
 
-    long_request = TokenGeneratorRequest(
+    long_request = TextGenerationRequest(
         id="request_with_short_message",
         index=0,
         model_name=llama_3_1_8b_instruct_local_path,
@@ -247,17 +249,17 @@ def test_text_tokenizer_with_constrained_decoding(
 
     """
 
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         id="request_with_tools",
         index=0,
         model_name=pipeline_config.model_config.model_path,
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content=prompt,
             )
         ],
-        response_format=TokenGeneratorResponseFormat(
+        response_format=TextGenerationResponseFormat(
             type="json_schema",
             json_schema={
                 "title": "Person",
@@ -288,12 +290,12 @@ def test_tokenizer_encode_stop_criteria(
 
     prompt = "hi my name is"
 
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         id="id_0",
         index=0,
         model_name=llama_3_1_8b_instruct_local_path,
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content=prompt,
             )
@@ -329,11 +331,11 @@ async def test_tokenizer__generate_prompt_and_token_ids(
 
     # Test with list of messages
     messages = [
-        TokenGeneratorRequestMessage(
+        TextGenerationRequestMessage(
             role="user",
             content="Hello, how are you?",
         ),
-        TokenGeneratorRequestMessage(
+        TextGenerationRequestMessage(
             role="assistant",
             content="I'm doing well, thank you!",
         ),
@@ -363,7 +365,7 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     # Test with neither prompt nor messages (should raise ValueError)
     with pytest.raises(
         ValueError,
-        match="either prompt must be provided as a list\\[int\\] or str, or messages must be provided as a list\\[TokenGeneratorRequestMessage\\]",
+        match="either prompt must be provided as a list\\[int\\] or str, or messages must be provided as a list\\[TextGenerationRequestMessage\\]",
     ):
         await tokenizer._generate_prompt_and_token_ids(
             prompt=None,

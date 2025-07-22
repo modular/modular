@@ -11,10 +11,7 @@ from unittest.mock import patch
 
 import hf_repo_lock
 from max.driver import DeviceSpec
-from max.interfaces import SamplingParams
-from max.pipelines import (
-    TokenGeneratorRequest,
-)
+from max.interfaces import SamplingParams, TextGenerationRequest
 from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
     MockTextTokenizer,
@@ -42,7 +39,7 @@ def test_mock_text_tokenizer() -> None:
         )
         model_path = REPO_ID
 
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         id="request_0",
         index=0,
         model_name=model_path,
@@ -104,7 +101,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  #
             id = f"request_{i}"
             max_new_tokens[id] = _max_new_tokens[i]
             sampling_params = SamplingParams(max_new_tokens=max_new_tokens[id])
-            request = TokenGeneratorRequest(
+            request = TextGenerationRequest(
                 id=id,
                 index=i,
                 model_name=model_path,

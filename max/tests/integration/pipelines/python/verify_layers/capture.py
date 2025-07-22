@@ -23,9 +23,9 @@ from max._core.engine import PrintStyle
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorValue, ops
+from max.interfaces import TextGenerationRequest
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.nn.layer import Module
-from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import ModelOutput
 
 from verify_layers.collect_subclasses import all_subclasses
@@ -637,7 +637,7 @@ def capture_max_layer_outputs(
         # Create input context for MAX
         async def create_max_context():
             return await max_pipeline_data.tokenizer.new_context(
-                TokenGeneratorRequest(
+                TextGenerationRequest(
                     id="test",
                     index=0,
                     prompt=prompt,

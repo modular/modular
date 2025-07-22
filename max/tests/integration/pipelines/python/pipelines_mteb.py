@@ -34,7 +34,7 @@ import numpy as np
 
 # Pipelines
 from max.entrypoints.cli import pipeline_config_options
-from max.interfaces import PipelineTask
+from max.interfaces import PipelineTask, TextGenerationRequest
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsGenerator,
@@ -43,7 +43,6 @@ from max.pipelines import (
 )
 from max.pipelines.core import (
     PipelineTokenizer,
-    TokenGeneratorRequest,
 )
 from transformers import AutoConfig
 
@@ -127,7 +126,7 @@ class EmbeddingModel:
         pipeline_request = {}
         for n, sentence in enumerate(sentences):
             pipeline_request[str(n)] = await self.tokenizer.new_context(
-                TokenGeneratorRequest(
+                TextGenerationRequest(
                     id=str(n),
                     index=n,
                     prompt=sentence,

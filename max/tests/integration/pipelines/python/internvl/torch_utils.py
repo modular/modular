@@ -22,8 +22,8 @@ from max.pipelines.architectures.internvl.tokenizer import (
     crop_into_patches,
 )
 from PIL import Image
+from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import (
-    TextGenerationRequest,
     run_text_generation_with_custom_image_processing,
 )
 from torchvision.transforms.functional import InterpolationMode
@@ -77,7 +77,7 @@ def run_text_generation(
     model: PreTrainedModel,
     processor: InternVLProcessor,
     device: torch.device,
-    textgen_requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
 ) -> list[dict]:
@@ -93,9 +93,9 @@ def run_text_generation(
     model.img_context_token_id = img_context_token_id
 
     def internvl_request_processor(
-        request: TextGenerationRequest,
+        request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
-        if request.is_multimodal:
+        if len(request.images) > 0:
             assert len(request.images) == 1
             pil_image = load_pil_image_from_url(request.images[0])
 

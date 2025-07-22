@@ -8,8 +8,7 @@
 from typing import Any
 
 import pytest
-from max.interfaces import SamplingParams
-from max.pipelines import TokenGeneratorRequest
+from max.interfaces import SamplingParams, TextGenerationRequest
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,
@@ -39,7 +38,7 @@ async def test_smollm2_with_lora_adapter() -> None:
     sampling_params = SamplingParams(max_new_tokens=50, temperature=0.7)
 
     context = await tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="test_lora",
             index=0,
             prompt=prompt,
@@ -87,7 +86,7 @@ async def test_lora_vs_base_comparison() -> None:
 
     # Generate with base model
     base_context = await tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="base",
             index=0,
             prompt=prompt,
@@ -98,7 +97,7 @@ async def test_lora_vs_base_comparison() -> None:
 
     # Generate with LoRA model
     lora_context = await tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="lora",
             index=0,
             prompt=prompt,
@@ -161,7 +160,7 @@ async def test_multiple_lora_adapters() -> None:
     contexts = {}
     for i, (prompt, model_name) in enumerate(prompts):
         context = await tokenizer.new_context(
-            TokenGeneratorRequest(
+            TextGenerationRequest(
                 id=f"req_{i}",
                 index=i,
                 prompt=prompt,

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.pipelines import TokenGeneratorRequest, TokenGeneratorRequestMessage
+from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
 from PIL import Image
 
@@ -43,8 +43,8 @@ async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:  # noqa: AN
         "input_ids": [1, 2, 3],
     }
 
-    request = TokenGeneratorRequest(
-        messages=[TokenGeneratorRequestMessage(role="user", content="test")],
+    request = TextGenerationRequest(
+        messages=[TextGenerationRequestMessage(role="user", content="test")],
         index=0,
         id="test-id",
         model_name="test-model",
@@ -113,9 +113,9 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:  # noqa: 
     test_image = img_buffer.getvalue()
 
     # Create request with image
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content=[
                     {"type": "text", "text": "test"},
@@ -180,15 +180,15 @@ async def test_internvl_tokenizer_image_placement(mocker) -> None:  # noqa: ANN0
     test_image = img_buffer.getvalue()
 
     # Create a multi-turn request with an image in the last turn
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user", content="What is in this image?"
             ),
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="assistant", content="I can't see an image."
             ),
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content=[
                     {"type": "text", "text": "Sorry, here it is."},

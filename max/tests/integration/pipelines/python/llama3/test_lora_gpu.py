@@ -8,7 +8,7 @@ from typing import Any
 
 import hf_repo_lock
 import pytest
-from max.interfaces import SamplingParams
+from max.interfaces import SamplingParams, TextGenerationRequest
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -17,7 +17,6 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import next_token_with_logits
 from test_common.test_data import DEFAULT_PROMPTS
 
@@ -75,7 +74,7 @@ async def test_pipeline_lora(
 
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="",
             index=0,
             prompt=prompt_a,
@@ -116,7 +115,7 @@ async def test_lora_vs_base_model_logits(
     sampling_params = SamplingParams(max_new_tokens=300)
 
     base_context = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="base_test",
             index=0,
             prompt=prompt,
@@ -125,7 +124,7 @@ async def test_lora_vs_base_model_logits(
         )
     )
     lora_context = await pipeline_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id="lora_test",
             index=1,  # Reset index since we released the previous context
             prompt=prompt,

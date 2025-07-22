@@ -10,15 +10,17 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Iterable
-from dataclasses import dataclass
 from typing import Any, Optional, TypedDict
 
 import numpy as np
 import requests
+from max.interfaces import TextGenerationRequest
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
-from max.pipelines.core import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.core import PipelineTokenizer
 from typing_extensions import NotRequired
+
+from .test_data import MockTextGenerationRequest
 
 
 class TokenInfo(TypedDict):
@@ -43,34 +45,6 @@ class ModelOutput(TypedDict):
     """Outputs from a text embedding model."""
 
 
-@dataclass(frozen=True)
-class TextGenerationRequest:
-    """Request for text generation testing, supporting both text-only and multimodal inputs."""
-
-    prompt: str
-    """The text prompt to be processed by the model."""
-
-    images: list[str]
-    """List of image URLs or file paths. Empty for text-only requests."""
-
-    @property
-    def is_multimodal(self) -> bool:
-        """Returns True if this request includes images."""
-        return len(self.images) > 0
-
-    @classmethod
-    def text_only(cls, prompt: str) -> TextGenerationRequest:
-        """Creates a text-only generation request."""
-        return cls(prompt=prompt, images=[])
-
-    @classmethod
-    def with_images(
-        cls, prompt: str, images: list[str]
-    ) -> TextGenerationRequest:
-        """Creates a multimodal generation request."""
-        return cls(prompt=prompt, images=images)
-
-
 NUM_STEPS = 10
 
 
@@ -81,7 +55,7 @@ def resolve_image_from_url(image_ref: str) -> bytes:
 def run_model(
     model: PipelineModel,
     tokenizer: PipelineTokenizer,
-    requests: Iterable[TextGenerationRequest],
+    requests: Iterable[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
@@ -104,7 +78,7 @@ def run_model(
 async def run_model_async(
     model: PipelineModel,
     tokenizer: PipelineTokenizer,
-    requests: Iterable[TextGenerationRequest],
+    requests: Iterable[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
@@ -158,7 +132,7 @@ async def run_model_async(
         curr_req_id = str(uuid.uuid4())
 
         context = await tokenizer.new_context(
-            TokenGeneratorRequest(
+            TextGenerationRequest(
                 id="",
                 index=len(batch_contexts),
                 prompt=request.prompt,

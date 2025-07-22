@@ -11,9 +11,9 @@ import uuid
 
 import pytest
 from max import pipelines
+from max.interfaces import TextGenerationRequest
 from max.pipelines import (
     PipelineConfig,
-    TokenGeneratorRequest,
 )
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.lib import PipelineEngine
@@ -47,7 +47,7 @@ async def test_internvl_tokenizer_with_image() -> None:
 
     # Compare text-only vs text+image tokenization
     text_context = await max_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id=str(uuid.uuid4()),
             index=0,
             model_name=model_id,
@@ -55,7 +55,7 @@ async def test_internvl_tokenizer_with_image() -> None:
         )
     )
     image_context = await max_tokenizer.new_context(
-        TokenGeneratorRequest(
+        TextGenerationRequest(
             id=str(uuid.uuid4()),
             index=0,
             model_name=model_id,

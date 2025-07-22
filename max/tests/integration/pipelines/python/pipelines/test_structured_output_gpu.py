@@ -14,9 +14,9 @@ from max.interfaces import SamplingParams
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorResponseFormat,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationResponseFormat,
 )
 from max.pipelines.core import TextContext
 
@@ -47,18 +47,18 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
 
     request_id = "request_0"
     sampling_params = SamplingParams(max_new_tokens=50)
-    request = TokenGeneratorRequest(
+    request = TextGenerationRequest(
         model_name=pipeline_config.model_config.model_path,
         id=request_id,
         index=0,
         messages=[
-            TokenGeneratorRequestMessage(
+            TextGenerationRequestMessage(
                 role="user",
                 content=prompt,
             )
         ],
         sampling_params=sampling_params,
-        response_format=TokenGeneratorResponseFormat(
+        response_format=TextGenerationResponseFormat(
             type="json_schema",
             json_schema={
                 "title": "Person",

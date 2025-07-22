@@ -46,7 +46,7 @@ from test_common import (
 )
 from test_common.evaluate import ModelOutput
 from test_common.github_utils import github_log_group
-from test_common.torch_utils import TextGenerationRequest
+from test_common.torch_utils import MockTextGenerationRequest
 from typing_extensions import ParamSpec
 
 # This is far from a universal standard, but this is the closest to a standard
@@ -171,7 +171,7 @@ class PipelineOracle(ABC):
         raise NotImplementedError
 
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for the model.
 
         By default, creates text-only requests from test data. Multimodal pipelines
@@ -212,7 +212,7 @@ class MultiModalPipelineOracle(PipelineOracle):
     """
 
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for multimodal model."""
         return test_data.DEFAULT_MULTIMODAL
 
@@ -234,7 +234,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         }
 
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for InternVL."""
         return (
             test_data.DEFAULT_TEXT_ONLY + test_data.INTERNVL_INSTRUCT_REQUESTS
@@ -333,7 +333,7 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
         }
 
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Idefics3."""
 
         return (
@@ -490,7 +490,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
 
 class PixtralPipelineOracle(MultiModalPipelineOracle):
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Pixtral model."""
         return test_data.PIXTRAL_REQUESTS
 
@@ -653,10 +653,10 @@ class GenericOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
-    def inputs(self) -> list[TextGenerationRequest]:
+    def inputs(self) -> list[MockTextGenerationRequest]:
         return (
             [
-                TextGenerationRequest.text_only(prompt)
+                MockTextGenerationRequest.text_only(prompt=prompt)
                 for prompt in self._prompts
             ]
             if self._prompts
