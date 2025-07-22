@@ -205,6 +205,9 @@ mutation.
 - `UnsafePointer.address_of()` has been removed.  Use `UnsafePointer(to=...)`
   constructor instead.
 
+- `DType.tensor_float32` has been removed due to lack of support for it in the
+  library and the compiler.
+
 ### 🛠️ Fixed
 
 - [#4121](https://github.com/modular/modular/issues/4121) - better error message

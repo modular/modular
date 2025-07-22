@@ -46,7 +46,6 @@ alias float_dtypes = [
     DType.bfloat16,
     DType.float16,
     DType.float32,
-    DType.tensor_float32,
     DType.float64,
 ]
 

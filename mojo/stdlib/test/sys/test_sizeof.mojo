@@ -30,5 +30,4 @@ def main():
     assert_equal(sizeof[DType.float8_e4m3fnuz](), 1)
     assert_equal(sizeof[DType.bfloat16](), 2)
     assert_equal(sizeof[DType.float16](), 2)
-    assert_equal(sizeof[DType.tensor_float32](), 4)
     assert_equal(sizeof[DType.invalid](), 0)
