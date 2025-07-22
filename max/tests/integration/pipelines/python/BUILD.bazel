@@ -201,6 +201,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/idefics3:torch_utils",
         "//SDK/integration-test/pipelines/python/internvl:torch_utils",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints",

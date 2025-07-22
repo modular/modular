@@ -862,6 +862,18 @@ PIPELINES = {
             kl_div_threshold=4.6e-7,
         ),
     ),
+    "HuggingFaceM4/Idefics3-8B-Llama3": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big", "nvidia-only"],
+        run=_make_pipeline_runner(
+            pipeline="idefics3-8b-llama3",
+            encoding="bfloat16",
+            # TODO: Accuracy is much worse on AMD.
+            # so we might have an AMD kernel bug here
+            cos_dist_threshold=8.8e-03,
+            kl_div_threshold=8.7e-02,
+        ),
+    ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],

@@ -32,6 +32,8 @@ SHORT_TEXT_PROMPTS = (
 MULTIMODAL_PROMPT = (
     "<|image|><|begin_of_text|>If I had to write a haiku for this one"
 )
+
+
 MULTIMODAL_IMAGE = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
 
 PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
@@ -39,6 +41,10 @@ PIXTRAL_IMAGE = "https://picsum.photos/id/237/400/300"
 
 INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|>\nDescribe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
 INTERNVL_INSTRUCT_IMAGE = "https://cdn-uploads.huggingface.co/production/uploads/632698f75cf955bfbbe727a9/L9E3YzvMo2B_XvloSx5ud.jpeg"
+
+IDEFICS3_INSTRUCT_PROMPT = "<image> Describe the image:"
+IDEFICS3_INSTRUCT_IMAGE = "https://cdn.britannica.com/47/195447-050-51296461/Masjed-e-Jomeh-Yazd-Iran.jpg"
+
 
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]
 DEFAULT_TEXT_ONLY = [
@@ -57,4 +63,13 @@ INTERNVL_INSTRUCT_REQUESTS = [
     TextGenerationRequest.with_images(
         INTERNVL_INSTRUCT_PROMPT, [INTERNVL_INSTRUCT_IMAGE]
     )
+]
+
+IDEFICS3_INSTRUCT_REQUESTS = [
+    TextGenerationRequest.with_images(
+        IDEFICS3_INSTRUCT_PROMPT, [MULTIMODAL_IMAGE]
+    ),
+    TextGenerationRequest.with_images(
+        IDEFICS3_INSTRUCT_PROMPT, [IDEFICS3_INSTRUCT_IMAGE]
+    ),
 ]

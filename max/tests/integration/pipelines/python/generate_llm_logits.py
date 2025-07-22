@@ -28,6 +28,7 @@ import huggingface_hub
 import requests
 import torch
 import transformers
+from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
@@ -312,6 +313,110 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             textgen_requests=self.inputs,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
+        )
+
+
+class Idefics3PipelineOracle(MultiModalPipelineOracle):
+    """Pipeline oracle for Idefics3 architectures."""
+
+    hf_repo_id: str
+    """ID of the Hugging Face repository."""
+
+    def __init__(self, hf_repo_id: str) -> None:
+        super().__init__()
+        self.hf_repo_id = hf_repo_id
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    @property
+    def inputs(self) -> list[TextGenerationRequest]:
+        """Input requests for Idefics3."""
+
+        return (
+            test_data.DEFAULT_TEXT_ONLY + test_data.IDEFICS3_INSTRUCT_REQUESTS
+        )
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+
+        # Compute the max sequence length for Idefics3
+        hf_config = transformers.AutoConfig.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+
+        max_length = 8192
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=KVCacheStrategy.PAGED,
+            model_path=self.hf_repo_id,
+            huggingface_model_revision=revision,
+            max_length=max_length,
+            trust_remote_code=True,
+            engine=PipelineEngine.MAX,
+            # TODO(GEX-2365): Handle this in model memory estimation.
+            device_memory_utilization=0.8,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            self.hf_repo_id,
+            revision=revision,
+            trust_remote_code=True,
+            use_fast=False,
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        processor = transformers.AutoProcessor.from_pretrained(
+            self.hf_repo_id, revision=revision
+        )
+        # Use AutoModelForVision2Seq instead of AutoModel for Idefics3
+        model = transformers.AutoModelForVision2Seq.from_pretrained(
+            self.hf_repo_id,
+            revision=revision,
+            config=config,
+            device_map=device,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            trust_remote_code=True,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+    def run_torch_text_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+    ) -> list[dict]:
+        """Run text generation using Idefics3-specific preprocessing logic."""
+
+        return idefics3_torch_utils.run_text_generation(
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=device,
+            textgen_requests=self.inputs,
+            print_outputs=True,
+            use_cache=self.use_cache,
         )
 
 
@@ -777,6 +882,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "internvl3-78b-instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-78B-Instruct"
+    ),
+    "idefics3-8b-llama3": Idefics3PipelineOracle(
+        "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
