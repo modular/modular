@@ -16,11 +16,9 @@ from sys import alignof, simdwidthof
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     barrier,
     block_idx,
     lane_id,
-    thread_idx,
 )
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace

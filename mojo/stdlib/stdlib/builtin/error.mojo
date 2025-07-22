@@ -17,7 +17,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from collections.string.format import _CurlyEntryFormattable
-from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import memcpy

@@ -21,7 +21,7 @@ from random import seed
 
 import math
 from math import floor
-from sys import bitwidthof, external_call
+from sys import external_call
 from time import perf_counter_ns
 
 

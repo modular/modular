@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-
-from memory import AddressSpace, bitcast
 
 alias _kStartTensorMarker = "["
 alias _kEndTensorMarker = "]"

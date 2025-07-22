@@ -37,9 +37,8 @@ from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
 from gpu.host import get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
-from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.tensor_ops import tc_reduce_gevm_8x
-from logger import Logger, Level
+from gpu.memory import AddressSpace, load
+from logger import Logger
 from memory import memset_zero, stack_allocation
 
 from utils import IndexList
@@ -50,7 +49,6 @@ from utils.static_tuple import StaticTuple
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
-from sys.param_env import env_get_string
 
 # layout imports
 from layout import (

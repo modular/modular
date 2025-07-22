@@ -13,7 +13,6 @@
 
 from collections import List
 
-from ._c.ffi import MLIR_func
 from .ir import Context, DialectType, Type
 
 

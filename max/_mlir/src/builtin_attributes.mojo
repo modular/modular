@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from collections.string import StaticString
 
 import ._c
-import ._c.BuiltinAttributes
-import ._c.BuiltinTypes
-from ._c.ffi import MLIR_func
 from .ir import Attribute, Context, DialectAttribute, Type
 
 

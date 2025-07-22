@@ -13,10 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import (
-    DeviceAttribute,
-    DeviceBuffer,
     DeviceContext,
-    DeviceStream,
     Dim,
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_get_current_context, CUcontext

@@ -24,13 +24,13 @@ from gpu._cufft.cufft import (
     cufftSetStream,
     cufftSetWorkArea,
 )
-from gpu._cufft.types import Status, Type
+from gpu._cufft.types import Type
 from gpu._cufft.utils import check_error
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from layout import LayoutTensor, Layout
+from layout import LayoutTensor
 
-from sys.ffi import _get_global_or_null, external_call
+from sys.ffi import external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 

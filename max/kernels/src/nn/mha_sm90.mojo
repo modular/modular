@@ -23,7 +23,6 @@ from gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    global_idx,
     lane_id,
     thread_idx,
 )
@@ -39,26 +38,20 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     copy_local_to_shared,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
     copy_sram_to_dram,
     cp_async_k_major,
-    cp_async_mn_major,
 )
 from layout.swizzle import make_swizzle
-from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_to_descriptor,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
-    MHASchedule,
     MHASchedulerSynchronization,
     MHATileScheduler,
     MHATileState,
@@ -67,20 +60,13 @@ from nn.mha_tile_scheduler import (
     SeqInfo,
     TileScheduler,
     TransientScheduler,
-    WorkInfo,
 )
 from nn.mha_utils import (
-    DynamicInt,
     FlashAttentionAlgorithm,
     MHAConfig,
     MHAPartitionScheme,
-    NoPartition,
     OptionallyStaticInt,
-    SplitKPartition,
-    StaticInt,
-    _copy_frag_to_smem,
     _is_decoding,
-    _kernel_mask,
     get_start_and_end_for_partitions,
 )
 from nn.mha_fa3_utils import (
@@ -97,7 +83,7 @@ from nn.softmax import (
 )
 from tensor_internal import ManagedTensorSlice
 
-from utils.index import Index, IndexList
+from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 

@@ -19,7 +19,7 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from utils import IndexList, StaticTuple
+from utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Dim

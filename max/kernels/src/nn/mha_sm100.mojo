@@ -11,19 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import tile_and_unswitch, unswitch
+from algorithm.functional import unswitch
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _uint_type_of_width
 from collections import OptionalReg
-from compiler_internal import StaticTensorSpec
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
-    global_idx,
     lane_id,
     thread_idx,
 )
@@ -32,9 +27,8 @@ from gpu.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.id import sm_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, CacheEviction, external_memory
+from gpu.memory import AddressSpace, external_memory
 from gpu.mma import MMAOperandDescriptor
 from gpu.mma_sm100 import (
     UMMAInsDescriptor,
@@ -43,7 +37,7 @@ from gpu.mma_sm100 import (
     mma_arrive,
     mma,
 )
-from gpu.sync import async_copy_arrive, named_barrier
+from gpu.sync import named_barrier
 from gpu.tcgen05 import (
     tcgen05_alloc,
     tcgen05_ld,
@@ -53,7 +47,6 @@ from gpu.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_dealloc,
 )
-from kv_cache.types import KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
@@ -61,22 +54,14 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     copy_local_to_shared,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
     copy_sram_to_dram,
     cp_async_k_major,
-    cp_async_mn_major,
 )
 from layout.swizzle import make_swizzle
-from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
-    TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
-    _wgmma_descriptor,
-    _convert_cfrags_to_simd,
-    _convert_cfrags_to_tuple,
 )
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -84,12 +69,10 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
-from linalg._multistage_gemm_gpu import multistage_mma
 from math import ceildiv, recip
 from math.constants import log2e
 from memory import stack_allocation
 from memory import stack_allocation, bitcast
-from nn.mha import get_mha_decoding_num_partitions, mha_splitk_reduce
 from nn.mha_fa3_utils import (
     MHAPosition,
     _get_position,
@@ -98,33 +81,22 @@ from nn.mha_fa3_utils import (
     valid_length_managed_tensor_slice_to_ndbuffer,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import KVCacheMHAOperand
-from nn.mha_operand import MHAOperand, NDBufferMHAOperand
+from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
-    MHASchedule,
     MHASchedulerSynchronization,
     MHATileScheduler,
     MHATileState,
     MHATileSummary,
-    QueuedTileScheduler,
     SeqInfo,
-    TileScheduler,
     TransientScheduler,
-    WorkInfo,
 )
 from nn.mha_utils import (
-    DynamicInt,
     FlashAttentionAlgorithm,
     MHAConfig,
     MHAPartitionScheme,
-    NoPartition,
     OptionallyStaticInt,
-    SplitKPartition,
-    StaticInt,
-    _copy_frag_to_smem,
     _is_decoding,
-    _kernel_mask,
     get_start_and_end_for_partitions,
 )
 from nn.softmax import (
@@ -132,15 +104,13 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys import alignof, simdwidthof, sizeof
 from sys import sizeof
-from tensor_internal import IOUnknown
 from tensor_internal import ManagedTensorSlice
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils.index import Index
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 import gpu.warp as warp
-import gpu.warp as warpre_wait
 
 
 struct RegisterAccumulatorDescription:

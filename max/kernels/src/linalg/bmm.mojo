@@ -23,7 +23,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import is_cpu, is_valid_target, A100, H100
+from gpu.host.info import is_cpu, is_valid_target, A100
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

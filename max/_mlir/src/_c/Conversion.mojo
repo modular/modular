@@ -21,7 +21,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from .ffi import MLIR_func
 from .Support import *
 
 # ===-- mlir-c/Conversion.h - Conversion passes initialization ----*- C -*-===//

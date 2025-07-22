@@ -394,7 +394,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         Check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from testing import assert_true
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())

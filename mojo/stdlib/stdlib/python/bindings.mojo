@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
-from os import abort
 from sys.ffi import c_int, _Global
 from sys.info import sizeof
 from compile.reflection import get_type_name
@@ -21,11 +19,6 @@ from memory import stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
-    Py_tp_new,
-    Py_tp_dealloc,
-    Py_tp_init,
-    Py_tp_methods,
-    Py_tp_repr,
     PyCFunction,
     PyCFunctionWithKeywords,
     PyMethodDef,
@@ -36,10 +29,6 @@ from python._cpython import (
     PyType_Slot,
     PyType_Spec,
     GILAcquired,
-    destructor,
-    reprfunc,
-    Typed_initproc,
-    Typed_newfunc,
 )
 from python._python_func import PyObjectFunction
 from python.python_object import _unsafe_alloc, _unsafe_init

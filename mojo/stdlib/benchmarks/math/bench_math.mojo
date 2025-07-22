@@ -14,7 +14,7 @@
 from math import *
 from random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

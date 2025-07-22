@@ -15,7 +15,7 @@ from random import random_ui64, seed
 from sys import bitwidthof
 from sys.intrinsics import likely, unlikely
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from bit import bit_width, count_leading_zeros
 
 # ===-----------------------------------------------------------------------===#

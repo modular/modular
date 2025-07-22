@@ -17,8 +17,7 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray, Optional
-from collections.string.string_slice import get_static_string
+from collections import InlineArray
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path

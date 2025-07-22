@@ -18,11 +18,9 @@ from python.bindings import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PyMojoObject,
     PythonModuleBuilder,
-    lookup_py_type_object,
 )
-from python._cpython import PyObjectPtr, PyTypeObject
+from python._cpython import PyObjectPtr
 
 
 @export

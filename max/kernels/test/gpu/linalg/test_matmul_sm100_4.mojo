@@ -29,8 +29,6 @@ from gpu.memory import AddressSpace, tma_store_fence
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,

@@ -35,8 +35,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.memory import (
-    CacheEviction,
-    Fill,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
@@ -47,7 +45,6 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    _swizzle_signature,
     copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,

@@ -14,7 +14,7 @@
 
 from bit import byte_swap
 from builtin.io import _printf
-from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
+from sys.info import is_gpu
 from memory import memcpy, bitcast
 from os import abort
 from sys import alignof

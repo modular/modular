@@ -14,8 +14,8 @@
 """Implement UTF-8 utils."""
 
 from base64._b64encode import _sub_with_saturation
-from sys import is_compile_time, simdwidthof
-from sys.intrinsics import likely, llvm_intrinsic
+from sys import simdwidthof
+from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from memory import Span

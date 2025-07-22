@@ -13,7 +13,6 @@
 
 from math import iota
 
-from memory import UnsafePointer
 from layout import LayoutTensor, RuntimeTuple
 
 from utils import IndexList

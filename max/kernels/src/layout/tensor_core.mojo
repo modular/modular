@@ -49,7 +49,6 @@ from collections import OptionalReg
 from math import align_down
 from sys import (
     has_nvidia_gpu_accelerator,
-    is_amd_gpu,
     is_nvidia_gpu,
     simdwidthof,
     sizeof,

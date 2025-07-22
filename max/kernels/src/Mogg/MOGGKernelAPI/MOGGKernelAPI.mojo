@@ -46,7 +46,7 @@ from algorithm import max as reduce_max
 from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
-from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
+from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
@@ -58,8 +58,6 @@ from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    KVCollectionT,
-    PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
@@ -241,7 +239,6 @@ from tensor_internal import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
-from tensor_internal._indexing import _dot_prod, _row_major_strides
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
 from tensor_internal.managed_tensor_slice import (
@@ -268,7 +265,6 @@ from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
-from utils.static_tuple import _create_array, _set_array_elem
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.

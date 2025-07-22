@@ -17,7 +17,6 @@ from math import align_up, ceildiv, exp
 from math.math import _Expable
 from sys import (
     alignof,
-    bitwidthof,
     is_amd_gpu,
     is_nvidia_gpu,
     prefetch,
@@ -52,7 +51,7 @@ from .int_tuple import (
     depth,
     fill_like,
     flatten,
-    idx2crd,
+    propagate_unknown,
     product,
     to_nest,
 )

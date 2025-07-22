@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Dict, Optional
+from collections import Optional
 from collections.string._utf8 import _is_valid_utf8
 from collections.string.string_slice import _split
-from memory import stack_allocation
 from os import abort
 from pathlib import _dir_of_current_file
-from random import random_si64, seed
+from random import seed
 from sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#

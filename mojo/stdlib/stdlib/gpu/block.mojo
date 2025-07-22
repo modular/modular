@@ -27,20 +27,17 @@ vectorization.
 """
 
 
-from builtin.math import max as _max
-from builtin.math import min as _min
 from memory import stack_allocation
 from math import align_up
 
 from .globals import WARP_SIZE
-from .id import block_idx, lane_id, thread_idx, warp_id
+from .id import lane_id, thread_idx, warp_id
 from .memory import AddressSpace
 from .sync import barrier
 from .warp import broadcast as warp_broadcast
 from .warp import max as warp_max
 from .warp import min as warp_min
 from .warp import prefix_sum as warp_prefix_sum
-from .warp import shuffle_idx, shuffle_up
 from .warp import sum as warp_sum
 
 # ===-----------------------------------------------------------------------===#

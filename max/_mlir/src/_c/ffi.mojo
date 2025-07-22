@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from os import abort, getenv
+from os import abort
 from sys.ffi import (
     _find_dylib,
     _get_dylib_function,

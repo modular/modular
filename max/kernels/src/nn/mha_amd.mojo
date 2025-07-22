@@ -15,28 +15,22 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import alignof, simdwidthof, sizeof
-from sys.intrinsics import _type_is_eq, readfirstlane
+from sys.intrinsics import readfirstlane
 
 from algorithm.functional import unswitch
 from gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
     block_idx,
-    global_idx,
-    grid_dim,
     lane_id,
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
 from gpu.intrinsics import buffer_store
 from gpu.memory import AddressSpace
-from gpu.mma import mma as mma_simd
 from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
-    schedule_group_barrier,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
@@ -46,9 +40,7 @@ from layout.layout_tensor import (
     ThreadScope,
     copy_local_to_shared,
     copy_dram_to_local,
-    copy_dram_to_sram,
     copy_local_to_dram,
-    copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
@@ -65,8 +57,6 @@ from nn.mha_utils import (
 )
 from nn.softmax import (
     _online_softmax_iter_for_mma_output,
-    _online_softmax_iter_for_mma_output_split_warp_reduce,
-    _softmax_gpu,
     softmax,
 )
 

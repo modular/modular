@@ -12,12 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import BitSet
-from math import ceil
 from random import *
-from sys import sizeof
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-from bit import next_power_of_two
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 alias INIT_LOOP_SIZE: UInt = 1000000

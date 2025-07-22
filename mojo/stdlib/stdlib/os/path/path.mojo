@@ -22,7 +22,7 @@ from os.path import isdir
 
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget, os_is_macos, os_is_windows
 
 
 from .. import PathLike

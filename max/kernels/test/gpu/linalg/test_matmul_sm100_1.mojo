@@ -38,7 +38,6 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     st_matrix_n_layout,
-    tile_to_descriptor,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster

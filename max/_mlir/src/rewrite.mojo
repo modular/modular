@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import ._c
-import ._c.IR
 from .ir import Block, Context, Location, Operation, Region, Type, Value
 
 

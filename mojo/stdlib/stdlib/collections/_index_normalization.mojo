@@ -13,7 +13,6 @@
 """The utilities provided in this module help normalize the access
 to data elements in arrays."""
 
-from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
 

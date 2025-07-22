@@ -58,7 +58,6 @@ from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_arrive_expect_tx_relaxed,
     mbarrier_init,
-    mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from memory.pointer import _GPUAddressSpace

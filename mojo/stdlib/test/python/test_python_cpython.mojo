@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
+from python import Python
 from python._cpython import Py_eval_input, Py_ssize_t, PyMethodDef, PyObjectPtr
 from testing import (
     assert_false,
     assert_equal,
-    assert_equal_pyobj,
     assert_raises,
     assert_true,
 )

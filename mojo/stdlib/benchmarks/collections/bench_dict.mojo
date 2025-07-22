@@ -13,12 +13,10 @@
 
 from collections.dict import DictEntry
 from hashlib import Hasher
-from math import ceil
 from random.random import random_si64, seed
 from sys import sizeof
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-from bit import next_power_of_two
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#

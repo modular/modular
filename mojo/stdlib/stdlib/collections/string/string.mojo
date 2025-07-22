@@ -77,17 +77,10 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string._unicode import (
-    is_lowercase,
-    is_uppercase,
-    to_lowercase,
-    to_uppercase,
-)
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
-    _utf8_byte_type,
 )
 from hashlib.hasher import Hasher
 from os import PathLike, abort
@@ -100,8 +93,6 @@ from bit import count_leading_zeros
 from memory import memcpy, memset, memcmp
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils import IndexList, Variant
-from utils._select import _select_register_value as select
 from utils.write import (
     _TotalWritableBytes,
     _WriteBufferStack,

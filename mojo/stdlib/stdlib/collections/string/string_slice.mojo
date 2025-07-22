@@ -65,11 +65,11 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib.hasher import Hasher
 from math import align_down
 from os import PathLike, abort
-from sys import bitwidthof, is_compile_time, simdwidthof
+from sys import is_compile_time, simdwidthof
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
-from bit import count_leading_zeros, count_trailing_zeros
+from bit import count_trailing_zeros
 from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, PythonConvertible, PythonObject

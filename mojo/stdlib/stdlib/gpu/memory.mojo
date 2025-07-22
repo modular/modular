@@ -51,7 +51,7 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import to_i16, to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
 from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#

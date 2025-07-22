@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
+from sys import simdwidthof, sizeof
 from gpu import thread_idx
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive

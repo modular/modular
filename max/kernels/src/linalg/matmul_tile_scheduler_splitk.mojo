@@ -13,15 +13,12 @@
 
 from layout.runtime_layout import RuntimeLayout
 from math import ceildiv, align_up
-from layout import IntTuple, Layout, LayoutTensor
-from sys import bitwidthof
+from layout import Layout, LayoutTensor
 from gpu.id import block_idx, grid_dim, thread_idx
-from utils.fast_div import FastDiv
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from utils.index import Index, IndexList
 from gpu.host.info import H100
-from linalg.utils_gpu import block_swizzle
 from gpu.memory import AddressSpace
 from sys import sizeof
 from os.atomic import Atomic

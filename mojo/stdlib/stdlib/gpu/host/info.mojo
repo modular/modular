@@ -20,7 +20,6 @@ memory specifications, thread organization, and performance characteristics.
 
 from math import ceildiv, floor
 from os import abort
-from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()

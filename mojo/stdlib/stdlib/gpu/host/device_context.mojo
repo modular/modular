@@ -26,7 +26,6 @@ from pathlib import Path
 from sys import (
     bitwidthof,
     env_get_bool,
-    env_get_int,
     env_get_string,
     external_call,
     is_defined,
@@ -35,7 +34,7 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
+from sys.info import is_triple
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
@@ -49,11 +48,11 @@ from gpu.host.compile import (
     _ptxas_compile,
     _to_sass,
 )
-from memory import memcpy, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import Variant
-from utils._serialize import _serialize_elements, _serialize_elements_compact
+from utils._serialize import _serialize_elements
 
 from .info import DEFAULT_GPU, GPUInfo
 

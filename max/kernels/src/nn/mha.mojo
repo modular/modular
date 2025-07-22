@@ -17,9 +17,6 @@ from math.constants import log2e
 from sys import (
     CompilationTarget,
     alignof,
-    bitwidthof,
-    env_get_bool,
-    env_get_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -27,7 +24,6 @@ from sys import (
     simdwidthof,
     sizeof,
 )
-from sys.intrinsics import _type_is_eq
 
 import gpu.warp as warp
 from algorithm import elementwise
@@ -48,7 +44,7 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.host import Dim as LaunchDim
 from gpu.host import FuncAttribute
-from gpu.host.info import A100, H100, B200, _get_info_from_target
+from gpu.host.info import A100, H100, B200
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -65,7 +61,6 @@ from layout.layout_tensor import (
     copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_local,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
@@ -77,7 +72,6 @@ from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.transpose import transpose
 from memory import stack_allocation
-from memory.pointer import AddressSpace as _AddressSpace
 from nn.mha_amd import (
     mha_decoding_single_batch_amd,
     mha_single_batch_amd,
@@ -107,11 +101,6 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
-from .mha_tile_scheduler import (
-    QueuedTileScheduler,
-    TileScheduler,
-    TransientScheduler,
-)
 from .softmax import (
     _exp2_concrete,
     _exp_concrete,

@@ -25,7 +25,7 @@ from gpu.cluster import (
     elect_one_sync_with_mask,
     elect_one_sync,
 )
-from gpu.id import block_id_in_cluster, warp_id, lane_id
+from gpu.id import block_id_in_cluster, lane_id
 from layout.tma_async import SharedMemBarrier, PipelineState
 from gpu.intrinsics import Scope
 from memory import stack_allocation

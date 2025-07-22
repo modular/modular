@@ -12,18 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from os import PathLike, abort
+from os import abort
 from os.atomic import Atomic
 from sys import external_call
-from sys.info import num_physical_cores
-from sys.param_env import is_defined
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
 
 from utils import StaticTuple
 
-from .tracing import TraceLevel
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext

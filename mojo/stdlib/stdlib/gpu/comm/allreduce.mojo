@@ -39,12 +39,11 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys import alignof, simdwidthof, sizeof
 from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
-from builtin.device_passable import DevicePassable
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

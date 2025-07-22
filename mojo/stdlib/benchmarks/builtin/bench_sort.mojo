@@ -13,7 +13,7 @@
 
 from random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from stdlib.builtin.sort import (
     _heap_sort,
     _insertion_sort,

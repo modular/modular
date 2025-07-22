@@ -13,7 +13,7 @@
 
 from collections.string._unicode_lookups import *
 
-from memory import Span, memcpy
+from memory import Span
 
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:

@@ -17,8 +17,6 @@ from testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
-    assert_is,
-    assert_is_not,
     assert_not_equal,
     assert_raises,
     assert_true,

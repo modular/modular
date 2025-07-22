@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
 from sys import sizeof
 
 from testing import assert_equal, assert_false, assert_true

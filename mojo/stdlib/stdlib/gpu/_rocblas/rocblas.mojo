@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-from os import abort
 
 from complex import ComplexFloat32, ComplexFloat64
 from gpu.host._amdgpu_hip import hipStream_t

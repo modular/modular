@@ -20,8 +20,6 @@ from python import Python
 """
 
 from collections.dict import OwnedKwargsDict
-from os import abort, getenv
-from sys import external_call, sizeof
 from sys.ffi import _Global
 
 
@@ -32,8 +30,6 @@ from ._cpython import (
     Py_ssize_t,
     PyMethodDef,
     PyObjectPtr,
-    GILAcquired,
-    GILReleased,
 )
 from .python_object import PythonObject
 

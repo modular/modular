@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import *
-from random import seed
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#

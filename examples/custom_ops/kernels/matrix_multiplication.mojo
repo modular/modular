@@ -23,12 +23,11 @@ from gpu import (
     warp_id,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
-    copy_dram_to_sram,
     copy_dram_to_sram_async,
 )
 from layout.math import outer_product_acc

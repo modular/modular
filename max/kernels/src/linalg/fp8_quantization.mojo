@@ -18,19 +18,16 @@ from math import ceildiv
 from sys import simdwidthof
 from sys.info import _is_sm_9x_or_newer
 
-import gpu.warp as warp
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+from gpu import WARP_SIZE, block_idx, thread_idx
 import gpu.block
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
-from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
-from memory import stack_allocation
 from runtime.tracing import trace_arg
 
 from utils.index import IndexList

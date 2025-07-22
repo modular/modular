@@ -22,10 +22,8 @@ from sys.ffi import c_char
 from collections.string.format import _FormatCurlyEntry
 from collections.string.string_slice import _to_string_list
 
-from memory import memcpy
 from python import PythonConvertible, PythonObject
 
-from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral

@@ -27,7 +27,6 @@ There are a few main tools in this module:
 
 from .hasher import Hasher, default_hasher
 from memory import UnsafePointer
-from sys import is_compile_time
 
 
 # ===----------------------------------------------------------------------=== #

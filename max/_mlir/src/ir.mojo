@@ -17,7 +17,6 @@ from collections.string import StaticString
 
 
 from utils import Variant
-from utils.write import _WriteBufferStack
 
 import ._c
 import ._c.IR
@@ -25,8 +24,6 @@ from ._c.ffi import MLIR_func
 from .diagnostics import (
     Diagnostic,
     DiagnosticHandler,
-    DiagnosticHandlerID,
-    DiagnosticSeverity,
     ErrorCapturingDiagnosticHandler,
 )
 

@@ -25,7 +25,7 @@ from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_equal
 
-from utils import Index, IndexList
+from utils import Index
 
 
 fn test[

@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_down, ceildiv, isqrt
-from sys.info import _is_sm_9x, alignof, simdwidthof
+from sys.info import alignof, simdwidthof
 
 import gpu.warp as warp
 from algorithm import map_reduce, mean, variance, vectorize
@@ -39,11 +38,6 @@ from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from gpu.host.launch_attribute import (
-    LaunchAttribute,
-    LaunchAttributeID,
-    LaunchAttributeValue,
-)
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from register import register_internal

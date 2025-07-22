@@ -20,9 +20,8 @@ from internal_utils import (
     random,
 )
 from random import random_float64
-from linalg.grouped_matmul import grouped_matmul_sm90, naive_grouped_matmul
-from linalg.utils_gpu import MatmulConfig
-from testing import assert_almost_equal, assert_true
+from linalg.grouped_matmul import naive_grouped_matmul
+from testing import assert_almost_equal
 from math import ceildiv
 from utils import IndexList
 from utils.index import Index

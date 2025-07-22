@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import alignof, num_physical_cores, sizeof
+from sys import alignof, sizeof
 
 from algorithm import parallelize_over_rows
 from bit import log2_floor
@@ -23,7 +23,6 @@ from memory import Span
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
 
-from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 

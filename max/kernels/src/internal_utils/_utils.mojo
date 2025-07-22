@@ -18,14 +18,12 @@ from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    BenchMetric,
     ThroughputMeasure,
     clobber_memory,
     keep,
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout

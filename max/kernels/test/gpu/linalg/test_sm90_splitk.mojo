@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv
-from utils.numerics import get_accum_type
 import linalg.vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
