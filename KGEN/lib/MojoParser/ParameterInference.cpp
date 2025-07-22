@@ -855,60 +855,32 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
   return success();
 }
 
-/// Given a signature type that has some of its parameter bindings known, burn
-/// the values for those parameters in, leaving the rest untouched so we can
-/// infer them.
-template <typename... Ts>
-static std::tuple<Ts...>
-getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
+/// Given some attr/types that have some of their parameter bindings known,
+/// substitute the known values for those parameters into the attr/types. Any
+/// unknown parameters are left untouched so we can infer them.
+static void
+getPartiallySpecializedAttrTypes(ArrayRef<TypedAttr> bindingsSoFar,
                                  ParserParameterEvaluator &evaluator,
-                                 bool signatureScoped, Ts... args) {
+                                 SmallVectorImpl<Attribute> &pendingAttrs,
+                                 SmallVectorImpl<Type> &pendingTypes) {
   if (bindingsSoFar.empty())
-    return std::make_tuple(args...);
+    return;
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParserParameterEvaluator &evaluator, bool signatureScoped)
-        : bindingsSoFar(bindingsSoFar), evaluator(evaluator),
-          signatureScoped(signatureScoped) {}
+                ParserParameterEvaluator &evaluator)
+        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
 
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
-      // Original comment from Jeff:
-      // Depth-1 because we're matching against the signature parameters,
-      // and that pushes level of depth immediately.
-      //
-      // Evan's interpretation, take with grain of salt:
-      // If `signatureScoped` is true, then we do depth-1 because we're
-      // substituting parameter-values from an outside scope into the "inner"
-      // scope that's defined by the signature, which is 1 different, see
-      // PSTIAIRAID for more.
-      // So `signatureScoped` must mean that the `args` are in a signature's
-      // scope, not in the same scope that the `bindingsSoFar` are from.
-      //
-      // TODO(MOCO-2080): ...should this be dyn_cast<IndexRefAttrInterface>?
-      //
-      // Billy: Yeah I think you're right. Also, perhaps signatureScoped isn't
-      // the right name. It should really just be determined by the "relative"
-      // depth difference between where the evaluator was set up at, and where
-      // the args come from.
-      // When doing parameter inference on a particular signature S, the
-      // evaluator is set up relative to S. This means it works naturally with
-      // anything inside S (as is the case with "non-signature-scoped" calls).
-      // But if we want the evaluator to operate on S itself, then everything is
-      // off by 1 because the signature S itself will increment the depth when
-      // we walk inside it.
       auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
-      if (!ref || ref.getDepth() != depth - signatureScoped ||
+      if (!ref || ref.getDepth() != depth ||
           ref.getIndex() >= bindingsSoFar.size())
         return {};
       TypedAttr result = bindingsSoFar[ref.getIndex()];
 
       [[maybe_unused]] auto getExpectedType = [&]() -> ASTType {
-        // Since we're at a depth of `depth - signatureScoped`, while the
-        // `evaluator` expects a depth of 0, we need to adjust any depths in the
-        // type before running it through `evaluator`.
-        IndexDepthAdjuster depthAdjuster(depth - signatureScoped);
+        IndexDepthAdjuster depthAdjuster(depth);
         Type adjustedType = depthAdjuster.replace(result.getType());
         return evaluator.getReboundType(adjustedType);
       };
@@ -919,10 +891,12 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
 
     ArrayRef<TypedAttr> bindingsSoFar;
     ParserParameterEvaluator &evaluator;
-    bool signatureScoped;
-  } substitutor(bindingsSoFar, evaluator, signatureScoped);
+  } substitutor(bindingsSoFar, evaluator);
 
-  return std::make_tuple(substitutor.replace(args)...);
+  for (Attribute &attr : pendingAttrs)
+    attr = substitutor.replace(attr);
+  for (Type &type : pendingTypes)
+    type = substitutor.replace(type);
 }
 
 /// Infer parameters from an operand being passed into this function. This is
@@ -1052,9 +1026,11 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       else
         break;
     }
-    auto [type] = getPartiallySpecializedSignature(currentParams, evaluator,
-                                                   /*signatureScoped=*/false,
-                                                   Type(expectedType));
+    SmallVector<Attribute> pendingAttrs;
+    SmallVector<Type> pendingTypes = {Type(expectedType)};
+    getPartiallySpecializedAttrTypes(currentParams, evaluator, pendingAttrs,
+                                     pendingTypes);
+    Type type = pendingTypes.front();
     return type;
   };
 
@@ -1229,14 +1205,14 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
                              !paramListAttr.isPosVarArg(paramTypes.size() - 1)))
     return;
 
-  auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
-
-  DefaultValueHandler defaultHandler(paramListAttr);
-  std::tie(types, paramListAttr) = getPartiallySpecializedSignature(
-      inferredParams, evaluator, /*signatureScoped=*/false, types,
-      paramListAttr);
+  SmallVector<Attribute> pendingAttrs = {paramListAttr};
+  SmallVector<Type> types(paramTypes.begin(), paramTypes.end());
+  getPartiallySpecializedAttrTypes(inferredParams, evaluator, pendingAttrs,
+                                   types);
+  paramListAttr = cast<PogListAttr>(pendingAttrs[0]);
 
   size_t posIdx = 0, numParams = givenBindings.size();
+  DefaultValueHandler defaultHandler(paramListAttr);
   for (auto [idx, pog] : llvm::enumerate(paramListAttr.getPogs())) {
     // Inferred parameters won't have supplied values because they cannot be
     // specified by the user. We want to infer them from other parameters.
@@ -1307,15 +1283,42 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 LogicalResult ParameterInferenceState::infer(
     FnTypeGeneratorType signature, const CallOperands &operands,
     const OperandValueList &variadicKwOperands, bool returnsSelf) {
-  // First try to infer parameters from parameters.
+  // First try to infer parameters from the already provided bindings.
   infer(signature.getInputParamTypes(), signature.getParamListAttrs(),
         /*hasArguments*/ true);
 
-  size_t numOperands = operands.size();
-
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  std::tie(signature) = getPartiallySpecializedSignature(
-      inferredParams, evaluator, /*signatureScoped=*/true, signature);
+  {
+    // Substitute the already inferred parameters into the signature, without
+    // removing their parameter decls.
+    //
+    // For example, if given this signature,
+    //     fn [N: Int, S: SIMD[DType.int8, N]]() -> ()
+    // and we know that N=1, it should become:
+    //     fn [N: Int, S: SIMD[DType.int8, 1]]() -> ()
+    // Note the N became a 1 right here ---^
+    //
+    // We can't use `getSpecializedGenerator` for this as it removes the
+    // parameter-decls. For example, giving `getSpecializedGenerator` this:
+    //     fn [N: Int, S: SIMD[DType.int8, N]]() -> ()
+    // and N=1, it would produce this signature:
+    //     fn [S: SIMD[DType.int8, 1]]() -> ()
+    // which we don't want, because the rest of the logic expects
+    // inputParamTypes to be intact.
+    //
+    // All this must be done by slicing out the nested types & attrs from the
+    // generator type so that the depths of index references are correct.
+    FnType bodyType = signature.getBody();
+    PogListAttr metadata = signature.getMetadata();
+    SmallVector<Attribute> pendingAttrs = {metadata};
+    SmallVector<Type> pendingTypes(signature.getInputParamTypes());
+    pendingTypes.push_back(bodyType);
+    getPartiallySpecializedAttrTypes(inferredParams, evaluator, pendingAttrs,
+                                     pendingTypes);
+    bodyType = cast<FnType>(pendingTypes.back());
+    metadata = cast<PogListAttr>(pendingAttrs.front());
+    signature = cast<FnTypeGeneratorType>(GeneratorType::get(
+        ArrayRef<Type>(pendingTypes).drop_back(), bodyType, metadata));
+  }
 
   // If this is a result in a returnsSelf function like an __init__, infer
   // self parameters (which could be specialized and shadowed).
@@ -1336,6 +1339,8 @@ LogicalResult ParameterInferenceState::infer(
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
   size_t posOperandIdx = 0;
+  size_t numOperands = operands.size();
+  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   for (auto [expectedArgIdx, expectedConvention] :
        llvm::enumerate(signature.getArgConventions())) {
 
