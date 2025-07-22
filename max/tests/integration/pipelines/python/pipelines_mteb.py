@@ -66,8 +66,6 @@ class EmbeddingModel:
     def mteb_model_meta(self) -> mteb.ModelMeta:
         if self.pipeline_config.engine == PipelineEngine.MAX:
             name = f"max_{self.pipeline_config.model_config.model_path}"
-        elif self.pipeline_config.engine == PipelineEngine.HUGGINGFACE:
-            name = f"max_hf_{self.pipeline_config.model_config.model_path}"
         else:
             name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.model_config.model_path}"
 

@@ -302,6 +302,7 @@ DUMMY_ARCH = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.q6_k: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.q4_0: [KVCacheStrategy.CONTINUOUS],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,

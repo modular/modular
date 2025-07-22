@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import os
+import typing
 from functools import wraps
 from unittest.mock import MagicMock, patch
 
@@ -94,10 +96,39 @@ class DummyPipelineConfig(PipelineConfig):
 
 
 def mock_huggingface_config(func):  # noqa: ANN001
+    """Mock HuggingFace config to return correct architectures for test models."""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
+        def mock_from_pretrained(
+            model_name_or_path: typing.Union[str, os.PathLike[str]], **kwargs
+        ):
+            # Create a mock config with the correct architectures based on model
+            mock_config = MagicMock()
+
+            # Map specific test models to their architectures
+            model_architectures = {
+                "OpenGVLab/InternVL2-8B": ["InternVLChatModel"],
+                "modularai/Llama-3.1-8B-Instruct-GGUF": ["LlamaForCausalLM"],
+                "HuggingFaceTB/SmolLM-135M": ["LlamaForCausalLM"],
+                "trl-internal-testing/tiny-random-LlamaForCausalLM": [
+                    "LlamaForCausalLM"
+                ],
+                # Add other specific mappings as needed
+            }
+
+            # Handle local paths that might be cache directories
+            if "Llama-3.1-8B-Instruct" in str(model_name_or_path):
+                mock_config.architectures = ["LlamaForCausalLM"]
+            else:
+                # Only return architectures for known test models, empty list for unknown ones
+                mock_config.architectures = model_architectures.get(
+                    str(model_name_or_path), []
+                )
+            return mock_config
+
         with patch.object(
-            AutoConfig, "from_pretrained", return_value=MagicMock()
+            AutoConfig, "from_pretrained", side_effect=mock_from_pretrained
         ):
             return func(*args, **kwargs)
 

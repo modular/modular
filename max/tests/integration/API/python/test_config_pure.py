@@ -403,6 +403,7 @@ def test_config_init__raises_with_no_model_path() -> None:
 
 @mock_pipeline_config_hf_dependencies
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     config = PipelineConfig(
         weight_path=[
             Path(
@@ -424,6 +425,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
 def test_config_post_init__other_repo_weights(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
         weight_path=Path(
@@ -442,10 +444,11 @@ def test_config_post_init__other_repo_weights(
 
 @mock_pipeline_config_hf_dependencies
 def test_config_init__reformats_with_str_weights_path() -> None:
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     # We expect this to convert the string.
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
-        weight_path="file.gguf",
+        weight_path="file.q4_0.gguf",
     )
 
     assert isinstance(config.model_config.weight_path, list)
@@ -455,6 +458,7 @@ def test_config_init__reformats_with_str_weights_path() -> None:
 
 @mock_pipeline_config_hf_dependencies
 def test_validate_model_path__correct_repo_id_provided() -> None:
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
@@ -469,7 +473,7 @@ def test_validate_model_path__correct_repo_id_provided() -> None:
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     with pytest.raises(ValueError):
         # This should raise, as q4_k != f32.
@@ -507,7 +511,7 @@ def test_config__test_incompatible_quantization_encoding(
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     with pytest.raises(ValueError):
         # This should raise, as allow_safetensors_weights_float32_to_bfloat16_cast defaults to False, which
@@ -564,7 +568,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
 def test_config__test_retrieve_factory_with_known_architecture(
     modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
@@ -582,15 +586,17 @@ def test_config__test_retrieve_factory_with_known_architecture(
 def test_config__test_retrieve_factory_with_unsupported_model_path(
     gemma_3_1b_it_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
-    config = PipelineConfig(
-        model_path=gemma_3_1b_it_local_path,
-        max_batch_size=1,
-        max_length=1,
-    )
-    # Fallback to the generalized pipeline
-    assert config.engine == PipelineEngine.HUGGINGFACE
+    # Should now raise an error since HuggingFace fallback is removed
+    with pytest.raises(
+        ValueError, match="MAX-optimized architecture not available"
+    ):
+        config = PipelineConfig(
+            model_path=gemma_3_1b_it_local_path,
+            max_batch_size=1,
+            max_length=1,
+        )
 
 
 @pytest.mark.skip(
@@ -601,7 +607,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
 def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
     modular_ai_llama_3_1_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
@@ -628,6 +634,7 @@ class LimitedPickler(pickle.Unpickler):
 
 @mock_pipeline_config_hf_dependencies
 def test_config_is_picklable(tmp_path) -> None:  # noqa: ANN001
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
@@ -645,6 +652,7 @@ def test_config_is_picklable(tmp_path) -> None:  # noqa: ANN001
 
 @mock_pipeline_config_hf_dependencies
 def test_config__validate_devices() -> None:
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
     # This test should always have a cpu available.
     _ = PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",
@@ -667,7 +675,7 @@ def test_config__validate_devices() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_config__validates_supported_device() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     # Valid device/encoding combinations.
     config = PipelineConfig(
@@ -691,7 +699,7 @@ def test_config__validates_supported_device() -> None:
 def test_config__validates_invalid_supported_device(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     with pytest.raises(
         ValueError, match="not compatible with the selected device type 'cpu'"
@@ -711,17 +719,19 @@ def test_config__validates_invalid_supported_device(
 def test_config__validates_engine_configurations(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
-    # Test explicit HuggingFace engine with valid config
-    # This verifies we can force HF even when MAX would work
-    config = PipelineConfig(
-        model_path=llama_3_1_8b_instruct_local_path,
-        device_specs=[DeviceSpec.accelerator()],
-        max_length=1,
-        engine=PipelineEngine.HUGGINGFACE,
-    )
-    assert config.engine == PipelineEngine.HUGGINGFACE
+    # Test that HuggingFace engine is rejected since it's no longer supported
+    with pytest.raises(
+        ValueError,
+        match="Engine huggingface is not supported. Only MAX engine is supported.",
+    ):
+        config = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1,
+            engine="huggingface",  # Should raise error
+        )
 
 
 @prepare_registry
@@ -729,7 +739,7 @@ def test_config__validates_lora_configuration(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
     llama_3_1_8b_lora_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     # Test explicit HuggingFace engine with valid config
     # This verifies we can force HF even when MAX would work

@@ -52,13 +52,16 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
-    config = PipelineConfig(
-        model_path="GSAI-ML/LLaDA-8B-Instruct",
-        max_batch_size=1,
-        max_length=1,
-        trust_remote_code=True,
-    )
-    assert config.engine == PipelineEngine.HUGGINGFACE
+    # Should now raise an error since HuggingFace fallback is removed
+    with pytest.raises(
+        ValueError, match="MAX-optimized architecture not available"
+    ):
+        config = PipelineConfig(
+            model_path="GSAI-ML/LLaDA-8B-Instruct",
+            max_batch_size=1,
+            max_length=1,
+            trust_remote_code=True,
+        )
 
     @prepare_registry
     @mock_pipeline_config_hf_dependencies

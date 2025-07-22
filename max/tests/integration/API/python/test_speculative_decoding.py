@@ -16,7 +16,6 @@ from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    PipelineEngine,
     SupportedEncoding,
 )
 from max.pipelines.core import TextContext
@@ -122,14 +121,17 @@ def test_config__validate_device_and_encoding_combinations(
         draft_model_path=smollm_135m_local_path,
     )
 
-    with pytest.raises(ValueError):
-        # Invalid device/encoding combinations
+    with pytest.raises(
+        ValueError,
+        match="Engine huggingface is not supported. Only MAX engine is supported.",
+    ):
+        # Invalid engine
         config = PipelineConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             quantization_encoding=SupportedEncoding.float32,
             device_specs=[DeviceSpec.cpu()],
             draft_model_path=smollm_135m_local_path,
-            engine=PipelineEngine.HUGGINGFACE,
+            engine="huggingface",  # Use string instead of enum since enum no longer exists
         )
 
 
@@ -168,14 +170,14 @@ def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:  
     """Test that speculative decoding is not supported with HuggingFace engine."""
     with pytest.raises(
         ValueError,
-        match="Speculative Decoding not supported with the HuggingFace Engine",
+        match="Engine huggingface is not supported. Only MAX engine is supported.",
     ):
         PipelineConfig(
             model_path=smollm2_135m_local_path,
             quantization_encoding=SupportedEncoding.bfloat16,
             device_specs=[DeviceSpec.accelerator()],
             draft_model_path=smollm2_135m_local_path,
-            engine=PipelineEngine.HUGGINGFACE,
+            engine="huggingface",  # Use string instead of enum since enum no longer exists
         )
 
 

@@ -147,15 +147,17 @@ def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None: 
                 max_length=512,
             )
 
-        # This example, should raise as we dont have q4_k listed as supported.
-        # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.q4_k,
-            max_batch_size=1,
-            max_length=512,
-        )
-        assert config.engine == PipelineEngine.HUGGINGFACE
+        # This example should now raise an error since HuggingFace fallback is removed
+        with pytest.raises(
+            ValueError,
+            match="quantization_encoding of 'q4_k' not supported by MAX engine",
+        ):
+            config = PipelineConfig(
+                model_path=llama_3_1_8b_instruct_local_path,
+                quantization_encoding=SupportedEncoding.q4_k,
+                max_batch_size=1,
+                max_length=512,
+            )
 
         # Test a partially complete huggingface_repo
         config = PipelineConfig(

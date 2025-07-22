@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import get_type_hints
 
 import click
+import max.pipelines.architectures.internvl.arch as internvl_arch
+import max.pipelines.architectures.llama3.arch as llama3_arch
 import pytest
 from click.testing import CliRunner
 from max.driver import DeviceSpec
@@ -96,7 +98,7 @@ TEST_COMMANDS = [
             "--weight-path",
             "model3.safetensors",
             "--devices",
-            "cpu",
+            "gpu",
         ],
         expected={
             "model_config": {
@@ -108,7 +110,7 @@ TEST_COMMANDS = [
                     Path("model3.safetensors"),
                 ],
                 "kv_cache_config": {
-                    "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                    "cache_strategy": KVCacheStrategy.PAGED,
                 },
             },
         },
@@ -169,7 +171,7 @@ TEST_COMMANDS = [
             "--vision-config-overrides",
             '{"max_dynamic_patch": 24}',
             "--devices",
-            "cpu",
+            "gpu",
         ],
         expected={
             "model_config": {
@@ -186,7 +188,7 @@ TEST_COMMANDS = [
             "--vision-config-overrides",
             '{"max_dynamic_patch": 12, "custom_field": "test"}',
             "--devices",
-            "cpu",
+            "gpu",
         ],
         expected={
             "model_config": {
@@ -253,6 +255,9 @@ def testing(
     idx,  # noqa: ANN001
     **config_kwargs,
 ) -> None:
+    PIPELINE_REGISTRY.register(llama3_arch.llama_arch, allow_override=True)
+    PIPELINE_REGISTRY.register(internvl_arch.internvl_arch, allow_override=True)
+
     # Retrieve test command.
     test_command = TEST_COMMANDS[idx]
 
@@ -325,11 +330,8 @@ def test_cli_commands(command, idx) -> None:  # noqa: ANN001
         command: Command object containing args and valid flag
         idx: Index of the command in TEST_COMMANDS list
     """
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     runner = CliRunner()
-
     command_args = command.args + ["--idx", str(idx)]
-
     result = runner.invoke(testing, command_args)
 
     if command.valid:
