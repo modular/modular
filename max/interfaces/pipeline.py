@@ -1,0 +1,149 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Interfaces and result/status classes for pipeline operations in the MAX API.
+
+This module defines the core status and result structures used by pipeline components
+to communicate operation outcomes, including success and cancellation states.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Generic, Protocol, TypeVar, runtime_checkable
+
+from typing_extensions import TypeAlias
+
+from .context import RequestID
+
+
+class PipelineInputs:
+    """
+    Base class representing inputs to a pipeline operation.
+
+    This class serves as a marker interface for all pipeline input types.
+    Concrete implementations should inherit from this class and define
+    the specific input data structures required for their pipeline operations.
+
+    Example:
+        class MyPipelineInputs(PipelineInputs):
+            def __init__(self, data: str, config: dict):
+                self.data = data
+                self.config = config
+    """
+
+    ...
+
+
+# TODO: We should change this to a abstract base class, but this blocks
+# msgspec.Struct implementations of this class.
+@runtime_checkable
+class PipelineOutput(Protocol):
+    """
+    Abstract base class representing the output of a pipeline operation.
+
+    Subclasses must implement the `is_done` property to indicate whether
+    the pipeline operation has completed.
+    """
+
+    @property
+    def is_done(self) -> bool:
+        """
+        Indicates whether the pipeline operation has completed.
+
+        Returns:
+            bool: True if the operation is done, False otherwise.
+        """
+        ...
+
+
+PipelineOutputType = TypeVar("PipelineOutputType", bound=PipelineOutput)
+"""
+Type variable for pipeline output types.
+
+This TypeVar is bound to PipelineOutput, ensuring that any type used with this
+variable must implement the PipelineOutput protocol. Used for generic typing
+in pipeline operations to maintain type safety while allowing flexibility
+in output types.
+
+Bounds:
+    PipelineOutput: All types must implement the PipelineOutput protocol
+"""
+
+PipelineOutputsDict: TypeAlias = dict[RequestID, PipelineOutputType]
+"""
+Type alias for a dictionary mapping string keys to PipelineOutput instances.
+
+This is used to represent a collection of pipeline outputs, where each key
+identifies a specific output.
+"""
+
+
+PipelineInputsType = TypeVar("PipelineInputsType", bound=PipelineInputs)
+"""
+Type variable for pipeline input types.
+
+This TypeVar is bound to PipelineInputs, ensuring that any type used with this
+variable must inherit from the PipelineInputs base class. Used for generic typing
+in pipeline operations to maintain type safety while allowing flexibility
+in input types.
+
+Bounds:
+    PipelineInputs: All types must inherit from PipelineInputs base class
+"""
+
+PipelineOutputsType = TypeVar("PipelineOutputsType", bound=PipelineOutputsDict)
+"""
+Type variable for pipeline outputs dictionary types.
+
+This TypeVar is bound to PipelineOutputsDict, ensuring that any type used with this
+variable must be compatible with a dictionary mapping RequestID to PipelineOutput
+instances. Used for generic typing in pipeline operations to maintain type safety
+for collections of pipeline outputs.
+
+Bounds:
+    PipelineOutputsDict: All types must be compatible with dict[RequestID, PipelineOutputType]
+"""
+
+
+class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
+    """
+    Abstract base class for pipeline operations.
+
+    This generic abstract class defines the interface for pipeline operations that
+    transform inputs of type PipelineInputsType into outputs of type PipelineOutputsDict[PipelineOutputType].
+    All concrete pipeline implementations must inherit from this class and implement
+    the execute method.
+
+    Type Parameters:
+        PipelineInputsType: The type of inputs this pipeline accepts, must inherit from PipelineInputs
+        PipelineOutputType: The type of outputs this pipeline produces, must be a subclass of PipelineOutput
+
+    Example:
+        class MyPipeline(Pipeline[MyInputs, MyOutput]):
+            def execute(self, inputs: MyInputs) -> dict[RequestID, MyOutput]:
+                # Implementation here
+                pass
+    """
+
+    @abstractmethod
+    def execute(
+        self, inputs: PipelineInputsType
+    ) -> PipelineOutputsDict[PipelineOutputType]:
+        """
+        Execute the pipeline operation with the given inputs.
+
+        This method must be implemented by all concrete pipeline classes.
+        It takes inputs of the specified type and returns outputs according
+        to the pipeline's processing logic.
+
+        Args:
+            inputs: The input data for the pipeline operation, must be of type PipelineInputsType
+
+        Returns:
+            The results of the pipeline operation, as a dictionary mapping RequestID to PipelineOutputType
+
+        Raises:
+            NotImplementedError: If not implemented by a concrete subclass
+        """
+        ...
