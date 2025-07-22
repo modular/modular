@@ -29,7 +29,7 @@ def transfer_routine_sender(
     GB: float,
 ) -> None:
     # Enabling UCX debug logging only for sender
-    os.environ["UCX_LOG_LEVEL"] = "trace"
+    os.environ["UCX_LOG_LEVEL"] = "debug"
 
     device = Accelerator(1)
 
@@ -179,6 +179,10 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     assert "UCX  DEBUG register cuda memory on: cuda_cpy, cuda_ipc" in out
     assert "UCX  DEBUG register cuda-managed memory on: cuda_cpy" in out
     assert "UCX  DEBUG no memory domain supports registering rocm memory" in out
+    assert (
+        "UCX  DEBUG cuMemcpyDtoDAsync_v2(dst, src, iov[0].length, stream) -> 0"
+        in out
+    )
 
     # Check stderr
     assert (
