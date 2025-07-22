@@ -306,7 +306,7 @@ EOF
         srcs = ["//bazel/internal/llvm-lit:validate_lit_features.py"],
         main = "//bazel/internal/llvm-lit:validate_lit_features.py",
         args = [native.package_name()] + srcs,
-        env = default_env,
+        env = default_env | {"RUNS_ON_GPU": str("gpu" in tags)},
         toolchains = [
             "//bazel/internal:current_gpu_toolchain",
         ],
