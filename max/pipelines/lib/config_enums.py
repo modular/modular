@@ -56,7 +56,6 @@ class RopeType(str, Enum):
 
 class PipelineEngine(str, Enum):
     MAX = "max"
-    HUGGINGFACE = "huggingface"
 
 
 class PipelineRole(str, Enum):

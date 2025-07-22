@@ -19,7 +19,6 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
-import torch
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import PipelineTask
@@ -42,8 +41,6 @@ if TYPE_CHECKING:
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import PipelineEngine, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_pipeline import DEFAULT_MAX_SEQ_LEN as HF_DEFAULT_MAX_SEQ_LEN
-from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
@@ -84,14 +81,6 @@ def get_pipeline_for_task(
     else:
         msg = f"PipelineTask ({task}) does not have supported Pipeline"
         raise ValueError(msg)
-
-
-_HF_PIPELINE_TASK_MAP: dict[
-    PipelineTask, type[HFTextGenerationPipeline] | type[HFEmbeddingsPipeline]
-] = {
-    PipelineTask.TEXT_GENERATION: HFTextGenerationPipeline,
-    PipelineTask.EMBEDDINGS_GENERATION: HFEmbeddingsPipeline,
-}
 
 
 class SupportedArchitecture:
@@ -375,17 +364,6 @@ class PipelineRegistry:
 
         return message
 
-    def _set_hf_pipeline_defaults(
-        self, pipeline_config: PipelineConfig
-    ) -> PipelineConfig:
-        if pipeline_config.max_batch_size is None:
-            pipeline_config.max_batch_size = 1
-        # HF pipelines always use custom continuous cache
-        pipeline_config.model_config.kv_cache_config.cache_strategy = (
-            KVCacheStrategy.CONTINUOUS
-        )
-        return pipeline_config
-
     def retrieve_tokenizer(
         self,
         pipeline_config: PipelineConfig,
@@ -542,48 +520,8 @@ class PipelineRegistry:
                 ),
             )
         else:
-            pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)
-            hf_pipeline_class = _HF_PIPELINE_TASK_MAP[task]
-
-            torch_device_type = str(
-                pipeline_config.model_config.device_specs[0].device_type
-            )
-            if (
-                pipeline_config.model_config.device_specs[0].device_type
-                == "gpu"
-            ):
-                torch_device_type = "cuda"
-                torch.multiprocessing.set_start_method("spawn", force=True)
-
-            # Generalized pipeline
-            tokenizer = TextTokenizer(
-                pipeline_config.model_config.model_path,
-                revision=pipeline_config.model_config.huggingface_model_revision,
-                max_length=pipeline_config.max_length or HF_DEFAULT_MAX_SEQ_LEN,
-                max_new_tokens=pipeline_config.max_new_tokens,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                enable_llama_whitespace_fix=True,
-            )
-            logger.info(
-                self._load_logging_message(
-                    pipeline_config=pipeline_config,
-                    tokenizer_type=TextTokenizer,
-                    pipeline_model="",
-                    pipeline_name=hf_pipeline_class.__name__,
-                    factory=True,
-                    devices=load_devices(
-                        pipeline_config.model_config.device_specs
-                    ),
-                )
-            )
-            pipeline_factory = cast(
-                Callable[[], PipelineTypes],
-                functools.partial(
-                    hf_pipeline_class,
-                    pipeline_config=pipeline_config,
-                    torch_device_type=torch_device_type,
-                ),
-            )
+            msg = f"Engine {pipeline_config.engine} is not supported. Only MAX engine is supported."
+            raise ValueError(msg)
 
         if tokenizer.eos is None:
             msg = "tokenizer.eos value is None, tokenizer configuration is incomplete."

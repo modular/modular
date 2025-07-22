@@ -56,7 +56,7 @@ class PipelineConfig(MAXConfig):
     """
 
     engine: Optional[PipelineEngine] = None
-    """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
+    """Engine backend to use for serving. Currently only 'max' engine is supported."""
 
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
@@ -455,11 +455,9 @@ class PipelineConfig(MAXConfig):
         """
         assert self.draft_model_config is not None  # keep mypy happy
 
-        # We don't support running speculative decoding with the HuggingFace backend.
-        if self.engine == PipelineEngine.HUGGINGFACE:
-            msg = (
-                "Speculative Decoding not supported with the HuggingFace Engine"
-            )
+        # Only MAX engine is supported
+        if self.engine != PipelineEngine.MAX:
+            msg = f"Engine {self.engine} is not supported. Only MAX engine is supported."
             raise ValueError(msg)
 
         # Validate that both the `draft_model` and target model `model_path` have the same
@@ -531,22 +529,12 @@ class PipelineConfig(MAXConfig):
         )
 
         # If nothing is provided, we should not update any more params.
-        # Instead, fall back to the HuggingFace engine.
-        if not arch and self.engine == PipelineEngine.MAX:
-            raise ValueError(
-                "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
-            )
-        elif not arch:
+        if not arch:
             msg = (
-                "MAX-optimized architecture not available for"
-                f" '{model_config.model_path}' falling back to"
-                " HuggingFace."
+                f"MAX-optimized architecture not available for '{model_config.model_path}'. "
+                "Please file a request at https://modul.ar/request to add this model architecture to MAX."
             )
-            logger.warning(msg)
-            msg = "Please file a request at https://modul.ar/request to add this model architecture to MAX."
-            logger.warning(msg)
-            self.engine = PipelineEngine.HUGGINGFACE
-            return
+            raise ValueError(msg)
 
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
@@ -573,15 +561,8 @@ class PipelineConfig(MAXConfig):
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
-            if self.engine == PipelineEngine.MAX:
-                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
-                raise ValueError(msg)
-
-            else:
-                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
-                logger.warning(msg)
-                self.engine = PipelineEngine.HUGGINGFACE
-                return
+            msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+            raise ValueError(msg)
 
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
@@ -593,10 +574,12 @@ class PipelineConfig(MAXConfig):
             self, arch.pipeline_model, model_config, devices
         )
 
-        # If we pass validation ensure and the engine is not set, just set it
-        # to MAX.
+        # Validate engine and set to MAX if needed
         if self.engine is None:
             self.engine = PipelineEngine.MAX
+        elif self.engine != PipelineEngine.MAX:
+            msg = f"Engine {self.engine} is not supported. Only MAX engine is supported."
+            raise ValueError(msg)
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -615,7 +598,7 @@ class PipelineConfig(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         pipeline_help = {
-            "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
+            "engine": "Specify the engine backend to use for serving the model. Currently only 'max' engine is supported.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",

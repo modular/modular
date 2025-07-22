@@ -20,7 +20,6 @@ from .continuous_batching_cache import (
     ContinuousBatchingKVCacheType,
     FetchContinuousBatchingKVCacheCollection,
 )
-from .hf import ContinuousHFStaticCache
 from .manager import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -53,7 +52,6 @@ __all__ = [
     "ContinuousBatchingKVCacheCollectionType",
     "ContinuousBatchingKVCacheManager",
     "ContinuousBatchingKVCacheType",
-    "ContinuousHFStaticCache",
     "FetchContinuousBatchingKVCacheCollection",
     "FetchPagedKVCacheCollection",
     "KVCacheInputSymbols",
