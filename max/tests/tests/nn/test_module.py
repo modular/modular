@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, Weight
+from max.graph import DeviceRef, Graph, SymbolicDim, Weight
 from max.nn import Module
 
 
@@ -86,3 +86,60 @@ def test_load_state_dict_with_unaligned_weights(
     model = session.load(graph, weights_registry=module.state_dict())
     outputs = model()[0]
     np.testing.assert_array_equal(outputs.to_numpy(), weight * 2)  # type: ignore
+
+
+def test_load_state_dict_with_symbolic_dimensions() -> None:
+    """Test that load_state_dict works with weights that have symbolic dimensions."""
+
+    class SymbolicModule(Module):
+        def __init__(self) -> None:
+            super().__init__()
+            batch = SymbolicDim("batch")
+            self.weight = Weight(
+                "weight", DType.float32, (batch, 10), DeviceRef.CPU()
+            )
+
+        def __call__(self):
+            return self.weight
+
+    module = SymbolicModule()
+
+    # Test loading with concrete batch size - should work
+    weight_array = np.random.uniform(size=[32, 10]).astype(np.float32)
+    module.load_state_dict({"weight": weight_array})
+
+    # Verify the weight was loaded correctly
+    state_dict = module.state_dict()
+    np.testing.assert_array_equal(weight_array, state_dict["weight"])  # type: ignore
+
+
+def test_load_state_dict_symbolic_validation_errors() -> None:
+    """Test that validation errors work correctly with symbolic dimensions."""
+
+    class SymbolicModule(Module):
+        def __init__(self) -> None:
+            super().__init__()
+            batch = SymbolicDim("batch")
+            # Static, symbolic, static pattern
+            self.weight = Weight(
+                "weight", DType.float32, (1024, batch, 256), DeviceRef.CPU()
+            )
+
+        def __call__(self):
+            return self.weight
+
+    module = SymbolicModule()
+
+    # Wrong static dimension should fail
+    wrong_static = np.random.uniform(size=[512, 32, 256]).astype(np.float32)
+    with pytest.raises(ValueError, match="expected 1024, got 512"):
+        module.load_state_dict({"weight": wrong_static})
+
+    # Wrong rank should fail
+    wrong_rank = np.random.uniform(size=[1024, 32]).astype(np.float32)
+    with pytest.raises(ValueError, match="shape rank"):
+        module.load_state_dict({"weight": wrong_rank})
+
+    # Correct shape should work
+    correct_array = np.random.uniform(size=[1024, 32, 256]).astype(np.float32)
+    module.load_state_dict({"weight": correct_array})
