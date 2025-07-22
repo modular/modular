@@ -480,7 +480,7 @@ public:
     // If the client doesn't want progress reporting, just invoke the callback
     // immediately.
     if (!enabled)
-      callback();
+      return callback();
 
     auto token = generateToken();
     std::string tokenCopy = token;
@@ -827,6 +827,11 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
             std::chrono::duration_cast<std::chrono::microseconds>(end -
                                                                   started),
             parsedSize, kind == Kind::kNotebookDocument);
+        llvm::errs() << "Parsed document " << uris.front().file() << " in "
+                     << std::chrono::duration_cast<std::chrono::milliseconds>(
+                            end - started)
+                            .count()
+                     << "ms\n";
 
         // If we've already been invalidated, bail out early.
         if (isInvalidated)
