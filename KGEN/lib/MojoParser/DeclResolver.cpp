@@ -1080,20 +1080,3 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   std::replace(mangledName.begin(), mangledName.end(), '@', '_');
   return StringAttr::get(baseName.getContext(), mangledName);
 }
-
-LogicalResult DeclResolver::replaceNameAssociatedWithParameter(
-    StringAttr oldName, StringAttr updatedName, ASTDecl &scope) {
-  auto it = scope.declsInScope->find(oldName);
-  if (it == scope.declsInScope->end() || it->second.size() != 1)
-    return failure();
-
-  ASTDecl *paramDecl = it->second.front();
-  PValue parameter(paramDecl->getIfIRValue().getIfPValue());
-
-  if (!parameter)
-    return failure();
-
-  scope.declsInScope->erase(it);
-  scope.declsInScope->insert({updatedName, {paramDecl}});
-  return success();
-}

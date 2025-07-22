@@ -1209,10 +1209,12 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return failure();
 
   // Finally now that the full signature has been resolved, build our IR.
-  ASTDecl *fileModule = decl.getNearestDeclOfType<FileModuleOp>();
-  ClosureEmitter emitter(*fileModule, shared);
-  auto [signature, numberOfImplicitClosureArgs, functionType] =
-      emitter.computeFunctionSignature(decl, baseName, tcSignature);
+  // Handle argument effects and build the ASTDecls for the arguments.
+  OpBuilder builder = decl.getDeclEndBuilder();
+  NamedAttrList attrs = funcOp->getAttrDictionary();
+
+  // Compute the signature of the function.
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();
 
@@ -1220,15 +1222,20 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // The implicitOriginDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
-  SmallVector<ParamDeclAttr> allParams;
-  llvm::append_range(allParams, tcSignature.paramList.paramDeclAttrs);
-  llvm::append_range(allParams, tcSignature.implicitOriginDecls);
-  NamedAttrList attrs = funcOp->getAttrDictionary();
-  MLIRContext *ctx = shared.getContext();
-  attrs.set(funcOp.getParamsAttrName(),
-            ParamDeclArrayAttr::get(ctx, allParams));
+  ParamDeclArrayAttr paramsArrayAttr;
+  if (tcSignature.implicitOriginDecls.empty()) {
+    paramsArrayAttr =
+        builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
+  } else {
+    SmallVector<ParamDeclAttr> mergedParams;
+    llvm::append_range(mergedParams, paramList.paramDeclAttrs);
+    llvm::append_range(mergedParams, tcSignature.implicitOriginDecls);
+    paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
+  }
 
-  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+  attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
+  attrs.set(funcOp.getFunctionTypeAttrName(),
+            TypeAttr::get(tcSignature.getFunctionType()));
 
   // Now that the FunctionType is set to the pretty type that includes implicit
   // origins, we strip off the named origin decl references and replace them
@@ -1253,8 +1260,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
-  if (!signature)
-    return failure();
 
   // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
@@ -1271,8 +1276,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     auto existingArgs =
         existingFunc.getFuncTypeGenerator().getArgListAttrs().getPogs();
     for (auto [arg, existingArg] :
-         llvm::zip(tcSignature.argList.parsedArgs,
-                   existingArgs.drop_front(numberOfImplicitClosureArgs))) {
+         llvm::zip(tcSignature.argList.parsedArgs, existingArgs)) {
       if ((arg.kwArgHandling == KWArgHandling::kKeywordOnly ||
            existingArg.getPassingKind() == PassingKind::KwOnly) &&
           arg.name != existingArg.getName()) {
@@ -1305,9 +1309,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Generate a debug subprogram for this function.
   shared.setLocationDebugScope(funcOp);
-  for (auto [parsedArg, bbArg] : llvm::zip(
-           fnSignature.parsedArgs, funcOp.getBody()->getArguments().drop_front(
-                                       numberOfImplicitClosureArgs)))
+  for (auto [parsedArg, bbArg] :
+       llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
 
   auto notify = llvm::make_scope_exit(
