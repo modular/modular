@@ -6,8 +6,8 @@
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
 from .context import InputContext, SamplingParams
-from .engine import EngineOutput, EngineResult, EngineStatus
 from .log_probabilities import LogProbabilities
+from .pipeline import PipelineOutput
 from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
@@ -21,6 +21,7 @@ from .pipeline_variants import (
     TextGenerationResponseFormat,
     TokenGenerator,
 )
+from .scheduler import SchedulerResult, SchedulerStatus
 from .status import GenerationStatus
 from .task import PipelineTask
 
@@ -29,18 +30,29 @@ __all__ = [
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
     "EmbeddingsOutput",
-    "EngineResult",
     "EngineStatus",
     "GenerationStatus",
+    "GenerationStatus",
+    "InputContext",
     "LogProbabilities",
+    "LogProbabilities",
+    "PipelineOutput",
+    "PipelineTask",
     "PipelineTask",
     "SamplingParams",
+    "SamplingParams",
+    "SchedulerResult",
+    "SchedulerResult",
+    "SchedulerStatus",
+    "TextGenerationOutput",
     "TextGenerationRequest",
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponse",
     "TextGenerationResponseFormat",
+    "TextGenerationResponseFormat",
     "TextResponse",
+    "TokenGenerator",
     "TokenGenerator",
 ]
