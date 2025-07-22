@@ -164,8 +164,8 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         """
         with self.open_channel(req_id, data) as queue:
             # queue.get() will wait until an item is available.
-            # This will exit when no result is passed in the EngineResult.
-            # or the EngineResult states that we should stop the stream.
+            # This will exit when no result is passed in the SchedulerResult.
+            # or the SchedulerResult states that we should stop the stream.
             while (item := await queue.get()).result is not None:
                 yield item.result
 

@@ -19,7 +19,11 @@ from dataclasses import dataclass
 from typing import Union
 
 import zmq
-from max.interfaces import EngineResult, TextGenerationOutput, TokenGenerator
+from max.interfaces import (
+    SchedulerResult,
+    TextGenerationOutput,
+    TokenGenerator,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -87,7 +91,7 @@ class DecodeScheduler(Scheduler):
             ),
         )
         self.response_push_socket = ZmqPushSocket[
-            dict[str, EngineResult[TextGenerationOutput]]
+            dict[str, SchedulerResult[TextGenerationOutput]]
         ](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
@@ -171,7 +175,7 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: dict[str, EngineResult[TextGenerationOutput]]
+        self, responses: dict[str, SchedulerResult[TextGenerationOutput]]
     ) -> None:
         """Pushes response messages to the response socket.
 
@@ -408,12 +412,14 @@ class DecodeScheduler(Scheduler):
         if not responses:
             return
 
-        stream_responses: dict[str, EngineResult[TextGenerationOutput]] = {}
+        stream_responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
         for request_id, response in responses.items():
             if response.is_done:
-                stream_responses[request_id] = EngineResult.complete(response)
+                stream_responses[request_id] = SchedulerResult.complete(
+                    response
+                )
             else:
-                stream_responses[request_id] = EngineResult.active(response)
+                stream_responses[request_id] = SchedulerResult.active(response)
 
         self.push_to_response_socket(stream_responses)
 

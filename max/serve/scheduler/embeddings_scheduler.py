@@ -17,11 +17,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-from max.interfaces import EmbeddingsOutput, EngineResult
+from max.interfaces import EmbeddingsOutput, SchedulerResult
 from max.pipelines.core import (
     EmbeddingsGenerator,
     TextContext,
     msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.profiler import traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -57,8 +58,12 @@ class EmbeddingsScheduler(Scheduler):
             deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[EmbeddingsOutput]]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
+            dict[str, SchedulerResult[EmbeddingsOutput]]
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
 
     @traced
     def _create_batch_to_execute(self):
@@ -107,7 +112,7 @@ class EmbeddingsScheduler(Scheduler):
         # send the responses to the API process
         self.response_q.put_nowait(
             {
-                request_id: EngineResult.complete(response)
+                request_id: SchedulerResult.complete(response)
                 for request_id, response in batch_responses.items()
             }
         )

@@ -22,7 +22,7 @@ from typing import Generic, TypeVar, Union
 
 import zmq
 from max.interfaces import (
-    EngineResult,
+    SchedulerResult,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -181,7 +181,7 @@ class TokenGenerationScheduler(Scheduler):
             ),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[TextGenerationOutput]]
+            dict[str, SchedulerResult[TextGenerationOutput]]
         ](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
@@ -742,7 +742,9 @@ class TokenGenerationScheduler(Scheduler):
                 )
                 del self.active_batch[req_id]
 
-                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
+                self.response_q.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
     @traced
     def _stream_responses_to_frontend(
@@ -751,12 +753,12 @@ class TokenGenerationScheduler(Scheduler):
         if not batch_responses:
             return
 
-        responses: dict[str, EngineResult[TextGenerationOutput]] = {}
+        responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:
-                responses[request_id] = EngineResult.complete(response)
+                responses[request_id] = SchedulerResult.complete(response)
             else:
-                responses[request_id] = EngineResult.active(response)
+                responses[request_id] = SchedulerResult.active(response)
 
         self.response_q.put_nowait(responses)
 
