@@ -6,7 +6,7 @@
 
 from python import PythonObject, Python
 from python.bindings import PythonModuleBuilder
-from python.python import CPython, GILAcquired, GILReleased
+from python._cpython import GILAcquired, GILReleased
 from os import abort
 import math
 from algorithm.functional import parallelize

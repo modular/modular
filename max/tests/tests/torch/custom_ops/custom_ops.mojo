@@ -21,15 +21,10 @@ from compiler_internal import register
 from tensor_internal import (
     InputTensor,
     OutputTensor,
-    VariadicTensors,
     foreach,
 )
 from runtime.asyncrt import DeviceContextPtr
 from utils.index import IndexList
-from layout import LayoutTensor, Layout
-from gpu import global_idx, thread_idx, block_idx, AddressSpace, barrier
-from math import ceildiv, sqrt
-from algorithm.functional import vectorize
 
 
 @register("grayscale")
