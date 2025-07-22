@@ -55,7 +55,7 @@ from memory.unsafe import bitcast
 from utils import Variant
 from utils._serialize import _serialize_elements, _serialize_elements_compact
 
-from .info import DEFAULT_GPU
+from .info import DEFAULT_GPU, GPUInfo
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -1502,6 +1502,9 @@ struct DeviceFunction[
     declared_arg_types: Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]],
     *,
     target: __mlir_type.`!kgen.target` = get_gpu_target(),
+    compile_options: StaticString = GPUInfo.from_target[
+        target
+    ]().compile_options,
     _ptxas_info_verbose: Bool = False,
 ]:
     """Represents a compiled device function for GPU execution.
@@ -1514,6 +1517,7 @@ struct DeviceFunction[
         func: The function to compile for GPU execution.
         declared_arg_types: An optional containing a variadic of the declared dtypes of the kernel signature.
         target: The target architecture for compilation. Defaults to the current GPU target.
+        compile_options: The string of compilation options to pass to the compiler.
         _ptxas_info_verbose: Whether to enable verbose PTX assembly output. Defaults to False.
 
     Example:
@@ -1624,6 +1628,7 @@ struct DeviceFunction[
             func,
             emission_kind = self._emission_kind,
             target=target,
+            compile_options=compile_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -1781,6 +1786,7 @@ struct DeviceFunction[
                 func,
                 emission_kind="asm",
                 target=target,
+                compile_options=compile_options,
             ]().asm
 
         @parameter
@@ -1848,6 +1854,7 @@ struct DeviceFunction[
                 Self.func,
                 emission_kind="llvm-opt",
                 target=target,
+                compile_options=compile_options,
             ]().asm
 
             @parameter
@@ -2916,9 +2923,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -2926,7 +2934,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -2939,14 +2948,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
 
         Args:
             func_attribute: An attribute to use when compiling the code (such
@@ -2961,7 +2972,8 @@ struct DeviceContext(Copyable, Movable):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-            _target=_target,
+            target=target,
+            compile_options=compile_options,
         ](func_attribute=func_attribute)
 
     @always_inline
@@ -2971,9 +2983,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -2981,7 +2994,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -2994,15 +3008,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
-
         Args:
             func_attribute: An attribute to use when compiling the code (such
                 as maximum shared memory size).
@@ -3039,9 +3054,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -3049,7 +3065,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3066,15 +3083,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
-
         Args:
             func_attribute: An attribute to use when compiling the code (such
                 as maximum shared memory size).
@@ -3109,9 +3127,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -3119,7 +3138,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3132,15 +3152,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
-
         Args:
             func_attribute: An attribute to use when compiling the code (such
                 as maximum shared memory size).
@@ -3177,9 +3198,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -3187,7 +3209,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3204,15 +3227,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
-
         Args:
             func_attribute: An attribute to use when compiling the code (such
                 as maximum shared memory size).
@@ -3247,9 +3271,10 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
-        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -3257,7 +3282,8 @@ struct DeviceContext(Copyable, Movable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=_target,
+            target=target,
+            compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
@@ -3270,15 +3296,16 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device dtype than the
-                one associated with this `DeviceContext`.
-
         Args:
             func_attribute: An attribute to use when compiling the code (such
                 as maximum shared memory size).
@@ -3379,6 +3406,8 @@ struct DeviceContext(Copyable, Movable):
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3402,6 +3431,10 @@ struct DeviceContext(Copyable, Movable):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            target: Change the target to different device dtype than the
+                one associated with this `DeviceContext`.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
             _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
                 to be installed. Pass `True`, or a file path to dump to, or a
                 function returning a file path.
@@ -3452,6 +3485,8 @@ struct DeviceContext(Copyable, Movable):
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
+            target=target,
+            compile_options=compile_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=func_attribute)
