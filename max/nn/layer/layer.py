@@ -33,6 +33,7 @@ from max.graph import (
     Shape,
     ShapeLike,
     ShardingStrategy,
+    StaticDim,
     Type,
     Value,
     Weight,
@@ -513,9 +514,49 @@ def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
     shape, dtype = _get_value_shape_dtype(value)
 
     diffs = []
-    weight_shape = tuple(weight.shape.static_dims)
-    if shape != weight_shape:
-        diffs.append(f"shape (expected={weight_shape}, actual={shape})")
+
+    # Check if weight has symbolic dimensions
+    # Convert weight.shape to list to ensure it's sized
+    weight_shape_dims = list(weight.shape)
+    weight_has_symbolic_dims = len(weight_shape_dims) != len(
+        weight.shape.static_dims
+    )
+
+    # Convert shape to tuple to ensure it's sized
+    shape_tuple = tuple(shape)
+
+    if weight_has_symbolic_dims:
+        # For weights with symbolic dimensions, validate by comparing static dimensions
+        # at their correct positions, allowing symbolic dimensions to vary
+        if len(shape_tuple) != len(weight_shape_dims):
+            # Shape rank must match
+            diffs.append(
+                f"shape rank (expected={len(weight_shape_dims)}, actual={len(shape_tuple)})"
+            )
+        else:
+            # Check each dimension: static dims must match, symbolic dims can vary
+            mismatches = []
+            for i, (weight_dim, value_dim) in enumerate(
+                zip(weight_shape_dims, shape_tuple)
+            ):
+                if isinstance(weight_dim, StaticDim):
+                    # This is a static dimension - must match exactly
+                    if int(weight_dim) != value_dim:
+                        mismatches.append(
+                            f"dim[{i}]: expected {int(weight_dim)}, got {value_dim}"
+                        )
+                # Symbolic dimensions are allowed to vary, so no check needed
+
+            if mismatches:
+                diffs.append(f"shape ({', '.join(mismatches)})")
+    else:
+        # For fully static weights, use the original validation
+        weight_shape = tuple(weight.shape.static_dims)
+        if shape_tuple != weight_shape:
+            diffs.append(
+                f"shape (expected={weight_shape}, actual={shape_tuple})"
+            )
+
     if dtype != weight.dtype:
         diffs.append(f"dtype (expected={weight.dtype}, actual={dtype})")
     if diffs:
