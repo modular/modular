@@ -45,9 +45,35 @@ class KVCacheParams:
     cache_strategy: KVCacheStrategy = KVCacheStrategy.CONTINUOUS
     page_size: Optional[int] = None
     n_devices: int = 1
+    # New fields for pipeline parallelism
+    pipeline_parallel_degree: int = 1
+    stage_id: Optional[int] = None  # Which pipeline stage this cache serves
+    total_num_layers: Optional[int] = None  # Total layers in the model
+
+    # Computed fields (set in __post_init__)
+    n_kv_heads_per_device: int = 0  # Will be computed
+    n_layers_per_stage: Optional[int] = None  # Will be computed
 
     def __post_init__(self):
-        self.n_kv_heads_per_device = max(self.n_kv_heads // self.n_devices, 1)
+        # Pipeline parallel mode: shard by layers, keep all heads per stage
+        if self.pipeline_parallel_degree > 1:
+            if self.total_num_layers is None:
+                raise ValueError(
+                    "total_num_layers must be specified for pipeline parallel mode"
+                )
+            # Each stage keeps all heads but handles only a subset of layers
+            self.n_kv_heads_per_device = self.n_kv_heads
+            self.n_layers_per_stage = max(
+                self.total_num_layers // self.pipeline_parallel_degree, 1
+            )
+        else:
+            # Tensor parallel mode: shard by heads, keep all layers per device
+            self.n_kv_heads_per_device = max(
+                self.n_kv_heads // self.n_devices, 1
+            )
+            self.n_layers_per_stage = (
+                self.total_num_layers if self.total_num_layers else None
+            )
 
         # Validate inputs
         if (
@@ -83,6 +109,16 @@ class KVCacheParams:
             and self.cache_strategy == KVCacheStrategy.PAGED
         ):
             raise ValueError("Page size is required for paged cache strategy")
+
+        # Pipeline parallel specific validations
+        if self.pipeline_parallel_degree > 1:
+            if self.stage_id is not None and (
+                self.stage_id < 0
+                or self.stage_id >= self.pipeline_parallel_degree
+            ):
+                raise ValueError(
+                    f"stage_id ({self.stage_id}) must be between 0 and {self.pipeline_parallel_degree - 1}"
+                )
 
     @property
     def dtype_shorthand(self) -> str:

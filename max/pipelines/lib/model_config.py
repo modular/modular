@@ -107,6 +107,12 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = False
     """Whether to use subgraphs for the model."""
 
+    tensor_parallel_degree: int = 1
+    """Number of tensor-parallel replicas."""
+
+    pipeline_parallel_degree: int = 1
+    """Number of pipeline stages."""
+
     _applied_dtype_cast_from: Optional[SupportedEncoding] = None
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
@@ -153,6 +159,18 @@ class MAXModelConfig(MAXModelConfigBase):
         ):
             raise ValueError(
                 "--quantization-encoding must be provided when --allow-safetensors-weights-float32-to-bfloat16-cast is enabled"
+            )
+
+        # validate that the pipeline and tensor parallel degrees are set.
+        if self.pipeline_parallel_degree < 1:
+            raise ValueError("pipeline_parallel_degree must be greater than 0")
+        if self.tensor_parallel_degree < 1:
+            raise ValueError("tensor_parallel_degree must be greater than 0")
+        if self.pipeline_parallel_degree * self.tensor_parallel_degree > len(
+            self.device_specs
+        ):
+            raise ValueError(
+                "pipeline_parallel_degree * tensor_parallel_degree must be less than or equal to the number of devices"
             )
 
         # Validate that the device_specs provided are available
@@ -714,7 +732,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if self.quantization_encoding == SupportedEncoding.gptq:
             hf_quant_config = self.huggingface_config.quantization_config
 
-            if self.huggingface_config.torch_dtype is not torch.float16:
+            if self.huggingface_config.torch_dtype != torch.float16:
                 raise ValueError(
                     "bfloat16 scales are not supported for GPTQ-quantized models."
                 )
@@ -806,6 +824,8 @@ class MAXModelConfig(MAXModelConfigBase):
             "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
+            "tensor_parallel_degree": "Number of tensor-parallel replicas (default: 1).",
+            "pipeline_parallel_degree": "Number of pipeline stages (default: 1).",
         }
 
         config_help = KVCacheConfig.help()

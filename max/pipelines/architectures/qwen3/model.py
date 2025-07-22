@@ -18,6 +18,7 @@ from typing import Any, Callable, Literal, Optional
 
 from max._core.engine import Model
 from max.driver import Tensor
+from max.engine import InferenceSession
 from max.graph import Graph, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.layer import Module
@@ -51,7 +52,10 @@ class Qwen3Model(LlamaModelBase):
     """Weights to load into the model."""
 
     def _build_graph(
-        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+        self,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+        session: Optional[InferenceSession] = None,
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
