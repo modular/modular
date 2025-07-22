@@ -14,12 +14,18 @@ from .pipeline_variants import (
     AudioGeneratorOutput,
     EmbeddingsOutput,
     TextGenerationOutput,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
     TokenGenerator,
 )
 from .status import GenerationStatus
 from .task import PipelineTask
 
 __all__ = [
+    "AudioGenerationMetadata",
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
     "EmbeddingsOutput",
@@ -29,7 +35,12 @@ __all__ = [
     "LogProbabilities",
     "PipelineTask",
     "SamplingParams",
+    "TextGenerationRequest",
+    "TextGenerationRequestFunction",
+    "TextGenerationRequestMessage",
+    "TextGenerationRequestTool",
     "TextGenerationResponse",
+    "TextGenerationResponseFormat",
     "TextResponse",
     "TokenGenerator",
 ]

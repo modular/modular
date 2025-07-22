@@ -15,6 +15,8 @@ from typing import Generic, Optional, Protocol, TypeVar, runtime_checkable
 import msgspec
 from typing_extensions import TypeAlias
 
+from .context import RequestID
+
 
 class EngineStatus(str, Enum):
     """
@@ -56,7 +58,7 @@ class EngineOutput(Protocol):
 
 O = TypeVar("O", bound=EngineOutput)
 
-EngineOutputs: TypeAlias = dict[str, O]
+EngineOutputs: TypeAlias = dict[RequestID, O]
 """
 Type alias for a dictionary mapping string keys to EngineOutput instances.
 
