@@ -25,8 +25,8 @@ def _lit_test(name, srcs, args = None, data = None, deps = None, **kwargs):
     deps = deps or []
     aspect_py_test(
         name = name,
-        srcs = [Label("@llvm-project//llvm:lit")],
-        main = Label("@llvm-project//llvm:utils/lit/lit.py"),
+        srcs = [Label("@llvm-project//llvm:lit"), "//bazel/internal/llvm-lit:lit_shim.py"],
+        main = Label("//bazel/internal/llvm-lit:lit_shim.py"),
         args = args + ["-v"] + ["$(execpath %s)" % src for src in srcs],
         data = data + srcs,
         deps = deps + [Label("@llvm-project//llvm:lit")],
