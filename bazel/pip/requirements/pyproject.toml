@@ -70,7 +70,6 @@ dependencies = [
   "regex",
   "safetensors",
   "sentencepiece",
-  "sentinel==1.0.0",
   "setuptools",
   "simpy",
   "sphinx==7.4.7",

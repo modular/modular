@@ -101,7 +101,6 @@ PINS = {
     "scipy": "scipy@1.13.1",
     "sentence-transformers": "sentence-transformers@3.3.1",
     "sentencepiece": "sentencepiece@0.2.0",
-    "sentinel": "sentinel@1.0.0",
     "setuptools": "setuptools@80.9.0",
     "simpy": "simpy@4.1.1",
     "soundfile": "soundfile@0.12.1",
@@ -5632,16 +5631,6 @@ def targets():
     pycross_wheel_library(
         name = "sentencepiece@0.2.0",
         wheel = ":_wheel_sentencepiece@0.2.0",
-    )
-
-    native.alias(
-        name = "_wheel_sentinel@1.0.0",
-        actual = "@pycross_lock_file_wheel_sentinel_1.0.0_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "sentinel@1.0.0",
-        wheel = ":_wheel_sentinel@1.0.0",
     )
 
     native.alias(
@@ -16640,16 +16629,6 @@ def repositories():
         ],
         sha256 = "0461324897735512a32d222e3d886e24ad6a499761952b6bda2a9ee6e4313ea5",
         downloaded_file_path = "sentencepiece-0.2.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_sentinel_1.0.0_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/f3/c4/37cd564e7c5ee72afc864e43b872c716ed43604e50ea0adbb510d720f92d/sentinel-1.0.0-py3-none-any.whl",
-        ],
-        sha256 = "24f02a34cc9f0fcba5a666a23b6c7f56aff332fc624632ee442e7237751a9f60",
-        downloaded_file_path = "sentinel-1.0.0-py3-none-any.whl",
     )
 
     maybe(
