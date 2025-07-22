@@ -82,7 +82,7 @@ def convert_safetensor_state_dict(
     # a GPTQ Llama model.
     if hasattr(huggingface_config, "quantization_config"):
         UNUSED_KEYS = [".bias", ".qzeros"]
-        if huggingface_config.quantization_config["desc_act"] == True:
+        if huggingface_config.quantization_config.get("desc_act") is True:
             UNUSED_KEYS.append("v_proj.perm_idx")
             UNUSED_KEYS.append("k_proj.perm_idx")
         else:
