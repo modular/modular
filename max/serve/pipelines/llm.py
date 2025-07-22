@@ -95,7 +95,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             for token_id, value in top_log_probs.items():
                 decoded_log_probs[
                     await self.tokenizer.decode(
-                        context,
                         token_id,
                         skip_special_tokens=skip_special_tokens,
                     )
@@ -144,7 +143,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         # the nsys trace to be overly noisy since this is an async loop.
                         tracer = Tracer("tokenizer.decode")
                         decoded_token = await self.tokenizer.decode(
-                            context,
                             token,
                             skip_special_tokens=skip_special_tokens,
                         )

@@ -23,7 +23,7 @@ from typing import (
 
 from typing_extensions import TypeVar
 
-TokenGeneratorContext = TypeVar("TokenGeneratorContext")
+TokenGeneratorContext = TypeVar("TokenGeneratorContext", covariant=True)
 TokenGeneratorBatchKey = TypeVar("TokenGeneratorBatchKey")
 
 TokenizerEncoded = TypeVar("TokenizerEncoded")
@@ -103,14 +103,12 @@ class PipelineTokenizer(
 
     async def decode(
         self,
-        context: TokenGeneratorContext,
         encoded: TokenizerEncoded,
         **kwargs,
     ) -> str:
         """Decodes response tokens to text.
 
         Args:
-            context (TokenGeneratorContext): Current generation context.
             encoded (TokenizerEncoded): Encoded response tokens.
 
         Returns:

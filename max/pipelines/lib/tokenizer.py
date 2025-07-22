@@ -69,7 +69,6 @@ class IdentityPipelineTokenizer(
 
     async def decode(
         self,
-        context: TokenGeneratorContext,
         encoded: str,
         **kwargs,
     ) -> str:
@@ -121,7 +120,6 @@ class PreTrainedPipelineTokenizer(
 
     async def decode(
         self,
-        context: TokenGeneratorContext,
         encoded: np.ndarray,
         **kwargs,
     ) -> str:
@@ -267,9 +265,7 @@ class TextTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self, context: TextContext, encoded: np.ndarray, **kwargs
-    ) -> str:
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         # Sometimes, encoded comes in as an int so, make it np array
         if isinstance(encoded, int):
@@ -547,9 +543,7 @@ class TextAndVisionTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self, context: TextAndVisionContext, encoded: np.ndarray, **kwargs
-    ) -> str:
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         return self.delegate.decode(encoded, **kwargs)
 

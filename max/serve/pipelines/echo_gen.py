@@ -66,9 +66,7 @@ class EchoPipelineTokenizer(
             # Already a sequence of integers
             return np.array(list(prompt), dtype=np.int32)
 
-    async def decode(
-        self, context: TextContext, encoded: np.ndarray, **kwargs
-    ) -> str:
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.
