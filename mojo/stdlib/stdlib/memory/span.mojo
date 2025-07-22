@@ -157,7 +157,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = length
+        self._len = Int(length)
 
     @always_inline
     fn copy(self) -> Self:

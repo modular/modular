@@ -22,7 +22,7 @@ struct Timer(Copyable, Movable):
         self.start_time = 0
 
     fn __enter__(mut self) -> Self:
-        self.start_time = time.perf_counter_ns()
+        self.start_time = Int(time.perf_counter_ns())
         return self
 
     fn __exit__(mut self):

@@ -64,7 +64,7 @@ fn next_power_of_two_uint_v1(val: UInt) -> UInt:
     if unlikely(val == 0):
         return 1
 
-    return 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+    return 1 << (bitwidthof[UInt]() - count_leading_zeros(Int(val - 1)))
 
 
 fn next_power_of_two_uint_v2(val: UInt) -> UInt:
@@ -78,14 +78,15 @@ fn next_power_of_two_uint_v2(val: UInt) -> UInt:
 
 fn next_power_of_two_uint_v3(val: UInt) -> UInt:
     return 1 << (
-        bitwidthof[UInt]() - count_leading_zeros(val - UInt(likely(val > 0)))
+        bitwidthof[UInt]()
+        - count_leading_zeros(Int(val - UInt(likely(val > 0))))
     )
 
 
 fn next_power_of_two_uint_v4(val: UInt) -> UInt:
     return 1 << (
         bitwidthof[UInt]()
-        - count_leading_zeros((val | UInt(unlikely(val == 0))) - 1)
+        - count_leading_zeros(Int((val | UInt(unlikely(val == 0))) - 1))
     )
 
 

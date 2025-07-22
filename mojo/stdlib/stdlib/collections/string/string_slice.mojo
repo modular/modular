@@ -160,7 +160,7 @@ struct CodepointSliceIter[
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return self._slice.char_length()
+        return Int(self._slice.char_length())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -372,7 +372,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return self._slice.char_length()
+        return Int(self._slice.char_length())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -441,7 +441,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
             # Advance the pointer in _slice.
             self._slice._slice._data += char_len
             # Decrement the byte-length of _slice.
-            self._slice._slice._len -= char_len
+            self._slice._slice._len -= Int(char_len)
 
         return result
 

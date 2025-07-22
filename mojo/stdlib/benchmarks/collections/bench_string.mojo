@@ -44,7 +44,7 @@ fn make_string[
 
         @parameter
         if length > 0:
-            var items = f.read_bytes(length)
+            var items = f.read_bytes(Int(length))
             i = 0
             while length > len(items):
                 items.append(items[i])

@@ -157,7 +157,7 @@ struct BitSet[size: UInt](
         for i in range(self._words_size):
             total += UInt(pop_count(self._words.unsafe_get(i)))
 
-        return total
+        return Int(total)
 
     @always_inline
     fn is_empty(self) -> Bool:
@@ -197,7 +197,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        _check_index_bounds["set"](idx, size)
+        _check_index_bounds["set"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= _bit_mask(idx)
 
@@ -211,7 +211,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        _check_index_bounds["clearing"](idx, size)
+        _check_index_bounds["clearing"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= ~_bit_mask(idx)
 
@@ -226,7 +226,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        _check_index_bounds["toggling"](idx, size)
+        _check_index_bounds["toggling"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= _bit_mask(idx)
 
@@ -243,7 +243,7 @@ struct BitSet[size: UInt](
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        _check_index_bounds["testing"](idx, size)
+        _check_index_bounds["testing"](idx, Int(size))
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
 
@@ -322,7 +322,7 @@ struct BitSet[size: UInt](
         if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
-            vectorize[_intersect, simd_width, size = Self._words_size]()
+            vectorize[_intersect, simd_width, size = Int(Self._words_size)]()
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter

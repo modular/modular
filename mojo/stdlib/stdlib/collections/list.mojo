@@ -148,7 +148,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             fill: The element to fill each element of the list.
         """
         self = Self()
-        self.resize(length, fill)
+        self.resize(Int(length), fill)
 
     @always_inline
     fn __init__(out self, var *values: T, __list_literal__: () = ()):

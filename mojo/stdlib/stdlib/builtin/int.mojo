@@ -405,7 +405,7 @@ struct Int(
             This follows [Python's integer literals](
             https://docs.python.org/3/reference/lexical_analysis.html#integers).
         """
-        self = atol(value, base)
+        self = atol(value, Int(base))
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

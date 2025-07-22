@@ -34,7 +34,7 @@ fn _get_random_state() -> OpaquePointer:
 
 fn seed():
     """Seeds the random number generator using the current time."""
-    seed(perf_counter_ns())
+    seed(Int(perf_counter_ns()))
 
 
 fn seed(a: Int):

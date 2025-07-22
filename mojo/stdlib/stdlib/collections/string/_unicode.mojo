@@ -46,7 +46,7 @@ fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
     var result = lookup._binary_search_index(rune.to_u32())
 
     if result:
-        return result.unsafe_value()
+        return Int(result.unsafe_value())
     else:
         return -1
 
