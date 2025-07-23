@@ -15,6 +15,7 @@ from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
+from collections import OwnedKwargsDict
 
 
 @export
@@ -45,6 +46,10 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_function[takes_one]("takes_one")
         b.def_function[takes_two]("takes_two")
         b.def_function[takes_three]("takes_three")
+
+        # kwargs test functions
+        b.def_function[sum_kwargs_ints]("sum_kwargs_ints")
+        b.def_function[sum_pos_arg_and_kwargs]("sum_pos_arg_and_kwargs")
 
         return b.finalize()
     except e:
@@ -186,3 +191,29 @@ fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
         takes_three_raises(list_obj, obj, obj2)
     except e:
         abort(String("Unexpected Python error: ", e))
+
+
+# ===----------------------------------------------------------------------=== #
+# Kwargs Test Functions
+# ===----------------------------------------------------------------------=== #
+
+
+@export
+fn sum_kwargs_ints(
+    kwargs: OwnedKwargsDict[PythonObject],
+) raises -> PythonObject:
+    """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
+    """
+    var total = 0
+    for entry in kwargs.items():
+        var value = entry.value
+        total += Int(value)
+
+    return PythonObject(total)
+
+
+@export
+fn sum_pos_arg_and_kwargs(
+    arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+) raises -> PythonObject:
+    return PythonObject(Int(arg1) + Int(sum_kwargs_ints(kwargs)))

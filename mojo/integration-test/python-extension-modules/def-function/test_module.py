@@ -163,3 +163,22 @@ def test_takes_three_raises() -> None:
     assert cm.value.args == ("list_obj must have length 3",)
 
     _test_takes_three(def_function.takes_three_raises)
+
+
+def test_sum_kwargs_ints() -> None:
+    # Test def_function with kwargs
+    # Function that only takes kwargs:
+    result = def_function.sum_kwargs_ints()
+    assert result == 0
+
+    result = def_function.sum_kwargs_ints(a=5, b=10, c=15)
+    assert result == 30
+
+
+def test_sum_pos_arg_and_kwargs() -> None:
+    # Function that takes both positional and keyword arguments:
+    result = def_function.sum_pos_arg_and_kwargs(10, a=5, b=15)
+    assert result == 30  # 10 + 5 + 15
+
+    result = def_function.sum_pos_arg_and_kwargs(100)
+    assert result == 100
