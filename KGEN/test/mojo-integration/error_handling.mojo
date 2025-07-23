@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from builtin.io import _printf
+from io.io import _printf
 
 
 fn raiseErrorIf(cond: Bool) raises -> Int:
