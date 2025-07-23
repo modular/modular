@@ -77,9 +77,6 @@ class PrefillScheduler(Scheduler):
         self.active_transfers: dict[
             str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
         ] = {}
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_ce)
-        )
         self.preempted_prefill: queue.Queue[PrefillRequest] = queue.Queue()
 
         self.dispatcher_client = dispatcher_client
@@ -165,12 +162,9 @@ class PrefillScheduler(Scheduler):
         self,
         prefill_request: PrefillRequest,
     ) -> None:
-        """Releases the cache index back to the available pool and cleans up pipeline
-        resources before returning the request to the preempted queue.
+        """Releases pipeline resources and cleans up the request before returning
+        it to the preempted queue.
 
-        Args:
-            req_id: The ID of the request to return
-            data: The Union[TextAndVisionContext, TextContext] containing the request data
         """
         self.pipeline.release(prefill_request.context)
         prefill_request.context.reset()
@@ -180,7 +174,6 @@ class PrefillScheduler(Scheduler):
         """Cleans up completed transfers from the active transfers dictionary.
 
         Checks the status of all active transfers. For any transfer that is no longer in progress:
-        - Returns the cache index back to the available pool
         - Releases pipeline resources
         - Removes the transfer from active_transfers
         """
@@ -189,7 +182,6 @@ class PrefillScheduler(Scheduler):
             status = self.transfer_engine.get_transfer_status(transfer)
 
             if status != nixl.Status.IN_PROG:
-                self.available_cache_indices.add(context.cache_seq_id)
                 self.pipeline.release(context)
                 to_be_deleted.append(req_id)
 
@@ -199,24 +191,20 @@ class PrefillScheduler(Scheduler):
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
 
-        Processes requests up to max_batch_size_ce, handling cache assignment and chunking.
+        Processes requests up to max_batch_size_ce, handling chunking.
         For each request:
-        - Assigns cache if needed
         - Attempts to schedule via paged manager
         - Chunks inputs if enabled and batch token length exceeds target
         - Tracks total batch token length
         """
         batch_token_length = 0
-        while self.available_cache_indices:
+        while len(self.active_batch) < self.scheduler_config.max_batch_size_ce:
             try:
                 prefill_request = self.get_prefill_request()
                 prefill_request.context.reset()
                 logger.info("received from decode node!")
 
                 if not self.paged_manager.contains(prefill_request.id):
-                    prefill_request.context.assign_to_cache(
-                        self.available_cache_indices.pop()
-                    )
                     self.paged_manager.external_claim(prefill_request.id)
 
             except queue.Empty:

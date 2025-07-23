@@ -20,6 +20,7 @@ from typing import Union
 
 import zmq
 from max.interfaces import (
+    RequestID,
     SchedulerResult,
     TextGenerationOutput,
     TokenGenerator,
@@ -126,10 +127,7 @@ class DecodeScheduler(Scheduler):
         self.active_batch: OrderedDict[
             str, Union[TextContext, TextAndVisionContext]
         ] = OrderedDict()
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_tg)
-        )
-        self.reserved_cache_indices: dict[str, int] = {}
+        self.pending_prefill_requests: list[RequestID] = []
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -175,7 +173,7 @@ class DecodeScheduler(Scheduler):
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
-        self, responses: dict[str, SchedulerResult[TextGenerationOutput]]
+        self, responses: dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ) -> None:
         """Pushes response messages to the response socket.
 
@@ -190,7 +188,7 @@ class DecodeScheduler(Scheduler):
     @traced
     def send_prefill_request(
         self,
-        request_id: str,
+        request_id: RequestID,
         data: Union[TextContext, TextAndVisionContext],
         dst_idx: list[int],
     ) -> None:
@@ -225,25 +223,20 @@ class DecodeScheduler(Scheduler):
 
         Breaks when the request queue is empty. Memory reservation is pending implementation.
         """
-        while self.available_cache_indices:
+        while (
+            len(self.active_batch) + len(self.pending_prefill_requests)
+        ) < self.scheduler_config.max_batch_size_tg:
             try:
                 # Pop off request queue
                 request_id, request_context = self.pull_from_request_socket()
                 logger.info("request received from api worker.")
 
-                # Try and Prefetch Memory Eagerly
-                #
-
-                # If we pop off a request successfully.
-                # Grab new cache index, claim the slot with the paged manager
-                # and add it to the reserved_cache_indices.
-                cache_seq_id = self.available_cache_indices.pop()
+                # Claim the slot with the paged manager
                 if not self.paged_manager.contains(request_id):
                     self.paged_manager.external_claim(request_id)
 
-                # Ensure request_context uses the appropriate cache seq id
+                # Ensure request_context is unassigned from cache
                 request_context.unassign_from_cache()
-                request_context.assign_to_cache(cache_seq_id)
 
                 # TODO: E2EOPT-269
 
@@ -253,28 +246,18 @@ class DecodeScheduler(Scheduler):
                     # If we don't have enough space in the paged manager
                     # return this to the request queue.
                     self.preempted_request.put((request_id, request_context))
-                    self.available_cache_indices.add(cache_seq_id)
                     self.paged_manager.release(request_id)
 
-                    # Error out here, if we cant prefetch and have no outstanding reserved_cache_indices.
-                    # This means it will not be possible to fulfill this request.
-                    if not self.reserved_cache_indices:
-                        raise RuntimeError(
-                            "no cache space reserved, and prefetch is failing. This indicates that the cache does not have enough pages to hold a single request."
-                        )
-
-                    # Break out of the loop, we cant add this to our reserved cache indices
+                    # Break out of the loop, we cant add this to our batch
                     # or send for prefilling.
                     break
-
-                # If successful, mark as reserved and send to prefill socket.
-                self.reserved_cache_indices[request_id] = cache_seq_id
 
                 dst_idx = self.paged_manager.block_manager.get_req_blocks(
                     request_id
                 )
 
                 # Send to the Prefill Node
+                self.pending_prefill_requests.append(request_id)
                 self.send_prefill_request(request_id, request_context, dst_idx)
 
             except queue.Empty:
@@ -288,7 +271,7 @@ class DecodeScheduler(Scheduler):
     def update_batch(self) -> None:
         """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
 
-        Adds new requests to the batch while cache indices are available. For each request, attempts to prefetch
+        Adds new requests to the batch up to the maximum batch size. For each request, attempts to prefetch
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
 
@@ -333,11 +316,6 @@ class DecodeScheduler(Scheduler):
                 completed_transfer_name
             )
 
-            prefill_response.context.unassign_from_cache()
-            prefill_response.context.assign_to_cache(
-                self.reserved_cache_indices[prefill_response.id]
-            )
-
             # Calculate num_steps
             num_available_steps = (
                 prefill_response.context.compute_num_available_steps(
@@ -359,6 +337,7 @@ class DecodeScheduler(Scheduler):
 
             # Add to active batch.
             self.active_batch[prefill_response.id] = prefill_response.context
+            self.pending_prefill_requests.remove(prefill_response.id)
 
             # Remove from completed transfers.
             self.completed_transfers.remove(completed_transfer_name)
@@ -427,7 +406,7 @@ class DecodeScheduler(Scheduler):
     def _handle_terminated_responses(
         self, responses: dict[str, TextGenerationOutput]
     ) -> None:
-        """Handles cleanup for completed text generation responses by releasing cache and removing from active batch.
+        """Handles cleanup for completed text generation responses by releasing pipeline resources and removing from active batch.
 
         Args:
             responses: Dictionary mapping request IDs to their text generation responses.
@@ -437,11 +416,8 @@ class DecodeScheduler(Scheduler):
 
         for request_id, response in responses.items():
             if response.is_done:
-                # Release from cache, and active batch.
-                cache_id = self.active_batch[request_id].cache_seq_id
+                # Release from pipeline and active batch.
                 self.pipeline.release(self.active_batch[request_id])
-                self.available_cache_indices.add(cache_id)
-                del self.reserved_cache_indices[request_id]
                 del self.active_batch[request_id]
 
     @traced
