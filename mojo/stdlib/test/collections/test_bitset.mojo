@@ -20,7 +20,7 @@ def test_bitset_init():
     # Test default initialization
     var bs = BitSet[128]()
     assert_equal(len(bs), 0, msg="Empty BitSet should have length 0")
-    assert_true(bs.is_empty(), msg="Empty BitSet should be empty")
+    assert_false(bs, msg="Empty BitSet should be empty")
 
     # Test with initial bits
     var bs2 = BitSet[64]()
@@ -200,7 +200,7 @@ def test_bitset_consecutive_operations():
     # Clear all and verify
     bs.clear_all()
     assert_equal(len(bs), 0, msg="Count should be 0 after clear_all")
-    assert_true(bs.is_empty(), msg="BitSet should be empty after clear_all")
+    assert_false(bs, msg="BitSet should be empty after clear_all")
 
 
 def test_bitset_word_boundaries():
@@ -572,9 +572,7 @@ def test_bitset_small_size():
     assert_equal(
         len(bs), 0, msg="Small BitSet: Should be empty after clear_all"
     )
-    assert_true(
-        bs.is_empty(), msg="Small BitSet: Should be empty after clear_all"
-    )
+    assert_false(bs, msg="Small BitSet: Should be empty after clear_all")
 
     # Test very small BitSet (size 1)
     var bs1 = BitSet[1]()
