@@ -183,31 +183,6 @@ fn make_closure(x: Int):
 
 # // -----
 
-# COM: Verify that the vtable entry is generated correctly
-
-
-trait MyInterface:
-    fn thing(self):
-        ...
-
-
-# CHECK:, {"__call__" : !lit.generator<<"T": !MyInterface>[2](!lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> read_mem
-# CHECK-SAME:, |, "a": !lit.ref<:!MyInterface *(0,0), imm *[0,1]> read_mem) -> !kgen.none> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<call>>
-# CHECK-SAME:, "__del__" : !lit.generator<[1]("self": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> owned_in_mem, |) -> !kgen.none
-# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<del>>
-# CHECK-SAME:, "__moveinit__" : !lit.generator<[2]("existing": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> owned_in_mem
-# CHECK-SAME:, |, ?, "self": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,1]> byref_result) -> !kgen.none> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<move>>}> : !None
-
-
-fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface](a: T) unified:
-        pass
-
-    return x
-
-
-# // -----
-
 # COM: Check that the argument is augmented at the definition site.
 
 # CHECK-DAG: [[TRAIT:!Int.*]] = !lit.trait<@{{.*}}::@"fn(y: Int) -> Int">
@@ -277,3 +252,42 @@ fn nested[
     x: fn[y: fn (z: Int) unified -> Int] (impl: y, u: Int) unified -> Int, //
 ](impl: x):
     pass
+
+
+# // -----
+
+# COM: Check that the struct generator of the lit op is generated correctly.
+
+
+# CHECK: [[TRAIT:!Int.*]] = !lit.trait<@{{.*}}::@"fn(z: Int) -> Int">
+
+
+# CHECK: kgen.struct.generator @{{.*}}::bindIt({{.*}})::myclosure": [[TRAIT]] = !
+# CHECK-SAME: kgen.closure<@{{.*}}::@"bindIt({{.*}})", "myclosure" nonescaping>{
+# CHECK: kgen.conformance @"{{.*}}::fn(z: Int) -> Int" {
+# CHECK-NEXT: kgen.witness "__call__"
+# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-NEXT: kgen.witness "__del__"
+# CHECK: kgen.conformance @"{{.*}}::Movable" {
+# CHECK-NEXT: kgen.witness "__moveinit__"
+fn bindIt(x: Int, y: Int) -> Int:
+    fn myclosure(z: Int) unified -> Int:
+        return x + y + z
+
+
+# // -----
+
+# COM: Check that parameters are emitted correctly
+
+
+# CHECK: kgen.struct.generator @"{{.*}}::bindIt()::myclosure"
+# CHECK: kgen.witness "__call__" : !lit.generator<<"my_param": !AnyType>
+# CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::@"bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) -> !kgen.none
+# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"bindIt()", "myclosure", #kgen.closure_method<call>
+# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::@"bindIt()" "myclosure"> #kgen.closure<@{{.*}}::@"bindIt()" "myclosure">>>
+
+
+# CHECK: lit.file_module
+fn bindIt() -> Int:
+    fn myclosure[my_param: AnyType](z: Int) unified:
+        pass

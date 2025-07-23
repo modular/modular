@@ -1672,7 +1672,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_InlineLevelAttr:$inlineLevel,
                        KGEN_ParamDeclAttr:$paramDecl,
-                       TypedAttrInterface:$vtable
+                       TypedAttrInterface:$typeValue
                        );
   let results = (outs LIT_RefType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -1688,7 +1688,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                                     type($captures),
                                     type($result),
                                     $paramDecl,
-                                    $vtable)  attr-dict
+                                    $typeValue)  attr-dict
   }];
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }

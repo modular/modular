@@ -122,6 +122,18 @@ private:
   /// check-lifetimes pass.
   StructDeclOp createStructWrapper(StringRef baseName, ASTDecl &traitDecl,
                                    SMLoc location);
+  /// Generate a witness table for a closure op.
+  TypedAttr addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
+                                      ClosureType closureType,
+                                      TraitDeclOp trait);
+  struct ClosureParent {
+    /// The parent definition
+    TraitDeclOp trait;
+    /// all closure parents have a single defining function.
+    FnOp definingFn;
+  };
+  /// Cached commonly used traits.
+  SmallVector<ClosureParent> closureParents;
 };
 
 } // namespace M::KGEN::LIT
