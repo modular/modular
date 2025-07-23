@@ -40,13 +40,7 @@ Tests are run with `-D ASSERT=all` by default.
 
 ### Running Benchmarks
 
-```bash
-# Run all benchmarks
-./stdlib/scripts/run-benchmarks.sh
-
-# Run specific benchmark
-./stdlib/scripts/run-benchmarks.sh path/to/benchmark.mojo
-```
+Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks.
 
 ### Code Formatting
 
