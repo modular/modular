@@ -138,3 +138,42 @@ def test_reset_auto() -> None:
     person.reset_auto()
     assert person.get_name_auto() == "Auto Reset Person"
     assert person.get_age() == 999
+
+
+def test_sum_kwargs_ints_py() -> None:
+    person = def_method.Person()
+    initial_age = person.get_age()
+
+    result = person.sum_kwargs_ints_py()
+    assert result == initial_age
+
+    result = person.sum_kwargs_ints_py(a=5, b=10, c=15)
+    expected_age = initial_age + 30
+    assert result == expected_age
+    assert person.get_age() == expected_age
+
+
+def test_sum_kwargs_ints() -> None:
+    person = def_method.Person()
+    initial_age = person.get_age()
+
+    result = person.sum_kwargs_ints()
+    assert result == initial_age
+
+    result = person.sum_kwargs_ints(a=5, b=10, c=15)
+    expected_age = initial_age + 30
+    assert result == expected_age
+    assert person.get_age() == expected_age
+
+
+def test_add_kwargs_to_age_auto() -> None:
+    person = def_method.Person()
+    initial_age = person.get_age()
+
+    result = person.add_kwargs_to_age_auto()
+    assert result == initial_age
+
+    result = person.add_kwargs_to_age_auto(bonus=10, extra=5)
+    expected_age = initial_age + 15
+    assert result == expected_age
+    assert person.get_age() == expected_age

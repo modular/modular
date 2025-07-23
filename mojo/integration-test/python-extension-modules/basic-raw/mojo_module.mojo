@@ -31,7 +31,7 @@ fn PyInit_mojo_module() -> PythonObject:
             "mojo_count_args",
             docstring="Count the provided arguments",
         )
-        b.def_py_c_function_with_kwargs(
+        b.def_py_c_function(
             mojo_count_args_with_kwargs,
             "mojo_count_args_with_kwargs",
             docstring="Count the provided arguments and keyword arguments",
@@ -46,7 +46,7 @@ fn PyInit_mojo_module() -> PythonObject:
                 "count_args",
                 docstring="Count the provided arguments",
             )
-            .def_py_c_method_with_kwargs(
+            .def_py_c_method(
                 counter_count_args_with_kwargs,
                 "count_args_with_kwargs",
                 docstring="Count the provided arguments and keyword arguments",
@@ -56,7 +56,7 @@ fn PyInit_mojo_module() -> PythonObject:
                 "static_count_args",
                 docstring="Count the provided arguments",
             )
-            .def_py_c_method_with_kwargs[static_method=True](
+            .def_py_c_method[static_method=True](
                 counter_static_count_args_with_kwargs,
                 "static_count_args_with_kwargs",
                 docstring="Count the provided arguments and keyword arguments",

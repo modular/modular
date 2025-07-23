@@ -15,6 +15,7 @@ from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
+from collections import OwnedKwargsDict
 
 
 @export
@@ -46,6 +47,11 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_method[Person.get_name_auto]("get_name_auto")
             .def_method[Person.increment_age_auto]("increment_age_auto")
             .def_method[Person.reset_auto]("reset_auto")
+            # kwargs test methods
+            .def_method[Person.sum_kwargs_ints]("sum_kwargs_ints")
+            .def_py_method[Person.sum_kwargs_ints_py]("sum_kwargs_ints_py")
+            # auto-convert self + kwargs test method
+            .def_method[Person.add_kwargs_to_age_auto]("add_kwargs_to_age_auto")
         )
         return b.finalize()
     except e:
@@ -210,3 +216,40 @@ struct Person(Copyable, Defaultable, Movable, Representable):
     fn reset_auto(self_ptr: UnsafePointer[Self]):
         self_ptr[].name = "Auto Reset Person"
         self_ptr[].age = 999
+
+    @staticmethod
+    fn sum_kwargs_ints(
+        py_self: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+    ) raises -> PythonObject:
+        """Test method that takes kwargs, adds them to person's age and returns the new age.
+        """
+        var self_ptr = Self._get_self_ptr(py_self)
+        return Self.add_kwargs_to_age_auto(self_ptr, kwargs)
+
+    @staticmethod
+    fn sum_kwargs_ints_py(
+        py_self: PythonObject, py_args: PythonObject, py_kwargs: PythonObject
+    ) raises -> PythonObject:
+        """Test def_py_method that takes kwargs, adds them to person's age and returns the new age.
+        """
+        var self_ptr = Self._get_self_ptr(py_self)
+        var total = 0
+        if py_kwargs._obj_ptr:
+            for entry in py_kwargs.values():
+                total += Int(entry)
+        self_ptr[].age += total
+        return PythonObject(self_ptr[].age)
+
+    @staticmethod
+    fn add_kwargs_to_age_auto(
+        self_ptr: UnsafePointer[Self], kwargs: OwnedKwargsDict[PythonObject]
+    ) raises -> PythonObject:
+        """Test method with auto-convert self + kwargs that adds kwargs to person's age.
+        """
+        var total = 0
+        for entry in kwargs.items():
+            var value = entry.value
+            total += Int(value)
+
+        self_ptr[].age += total
+        return PythonObject(self_ptr[].age)
