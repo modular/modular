@@ -110,9 +110,10 @@ fn make_closure(x: Int) -> Int:
 
 # COM: Test that explicit origins are handled correctly alongside implicit origins.
 
-# CHECK-DAG: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None">
+# CHECK: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None">
 
-# CHECK: lit.struct.decl @"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<impl: [[TRAIT]], |>([[TRAIT]]) attributes {isSynthetic} {
+# CHECK-LABEL: lit.struct.decl @"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"
+# CHECK-SAME: <impl: [[TRAIT]], |>([[TRAIT]]) attributes {isSynthetic} {
 # CHECK-NEXT: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: origin<1>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"
 # CHECK-SAME: <:[[TRAIT]] impl>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, mut lt>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) -> !kgen.none attributes {isSynthetic, sourceName = "__call__", specialFnKind = 0 : i8} {
@@ -143,12 +144,12 @@ trait MyInterface:
         ...
 
 
-# CHECK-DAG: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MyInterface](a: $0) -> None">
+# CHECK: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MyInterface](a: $0) -> None">
 
 
 # CHECK: lit.fn @"__init__($0)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<@{{.*}}::@"fn[MyInterface](a: $0) -> None_wrapper"<:[[TRAIT]] impl>, mut *"self`"> byref_result) -> !kgen.none attributes {isStatic, isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <@{{.*}}::@"fn[MyInterface](a: $0) -> None_wrapper"<:[[TRAIT]] impl>, mut *"self`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: get_vtable_entry(:[[TRAIT]] impl, "__moveinit__")][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
+# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__moveinit__" : !kgen.string>][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -292,3 +293,34 @@ fn bindIt(x: Int, y: Int) -> Int:
 fn bindIt() -> Int:
     fn myclosure[my_param: AnyType](z: Int) unified:
         pass
+
+
+# // -----
+
+# COM: Verify Conformance tables of the Wrapper are generated correctly
+
+# CHECK: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None">
+
+# CHECK-LABEL: lit.struct.decl @"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"
+# CHECK-SAME: <impl: [[TRAIT]], |>([[TRAIT]]) attributes {isSynthetic} {
+
+# CHECK: kgen.conformance @{{.*}}::fn[MutableOrigin](a: ref [$0] String, b: String) -> None" {
+# CHECK-NEXT: kgen.witness "__call__" : !lit.generator<<"lt": origin<1>>[2](!lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<:!None impl>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut *(0,0)>, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin<1> ?>
+
+# CHECK: kgen.conformance @{{.*}}::Movable" {
+# CHECK-NEXT: kgen.witness "__moveinit__" : !lit.generator<[2]("existing": !lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<:[[TRAIT]] impl>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<:[[TRAIT]] impl>, mut *[0,1]> byref_result) -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"::@"__moveinit__({{.*}})"<:[[TRAIT]] impl>
+
+# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-NEXT:  kgen.witness "__del__" : !lit.generator<[1]("self": !lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<:[[TRAIT]] impl>, mut *[0,0]> owned_in_mem, |) -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"::@"__del__{{.*}}"<:[[TRAIT]] impl>
+
+
+fn make_closure(x: Int) -> Int:
+    fn mutate[
+        lt: MutableOrigin
+    ](a: Pointer[String, lt]._mlir_type, b: String) unified:
+        pass
+
+    return x
