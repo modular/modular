@@ -15,7 +15,6 @@
 
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import (
-    PipelineEngine,
     PipelineRole,
     RepoType,
     RopeType,
@@ -80,7 +79,6 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
-    "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
     "PreTrainedPipelineTokenizer",

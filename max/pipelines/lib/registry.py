@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineEngine, RopeType, SupportedEncoding
+from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
@@ -349,7 +349,6 @@ class PipelineRegistry:
         message = f"""
 
         Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
-            engine:                 {pipeline_config.engine}
             architecture:           {architecture_id if architecture_id else "UNKNOWN"}
             devices:                {devices_str}
             model_path:             {pipeline_config.model_config.model_path}{weights_repo_str}
@@ -378,59 +377,53 @@ class PipelineRegistry:
             PipelineTokenizer: The configured tokenizer
 
         Raises:
-            ValueError: If no architecture is found or if engine is not MAX
+            ValueError: If no architecture is found
         """
-        if pipeline_config.engine == PipelineEngine.MAX:
-            # MAX pipeline
-            arch: SupportedArchitecture | None = None
-            if override_architecture:
-                arch = self.architectures[override_architecture]
-            else:
-                arch = self.retrieve_architecture(
-                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
-                )
-
-            if arch is None:
-                raise ValueError(
-                    f"No architecture found for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
-                )
-
-            # Calculate Max Length
-            huggingface_config = pipeline_config.model_config.huggingface_config
-            max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            )
-
-            tokenizer: PipelineTokenizer
-            if (
-                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
-                and arch.tokenizer is TextTokenizer
-            ):
-                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
-                tokenizer = text_tokenizer(
-                    pipeline_config.model_config.model_path,
-                    revision=pipeline_config.model_config.huggingface_model_revision,
-                    max_length=max_length,
-                    max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                    enable_llama_whitespace_fix=True,
-                )
-            else:
-                tokenizer = arch.tokenizer(
-                    model_path=pipeline_config.model_config.model_path,
-                    revision=pipeline_config.model_config.huggingface_model_revision,
-                    max_length=max_length,
-                    max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                    pipeline_config=pipeline_config,
-                )
-
-            return tokenizer
-
+        # MAX pipeline
+        arch: SupportedArchitecture | None = None
+        if override_architecture:
+            arch = self.architectures[override_architecture]
         else:
-            raise ValueError(
-                "PipelineTokenizer's can only be retrieved for MAX Models"
+            arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
             )
+
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+            )
+
+        # Calculate Max Length
+        huggingface_config = pipeline_config.model_config.huggingface_config
+        max_length = arch.pipeline_model.calculate_max_seq_len(
+            pipeline_config, huggingface_config=huggingface_config
+        )
+
+        tokenizer: PipelineTokenizer
+        if (
+            arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
+            and arch.tokenizer is TextTokenizer
+        ):
+            text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
+            tokenizer = text_tokenizer(
+                pipeline_config.model_config.model_path,
+                revision=pipeline_config.model_config.huggingface_model_revision,
+                max_length=max_length,
+                max_new_tokens=pipeline_config.max_new_tokens,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                enable_llama_whitespace_fix=True,
+            )
+        else:
+            tokenizer = arch.tokenizer(
+                model_path=pipeline_config.model_config.model_path,
+                revision=pipeline_config.model_config.huggingface_model_revision,
+                max_length=max_length,
+                max_new_tokens=pipeline_config.max_new_tokens,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                pipeline_config=pipeline_config,
+            )
+
+        return tokenizer
 
     def retrieve_factory(
         self,
@@ -444,83 +437,79 @@ class PipelineRegistry:
         tokenizer: PipelineTokenizer
         pipeline_factory: Callable[[], PipelineTypes]
 
-        if pipeline_config.engine == PipelineEngine.MAX:
-            pipeline_class = get_pipeline_for_task(task, pipeline_config)
+        pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
-            # MAX pipeline
-            arch: SupportedArchitecture | None = None
-            if override_architecture:
-                arch = self.architectures[override_architecture]
-            else:
-                arch = self.retrieve_architecture(
-                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
-                )
-
-            # Load HuggingFace Config
-            huggingface_config = pipeline_config.model_config.huggingface_config
-
-            # Architecture should not be None here, as the engine is MAX.
-            assert arch is not None
-            devices = load_devices(pipeline_config.model_config.device_specs)
-            logger.info(
-                self._load_logging_message(
-                    pipeline_config=pipeline_config,
-                    tokenizer_type=arch.tokenizer_cls,
-                    pipeline_model=arch.pipeline_model.__name__,
-                    pipeline_name=pipeline_class.__name__,
-                    architecture_id=arch.name,
-                    factory=True,
-                    devices=devices,
-                )
+        # MAX pipeline
+        arch: SupportedArchitecture | None = None
+        if override_architecture:
+            arch = self.architectures[override_architecture]
+        else:
+            arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo
             )
 
-            max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            )
+        # Load HuggingFace Config
+        huggingface_config = pipeline_config.model_config.huggingface_config
 
-            # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
-            # and suffers from the whitespace decoding bug. So, we enable the fix
-            # for only MistralModel in order to avoid any issues with performance
-            # for rest of the models. This can be applied more generically once
-            # we have more time verifying this for all the models.
-            # More information:
-            # https://linear.app/modularml/issue/AIPIPE-197/add-support-for-mistral-7b-instruct-v03
-            # TODO: remove this pipeline_model.__name__ check
-            if (
-                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
-                and arch.tokenizer is TextTokenizer
-            ):
-                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
-                tokenizer = text_tokenizer(
-                    pipeline_config.model_config.model_path,
-                    revision=pipeline_config.model_config.huggingface_model_revision,
-                    max_length=max_length,
-                    max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                    enable_llama_whitespace_fix=True,
-                )
-            else:
-                tokenizer = arch.tokenizer(
-                    model_path=pipeline_config.model_config.model_path,
-                    revision=pipeline_config.model_config.huggingface_model_revision,
-                    max_length=max_length,
-                    max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                    pipeline_config=pipeline_config,
-                )
-            pipeline_factory = cast(
-                Callable[[], PipelineTypes],
-                functools.partial(  # type: ignore[misc]
-                    pipeline_class,
-                    pipeline_config=pipeline_config,
-                    pipeline_model=arch.pipeline_model,
-                    eos_token_id=tokenizer.eos,
-                    weight_adapters=arch.weight_adapters,
-                ),
+        # Architecture should not be None here, as the engine is MAX.
+        assert arch is not None
+        devices = load_devices(pipeline_config.model_config.device_specs)
+        logger.info(
+            self._load_logging_message(
+                pipeline_config=pipeline_config,
+                tokenizer_type=arch.tokenizer_cls,
+                pipeline_model=arch.pipeline_model.__name__,
+                pipeline_name=pipeline_class.__name__,
+                architecture_id=arch.name,
+                factory=True,
+                devices=devices,
+            )
+        )
+
+        max_length = arch.pipeline_model.calculate_max_seq_len(
+            pipeline_config, huggingface_config=huggingface_config
+        )
+
+        # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
+        # and suffers from the whitespace decoding bug. So, we enable the fix
+        # for only MistralModel in order to avoid any issues with performance
+        # for rest of the models. This can be applied more generically once
+        # we have more time verifying this for all the models.
+        # More information:
+        # https://linear.app/modularml/issue/AIPIPE-197/add-support-for-mistral-7b-instruct-v03
+        # TODO: remove this pipeline_model.__name__ check
+        if (
+            arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
+            and arch.tokenizer is TextTokenizer
+        ):
+            text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
+            tokenizer = text_tokenizer(
+                pipeline_config.model_config.model_path,
+                revision=pipeline_config.model_config.huggingface_model_revision,
+                max_length=max_length,
+                max_new_tokens=pipeline_config.max_new_tokens,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                enable_llama_whitespace_fix=True,
             )
         else:
-            msg = f"Engine {pipeline_config.engine} is not supported. Only MAX engine is supported."
-            raise ValueError(msg)
+            tokenizer = arch.tokenizer(
+                model_path=pipeline_config.model_config.model_path,
+                revision=pipeline_config.model_config.huggingface_model_revision,
+                max_length=max_length,
+                max_new_tokens=pipeline_config.max_new_tokens,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                pipeline_config=pipeline_config,
+            )
+        pipeline_factory = cast(
+            Callable[[], PipelineTypes],
+            functools.partial(  # type: ignore[misc]
+                pipeline_class,
+                pipeline_config=pipeline_config,
+                pipeline_model=arch.pipeline_model,
+                eos_token_id=tokenizer.eos,
+                weight_adapters=arch.weight_adapters,
+            ),
+        )
 
         if tokenizer.eos is None:
             msg = "tokenizer.eos value is None, tokenizer configuration is incomplete."

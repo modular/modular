@@ -54,10 +54,6 @@ class RopeType(str, Enum):
     longrope = "longrope"
 
 
-class PipelineEngine(str, Enum):
-    MAX = "max"
-
-
 class PipelineRole(str, Enum):
     """Indicates whether the pipeline should do prefill and/or decode."""
 

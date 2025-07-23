@@ -26,7 +26,7 @@ from typing import Any, Optional, get_type_hints
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
-from .config_enums import PipelineEngine, PipelineRole
+from .config_enums import PipelineRole
 from .max_config import (
     KVCacheConfig,
     LoRAConfig,
@@ -54,9 +54,6 @@ class PipelineConfig(MAXConfig):
     flag, config file, environment variable, or internally set to a reasonable
     default.
     """
-
-    engine: Optional[PipelineEngine] = None
-    """Engine backend to use for serving. Currently only 'max' engine is supported."""
 
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
@@ -455,11 +452,6 @@ class PipelineConfig(MAXConfig):
         """
         assert self.draft_model_config is not None  # keep mypy happy
 
-        # Only MAX engine is supported
-        if self.engine != PipelineEngine.MAX:
-            msg = f"Engine {self.engine} is not supported. Only MAX engine is supported."
-            raise ValueError(msg)
-
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -573,13 +565,6 @@ class PipelineConfig(MAXConfig):
         MEMORY_ESTIMATOR.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
-
-        # Validate engine and set to MAX if needed
-        if self.engine is None:
-            self.engine = PipelineEngine.MAX
-        elif self.engine != PipelineEngine.MAX:
-            msg = f"Engine {self.engine} is not supported. Only MAX engine is supported."
-            raise ValueError(msg)
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""

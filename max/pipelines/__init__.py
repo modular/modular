@@ -28,7 +28,6 @@ from .lib.config import (
     PrometheusMetricsMode,
 )
 from .lib.config_enums import (
-    PipelineEngine,
     PipelineRole,
     RepoType,
     RopeType,
@@ -75,7 +74,6 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
-    "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
     "PipelinesFactory",
