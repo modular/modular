@@ -234,10 +234,11 @@ struct ContinuousBatchingKVCache[
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
         debug_assert(
-            head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
+            UInt(head_idx) < Self.kv_params.num_heads,
+            "KVCache head_idx out of range",
         )
         debug_assert(
-            head_dim_idx < Self.kv_params.head_size,
+            UInt(head_dim_idx) < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
         debug_assert(
@@ -446,13 +447,13 @@ struct PagedKVCache[
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
         debug_assert(
-            head_idx < Self.kv_params.num_heads,
+            UInt(head_idx) < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
         debug_assert(
-            head_dim_idx < Self.kv_params.head_size,
+            UInt(head_dim_idx) < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
 

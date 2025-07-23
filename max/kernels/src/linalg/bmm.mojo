@@ -555,8 +555,8 @@ fn naive_batched_matmul_kernel[
     var val = Scalar[accum_type](0)
     for ki in range(k):
         val += (
-            a_buff[z, y, ki].cast[accum_type]()
-            * b_buff[z, ki, x].cast[accum_type]()
+            a_buff[Int(z), y, ki].cast[accum_type]()
+            * b_buff[Int(z), ki, x].cast[accum_type]()
         )
 
     @parameter
@@ -565,8 +565,8 @@ fn naive_batched_matmul_kernel[
         var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
             z, c_buff_nd_shape
         )
-        nd_corrds[rank - 1] = x
-        nd_corrds[rank - 2] = y
+        nd_corrds[rank - 1] = Int(x)
+        nd_corrds[rank - 2] = Int(y)
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
         c_buff[Index(Int(z), Int(y), Int(x))] = val.cast[c_type]()
@@ -626,7 +626,7 @@ fn batched_matmul_kernel_gpu[
         @parameter
         if elementwise_lambda_fn:
             alias elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](block_idx.z)
+            var batch_coords = IndexList[3](Int(block_idx.z))
             batch_coords[2] = out_coords[1]
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)

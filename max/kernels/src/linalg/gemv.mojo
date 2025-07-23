@@ -159,7 +159,7 @@ fn gemv_kernel[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](warp_id, 0),
+                reverse_idx[transpose_b](Int(warp_id), 0),
                 accum.cast[c_type](),
             )
         else:
@@ -198,13 +198,13 @@ fn gemv_kernel_vector[
         return
 
     # Every warp processes a single row of the resultant vector
-    var local_accum = SIMD[s_type, simd_width](0)
+    var local_accum = SIMD[s_type, Int(simd_width)](0)
 
     alias local_accum_type = __type_of(local_accum)
 
     for i in range(ceildiv(k // simd_width, WARP_SIZE)):
-        var a_tile = a.tile[1, WARP_SIZE * simd_width](warp_id, i)
-        var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
+        var a_tile = a.tile[1, Int(WARP_SIZE * simd_width)](warp_id, i)
+        var b_tile = b.tile[1, Int(WARP_SIZE * simd_width)](0, i)
 
         if idx >= k:
             continue
@@ -227,16 +227,16 @@ fn gemv_kernel_vector[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                reverse_idx[transpose_b](warp_id, 0),
+                reverse_idx[transpose_b](Int(warp_id), 0),
                 accum.cast[c_type](),
             )
         else:
 
             @parameter
             if transpose_b:
-                c[0, warp_id] = accum.cast[c_type]()
+                c[0, Int(warp_id)] = accum.cast[c_type]()
             else:
-                c[warp_id, 0] = accum.cast[c_type]()
+                c[Int(warp_id), 0] = accum.cast[c_type]()
 
 
 @__llvm_metadata(
@@ -286,16 +286,16 @@ fn gemv_split_k[
 
     var tid = thread_idx.x
     var tile_a = stack_allocation[
-        simd_width, a_type, address_space = AddressSpace.LOCAL
+        Int(simd_width), a_type, address_space = AddressSpace.LOCAL
     ]()
     var tile_w = stack_allocation[
-        tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
+        Int(tile_n * simd_width), b_type, address_space = AddressSpace.LOCAL
     ]()
 
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
     var acc = stack_allocation[
-        tile_m * tile_n,
+        Int(tile_m * tile_n),
         s_type,
         address_space = AddressSpace.LOCAL,
     ]()
@@ -325,7 +325,7 @@ fn gemv_split_k[
                     continue
 
             var b_vec = weight.data.load[
-                width=simd_width, alignment=align_weight
+                width = Int(simd_width), alignment=align_weight
             ](weight_idx + i * k + idxK)
 
             tile_w.store[alignment=align_weight](i * simd_width, b_vec)
@@ -343,9 +343,9 @@ fn gemv_split_k[
                 if i + tile_id_m >= m:
                     continue
 
-            var a_vec = act.data.load[width=simd_width, alignment=align_act](
-                act_idx + i * k + idxK
-            )
+            var a_vec = act.data.load[
+                width = Int(simd_width), alignment=align_act
+            ](act_idx + i * k + idxK)
 
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
@@ -367,7 +367,7 @@ fn gemv_split_k[
     var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
-        k_warp_num * tile_m * tile_n,
+        Int(k_warp_num * tile_m * tile_n),
         s_type,
         address_space = AddressSpace.SHARED,
     ]()

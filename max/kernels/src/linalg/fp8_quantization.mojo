@@ -170,7 +170,7 @@ fn quantize_fp8_kernel[
     var thread_max = Scalar[in_type](0)
 
     var tid = thread_idx.x
-    var row = block_idx.x
+    var row = Int(block_idx.x)
     var group_idx = block_idx.y
 
     with PDL():

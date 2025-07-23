@@ -267,7 +267,7 @@ fn multistage_dual_mma[
     # Register tiles.
     var a_reg_tiles = (
         tb[a_type]()
-        .row_major[2 * k_group_size * num_m_mmas, a_frag_size]()
+        .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
         .local()
         .alloc()
         .split[2 * k_group_size]()
@@ -275,7 +275,7 @@ fn multistage_dual_mma[
 
     var b0_reg_tiles = (
         tb[b_type]()
-        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
         .local()
         .alloc()
         .vectorize[1, b_frag_size]()
@@ -283,7 +283,7 @@ fn multistage_dual_mma[
     )
     var b1_reg_tiles = (
         tb[b_type]()
-        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
         .local()
         .alloc()
         .vectorize[1, b_frag_size]()
@@ -603,7 +603,7 @@ fn multistage_dual_gemm_kernel[
         BK,
         WM,
         WN,
-        num_threads,
+        Int(num_threads),
         num_pipeline_stages,
         transpose_b,
         k_group_size = config.k_group_size,
@@ -708,7 +708,7 @@ fn multistage_dual_gemm_kernel[
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
-                        (m, n),
+                        (Int(m), Int(n)),
                         accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
@@ -744,7 +744,7 @@ fn multistage_dual_gemm_kernel[
 
                 @parameter
                 if c_layout.all_dims_known():
-                    dst_idx = dst_static_idx
+                    dst_idx = Int(dst_static_idx)
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
@@ -755,7 +755,7 @@ fn multistage_dual_gemm_kernel[
                     var vec = c_reg_frag.ptr.offset(src_idx).load[
                         width=2, alignment = alignof[SIMD[c_type, 2]]()
                     ]()
-                    epilogue[alignment=alignment]((m, n), vec)
+                    epilogue[alignment=alignment]((Int(m), Int(n)), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
@@ -1188,13 +1188,13 @@ fn dual_gemv_kernel[
 
     alias tile_k = simd_width * num_threads
     var tile_a = stack_allocation[
-        simd_width, a_type, address_space = AddressSpace.LOCAL
+        Int(simd_width), a_type, address_space = AddressSpace.LOCAL
     ]()
     var tile_w = stack_allocation[
-        tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
+        Int(tile_n * simd_width), b_type, address_space = AddressSpace.LOCAL
     ]()
     var acc = stack_allocation[
-        tile_m * tile_n, s_type, address_space = AddressSpace.LOCAL
+        Int(tile_m * tile_n), s_type, address_space = AddressSpace.LOCAL
     ]()
 
     var tile_b0 = tile_w
@@ -1214,25 +1214,25 @@ fn dual_gemv_kernel[
 
         @parameter
         for i in range(tile_n_per_B):
-            var b0_vec = b0.data.load[width=simd_width, alignment=align_weight](
-                weight_idx + i * k + idxK
-            )
+            var b0_vec = b0.data.load[
+                width = Int(simd_width), alignment=align_weight
+            ](weight_idx + i * k + idxK)
 
             tile_b0.store[alignment=align_weight](i * simd_width, b0_vec)
 
         @parameter
         for i in range(tile_n_per_B):
-            var b1_vec = b1.data.load[width=simd_width, alignment=align_weight](
-                weight_idx + i * k + idxK
-            )
+            var b1_vec = b1.data.load[
+                width = Int(simd_width), alignment=align_weight
+            ](weight_idx + i * k + idxK)
 
             tile_b1.store[alignment=align_weight](i * simd_width, b1_vec)
 
         @parameter
         for i in range(tile_m):
-            var a_vec = a.data.load[width=simd_width, alignment=align_act](
-                act_idx + i * k + idxK
-            )
+            var a_vec = a.data.load[
+                width = Int(simd_width), alignment=align_act
+            ](act_idx + i * k + idxK)
 
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
@@ -1251,7 +1251,7 @@ fn dual_gemv_kernel[
     var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
-        k_warp_num * tile_m * tile_n,
+        Int(k_warp_num * tile_m * tile_n),
         s_type,
         address_space = AddressSpace.SHARED,
     ]()

@@ -368,19 +368,19 @@ fn multistage_mma[
     # Register tiles.
     var a_reg_tiles = (
         tb[a_type]()
-        .row_major[2 * k_group_size * num_m_mmas, a_frag_size]()
+        .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
         .local()
         .alloc()
-        .split[2 * k_group_size]()
+        .split[Int(2 * k_group_size)]()
     )
 
     var b_reg_tiles = (
         tb[b_type]()
-        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
         .local()
         .alloc()
         .vectorize[1, b_frag_size]()
-        .split[2 * k_group_size]()
+        .split[Int(2 * k_group_size)]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -817,7 +817,7 @@ fn multistage_gemm_kernel[
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var bk_start: Int = (K // BK // num_warp_k_partitions) * warp_k_part_id
+    var bk_start: Int = Int((K // BK // num_warp_k_partitions) * warp_k_part_id)
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
         block_idx_swizzle[1], bk_start
     )
@@ -856,7 +856,7 @@ fn multistage_gemm_kernel[
         BK,
         WM,
         WN,
-        num_threads_per_warp_k_part,
+        Int(num_threads_per_warp_k_part),
         num_pipeline_stages,
         transpose_b,
         k_group_size = config.k_group_size,
@@ -876,7 +876,7 @@ fn multistage_gemm_kernel[
         warp_split_k_reduction[
             BM,
             BN,
-            num_threads_per_warp_k_part,
+            Int(num_threads_per_warp_k_part),
             num_warp_k_partitions,
         ](
             warp_k_part_id,
@@ -923,7 +923,7 @@ fn multistage_gemm_kernel[
 
             @parameter
             if c_gmem_frag.layout.all_dims_known():
-                dst_idx = dst_static_idx
+                dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
@@ -937,7 +937,7 @@ fn multistage_gemm_kernel[
 
                 @parameter
                 if dst_simd_width_x == 1:
-                    epilogue[alignment=alignment]((m, n), vec)
+                    epilogue[alignment=alignment]((Int(m), Int(n)), vec)
                 else:
 
                     @parameter
@@ -1031,7 +1031,7 @@ fn multistage_gemm_kernel[
                 var bid = (
                     block_idx_swizzle[1] + block_dim.x * block_idx_swizzle[0]
                 )
-                var semaphore = Semaphore(locks.offset(bid), thread_idx.x)
+                var semaphore = Semaphore(locks.offset(bid), Int(thread_idx.x))
                 semaphore.fetch()
                 semaphore.wait(block_idx.z)
 
@@ -1071,7 +1071,7 @@ fn multistage_gemm_kernel[
                 if num_parts == (block_idx.z + 1):
                     lock_flag = 0
                 else:
-                    lock_flag = block_idx.z + 1
+                    lock_flag = Int(block_idx.z + 1)
                 semaphore.release(lock_flag)
 
             else:
@@ -1160,9 +1160,9 @@ fn multistage_gemm_split_k_kernel[
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](num_partitions, block_idx.z)
+    var a_part = a.split[axis=1, alignment=BK](num_partitions, Int(block_idx.z))
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
-        num_partitions, block_idx.z
+        num_partitions, Int(block_idx.z)
     )
 
     @parameter
