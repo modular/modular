@@ -297,11 +297,6 @@ class InputContext(Protocol):
         ...
 
     @property
-    def is_streaming(self) -> bool:
-        """Returns True if the context is a streaming context, False otherwise."""
-        ...
-
-    @property
     def is_ce(self) -> bool:
         """Returns True if the context is a context encoding context, False otherwise."""
         ...
