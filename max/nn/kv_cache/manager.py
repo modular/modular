@@ -24,6 +24,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.interfaces.request import RequestID
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
@@ -182,7 +183,9 @@ class KVCacheManager(ABC, Generic[T]):
 
         # Attributes for managing available slots.
         self.available = set(range(self.max_batch_size))
-        self.active: set[int] = set()
+
+        # Mappings between request IDs and sequence IDs
+        self.request_to_seq_id: dict[RequestID, int] = {}
 
         self.is_ragged = is_ragged
         increment_cache_lengths_graph = (
@@ -238,16 +241,19 @@ class KVCacheManager(ABC, Generic[T]):
         """Returns the input symbols for the kv cache manager."""
         ...
 
-    def external_claim(self, seq_ids: list[int]) -> None:
-        """Variant of the above where sequence ids are reserved externally."""
-        for seq_id in seq_ids:
-            if seq_id in self.active:
-                raise ValueError(
-                    f"Attempted to claim {seq_id} but it is already in active set"
-                )
+    def external_claim(self, request_id: RequestID) -> None:
+        """Reserve a sequence ID for the given request ID."""
+        if request_id in self.request_to_seq_id:
+            raise ValueError(f"Request ID {request_id} is already claimed")
 
-            self.available.remove(seq_id)
-            self.active.add(seq_id)
+        if not self.available:
+            raise ValueError("No available sequence IDs to claim")
+
+        # Get the next available sequence ID
+        seq_id = self.available.pop()
+
+        # Update mappings
+        self.request_to_seq_id[request_id] = seq_id
 
     def step(self, batch: list[T]) -> None:
         """Commit the new tokens into the prefix cache.
@@ -255,21 +261,34 @@ class KVCacheManager(ABC, Generic[T]):
         This is a no-op if prefix caching is disabled."""
         ...
 
-    def release(self, seq_id: int) -> None:
-        """Release :obj:`seq_id` provided, marking this sequence as complete.
-        This returns the :obj:`seq_id` back to the available pool of cache memory,
+    def release(self, request_id: RequestID) -> None:
+        """Release the sequence associated with :obj:`request_id`, marking this sequence as complete.
+        This returns the sequence ID back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
-        if seq_id not in self.active:
+        if request_id not in self.request_to_seq_id:
             raise ValueError(
-                f"Attempted to release {seq_id} but it is not in active set"
+                f"Attempted to release request ID {request_id} but it is not claimed"
             )
 
-        self.active.remove(seq_id)
+        # Look up the sequence ID
+        seq_id = self.request_to_seq_id[request_id]
+
+        # Clean up mappings
+        del self.request_to_seq_id[request_id]
+
         self.available.add(seq_id)
 
-    def contains(self, seq_id: int) -> bool:
-        return seq_id in self.active
+    def contains(self, request_id: RequestID) -> bool:
+        """Check if the given request ID is currently active in the cache.
+
+        Args:
+            request_id: The request ID to check for.
+
+        Returns:
+            True if the request ID is active in the cache, False otherwise.
+        """
+        return request_id in self.request_to_seq_id
 
     def increment_cache_lengths(
         self,

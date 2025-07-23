@@ -31,6 +31,7 @@ from enum import Enum
 from typing import Generic, TypeVar
 
 import numpy as np
+from max.interfaces.request import RequestID
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -130,14 +131,16 @@ class BlockManager(Generic[T]):
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
         # is finished.
-        self.current_blocks_per_request: dict[int, list[KVCacheBlock]] = (
+        self.current_blocks_per_request: dict[RequestID, list[KVCacheBlock]] = (
             defaultdict(list)
         )
 
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
-        self.req_to_hashes: dict[int, list[BlockHashType]] = defaultdict(list)
+        self.req_to_hashes: dict[RequestID, list[BlockHashType]] = defaultdict(
+            list
+        )
 
         # Cache hit rate metrics.
         self.prompt_tokens = 0
@@ -175,8 +178,7 @@ class BlockManager(Generic[T]):
     ) -> None:
         """Compute the block hashes for the request."""
 
-        seq_id = ctx.cache_seq_id
-        hashes = self.req_to_hashes[seq_id]
+        hashes = self.req_to_hashes[ctx.request_id]
 
         num_unhashed_tokens = ctx.current_length - (
             len(hashes) * self.block_size
@@ -211,8 +213,7 @@ class BlockManager(Generic[T]):
         if not self.enable_prefix_caching or ctx.active_length == 1:
             return
 
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.current_blocks_per_request[seq_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
 
         # Update cache hit rate metrics.
         orig_prompt_len = ctx.active_length
@@ -354,8 +355,7 @@ class BlockManager(Generic[T]):
 
         assert self.enable_prefix_caching
 
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
@@ -394,8 +394,7 @@ class BlockManager(Generic[T]):
         if self.block_size == 1:
             return None, 0
 
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
 
         parent_hash = ROOT_BLOCK_HASH
@@ -443,13 +442,11 @@ class BlockManager(Generic[T]):
         This increments the committed_idx.
 
         Args:
-            seq_id: The ID of the request.
-            data: The data of the request.
+            ctx: Request InputContext.
         """
 
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.current_blocks_per_request[seq_id]
-        req_hashes = self.req_to_hashes[seq_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
 
         # Count the number of tokens for which we know the values of and align
@@ -480,10 +477,10 @@ class BlockManager(Generic[T]):
             committed_idx=num_computed_blocks * self.block_size
         )
 
-    def release(self, seq_id: int) -> None:
+    def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
 
-        blocks = self.current_blocks_per_request[seq_id]
+        blocks = self.current_blocks_per_request[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
             # Free blocks in reverse order so that the tail blocks are
@@ -493,8 +490,8 @@ class BlockManager(Generic[T]):
         for block in ordered_blocks:
             self.device_block_pool.free_block(block)
 
-        self.current_blocks_per_request[seq_id] = []
-        self.req_to_hashes[seq_id] = []
+        self.current_blocks_per_request[request_id] = []
+        self.req_to_hashes[request_id] = []
 
     @traced
     def allocate_new_blocks(self, ctx: T, num_steps: int = 1) -> None:
@@ -514,7 +511,7 @@ class BlockManager(Generic[T]):
             AssertionError: If the current blocks cannot accommodate the completed tokens.
         """
         # Determine number of new blocks to allocate.
-        current_blocks = self.current_blocks_per_request[ctx.cache_seq_id]
+        current_blocks = self.current_blocks_per_request[ctx.request_id]
         num_current_blocks = len(current_blocks)
         current_seq_len = ctx.current_length + num_steps - 1
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
@@ -591,8 +588,7 @@ class BlockManager(Generic[T]):
 
     def release_uncommitted_blocks(self, ctx: T) -> None:
         """Release the uncommitted blocks for the request."""
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.current_blocks_per_request[seq_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
         assert len(req_blocks) >= num_committed_blocks
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
@@ -602,9 +598,11 @@ class BlockManager(Generic[T]):
         ctx.set_token_indices(start_idx=ctx.committed_idx)
 
     @traced
-    def get_req_blocks(self, seq_id: int) -> list[int]:
+    def get_req_blocks(self, request_id: RequestID) -> list[int]:
         """Get the block ids for a request."""
-        return [block.bid for block in self.current_blocks_per_request[seq_id]]
+        return [
+            block.bid for block in self.current_blocks_per_request[request_id]
+        ]
 
     @traced
     def assert_runtime_invariants(self, ctx: T) -> None:
@@ -626,9 +624,8 @@ class BlockManager(Generic[T]):
         self.device_block_pool.assert_runtime_invariants(active_block_ids)
 
         # Get the request hashes and blocks
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
-        req_blocks = self.current_blocks_per_request[seq_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
 
         # Check that the number of committed blocks for request is correct
         num_committed_blocks = ctx.committed_idx // self.block_size

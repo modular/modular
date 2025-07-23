@@ -238,7 +238,8 @@ class DecodeScheduler(Scheduler):
                 # Grab new cache index, claim the slot with the paged manager
                 # and add it to the reserved_cache_indices.
                 cache_seq_id = self.available_cache_indices.pop()
-                self.paged_manager.external_claim([cache_seq_id])
+                if not self.paged_manager.contains(request_id):
+                    self.paged_manager.external_claim(request_id)
 
                 # Ensure request_context uses the appropriate cache seq id
                 request_context.unassign_from_cache()
@@ -253,7 +254,7 @@ class DecodeScheduler(Scheduler):
                     # return this to the request queue.
                     self.preempted_request.put((request_id, request_context))
                     self.available_cache_indices.add(cache_seq_id)
-                    self.paged_manager.release(cache_seq_id)
+                    self.paged_manager.release(request_id)
 
                     # Error out here, if we cant prefetch and have no outstanding reserved_cache_indices.
                     # This means it will not be possible to fulfill this request.
@@ -270,7 +271,7 @@ class DecodeScheduler(Scheduler):
                 self.reserved_cache_indices[request_id] = cache_seq_id
 
                 dst_idx = self.paged_manager.block_manager.get_req_blocks(
-                    cache_seq_id
+                    request_id
                 )
 
                 # Send to the Prefill Node

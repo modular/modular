@@ -213,13 +213,11 @@ class PrefillScheduler(Scheduler):
                 prefill_request.context.reset()
                 logger.info("received from decode node!")
 
-                if not prefill_request.context.is_assigned_to_cache:
+                if not self.paged_manager.contains(prefill_request.id):
                     prefill_request.context.assign_to_cache(
                         self.available_cache_indices.pop()
                     )
-                    self.paged_manager.external_claim(
-                        [prefill_request.context.cache_seq_id]
-                    )
+                    self.paged_manager.external_claim(prefill_request.id)
 
             except queue.Empty:
                 break
@@ -272,7 +270,7 @@ class PrefillScheduler(Scheduler):
 
             # Retrieve source block ids.
             src_idx = self.paged_manager.block_manager.get_req_blocks(
-                prefill_request.context.cache_seq_id,
+                prefill_request.context.request_id,
             )
 
             # Bump this back, so the token is returned.

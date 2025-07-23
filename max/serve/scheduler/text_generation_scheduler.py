@@ -317,7 +317,7 @@ class TokenGenerationScheduler(Scheduler):
             if not data.is_assigned_to_cache:
                 data.assign_to_cache(self.available_cache_indices.pop())
                 if self.paged_manager is not None:
-                    self.paged_manager.external_claim([data.cache_seq_id])
+                    self.paged_manager.external_claim(req_id)
 
             orig_prompt_length = data.active_length
             num_steps = 1
