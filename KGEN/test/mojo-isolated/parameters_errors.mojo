@@ -287,6 +287,12 @@ struct StructWithParams[a: Int, b: Int]:
     alias a2 = a+1
     alias a3 = a+b+1
 
+struct StructWithRecReference[n: Int]:
+    alias res = StructWithRecReference.f
+    @staticmethod
+    fn f():
+        pass
+
 fn testStructWithParams():
     # These are ok because the referenced alias doesn't depend on unbound parameters.
     _ = StructWithParams.a1
@@ -300,6 +306,8 @@ fn testStructWithParams():
     # expected-error @+1 {{cannot access alias 'a3' with unbound parameter 'StructWithParams.a'}}
     _ = StructWithParams.a3
 
+    # expected-error @+1 {{parametric value expects 1 parameter, but 2 were specified}}
+    _ = StructWithRecReference.res[1, 2](1, 2, 3)
 
 
 
