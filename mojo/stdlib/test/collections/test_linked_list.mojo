@@ -553,22 +553,16 @@ def test_iter():
     var l = LinkedList[Int](1, 2, 3)
     var iter = l.__iter__()
     assert_true(iter.__has_next__(), "Expected iter to have next")
-    assert_equal(len(iter), 3)
     assert_equal(iter.__next_ref__(), 1)
     assert_equal(iter.__next_ref__(), 2)
-    assert_equal(len(iter), 1)
     assert_equal(iter.__next_ref__(), 3)
-    assert_equal(len(iter), 0)
     assert_false(iter.__has_next__(), "Expected iter to not have next")
 
     var riter = l.__reversed__()
     assert_true(riter.__has_next__(), "Expected iter to have next")
-    assert_equal(len(riter), 3)
     assert_equal(riter.__next_ref__(), 3)
     assert_equal(riter.__next_ref__(), 2)
-    assert_equal(len(riter), 1)
     assert_equal(riter.__next_ref__(), 1)
-    assert_equal(len(riter), 0)
     assert_false(riter.__has_next__(), "Expected iter to not have next")
 
     var i = 0

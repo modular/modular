@@ -35,16 +35,13 @@ struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     var index: Int
     var src: VariadicList[type]
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.index < len(self.src)
+
     fn __next__(mut self) -> type:
         self.index += 1
         return self.src[self.index - 1]
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        return len(self.src) - self.index
 
 
 @register_passable("trivial")
@@ -143,6 +140,8 @@ struct _VariadicListMemIter[
         elt_type, elt_origin._mlir_origin, is_owned
     ]
 
+    alias Element = elt_type
+
     var index: Int
     var src: Pointer[
         Self.variadic_list_type,
@@ -155,18 +154,15 @@ struct _VariadicListMemIter[
         self.index = index
         self.src = Pointer(to=list)
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.index < len(self.src[])
+
     fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
         )[]
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        return len(self.src[]) - self.index
 
 
 struct VariadicListMem[

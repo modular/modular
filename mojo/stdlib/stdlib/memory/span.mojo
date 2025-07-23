@@ -56,6 +56,14 @@ struct _SpanIter[
         return self
 
     @always_inline
+    fn __has_next__(self) -> Bool:
+        @parameter
+        if forward:
+            return self.index < len(self.src)
+        else:
+            return self.index > 0
+
+    @always_inline
     fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
@@ -64,18 +72,6 @@ struct _SpanIter[
         else:
             self.index -= 1
             return self.src[self.index]
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src) - self.index
-        else:
-            return self.index
 
 
 @fieldwise_init
