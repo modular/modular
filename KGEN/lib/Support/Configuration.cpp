@@ -95,10 +95,6 @@ StringRef MojoConfig::getMGPRTPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".mgprt_path"), "lib/libMGPRT" EXT);
 }
 
-StringRef MojoConfig::getATenRTPath() {
-  return getPath(STRINGIFY_MOJO_CONFIG(".atenrt_path"), "lib/libATenRT" EXT);
-}
-
 //===----------------------------------------------------------------------===//
 // Driver Configurations
 
