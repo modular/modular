@@ -46,7 +46,7 @@ from gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
-    tma_store_fence,
+    fence_async_view_proxy,
 )
 from gpu.mma import st_matrix
 from gpu.sync import named_barrier
@@ -567,7 +567,7 @@ fn warp_specialized_gemm_output[
 
                 @parameter
                 if use_tma_store and not needs_x2:
-                    tma_store_fence()
+                    fence_async_view_proxy()
 
                     if local_thread_idx < WG_BN // TMA_BN:
                         var smem_offset = c_smem_tile.ptr.offset(

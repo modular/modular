@@ -25,7 +25,7 @@ alias WARP_GROUP_SIZE = 128
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
-from gpu.memory import AddressSpace, tma_store_fence
+from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -508,7 +508,7 @@ fn blackwell_tma_pair_umma_kernel[
         var col_start = block_idx.y * MMA_N
 
         if thread_idx.x == 0:
-            tma_store_fence()
+            fence_async_view_proxy()
             c_tma_op.async_store(c_smem_tile, (col_start, row_start))
             c_tma_op.commit_group()
             c_tma_op.wait_group[0]()
