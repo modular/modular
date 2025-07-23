@@ -73,7 +73,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     sampling_params: SamplingParams = msgspec.field(
         default_factory=SamplingParams
     )
-    streaming: bool = msgspec.field(default=False)
     model_name: str = msgspec.field(default="")
     lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
@@ -603,11 +602,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.active_length > 1
 
     @property
-    def is_streaming(self) -> bool:
-        """Returns True if the context is a streaming context, False otherwise."""
-        return self.streaming
-
-    @property
     def is_initial_prompt(self) -> bool:
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
@@ -676,6 +670,7 @@ class TTSContext(TextContext):
 
     Configuration:
         audio_prompt_tokens: Array of input audio prompt tokens used for voice cloning
+        streaming: Whether the request is streaming the audio to client
         _speech_token_size: Size of the speech token buffer, defaults to SPEECH_TOKEN_audio_chunk_size
         _speech_token_end_idx: Index marking the end of valid speech tokens
         _speech_tokens: Buffer containing the generated speech tokens
@@ -692,6 +687,8 @@ class TTSContext(TextContext):
     # For silence detection.
     audio_buffer: np.ndarray | None = msgspec.field(default=None)
     prev_samples_beyond_offset: int = msgspec.field(default=0)
+
+    streaming: bool = msgspec.field(default=False)
 
     # Fields for tracking the state of speech token or audio generation.
     _speech_token_size: int = msgspec.field(
