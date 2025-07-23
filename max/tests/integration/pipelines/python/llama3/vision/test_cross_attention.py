@@ -231,7 +231,6 @@ def test_cross_attention(
     # Phase 3: execution.
 
     seq_ids = list(kv_manager.available)[:batch_size]
-    kv_manager.external_claim(seq_ids)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
     batch = [
@@ -240,6 +239,9 @@ def test_cross_attention(
         )
         for s in seq_ids
     ]
+
+    for context in batch:
+        kv_manager.external_claim(context.request_id)
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.

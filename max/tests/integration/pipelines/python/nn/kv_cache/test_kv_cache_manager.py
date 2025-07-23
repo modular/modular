@@ -10,23 +10,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
-    KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
-
-
-def claim_sequence_ids(kv_manager: KVCacheManager, n: int) -> list[int]:
-    """Helper function to claim sequence IDs and call external_claim.
-
-    This replaces the deprecated claim() method.
-    """
-    # Get the first n available sequence IDs
-    seq_ids = list(kv_manager.available)[:n]
-    kv_manager.external_claim(seq_ids)
-    return seq_ids
 
 
 @pytest.mark.asyncio
@@ -45,14 +33,14 @@ async def test_step() -> None:
         session=InferenceSession(devices=[device]),
     )
 
-    # Claim three items
-    seq_ids = claim_sequence_ids(kv_manager, 3)
-
+    # Create three text contexts and externally claim each using their request_id
     prompt_lens = [3, 4, 7]
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
+    batch = []
+    for i in range(3):
+        seq_id = list(kv_manager.available)[0]
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
     for ctx in batch:
@@ -92,25 +80,38 @@ async def test_claim_and_release() -> None:
         session=InferenceSession(devices=[device]),
     )
 
+    contexts = []
+    prompt_lens = [2, 3, 4, 5, 6]
+    for i in range(5):
+        seq_id = list(kv_manager.available)[0]
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        contexts.append(context)
+
     # Claim 5 ids
     outstanding = 11
-    seq_ids = claim_sequence_ids(kv_manager, 5)
-    assert len(seq_ids) == 5
+    assert len(contexts) == 5
     assert len(kv_manager.available) == outstanding
 
     # Claim another 3 ids
-    seq_ids_2 = claim_sequence_ids(kv_manager, 3)
-    assert len(seq_ids_2) == 3
+    contexts_2 = []
+    prompt_lens_2 = [7, 8, 9]
+    for i in range(3):
+        seq_id = list(kv_manager.available)[0]
+        context = create_text_context(seq_id, np.empty(prompt_lens_2[i]))
+        kv_manager.external_claim(context.request_id)
+        contexts_2.append(context)
+
     outstanding -= 3
     assert len(kv_manager.available) == outstanding
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
-        kv_manager.release(seq_id=25)
+        kv_manager.release("fake-request-id")
 
     # Release all ids
-    for i, id in enumerate(seq_ids + seq_ids_2):
-        kv_manager.release(seq_id=id)
+    for i, context in enumerate(contexts + contexts_2):
+        kv_manager.release(context.request_id)
         assert len(kv_manager.available) == outstanding + i + 1
 
 
@@ -142,10 +143,17 @@ async def test_fetch_continuous() -> None:
         )[0]
 
     # Claim 5 items
-    seq_ids = claim_sequence_ids(kv_manager, 5)
+    seq_ids = []
+    contexts = []
+    for _ in range(5):
+        seq_id = list(kv_manager.available)[0]
+        context = create_text_context(seq_id, np.empty(1))
+        kv_manager.external_claim(context.request_id)
+        seq_ids.append(seq_id)
+        contexts.append(context)
 
     # Fetch 3 of the 5 ids
-    kv_collection = kv_manager.fetch(
-        [create_text_context(s, np.empty(1)) for s in seq_ids[:3]]
-    )[0]
+    # Fetch 3 of the 5 contexts created above
+    kv_collection = kv_manager.fetch(contexts[:3])[0]
+
     assert kv_collection is not None

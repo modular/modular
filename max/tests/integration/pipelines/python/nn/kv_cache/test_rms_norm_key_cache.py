@@ -119,16 +119,14 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
-    batch = [
-        create_text_context(s, np.empty(seq_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     fetch_args = kv_manager.fetch(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]
@@ -200,16 +198,14 @@ def test_partial_rms_norm_key_cache(
     # Compile and init the model.
     model = session.load(graph)
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
-    batch = [
-        create_text_context(s, np.empty(seq_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     fetch_args = kv_manager.fetch(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]
@@ -294,16 +290,13 @@ def test_rms_norm_new_key_cache(
     # Compile and init the model.
     model = session.load(graph)
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
-
-    batch = [
-        create_text_context(s, np.empty(seq_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
     # this is to test that we only operate on the new tokens
@@ -455,16 +448,14 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     # Compile and init the model
     model = session.load(graph)
 
-    # Claim seq_ids in cache
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
-    batch = [
-        create_text_context(s, np.empty(seq_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     fetch_args = kv_manager.fetch(batch)[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.

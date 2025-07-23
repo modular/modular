@@ -471,8 +471,15 @@ def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
 
     # Claim seq_ids in cache
     seq_ids_to_claim = list(kv_manager.available)[:batch_size]
-    kv_manager.external_claim(seq_ids_to_claim)
     seq_ids = seq_ids_to_claim
+
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+
+    for context in batch:
+        kv_manager.external_claim(context.request_id)
 
     input_row_offsets = Tensor(
         DType.uint32,
@@ -483,11 +490,6 @@ def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )

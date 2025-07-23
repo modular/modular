@@ -45,9 +45,10 @@ async def test_kv_cache_multi_gpu() -> None:
             session=inference_session,
         )
         seq_id = 0
-        kv_manager.external_claim([seq_id])
+        context = create_text_context(seq_id, np.empty(1))
+        kv_manager.external_claim(context.request_id)
 
-        batch = [create_text_context(seq_id, np.empty(1))]
+        batch = [context]
         list_of_kv_tuples = kv_manager.fetch(batch)
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
@@ -165,8 +166,8 @@ async def test_swapping_to_host_multi_gpu(
 
     cache_hit_rates = []
     for batch_idx, batch in enumerate(batches):
-        seq_ids = [ctx.cache_seq_id for ctx in batch]
-        kv_manager.external_claim(seq_ids)
+        for context in batch:
+            kv_manager.external_claim(context.request_id)
 
         # Run 1 CE batch and 4 TG batches
         for iter in range(5):
@@ -190,8 +191,8 @@ async def test_swapping_to_host_multi_gpu(
 
             kv_manager.step(batch)
 
-        for seq_id in seq_ids:
-            kv_manager.release(seq_id)
+        for context in batch:
+            kv_manager.release(context.request_id)
 
     if enable_swapping_to_host:
         # cache hit rates are high!

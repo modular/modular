@@ -261,18 +261,17 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 
     # Phase 3: execution.
 
-    seq_ids = []
-    for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+    # Create contexts and claim seq_ids in cache
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
-    batch = [
-        create_text_context(
-            s, np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
+    batch = []
+    for i in range(batch_size):
+        seq_id = i
+        context = create_text_context(
+            seq_id, np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
         )
-        for s in seq_ids
-    ]
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.
@@ -455,11 +454,13 @@ def test_kv_cache_paged_mla_prefill() -> None:
         return g
 
     g = construct()
-    # Claim seq_ids in cache
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     input_row_offsets = Tensor(
         DType.uint32,
@@ -472,10 +473,6 @@ def test_kv_cache_paged_mla_prefill() -> None:
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(cuda)
 
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )

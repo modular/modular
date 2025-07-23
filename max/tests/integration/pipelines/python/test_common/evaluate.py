@@ -119,7 +119,7 @@ async def run_model_async(
                         ),
                     ),
                 )
-            model.kv_manager.release(context.cache_seq_id)
+            model.kv_manager.release(context.request_id)
 
     # Evaluate requests.
     batch_contexts: dict[str, Any] = {}
@@ -191,8 +191,8 @@ def next_token_with_logits(
 
     # Claim cache rows for our batch.
     for context in context_batch:
-        if not model.kv_manager.contains(context.cache_seq_id):
-            model.kv_manager.external_claim([context.cache_seq_id])
+        if not model.kv_manager.contains(context.request_id):
+            model.kv_manager.external_claim(context.request_id)
 
     # Fetch kv inputs.
     kv_cache_inputs = model.kv_manager.fetch(context_batch)

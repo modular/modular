@@ -81,11 +81,13 @@ def test_mla_prefill_plan() -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     # Compute input row offsets for ragged tensors.
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
@@ -95,10 +97,6 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     fetch_args = kv_manager.fetch(batch)[0]
 
     results = model.execute(input_row_offsets.to(device0), *fetch_args)
@@ -212,11 +210,13 @@ def test_mla_decompress_k_cache() -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     # Compute input row offsets for ragged tensors.
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
@@ -226,10 +226,6 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )

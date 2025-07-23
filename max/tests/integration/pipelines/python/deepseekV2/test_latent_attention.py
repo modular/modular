@@ -156,11 +156,13 @@ def generate_max_outputs(
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]
 
-    # Claim seq_ids in cache.
-    seq_ids = []
+    # Create contexts and claim seq_ids in cache.
+    batch = []
     for i in range(batch_size):
-        kv_manager.external_claim([i])
-        seq_ids.append(i)
+        seq_id = i
+        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        kv_manager.external_claim(context.request_id)
+        batch.append(context)
 
     # Compute input row offsets for ragged tensors.
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
@@ -169,11 +171,6 @@ def generate_max_outputs(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
 
     if not use_prefill:
         # for MLA, we actually run different graphs for max_seq_len = 1 and

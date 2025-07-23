@@ -40,8 +40,9 @@ async def _test_kv_cache_gpu() -> None:
         session=InferenceSession(devices=[device]),
     )
     seq_id = list(kv_manager.available)[0]
-    kv_manager.external_claim([seq_id])
-    batch = [create_text_context(seq_id, np.empty(1))]
+    context = create_text_context(seq_id, np.empty(1))
+    kv_manager.external_claim(context.request_id)
+    batch = [context]
     # suffixed [0] because we only have one device
     kv_tuple = kv_manager.fetch(batch)[0]
     assert isinstance(kv_tuple, KVCacheInputs)

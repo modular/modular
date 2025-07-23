@@ -605,9 +605,11 @@ def attention_lora_max_output(
     lora_input_row_offsets = np.arange(total_seq_len + 1, dtype=np.uint32)
 
     seq_ids = list(kv_manager.available)[:batch_size]
-    kv_manager.external_claim(seq_ids)
 
     batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
+
+    for context in batch:
+        kv_manager.external_claim(context.request_id)
 
     blocks, cache_lengths, lookup_table_tensor, max_lengths_buf = (
         kv_manager.fetch(batch)[0]  # type: ignore

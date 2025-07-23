@@ -142,7 +142,14 @@ def test_kv_cache_ragged_attention(
 
     # Claim seq_ids in cache
     seq_ids = list(kv_manager.available)[:batch_size]
-    kv_manager.external_claim(seq_ids)
+
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+
+    for context in batch:
+        kv_manager.external_claim(context.request_id)
 
     input_row_offsets = Tensor(
         DType.uint32,
@@ -153,11 +160,6 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )

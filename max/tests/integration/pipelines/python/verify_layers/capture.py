@@ -650,10 +650,10 @@ def capture_max_layer_outputs(
         # For models with KV cache, we need to claim cache rows
         if hasattr(max_pipeline_data.model, "kv_manager"):
             if not max_pipeline_data.model.kv_manager.contains(
-                context.cache_seq_id
+                context.request_id
             ):
                 max_pipeline_data.model.kv_manager.external_claim(
-                    [context.cache_seq_id]
+                    context.request_id
                 )
 
             # Fetch kv inputs
