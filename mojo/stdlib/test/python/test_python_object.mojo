@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python, PythonObject
+from python._cpython import Py_ssize_t, PyObjectPtr
 from python.bindings import PythonModuleBuilder
 from testing import (
     assert_equal,
@@ -418,6 +419,27 @@ fn test_dict() raises:
 
     var empty2: PythonObject = {}
     assert_equal(String(empty2), "{}")
+
+    # Test that Python.dict uses RC correctly.
+    var cpy = Python().cpython()
+
+    # large integer so it's RC'd
+    var n = PythonObject(1000)
+    var d = Python.dict(num=n)
+
+    var _pos: Py_ssize_t = 0
+    var key: PyObjectPtr = {}
+    var val: PyObjectPtr = {}
+    _ = cpy.PyDict_Next(
+        d._obj_ptr,
+        UnsafePointer(to=_pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=val),
+    )
+
+    assert_equal(cpy._Py_REFCNT(key), 1)
+    assert_equal(cpy._Py_REFCNT(val), 1)
+    _ = d
 
 
 fn test_set() raises:
