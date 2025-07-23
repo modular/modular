@@ -65,9 +65,15 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
   for (auto [traitName, fnName] : parents) {
     auto traitDeclParent =
         shared.lookupBuiltinTrait(traitName, &moduleDecl, moduleDecl.getLoc());
+    if (traitDeclParent->resolvedness < DeclResolvedness::body)
+      assert(succeeded(shared.declResolver->resolveBody(
+                 *traitDeclParent, traitDeclParent->getLoc())) &&
+             "builtins should not fail body resolution.");
+
     TraitDeclOp traitParent =
         dyn_cast_or_null<TraitDeclOp>(traitDeclParent->getIfOperation());
     FnOp fnOp = getFnOpNamed(traitParent, fnName);
+    assert(fnOp && "missing function in builtin trait");
     closureParents.push_back({traitParent, fnOp});
   }
 }
@@ -485,7 +491,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
 
   // Populate the wrapper methods with a call to the result of a vtable lookup.
-  auto populateTraitFn = [&](FnOp traitFnOp) {
+  auto populateTraitFn = [&](FnOp traitFnOp) -> FnOp {
     b.setInsertionPointToEnd(&declOp.getFields().front());
     FnTypeGeneratorType wrappedSignature =
         specializeSignature(traitFnOp, selfType, *shared.declResolver);
@@ -566,16 +572,65 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
     }
     b.create<LIT::ReturnOp>(results);
     b.create<LIT::EndFnOp>();
+    return op;
   };
+  DenseMap<StringRef, FnOp> nameToImpl;
   for (auto decls : traitDecl.getDeclsInScope()) {
     for (auto method : decls.second) {
       auto fnOp = dyn_cast_or_null<FnOp>(method->getIfOperation());
       if (!fnOp)
         continue;
-      populateTraitFn(fnOp);
+      FnOp implementation = populateTraitFn(fnOp);
+      nameToImpl.insert({fnOp.getSourceName().value(), implementation});
     }
   }
+  // Emit conformance tables
+  StringAttr moveParent;
+  auto addWitnessEntry = [&](TraitDeclOp traitParent, FnOp fnOp) {
+    StringRef name = *fnOp.getSourceName();
+    b.setInsertionPointToEnd(&declOp.getBodyRegion().front());
+    SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
+    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
+        cast<mlir::SymbolOpInterface>(traitParent.getOperation()));
+    StringAttr parentName =
+        b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+    if (name == "__moveinit__")
+      moveParent = parentName;
 
+    ConformanceOp witnessTable =
+        b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
+    Block &block = witnessTable.getBody().emplaceBlock();
+    b.setInsertionPointToStart(&block);
+    assert(nameToImpl.contains(name) &&
+           "expected all trait ops to be implemented");
+    FnOp impl = nameToImpl[name];
+    SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
+        cast<mlir::SymbolOpInterface>(impl.getOperation()));
+    // Build symbol by binding struct level parameters and explicit parameters.
+    FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
+    SmallVector<TypedAttr> params;
+    params.push_back(ParamDeclRefAttr::get(implType));
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
+      return UnboundAttr::get(reference.getType());
+    });
+    for (auto param : impl.getInputParams().drop_back(
+             impl.getFuncTypeGenerator().getNumImplicitOriginDecls()))
+      params.push_back(
+          cast<TypedAttr>(replacer.replace(ParamDeclRefAttr::get(param))));
+
+    SmallVector<ParamDeclAttr> paramDecls;
+    paramDecls.push_back(implType);
+    llvm::append_range(paramDecls, impl.getInputParams());
+    SymbolConstantAttr symbolConstant =
+        SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
+    b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
+  };
+  addWitnessEntry(trait, getFnOpNamed(trait, "__call__"));
+  for (auto [traitParent, fnOp] : closureParents)
+    addWitnessEntry(traitParent, fnOp);
+
+  assert(moveParent && "closures are expected to conform to move");
   auto initName = StringAttr::get(ctx, "__init__");
   SmallVector<Type> initArgumentTypes;
   SmallVector<PogMetadataAttr> argPogs;
@@ -619,10 +674,10 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   FnTypeGeneratorType moveSignature =
       specializeSignature(moveFn, paramType, *shared.declResolver);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
-  TypedAttr moveSymbol = ParamOperatorAttr::get(
-      POC::GetVTableEntry,
-      {ParamDeclRefAttr::get(implType.getName(), implType.getType()), moveName},
-      moveSignature);
+
+  TypedAttr moveSymbol = GetWitnessAttr::get(
+      ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
+      moveParent, moveName, moveSignature);
   SmallVector<Value> operands;
   SmallVector<TypedAttr> origins;
   llvm::SmallDenseSet<StringRef> explicitParameters;
