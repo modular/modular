@@ -24,6 +24,8 @@ fn PyInit_mojo_module() -> PythonObject:
 
     try:
         var b = PythonModuleBuilder("mojo_module")
+
+        # Test def_py_c_function
         b.def_py_c_function(
             mojo_count_args,
             "mojo_count_args",
@@ -34,6 +36,33 @@ fn PyInit_mojo_module() -> PythonObject:
             "mojo_count_args_with_kwargs",
             docstring="Count the provided arguments and keyword arguments",
         )
+
+        # Test def_py_c_method
+        _ = (
+            b.add_type[TestCounter]("TestCounter")
+            .def_init_defaultable[TestCounter]()
+            .def_py_c_method(
+                counter_count_args,
+                "count_args",
+                docstring="Count the provided arguments",
+            )
+            .def_py_c_method_with_kwargs(
+                counter_count_args_with_kwargs,
+                "count_args_with_kwargs",
+                docstring="Count the provided arguments and keyword arguments",
+            )
+            .def_py_c_method[static_method=True](
+                counter_static_count_args,
+                "static_count_args",
+                docstring="Count the provided arguments",
+            )
+            .def_py_c_method_with_kwargs[static_method=True](
+                counter_static_count_args_with_kwargs,
+                "static_count_args_with_kwargs",
+                docstring="Count the provided arguments and keyword arguments",
+            )
+        )
+
         return b.finalize()
     except e:
         return abort[PythonObject](
@@ -63,3 +92,40 @@ fn mojo_count_args_with_kwargs(
         cpy.PyObject_Length(kwargs) if kwargs else 0
     )
     return cpy.PyLong_FromSsize_t(count)
+
+
+struct TestCounter(Copyable, Defaultable, Movable, Representable):
+    var value: Int
+
+    fn __init__(out self):
+        self.value = 0
+
+    fn __repr__(self) -> String:
+        return String("TestCounter(value=") + String(self.value) + ")"
+
+
+@export
+fn counter_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+    """PyCFunction method to count arguments."""
+    return mojo_count_args(py_self, args)
+
+
+@export
+fn counter_count_args_with_kwargs(
+    py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
+) -> PyObjectPtr:
+    return mojo_count_args_with_kwargs(py_self, args, kwargs)
+
+
+@export
+fn counter_static_count_args(
+    py_self: PyObjectPtr, args: PyObjectPtr
+) -> PyObjectPtr:
+    return mojo_count_args(py_self, args)
+
+
+@export
+fn counter_static_count_args_with_kwargs(
+    py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
+) -> PyObjectPtr:
+    return mojo_count_args_with_kwargs(py_self, args, kwargs)

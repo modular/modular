@@ -759,7 +759,7 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Parameters:
             static_method: Whether the method is exposed as a staticmethod.
-                Default is False. Note that CPython will pass a nullpointer for
+                Default is False. Note that CPython will pass a null pointer for
                 the first argument for static methods (i.e. instead of passing
                 the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
 
@@ -772,6 +772,38 @@ struct PythonTypeBuilder(Copyable, Movable):
         Returns:
             The builder with the method binding declared.
         """
+        self.methods.append(
+            PyMethodDef.function[static_method](method, method_name, docstring)
+        )
+        return self
+
+    fn def_py_c_method_with_kwargs[
+        static_method: Bool = False
+    ](
+        mut self,
+        method: PyCFunctionWithKeywords,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref [self] Self:
+        """Declare a binding for a method with PyCFunctionWithKeywords signature for the
+        type.
+
+        Parameters:
+            static_method: Whether the method is exposed as a staticmethod.
+                Default is False. Note that CPython will pass a null pointer for
+                the first argument for static methods (i.e. instead of passing
+                the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
+
+        Args:
+            method: The method to declare a binding for.
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
         self.methods.append(
             PyMethodDef.function[static_method](method, method_name, docstring)
         )
@@ -792,7 +824,7 @@ struct PythonTypeBuilder(Copyable, Movable):
         Parameters:
             method: The method to declare a binding for.
             static_method: Whether the method is exposed as a staticmethod.
-                Default is False. Note that CPython will pass a nullpointer for
+                Default is False. Note that CPython will pass a null pointer for
                 the first argument for static methods (i.e. instead of passing
                 the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
 
