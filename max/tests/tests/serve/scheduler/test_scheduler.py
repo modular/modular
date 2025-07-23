@@ -7,7 +7,7 @@
 import queue
 import time
 from typing import Union
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -134,8 +134,6 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN
 
 
 def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
-    mock_data = MagicMock()
-    mock_data.active_length = 10
     # Create a push socket to send data.
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -151,7 +149,8 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     batch = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
-    assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
+    # Cache management is now handled by the paged_manager/pipeline
+    assert batch["req1"] is not None
 
 
 def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
@@ -175,7 +174,8 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN00
     batch = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
-    assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
+    # Cache management is now handled by the paged_manager/pipeline
+    assert batch["req1"] is not None
     assert batch["req1"].active_idx == 20
     assert batch["req1"].active_length == 20
 
@@ -194,7 +194,7 @@ def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:  # n
     scheduler._handle_terminated_responses(batch_executed, batch_responses)
 
     assert "req2" not in batch_executed
-    assert 1 in scheduler.available_cache_indices
+    # Cache cleanup is now handled by pipeline.release()
     scheduler.pipeline.release.assert_called_once()
 
 
@@ -222,7 +222,6 @@ def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:  # noqa:
 def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     mock_request = create_mock_request(cache_seq_id=0)
     scheduler.active_batch = {"req1": mock_request}
-    scheduler.available_cache_indices = set()
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
@@ -243,7 +242,7 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     scheduler._handle_cancelled_requests()
 
     assert len(scheduler.active_batch) == 0
-    assert 0 in scheduler.available_cache_indices
+    # Cache cleanup is now handled by pipeline.release()
     scheduler.pipeline.release.assert_called_once_with(mock_request)
 
 
