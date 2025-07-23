@@ -160,27 +160,13 @@ struct BitSet[size: UInt](
         return total
 
     @always_inline
-    fn is_empty(self) -> Bool:
-        """Checks if the bitset contains any set bits.
-
-        Equivalent to `len(self) == 0`. Note that this checks the logical
-        size, not the allocated capacity.
-
-        Returns:
-            True if no bits are set (logical size is 0), False otherwise.
-        """
-        return len(self) == 0
-
-    @always_inline
     fn __bool__(self) -> Bool:
         """Checks if the bitset is non-empty (contains at least one set bit).
-
-        Equivalent to `len(self) != 0` or `not self.is_empty()`.
 
         Returns:
             True if at least one bit is set, False otherwise.
         """
-        return not self.is_empty()
+        return len(self) != 0
 
     # --------------------------------------------------------------------- #
     # Bit manipulation
