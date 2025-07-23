@@ -537,13 +537,13 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
       explicitParameters.insert(explicitParam.getName().getValue());
     getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
                          operands, origins);
-
-    TypedAttr symbol = ParamOperatorAttr::get(
-        POC::GetVTableEntry,
-        {ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-         StringAttr::get(op.getSourceNameAttr().getValue(),
-                         StringType::get(ctx))},
-        wrappedSignature);
+    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
+        cast<mlir::SymbolOpInterface>(trait.getOperation()));
+    StringAttr parentName =
+        StringAttr::get(ctx, getFlattenedSymbolName(parentSymbol));
+    TypedAttr symbol = GetWitnessAttr::get(
+        ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
+        parentName, op.getSourceNameAttr(), wrappedSignature);
     SmallVector<TypedAttr> paramArgs;
     llvm::append_range(
         paramArgs,
