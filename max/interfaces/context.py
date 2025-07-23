@@ -8,17 +8,10 @@ from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import TypeAlias
 
 from .log_probabilities import LogProbabilities
+from .request import RequestID
 from .status import GenerationStatus
-
-RequestID: TypeAlias = str
-"""A unique identifier for a request within the MAX API.
-
-This type alias is used throughout the MAX stack to represent request IDs,
-ensuring type clarity and consistency across interfaces and implementations.
-"""
 
 
 @dataclass(frozen=True)

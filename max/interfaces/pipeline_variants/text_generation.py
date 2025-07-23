@@ -20,8 +20,9 @@ from typing import (
 )
 
 import msgspec
-from max.interfaces.context import RequestID, SamplingParams
+from max.interfaces.context import SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
+from max.interfaces.request import Request
 from max.interfaces.status import GenerationStatus
 
 
@@ -106,12 +107,7 @@ class TextGenerationRequestMessage(TypedDict):
 
 
 @dataclass(frozen=True)
-class TextGenerationRequest:
-    id: RequestID
-    """
-    A unique identifier for the request. This ID can be used to trace and log
-    the request throughout its lifecycle, facilitating debugging and tracking.
-    """
+class TextGenerationRequest(Request):
     index: int
     """
     The sequence order of this request within a batch. This is useful for
@@ -194,12 +190,6 @@ class TextGenerationRequest:
 
     sampling_params: SamplingParams = SamplingParams()
     """Token sampling configuration parameters for the request."""
-
-    def __str__(self) -> str:
-        txt = f"Id: {self.id}"
-        if self.sampling_params.max_new_tokens is not None:
-            txt += f", MaxNewTokens: {self.sampling_params.max_new_tokens}"
-        return txt
 
 
 class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
