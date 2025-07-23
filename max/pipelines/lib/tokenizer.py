@@ -574,7 +574,10 @@ class TextAndVisionTokenizer(
         )
         # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
-            text=prompt, images=images, add_special_tokens=add_special_tokens
+            text=prompt,
+            images=images,
+            add_special_tokens=add_special_tokens,
+            return_tensors="np",
         )
 
         if "input_ids" not in processed_inputs:
