@@ -22,7 +22,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Union
 
 import numpy as np
-import torch
 from max.interfaces import TextGenerationRequest
 from max.pipelines.core import (
     TextAndVisionContext,
@@ -124,7 +123,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             images = None
 
         processed_inputs = self.processor(
-            text=prompt, images=images, add_special_tokens=add_special_tokens
+            text=prompt,
+            images=images,
+            add_special_tokens=add_special_tokens,
+            return_tensors="np",
         )
 
         if "input_ids" not in processed_inputs:
@@ -156,14 +158,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                 raise ValueError(msg)
             pixel_values = processed_inputs["pixel_values"]
             if isinstance(pixel_values, list):
-                pixel_values = tuple(
-                    tensor.numpy() if torch.is_tensor(tensor) else tensor
-                    for tensor in pixel_values
-                )
-            elif torch.is_tensor(pixel_values):
-                pixel_values = (pixel_values.numpy(),)
+                pixel_values = tuple(pixel_values)
             elif isinstance(pixel_values, np.ndarray):
                 pixel_values = (pixel_values,)
+            else:
+                raise ValueError(
+                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
+                )
         else:
             pixel_values = tuple()
 
