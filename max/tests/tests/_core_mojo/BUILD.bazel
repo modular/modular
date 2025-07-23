@@ -11,5 +11,6 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/_core_mojo",
         requirement("numpy"),
+        requirement("pytest-benchmark"),
     ],
 )
