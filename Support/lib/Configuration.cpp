@@ -286,34 +286,31 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
     }
   }
 
-  // Second we check for XDG_CONFIG_HOME and XDG_DATA_HOME. If they exist, we
-  // use them. We deviate from the spec here and use $HOME/.config/modular and
-  // `$HOME/.local/share/modular` as the spec says when the XDG_*_HOME variables
-  // are not set. We will instead still default to `$HOME/.modular`.
-  //
-  // BOTH of these must be set for us to use them otherwise things may break.
-  ///
-  // XDG_CACHE_HOME is optional and if it is not set we will use
-  // $HOME/.cache/modular if we are otherwise using XDG_CONFIG_HOME and
-  // XDG_DATA_HOME too.
+  // Follow the XDG spec https://specifications.freedesktop.org/basedir-spec
   auto xdgConfigHome = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
   auto xdgConfigData = llvm::sys::Process::GetEnv("XDG_DATA_HOME");
   auto xdgConfigCache = llvm::sys::Process::GetEnv("XDG_CACHE_HOME");
-  if (xdgConfigHome && xdgConfigData) {
-    if (!xdgConfigCache && homeDir)
-      xdgConfigCache = std::filesystem::path(*homeDir) / ".cache" / "modular";
-    switch (type) {
-    case FolderType::Config:
+  if (homeDir) {
+    if (!xdgConfigHome)
+      xdgConfigHome = std::filesystem::path(*homeDir) / ".config";
+    if (!xdgConfigData)
+      xdgConfigData = std::filesystem::path(*homeDir) / ".local" / "share";
+    if (!xdgConfigCache)
+      xdgConfigCache = std::filesystem::path(*homeDir) / ".cache";
+  }
+  switch (type) {
+  case FolderType::Config:
+    if (xdgConfigHome)
       paths.push_back(std::filesystem::path(*xdgConfigHome) / "modular");
-      break;
-    case FolderType::Data:
+    break;
+  case FolderType::Data:
+    if (xdgConfigData)
       paths.push_back(std::filesystem::path(*xdgConfigData) / "modular");
-      break;
-    case FolderType::Cache:
-      if (!xdgConfigCache)
-        paths.push_back(std::filesystem::path(*xdgConfigCache) / "modular");
-      break;
-    }
+    break;
+  case FolderType::Cache:
+    if (xdgConfigCache)
+      paths.push_back(std::filesystem::path(*xdgConfigCache) / "modular");
+    break;
   }
 
   // Lastly if we haven't added $HOME/.modular in first step, add it now.
