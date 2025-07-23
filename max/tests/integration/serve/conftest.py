@@ -5,9 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """The fixtures for all tests in this directory."""
 
+from __future__ import annotations
+
 import time
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from max.interfaces import PipelineTask, TextGenerationOutput
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
@@ -42,7 +47,7 @@ def echo_factory():
 
 
 @pytest.fixture()
-def echo_app():
+def echo_app() -> FastAPI:
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
@@ -58,18 +63,20 @@ def echo_app():
 
 
 @pytest.fixture(scope="session")
-def pipeline_config(request):  # noqa: ANN001
+def pipeline_config(request: pytest.FixtureRequest):
     return request.param
 
 
 @pytest.fixture(scope="session")
-def settings_config(request):  # noqa: ANN001
+def settings_config(request: pytest.FixtureRequest):
     """Fixture to control settings configuration"""
     return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
 
 
 @pytest.fixture(scope="function")
-def app(pipeline_config, settings_config):  # noqa: ANN001
+def app(
+    pipeline_config: PipelineConfig, settings_config: Mapping[str, Any]
+) -> FastAPI:
     """The FastAPI app used to serve the model."""
 
     pipeline_task = PipelineTask.TEXT_GENERATION
@@ -88,6 +95,7 @@ def app(pipeline_config, settings_config):  # noqa: ANN001
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
+        pipeline_task=pipeline_task,
     )
 
     settings = Settings(**settings_config)
