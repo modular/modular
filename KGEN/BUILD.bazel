@@ -1262,9 +1262,6 @@ modular_shared_library(
     srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     includes = [],
-    local_defines = [
-        "MODULAR_BUILDING_LIBRARY",
-    ],
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",

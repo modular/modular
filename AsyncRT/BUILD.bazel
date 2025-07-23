@@ -81,9 +81,6 @@ modular_shared_library(
     hdrs = [
         "include/AsyncRT/DeviceContext/BinaryID.h",
     ],
-    local_defines = [
-        "MODULAR_BUILDING_LIBRARY",
-    ],
     output_name = "AsyncRTMojoBindings",
     deps = [
         ":DeviceContext.headers",
