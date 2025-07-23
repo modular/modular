@@ -83,7 +83,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
   if (!success)
     return {};
 
-  ValueObjectSP dataVal = valobj->GetChildMemberWithName("data");
+  ValueObjectSP dataVal = valobj->GetChildMemberWithName("_data");
   if (!dataVal || !dataVal->GetError().Success())
     return {};
 
