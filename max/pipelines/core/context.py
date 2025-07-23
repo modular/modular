@@ -18,7 +18,6 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from collections.abc import Sequence
 from typing import Any, Optional
 
 import msgspec
@@ -37,7 +36,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     Configuration:
         request_id: A unique identifier for this sequence.
-        prompt: The input prompt as either a string or sequence of token IDs
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
         eos_token_ids: Set of token IDs that indicate end of sequence
@@ -64,7 +62,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """
 
     request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
-    prompt: str | Sequence[int]
     max_length: int
     tokens: np.ndarray
     eos_token_ids: set[int] = msgspec.field(default_factory=set)

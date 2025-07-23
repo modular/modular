@@ -116,7 +116,6 @@ class EchoPipelineTokenizer(
         # Create TextContext manually
         context = TextContext(
             request_id=request.request_id,
-            prompt=prompt,
             max_length=max_length,
             tokens=encoded_prompt,
             eos_token_ids={self.eos},  # Set containing the EOS token

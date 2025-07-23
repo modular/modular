@@ -187,7 +187,6 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         context = TextAndVisionContext(
             request_id=request.request_id,
-            prompt=prompt,
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
             extra_model_args=extra_model_args,
