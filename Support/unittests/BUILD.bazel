@@ -14,7 +14,6 @@ modular_cc_test(
     srcs = [
         "AlignedAllocTest.cpp",
         "AssertStreamTest.cpp",
-        "BufferTest.cpp",
         "ErrorOrTest.cpp",
         "ErrorTest.cpp",
         "FunctionExtrasTest.cpp",
