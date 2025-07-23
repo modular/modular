@@ -637,7 +637,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
     # Create a mock text context
     mock_request_1 = TextContext(
-        prompt=[1, 2, 3, 4, 5],  # Sample token sequence
         max_length=100,
         tokens=np.array([1, 2, 3, 4, 5], dtype=np.int32),
     )
@@ -656,7 +655,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     time.sleep(5)
 
     mock_request_2 = TextContext(
-        prompt=[1, 2, 3],
         max_length=100,
         tokens=np.array([1, 2, 3], dtype=np.int32),
     )

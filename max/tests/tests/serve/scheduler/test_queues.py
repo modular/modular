@@ -42,7 +42,7 @@ def test_serialization_and_deserialization_through_queue_with_pickle(
 
     context = (
         1,
-        TextContext(prompt="hello!", max_length=15, tokens=np.ones(5)),
+        TextContext(max_length=15, tokens=np.ones(5)),
     )
 
     push_socket.put(context)
@@ -67,7 +67,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack(
 
     context = (
         str(uuid.uuid4()),
-        TextContext(prompt="hello!", max_length=15, tokens=np.ones(5)),
+        TextContext(max_length=15, tokens=np.ones(5)),
     )
 
     push_socket.put(context)
@@ -85,7 +85,6 @@ def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa
 
     context = TextAndVisionContext(
         request_id="test-request",
-        prompt="vision test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(img,),  # Only one image supported
@@ -128,7 +127,6 @@ def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa
     # Create a new context for second test
     context2 = TextAndVisionContext(
         request_id="test-request-2",
-        prompt="vision test prompt 2",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(img,),

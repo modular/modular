@@ -102,7 +102,6 @@ def create_mock_request(
     tokens = np.ones(seq_len, dtype=np.int32)
     assert len(tokens) == seq_len
     context = TextContext(
-        prompt=tokens.tolist(),
         max_length=100,
         tokens=tokens,
     )

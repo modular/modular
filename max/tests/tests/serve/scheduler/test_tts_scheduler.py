@@ -62,7 +62,6 @@ def create_text_context(
         tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TTSContext(
-        prompt=tokens.tolist(),
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,
@@ -401,7 +400,6 @@ def enqueue_request_with_prompt(
     max_seq_len: int,
 ) -> None:
     context = TextContext(
-        prompt=tokens.tolist(),
         max_length=max_seq_len,
         tokens=tokens,
     )
