@@ -54,7 +54,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     tokens1 = np.array([1, 450, 6593, 310, 2834, 338], dtype=np.int64)
 
     context1 = TextContext(
-        prompt=tokens1.tolist(),
         tokens=tokens1,
         max_length=1024,
     )
@@ -79,7 +78,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
         dtype=np.int64,
     )
     context2 = TextContext(
-        prompt=tokens2.tolist(),
         tokens=tokens2,
         max_length=1024,
     )

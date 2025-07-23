@@ -21,7 +21,6 @@ from max.pipelines.core import (
 
 def test_context__get_min_token_logit_mask() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
@@ -49,7 +48,6 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
     None
 ):
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -77,7 +75,6 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
     None
 ):
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -102,7 +99,6 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
 
 def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -127,7 +123,6 @@ def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
 
 def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4, 5},
@@ -152,7 +147,6 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
 
 def test_context__eos() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
@@ -168,7 +162,6 @@ def test_context__eos() -> None:
 
 def test_context__max_length() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=6,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -181,7 +174,6 @@ def test_context__max_length() -> None:
 
 def test_context__current_length() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -206,7 +198,6 @@ def test_context__current_length() -> None:
 
 def test_context__seq_len() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -222,7 +213,6 @@ def test_context__seq_len() -> None:
 
 def test_context__bump_token_indices() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -257,7 +247,6 @@ def test_context__update_beyond_chunk_size() -> None:
     # Before making changes to resize behaviour, ensure you
     # test with the server, not just the `generate` entrypoint.
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -270,7 +259,6 @@ def test_context__update_beyond_chunk_size() -> None:
 
 def test_context__reset() -> None:
     context = TextContext(
-        prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -299,7 +287,6 @@ def test_context_sampling_params_integration() -> None:
     )
 
     context = TextContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         sampling_params=custom_params,
@@ -322,7 +309,6 @@ def test_context_sampling_params_stop() -> None:
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
-        prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[1, 2]],
@@ -337,7 +323,6 @@ def test_context_sampling_params_stop() -> None:
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
-        prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[2], [3, 1]],
@@ -356,7 +341,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
-        prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
@@ -370,7 +354,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
-        prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
@@ -387,7 +370,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
 def test_context_serializable() -> None:
     # Test that we can encode a sample TextContext with Pickle
     original_context = TextContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
     )
@@ -412,7 +394,6 @@ def test_context_serializable() -> None:
 def test_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextContext) with Pickle
     original_context = TextContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
     )
@@ -437,7 +418,6 @@ def test_context_tuple_serializable() -> None:
 def test_text_and_vision_context_serializable() -> None:
     # Test that we can encode a sample TextAndVisionContext with Pickle
     original_context = TextAndVisionContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(np.array([10, 11, 12, 13, 14]),),
@@ -463,7 +443,6 @@ def test_text_and_vision_context_serializable() -> None:
 def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     # Test that we can encode a sample TextAndVisionContext with Pickle
     original_context = TextAndVisionContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=tuple(),
@@ -489,7 +468,6 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
 def test_text_and_vision_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextAndVisionContext) with Pickle
     original_context = TextAndVisionContext(
-        prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(np.array([10, 11, 12, 13, 14]),),
@@ -517,7 +495,6 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
     # Create a TTSContext with some audio prompt tokens
     audio_prompt_tokens = np.array([100, 101, 102, 103], dtype=np.int32)
     original_context = TTSContext(
-        prompt="TTS test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         audio_prompt_tokens=audio_prompt_tokens,
@@ -575,7 +552,6 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
 
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
-        prompt="my sample prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(np.array([10, 11, 12, 13, 14]),),

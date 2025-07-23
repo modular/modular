@@ -59,7 +59,7 @@ def test_text_and_vision_tokenizer() -> None:
     img_url = "https://picsum.photos/id/237/200/300"
     img = convert_image_url_to_base64(img_url)
     imgs = [[], [img], [img, img]]
-    for repo_id, check_str in VALID_REPOS.items():
+    for repo_id in VALID_REPOS:
         model_path = repo_id
         tokenizer = TextAndVisionTokenizer(model_path, trust_remote_code=True)
         for imgs_list in imgs:
@@ -85,9 +85,7 @@ def test_text_and_vision_tokenizer() -> None:
 
             if not imgs_list:
                 assert context.pixel_values is None
-                assert check_str not in context.prompt, context.prompt
             else:
-                assert check_str in context.prompt, context.prompt
                 assert context.pixel_values is not None
                 assert len(context.pixel_values) == len(imgs_list)
 
@@ -137,9 +135,6 @@ def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
     )
 
     context: TextContext = asyncio.run(tokenizer.new_context(request))
-
-    # This is just asserting that the prompt includes function context
-    assert '"name": "get_current_weather"' in context.prompt
 
 
 def test_tokenizer__truncates_to_max_length(
@@ -209,7 +204,6 @@ async def test_tokenizer__encode_and_decode(
     encoded = await tokenizer.encode(test_string, add_special_tokens=False)
     context = TextContext(
         max_length=10,
-        prompt=test_string,
         tokens=np.array(encoded),
     )
     context.assign_to_cache(0)
@@ -277,7 +271,6 @@ def test_text_tokenizer_with_constrained_decoding(
     context = asyncio.run(tokenizer.new_context(request))
 
     assert context.json_schema
-    assert isinstance(context.prompt, str)
 
 
 def test_tokenizer_encode_stop_criteria(
