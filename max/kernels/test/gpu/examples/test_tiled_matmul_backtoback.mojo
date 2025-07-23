@@ -18,7 +18,7 @@ from sys import sizeof
 from sys.info import alignof, simdwidthof
 
 from buffer.dimlist import Dim
-from builtin.io import _printf
+from io.io import _printf
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,

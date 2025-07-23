@@ -32,7 +32,7 @@ from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 from sys.info import CompilationTarget
 
-from builtin.file_descriptor import FileDescriptor
+from .file_descriptor import FileDescriptor
 from memory import bitcast
 from utils.write import _WriteBufferHeap, _WriteBufferStack
 
@@ -77,7 +77,7 @@ struct _fdopen[mode: StaticString = "a"]:
         Examples:
 
         ```mojo
-        from builtin.io import _fdopen
+        from io.io import _fdopen
         from sys import stdin
 
         var line = _fdopen["r"](stdin).readline()
@@ -109,7 +109,7 @@ struct _fdopen[mode: StaticString = "a"]:
         Examples:
 
         ```mojo
-        from builtin.io import _fdopen
+        from io.io import _fdopen
         from sys import stdin
 
         var line = _fdopen["r"](stdin).read_until_delimiter(",")

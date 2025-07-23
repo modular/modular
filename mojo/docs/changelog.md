@@ -176,6 +176,10 @@ mutation.
   this operation that takes an arbitrary-length number of additional elements
   (possibly 0) to add to the list.
 
+- A new `io` module is available in the library. Some core input/output types
+  previously in the `builtin` module have been moved and imports may need to be
+  adjusted.
+
 ### Tooling changes
 
 - Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match

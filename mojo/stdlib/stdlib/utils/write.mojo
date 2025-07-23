@@ -13,7 +13,7 @@
 """Establishes the contract between `Writer` and `Writable` types."""
 
 from bit import byte_swap
-from builtin.io import _printf
+from io.io import _printf
 from sys.info import is_gpu
 from memory import memcpy, bitcast
 from os import abort

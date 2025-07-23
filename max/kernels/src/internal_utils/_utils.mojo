@@ -27,7 +27,7 @@ from buffer.dimlist import _make_tuple
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from stdlib.builtin.io import _snprintf
+from io.io import _snprintf
 from tensor_internal import DynamicTensor
 from testing import assert_equal, assert_true
 
