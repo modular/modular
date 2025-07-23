@@ -621,13 +621,26 @@ fn grouped_matmul_kernel[
             c.ptr + a_start_row * N, c_gmem_runtime_layout
         )
 
+        @always_inline
+        @parameter
+        fn elementwise_epilogue_fn_wrapper[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            @parameter
+            if elementwise_lambda_fn:
+                alias elementwise_epilogue = elementwise_lambda_fn.value()
+                var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
+                elementwise_epilogue(batch_idx, val)
+
         warp_specialized_gemm_output[
             c_tile_shape = Index(BM, BN),
             c_swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
             use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
         ](
             c_tma_op,
             c_by_expert,
