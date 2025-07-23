@@ -641,17 +641,6 @@ class PagedKVCacheManager(KVCacheManager):
             for i in range(len(self.devices))
         ]
 
-    def claim(self, n: int) -> list[int]:
-        """Claims `n` blocks of memory in the cache for incoming requests.
-
-        This returns a list of sequence ids, which identify a sequence's
-        location within the cache. This sequence id can then be passed
-        in the fetch function to return the ContinuousBatchingKVCacheCollection
-        for those sequences.
-        """
-        seq_ids = super().claim(n)
-        return seq_ids
-
     def external_claim(self, seq_ids: list[int]) -> None:
         """Variant of the above where sequence ids are reserved externally."""
         super().external_claim(seq_ids)

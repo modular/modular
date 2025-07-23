@@ -405,11 +405,11 @@ class MultimodalKVCacheManager(KVCacheManager):
         return text_kv_contains
 
     def num_kv_inputs(self) -> int:
-        """Returns the sum of the KV input lengths for both modalities."""
-        return (
-            self.text_kv_manager.num_kv_inputs()
-            + self.vision_kv_manager.num_kv_inputs()
-        )
+        """Returns the sum of the KV input lengths for both modalities.
+
+        Each KV manager (text and vision) returns 4 inputs, so the total is 8.
+        """
+        return 8
 
     def increment_cache_lengths(
         self,

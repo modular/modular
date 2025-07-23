@@ -238,24 +238,6 @@ class KVCacheManager(ABC, Generic[T]):
         """Returns the input symbols for the kv cache manager."""
         ...
 
-    def claim(self, n: int) -> list[int]:
-        """Claims ``n`` blocks of memory in the cache for incoming requests.
-
-        This returns a list of sequence ids, which identify a sequence's
-        location within the cache. This sequence id can then be passed
-        in the fetch function to return the :obj:`ContinuousBatchingKVCacheCollection`
-        for those sequences.
-        """
-        # TODO we should remove this interface and just use external_claim.
-        seq_ids = []
-
-        for _ in range(n):
-            seq_id = self.available.pop()
-            self.active.add(seq_id)
-            seq_ids.append(seq_id)
-
-        return seq_ids
-
     def external_claim(self, seq_ids: list[int]) -> None:
         """Variant of the above where sequence ids are reserved externally."""
         for seq_id in seq_ids:
@@ -287,20 +269,7 @@ class KVCacheManager(ABC, Generic[T]):
         self.available.add(seq_id)
 
     def contains(self, seq_id: int) -> bool:
-        return seq_id not in self.slots_remaining
-
-    @property
-    def slots_remaining(self) -> set[int]:
-        """The outstanding cache slots available."""
-        return self.available
-
-    def num_kv_inputs(self) -> int:
-        """Returns the default number of KV cache inputs for KV managers.
-
-        Subclasses with a different number of KV cache inputs should override
-        this method and :obj:`increment_cache_lengths`.
-        """
-        return 4
+        return seq_id in self.active
 
     def increment_cache_lengths(
         self,
