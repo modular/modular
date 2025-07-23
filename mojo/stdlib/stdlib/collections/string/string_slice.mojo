@@ -84,7 +84,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable, Sized):
+](Copyable, Iterator, Movable, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -98,6 +98,8 @@ struct CodepointSliceIter[
     element from the front of the iterator, and calls to `next_back()` will
     always take an element from the end.
     """
+
+    alias Element = StringSlice[origin]
 
     var _slice: StringSlice[origin]
 
@@ -115,6 +117,19 @@ struct CodepointSliceIter[
     @doc_private
     fn __iter__(self) -> Self:
         return self
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Returns True if there are still elements in this iterator.
+
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        # NOTE:
+        #   This intentionally check if the length _in bytes_ is greater
+        #   than zero, because checking the codepoint length requires a linear
+        #   scan of the string, which is needlessly expensive for this purpose.
+        return len(self._slice) > 0
 
     fn __next__(mut self) -> StringSlice[origin]:
         """Get the next codepoint in the underlying string slice.
@@ -136,19 +151,6 @@ struct CodepointSliceIter[
             return self.next().value()
         else:
             return self.next_back().value()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        """Returns True if there are still elements in this iterator.
-
-        Returns:
-            A boolean indicating if there are still elements in this iterator.
-        """
-        # NOTE:
-        #   This intentionally check if the length _in bytes_ is greater
-        #   than zero, because checking the codepoint length requires a linear
-        #   scan of the string, which is needlessly expensive for this purpose.
-        return len(self._slice) > 0
 
     @always_inline
     fn __len__(self) -> Int:
@@ -316,6 +318,8 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias Element = Codepoint
+
     var _slice: StringSlice[origin]
     """String slice containing the bytes that have not been read yet.
 
@@ -339,6 +343,15 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     fn __iter__(self) -> Self:
         return self
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Returns True if there are still elements in this iterator.
+
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        return Bool(self.peek_next())
+
     fn __next__(mut self) -> Codepoint:
         """Get the next codepoint in the underlying string slice.
 
@@ -352,15 +365,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         """
 
         return self.next().value()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        """Returns True if there are still elements in this iterator.
-
-        Returns:
-            A boolean indicating if there are still elements in this iterator.
-        """
-        return Bool(self.peek_next())
 
     @always_inline
     fn __len__(self) -> Int:

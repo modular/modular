@@ -54,6 +54,14 @@ struct _ListIter[
     var index: Int
     var src: Pointer[Self.list_type, list_origin]
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        @parameter
+        if forward:
+            return self.index < len(self.src[])
+        else:
+            return self.index > 0
+
     fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
@@ -68,19 +76,8 @@ struct _ListIter[
         return self.__next_ref__()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
     fn __iter__(self) -> Self:
         return self
-
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src[]) - self.index
-        else:
-            return self.index
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](

@@ -985,7 +985,7 @@ struct _DequeIter[
     ElementType: Copyable & Movable,
     deque_lifetime: Origin[deque_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
@@ -996,12 +996,21 @@ struct _DequeIter[
     """
 
     alias deque_type = Deque[ElementType]
+    alias Element = ElementType
 
     var index: Int
     var src: Pointer[Self.deque_type, deque_lifetime]
 
     fn __iter__(self) -> Self:
         return self
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        @parameter
+        if forward:
+            return self.index < len(self.src[])
+        else:
+            return self.index > 0
 
     fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
@@ -1015,14 +1024,3 @@ struct _DequeIter[
 
     fn __next__(mut self) -> ElementType:
         return self.__next_ref__()
-
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src[]) - self.index
-        else:
-            return self.index
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
