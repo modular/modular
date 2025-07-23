@@ -87,6 +87,7 @@ public:
   SharedState &shared;
 
   ParameterInferenceState(ASTDecl &declScope, const CallOperands &givenBindings,
+                          size_t totalExpectedBindings,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParameterEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
@@ -147,6 +148,9 @@ private:
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.
   const CallOperands &givenBindings;
+
+  /// The total number of bindings expected.
+  size_t totalExpectedBindings;
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.

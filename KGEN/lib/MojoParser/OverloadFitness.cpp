@@ -914,6 +914,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                     const ParserParameterEvaluator &evaluator) {
     ParameterInferenceState inference(callable.paramBindings.declScope,
                                       callable.paramBindings.getParameters(),
+                                      signature.getInputParamTypes().size(),
                                       bindingsSoFar, evaluator, inferenceDiags,
                                       allowImplicitConversions);
 

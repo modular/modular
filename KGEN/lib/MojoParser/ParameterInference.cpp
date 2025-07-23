@@ -117,11 +117,12 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
 
 ParameterInferenceState::ParameterInferenceState(
     ASTDecl &declScope, const CallOperands &givenBindings,
-    ArrayRef<TypedAttr> bindingsSoFar,
+    size_t totalExpectedBindings, ArrayRef<TypedAttr> bindingsSoFar,
     const ParserParameterEvaluator &evaluator,
     ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
-      givenBindings(givenBindings), evaluator(evaluator),
+      givenBindings(givenBindings),
+      totalExpectedBindings(totalExpectedBindings), evaluator(evaluator),
       inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()), diags(diags),
       allowImplicitConversions(allowImplicitConversions) {}
 
@@ -858,45 +859,21 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
 /// Given some attr/types that have some of their parameter bindings known,
 /// substitute the known values for those parameters into the attr/types. Any
 /// unknown parameters are left untouched so we can infer them.
-static void
-getPartiallySpecializedAttrTypes(ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParserParameterEvaluator &evaluator,
-                                 SmallVectorImpl<Attribute> &pendingAttrs,
-                                 SmallVectorImpl<Type> &pendingTypes) {
+static void getPartiallySpecializedAttrTypes(
+    ArrayRef<TypedAttr> bindingsSoFar, ParserParameterEvaluator &evaluator,
+    size_t totalNumBindings, SmallVectorImpl<Attribute> &pendingAttrs,
+    SmallVectorImpl<Type> &pendingTypes) {
   if (bindingsSoFar.empty())
     return;
 
-  struct Substitutor : IndexParameterReplacer<Substitutor> {
-    Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParserParameterEvaluator &evaluator)
-        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
-
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
-      if (!ref || ref.getDepth() != depth ||
-          ref.getIndex() >= bindingsSoFar.size())
-        return {};
-      TypedAttr result = bindingsSoFar[ref.getIndex()];
-
-      [[maybe_unused]] auto getExpectedType = [&]() -> ASTType {
-        IndexDepthAdjuster depthAdjuster(depth);
-        Type adjustedType = depthAdjuster.replace(result.getType());
-        return evaluator.getReboundType(adjustedType);
-      };
-      assert(result.getType() == getExpectedType() &&
-             "Parameter type mismatch");
-      return result;
-    }
-
-    ArrayRef<TypedAttr> bindingsSoFar;
-    ParserParameterEvaluator &evaluator;
-  } substitutor(bindingsSoFar, evaluator);
+  ParameterEvaluator bindingsEvaluator(bindingsSoFar);
+  bindingsEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
+  bindingsEvaluator.setExpectedNumIndexBindings(totalNumBindings);
 
   for (Attribute &attr : pendingAttrs)
-    attr = substitutor.replace(attr);
+    attr = bindingsEvaluator.getReboundAttribute(attr);
   for (Type &type : pendingTypes)
-    type = substitutor.replace(type);
+    type = bindingsEvaluator.getReboundType(type);
 }
 
 /// Infer parameters from an operand being passed into this function. This is
@@ -1028,7 +1005,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     }
     SmallVector<Attribute> pendingAttrs;
     SmallVector<Type> pendingTypes = {Type(expectedType)};
-    getPartiallySpecializedAttrTypes(currentParams, evaluator, pendingAttrs,
+    getPartiallySpecializedAttrTypes(currentParams, evaluator,
+                                     totalExpectedBindings, pendingAttrs,
                                      pendingTypes);
     Type type = pendingTypes.front();
     return type;
@@ -1207,8 +1185,8 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
   SmallVector<Attribute> pendingAttrs = {paramListAttr};
   SmallVector<Type> types(paramTypes.begin(), paramTypes.end());
-  getPartiallySpecializedAttrTypes(inferredParams, evaluator, pendingAttrs,
-                                   types);
+  getPartiallySpecializedAttrTypes(inferredParams, evaluator,
+                                   totalExpectedBindings, pendingAttrs, types);
   paramListAttr = cast<PogListAttr>(pendingAttrs[0]);
 
   size_t posIdx = 0, numParams = givenBindings.size();
@@ -1312,7 +1290,8 @@ LogicalResult ParameterInferenceState::infer(
     SmallVector<Attribute> pendingAttrs = {metadata};
     SmallVector<Type> pendingTypes(signature.getInputParamTypes());
     pendingTypes.push_back(bodyType);
-    getPartiallySpecializedAttrTypes(inferredParams, evaluator, pendingAttrs,
+    getPartiallySpecializedAttrTypes(inferredParams, evaluator,
+                                     totalExpectedBindings, pendingAttrs,
                                      pendingTypes);
     bodyType = cast<FnType>(pendingTypes.back());
     metadata = cast<PogListAttr>(pendingAttrs.front());
