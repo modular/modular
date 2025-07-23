@@ -33,7 +33,7 @@ from sys.ffi import (
     c_ssize_t,
     c_uint,
 )
-
+from utils import Variant
 
 alias Py_ssize_t = c_ssize_t
 alias Py_hash_t = Py_ssize_t
@@ -341,7 +341,7 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
     fn function[
         static_method: Bool = False
     ](
-        func: PyCFunction,
+        func: Variant[PyCFunction, PyCFunctionWithKeywords],
         func_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> Self:
@@ -361,30 +361,19 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         #   type, similar to `get_linkage_name()`?
 
         # FIXME: PyMethodDef is capturing the pointer without an origin.
+        var with_kwargs = func.isa[PyCFunctionWithKeywords]()
+        var func_ptr = rebind[OpaquePointer](
+            func[PyCFunctionWithKeywords]
+        ) if with_kwargs else rebind[OpaquePointer](func[PyCFunction])
 
-        alias flags = METH_VARARGS | (METH_STATIC if static_method else 0)
-        return PyMethodDef(
-            func_name.unsafe_ptr().bitcast[c_char](),
-            rebind[OpaquePointer](func),
-            flags,
-            docstring.unsafe_ptr().bitcast[c_char](),
-        )
-
-    @staticmethod
-    fn function[
-        static_method: Bool = False
-    ](
-        func: PyCFunctionWithKeywords,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> Self:
-        """Create a PyMethodDef for a function with keyword arguments."""
-        alias flags = METH_VARARGS | METH_KEYWORDS | (
-            METH_STATIC if static_method else 0
+        var flags = (
+            METH_VARARGS
+            | (METH_STATIC if static_method else 0)
+            | (METH_KEYWORDS if with_kwargs else 0)
         )
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
-            rebind[OpaquePointer](func),
+            func_ptr,
             flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )
