@@ -206,13 +206,10 @@ public:
   operator ::mlir::MLIRContext *() { return value; }
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    nb::object capsule;
-    try {
-      capsule = mlirApiObjectToCapsule(src);
-    } catch (nb::builtin_exception) {
+    std::optional<nb::object> capsule = mlirApiObjectToCapsule(src);
+    if (!capsule)
       return false;
-    }
-    value = unwrap(mlirPythonCapsuleToContext(capsule.ptr()));
+    value = unwrap(mlirPythonCapsuleToContext(capsule->ptr()));
     return !mlirContextIsNull(wrap(value));
   }
 
