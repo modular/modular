@@ -2585,22 +2585,14 @@ fn clamp[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _type_is_libm_supported(dtype: DType) -> Bool:
-    return dtype in (DType.float32, DType.float64) or dtype.is_integral()
-
-
+@always_inline("nodebug")
 fn _call_libm[
+    dtype: DType,
+    width: Int, //,
     func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     constrained[
-        arg_type.is_floating_point(), "argument type must be floating point"
-    ]()
-    constrained[
-        arg_type == result_type, "the argument type must match the result type"
+        dtype.is_floating_point(), "argument type must be floating point"
     ]()
     constrained[
         not is_nvidia_gpu(),
@@ -2608,32 +2600,17 @@ fn _call_libm[
     ]()
 
     @parameter
-    if not _type_is_libm_supported(arg_type):
+    if dtype not in [DType.float32, DType.float64]:
         # Coerce to f32 if the value is not representable by libm.
-        return _call_libm_impl[func_name, result_type = DType.float32](
-            arg.cast[DType.float32]()
-        ).cast[result_type]()
+        var arg_f32 = arg.cast[DType.float32]()
+        return _call_libm[func_name](arg_f32).cast[dtype]()
 
-    return _call_libm_impl[func_name, result_type=result_type](arg)
-
-
-fn _call_libm_impl[
-    func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
-    alias libm_name = String(
-        func_name
-    ) if arg_type is DType.float64 else func_name + "f"
-
-    var res = SIMD[result_type, width]()
+    alias libm_name = func_name + ("f" if dtype is DType.float32 else "")
+    var res = SIMD[dtype, width]()
 
     @parameter
     for i in range(width):
-        res[i] = _external_call_const[libm_name, Scalar[result_type]](arg[i])
-
+        res[i] = _external_call_const[libm_name, Scalar[dtype]](arg[i])
     return res
 
 
