@@ -1138,6 +1138,27 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
 
+# MOCO-2194: Parameter inference correctly folds contextually-evaluated params.
+trait WithAnAlias:
+    alias A: AnyType
+
+# Struct that conforms to `WithAnAlias`
+struct SomeStruct(WithAnAlias):
+    alias A = Int
+
+# Needs a struct that conforms to `WithAnAlias`
+# Will infer `a` and `b` automatically from `__init__`.
+struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
+    @staticmethod
+    fn __init__(out self: SomeWrapper[t, t.A, t.A]):
+        pass
+
+fn test_param_inference_contextual_fold():
+    # CHECK: lit.call @{{.*}}SomeWrapper::@"__init__
+    # CHECK-SAME: <:!WithAnAlias !SomeStruct, :!AnyType !Int, :!AnyType !Int>
+    sw = SomeWrapper[SomeStruct]()
+
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##

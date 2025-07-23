@@ -90,8 +90,30 @@ private:
 // ParameterEvaluator
 //===----------------------------------------------------------------------===//
 
-/// This class keeps a set of defined parameter values and is used to evaluate
+/// This class keeps a set of defined parameter bindings and is used to evaluate
 /// and simplify parameter expressions based on those values.
+///
+/// This class keeps track of two kinds of parameter bindings at the same time:
+///
+/// 1. Decl-based (name-based) bindings, which are used to substitute
+///    ParamDeclRefAttrs.
+/// 2. Index-based bindings, which are used to substitute ParamIndexRefAttrs.
+///
+/// - Rules for ParamDeclRefAttr:
+/// If the name referenced by the ParamDeclRefAttr is not registered with the
+/// evaluator, the attribute is left unchanged.
+///
+/// - Rules for ParamIndexRefAttr:
+/// The attr/type initially passed to the evaluator is considered to be at
+/// depth `inputDepth` (0 for most cases, but can be overriden by the user).
+/// Only index references that point back to index bindings at this depth are
+/// candidates for substitution (see IRAIDAI and PSTIAIRAID for details).
+///
+/// In addition, the evaluator will assert if the index is not less than the
+/// size of all the index bindings. If partial substitution is being performed
+/// (i.e. not all the index bindings are registered, only a given prefix of the
+/// index bindings are registered), the user can manually set the total number
+/// of index bindings so that the assertion is only triggered for real errors.
 class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
@@ -148,7 +170,20 @@ public:
   void dump() const;
 
   /// Append an index-based parameter binding.
-  void appendIndexBinding(TypedAttr value) { indexBindings.push_back(value); }
+  void appendIndexBinding(TypedAttr value) {
+    indexBindings.push_back(value);
+    expectedNumIndexBindings =
+        std::max(expectedNumIndexBindings, indexBindings.size());
+  }
+  /// Extend the expected number of index bindings. This value cannot be
+  /// smaller than the number of index bindings that have already been
+  /// registered. This should be used when performing partial substitution,
+  /// where only a prefix of the index bindings are registered.
+  void setExpectedNumIndexBindings(size_t num) {
+    assert(num >= indexBindings.size() && "expected too few index bindings!");
+    expectedNumIndexBindings = num;
+  }
+
   /// Return the number of input parameter values that have been added.
   size_t getNumIndexBindings() const { return indexBindings.size(); }
   /// Get all the input parameters.
@@ -171,8 +206,14 @@ private:
   /// These are the name-based parameter bindings.
   DenseMap<StringAttr, Attribute> declBindings;
 
-  /// These are the top-level index-based parameter bindings.
+  /// These are the top-level index-based parameter bindings. This list is
+  /// allowed to be shorter than the `expectedNumIndexBindings` value, in that
+  /// case, any index reference at the `inputDepth` with an index past the size
+  /// of this list will remain unsubstituted.
   SmallVector<TypedAttr> indexBindings;
+  /// The total number of index bindings expected. Any index reference at the
+  /// `inputDepth` must have an index smaller than this value.
+  size_t expectedNumIndexBindings = 0;
 
   /// The relative depth from the generator where the index-based parameter
   /// bindings are from. This is zero for most applications, but should be set

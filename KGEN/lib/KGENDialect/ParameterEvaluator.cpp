@@ -198,12 +198,17 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
         it != declBindings.end())
       result = upbindValue(it->second);
     else
-      result = declRef;
+      result = ParamDeclRefAttr::get(declRef.getName(),
+                                     doReplace(declRef.getType(), rootDepth));
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
-    assert(indexRef.getIndex() < indexBindings.size() &&
+    assert(indexRef.getIndex() < expectedNumIndexBindings &&
            "parameter index out of range");
-    result = upbindValue(indexBindings[indexRef.getIndex()]);
+    if (indexRef.getIndex() < indexBindings.size())
+      result = upbindValue(indexBindings[indexRef.getIndex()]);
+    else
+      result = ParamIndexRefAttr::get(indexRef.getDepth(), indexRef.getIndex(),
+                                      doReplace(indexRef.getType(), rootDepth));
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.

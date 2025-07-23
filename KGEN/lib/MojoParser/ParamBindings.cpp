@@ -690,9 +690,9 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                     const ParserParameterEvaluator &evaluator) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
-    ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
-                                      evaluator, inferenceDiags,
-                                      /*allowImplicitConversions=*/true);
+    ParameterInferenceState inference(
+        declScope, getParameters(), paramTypes.size(), bindingsSoFar, evaluator,
+        inferenceDiags, /*allowImplicitConversions=*/true);
 
     inference.infer(paramTypes, paramList, /*hasArguments*/ partial);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
@@ -853,9 +853,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParameterEvaluator &evaluator) {
-    ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
-                                      evaluator, inferenceDiags,
-                                      /*allowImplicitConversions=*/true);
+    ParameterInferenceState inference(
+        declScope, getParameters(), expectedParamTypes.size(), bindingsSoFar,
+        evaluator, inferenceDiags, /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
     inference.infer(expectedParamTypes, paramListAttr, partial);
