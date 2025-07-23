@@ -15,11 +15,9 @@ import numpy as np
 import torch
 from max.interfaces import (
     AudioGenerationMetadata,
+    AudioGenerationRequest,
     AudioGeneratorOutput,
     SamplingParams,
-)
-from max.pipelines.core import (
-    AudioGenerationRequest,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
@@ -52,7 +50,7 @@ def create_test_request_with_sampling_params(
 ) -> AudioGenerationRequest:
     """Create a test AudioGenerationRequest with specific SamplingParams."""
     return AudioGenerationRequest(
-        id=id,
+        request_id=id,
         input="Test prompt for sampling params",
         index=0,
         model="test-model",
@@ -117,7 +115,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
 
     # Create request without explicit sampling_params (should use defaults).
     request = AudioGenerationRequest(
-        id="test-request-default",
+        request_id="test-request-default",
         input="Default sampling params test",
         index=0,
         model="test-model",

@@ -11,8 +11,11 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.interfaces import AudioGenerationMetadata, AudioGeneratorOutput
-from max.pipelines.core import AudioGenerationRequest
+from max.interfaces import (
+    AudioGenerationMetadata,
+    AudioGenerationRequest,
+    AudioGeneratorOutput,
+)
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
 
@@ -39,7 +42,7 @@ class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
 def create_test_request() -> AudioGenerationRequest:
     """Create a test AudioGenerationRequest."""
     return AudioGenerationRequest(
-        id="test-request-1",
+        request_id="test-request-1",
         input="Hello, this is a test prompt",
         index=0,
         model="test-model",
