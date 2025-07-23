@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests basic NIXL functionality"""
 
+from __future__ import annotations
+
 import time
 from typing import cast
 
@@ -30,7 +32,9 @@ def _get_tensor_base_addr(tensor: Tensor) -> int:
 
 
 def create_agent(
-    name: str = "test_agent", listen_port: int = 8047
+    name: str = "test_agent",
+    listen_port: int = 8047,
+    gpu_device_id: int | None = None,
 ) -> tuple[Agent, int]:
     # Stand up Agent
     agent = Agent(
@@ -47,6 +51,9 @@ def create_agent(
 
     # Create ucx backend
     ucx_params = agent.get_plugin_params("ucx")
+    # Add GPU device ID to parameters if specified.
+    if gpu_device_id is not None:
+        ucx_params[0]["gpu_device_id"] = str(gpu_device_id)
     ucx_backend = agent.create_backend(type="ucx", init_params=ucx_params[0])
 
     return agent, ucx_backend
@@ -73,7 +80,9 @@ def test_remote_agent_registration() -> None:
 
 @pytest.mark.parametrize("device", [CPU(), Accelerator()])
 def test_memory_registration(device: Device) -> None:
-    agent, ucx_backend = create_agent()
+    agent, ucx_backend = create_agent(
+        gpu_device_id=0 if not device.is_host else None
+    )
 
     buffer = Tensor.from_numpy(np.ones((100, 100))).to(device)
 
