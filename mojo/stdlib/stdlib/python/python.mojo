@@ -370,26 +370,25 @@ struct Python(Defaultable):
     fn _dict[
         V: PythonConvertible & Copyable & Movable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
-        var cpython = Python().cpython()
-        var dict_obj_ptr = cpython.PyDict_New()
-        if not dict_obj_ptr:
-            raise Error("internal error: PyDict_New failed")
+        """Construct a Python dictionary from keyword arguments.
+
+        Return value: New reference.
+        """
+        var cpy = Python().cpython()
+        var dict_obj = cpy.PyDict_New()
 
         for entry in kwargs.items():
-            var key_ptr = cpython.PyUnicode_DecodeUTF8(
-                entry.key.as_string_slice()
-            )
-            if not key_ptr:
-                raise Error("internal error: PyUnicode_DecodeUTF8 failed")
+            var key = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
+            if not key:
+                raise cpy.unsafe_get_error()
 
-            var val_obj = entry.value.to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_ptr, val_obj._obj_ptr
-            )
-            if result == -1:
-                raise cpython.get_error()
+            var val = entry.value.to_python_object()
+            var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
+            cpy.Py_DecRef(key)
+            if errno == -1:
+                raise cpy.unsafe_get_error()
 
-        return dict_obj_ptr
+        return dict_obj
 
     @staticmethod
     fn dict[
