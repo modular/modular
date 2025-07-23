@@ -119,19 +119,6 @@ def test_config__validate_device_and_encoding_combinations(
         draft_model_path=smollm_135m_local_path,
     )
 
-    with pytest.raises(
-        ValueError,
-        match="Engine huggingface is not supported. Only MAX engine is supported.",
-    ):
-        # Invalid engine
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.float32,
-            device_specs=[DeviceSpec.cpu()],
-            draft_model_path=smollm_135m_local_path,
-            engine="huggingface",  # Use string instead of enum since enum no longer exists
-        )
-
 
 @pytest.mark.skip(reason="TODO(AITLIB-363): Division by zero error.")
 def test_config__validate_target_and_draft_architecture(
@@ -161,21 +148,6 @@ def test_config__validate_target_and_draft_architecture(
                 )
             ],
             draft_model_path=smollm_135m_local_path,
-        )
-
-
-def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:  # noqa: ANN001
-    """Test that speculative decoding is not supported with HuggingFace engine."""
-    with pytest.raises(
-        ValueError,
-        match="Engine huggingface is not supported. Only MAX engine is supported.",
-    ):
-        PipelineConfig(
-            model_path=smollm2_135m_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
-            device_specs=[DeviceSpec.accelerator()],
-            draft_model_path=smollm2_135m_local_path,
-            engine="huggingface",  # Use string instead of enum since enum no longer exists
         )
 
 

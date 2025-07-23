@@ -35,7 +35,6 @@ from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
-from max.pipelines.lib import PipelineEngine
 from test_common import (
     evaluate,
     evaluate_embeddings,
@@ -262,7 +261,6 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             huggingface_model_revision=revision,
             max_length=max_length,
             trust_remote_code=True,
-            engine=PipelineEngine.MAX,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
@@ -362,7 +360,6 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
             huggingface_model_revision=revision,
             max_length=max_length,
             trust_remote_code=True,
-            engine=PipelineEngine.MAX,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
@@ -456,7 +453,6 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
-            engine=PipelineEngine.MAX,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -510,7 +506,6 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=hf_repo_id,
-            engine=PipelineEngine.MAX,
             max_length=8192,
         )
         hf_repo_lock.apply_to_config(config)
@@ -588,7 +583,6 @@ class GenericOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
             weight_path=[] if weight_path is None else [weight_path],
-            engine=PipelineEngine.MAX,
             **self.config_params,
         )
         hf_repo_lock.apply_to_config(config)

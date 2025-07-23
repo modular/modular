@@ -12,11 +12,8 @@ import uuid
 import pytest
 from max import pipelines
 from max.interfaces import TextGenerationRequest
-from max.pipelines import (
-    PipelineConfig,
-)
+from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
-from max.pipelines.lib import PipelineEngine
 from PIL import Image
 
 
@@ -34,9 +31,7 @@ async def test_internvl_tokenizer_with_image() -> None:
     test_image = img_buffer.getvalue()
 
     # Get tokenizer
-    config = PipelineConfig(
-        model_path=model_id, engine=PipelineEngine.MAX, trust_remote_code=True
-    )
+    config = PipelineConfig(model_path=model_id, trust_remote_code=True)
     max_tokenizer, _ = pipelines.PIPELINE_REGISTRY.retrieve_factory(config)
 
     # Note: We don't compare with HF tokenizer for image inputs because InternVL's

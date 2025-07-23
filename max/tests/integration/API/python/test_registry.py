@@ -11,7 +11,6 @@ from max.interfaces import PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    PipelineEngine,
 )
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_model_dummy import DUMMY_ARCH
@@ -38,7 +37,6 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
         config = PipelineConfig(
             model_path="GSAI-ML/LLaDA-8B-Instruct",
             # This forces it to fail if we dont have it.
-            engine=PipelineEngine.MAX,
             max_batch_size=1,
             max_length=1,
             trust_remote_code=True,

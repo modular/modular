@@ -84,6 +84,5 @@ def test_pipelines_cli__custom_model() -> None:
                 f"--custom-architectures={path}",
                 "--huggingface-model-revision",
                 REVISION,
-                "--engine=max",
             ]
         )

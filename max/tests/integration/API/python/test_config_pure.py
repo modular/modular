@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.entrypoints.cli.config import parse_task_flags
-from max.pipelines import PIPELINE_REGISTRY, PipelineEngine, SupportedEncoding
+from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
@@ -487,7 +487,6 @@ def test_config__test_incompatible_quantization_encoding(
             ],
             max_batch_size=1,
             max_length=1,
-            engine=PipelineEngine.MAX,
         )
 
     # This should not raise, as float32 == f32.
@@ -501,7 +500,6 @@ def test_config__test_incompatible_quantization_encoding(
         ],
         max_batch_size=1,
         max_length=1,
-        engine=PipelineEngine.MAX,
         allow_safetensors_weights_float32_to_bfloat16_cast=True,
     )
 
@@ -522,7 +520,6 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=1,
-            engine=PipelineEngine.MAX,
         )
 
     with pytest.raises(ValueError):
@@ -533,7 +530,6 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=1,
-            engine=PipelineEngine.MAX,
             allow_safetensors_weights_float32_to_bfloat16_cast=True,
         )
 
@@ -544,7 +540,6 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
-        engine=PipelineEngine.MAX,
         allow_safetensors_weights_float32_to_bfloat16_cast=True,
     )
 
@@ -577,7 +572,6 @@ def test_config__test_retrieve_factory_with_known_architecture(
         max_length=1,
     )
 
-    assert config.engine == PipelineEngine.MAX
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
 
 
@@ -614,7 +608,6 @@ def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
         quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
-        engine=PipelineEngine.MAX,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -710,27 +703,6 @@ def test_config__validates_invalid_supported_device(
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
-            engine=PipelineEngine.MAX,
-        )
-
-
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__validates_engine_configurations(
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
-
-    # Test that HuggingFace engine is rejected since it's no longer supported
-    with pytest.raises(
-        ValueError,
-        match="Engine huggingface is not supported. Only MAX engine is supported.",
-    ):
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            max_length=1,
-            engine="huggingface",  # Should raise error
         )
 
 
@@ -741,16 +713,13 @@ def test_config__validates_lora_configuration(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
-    # Test explicit HuggingFace engine with valid config
-    # This verifies we can force HF even when MAX would work
+    # Test LoRA configuration with valid config
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
         device_specs=[DeviceSpec.accelerator()],
         max_length=1,
-        engine=PipelineEngine.MAX,
         lora_paths=[llama_3_1_8b_lora_local_path],
     )
-    assert config.engine == PipelineEngine.MAX
     assert config.lora_config is not None
     assert config.lora_config.lora_paths[0] == llama_3_1_8b_lora_local_path
     assert config.lora_config.max_lora_rank == 16

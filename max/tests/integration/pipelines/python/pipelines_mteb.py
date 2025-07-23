@@ -13,9 +13,6 @@
 
 To get results from a reference HuggingFace model, add
   --model-library=mteb
-
-You can also use `--engine=huggingface` (instead of `--model-library=mteb`) to
-run a benchmark with huggingface pipeline model
 """
 
 from __future__ import annotations
@@ -43,7 +40,6 @@ from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsGenerator,
     PipelineConfig,
-    PipelineEngine,
 )
 from transformers import AutoConfig
 
@@ -65,10 +61,7 @@ class EmbeddingModel:
 
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
-        if self.pipeline_config.engine == PipelineEngine.MAX:
-            name = f"max_{self.pipeline_config.model_config.model_path}"
-        else:
-            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.model_config.model_path}"
+        name = f"max_{self.pipeline_config.model_config.model_path}"
 
         if meta := mteb.models.MODEL_REGISTRY.get(
             self.pipeline_config.model_config.model_path
@@ -153,9 +146,7 @@ logger = logging.getLogger("pipelines_mteb")
         "Use this to choose how the evaluator loads the model. If 'pipeline' "
         "is chosen, the model will be chosen from the pipeline model registry. "
         " If 'mteb' is chosen, the model's model_path will be passed "
-        "to the mteb library. This is separate from the --engine flag, which "
-        "is used with --model-library=pipeline (but can be used to load a "
-        "HuggingFace model)."
+        "to the mteb library. "
     ),
 )
 @click.option("--eval-benchmark", type=str)

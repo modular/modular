@@ -15,7 +15,6 @@ from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    PipelineEngine,
     SupportedEncoding,
 )
 from test_common.mocks import mock_estimate_memory_footprint
@@ -38,7 +37,6 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         quantization_encoding=SupportedEncoding.gptq,
         device_specs=[DeviceSpec.accelerator()],
-        engine=PipelineEngine.MAX,
     )
 
     # We expect this to fail.
@@ -47,7 +45,6 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
             model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
             quantization_encoding=SupportedEncoding.gptq,
             device_specs=[DeviceSpec.accelerator()],
-            engine=PipelineEngine.MAX,
         )
 
 
@@ -142,7 +139,6 @@ def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None: 
             config = PipelineConfig(
                 model_path=llama_3_1_8b_instruct_local_path,
                 quantization_encoding=SupportedEncoding.q4_k,
-                engine=PipelineEngine.MAX,
                 max_batch_size=1,
                 max_length=512,
             )
@@ -169,5 +165,4 @@ def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None: 
             config.model_config.quantization_encoding
             == SupportedEncoding.float32
         )
-        assert config.engine == PipelineEngine.MAX
         assert config.model_config.weight_path == [Path("model.safetensors")]
