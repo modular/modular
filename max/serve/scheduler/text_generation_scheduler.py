@@ -18,10 +18,14 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, TypeVar, Union
+from typing import Generic, TypeVar, Union
 
 import zmq
-from max.interfaces import EngineResult, TextGenerationResponse, TokenGenerator
+from max.interfaces import (
+    EngineResult,
+    TextGenerationOutput,
+    TokenGenerator,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
@@ -109,7 +113,7 @@ class GenericSchedulerOutput(Generic[T]):
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
-        batch_inputs: dict[str, T] = {},
+        batch_inputs: dict[str, T] = {},  # noqa: B006
         input_tokens: int | None = None,
         cached_tokens: int | None = None,
     ) -> None:
@@ -177,7 +181,7 @@ class TokenGenerationScheduler(Scheduler):
             ),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[TextGenerationResponse]]
+            dict[str, EngineResult[TextGenerationOutput]]
         ](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
@@ -188,6 +192,10 @@ class TokenGenerationScheduler(Scheduler):
             zmq_endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(list[str]),
         )
+
+        self.pending_reqs: deque[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ] = deque()
 
         # Initialize Scheduler state.
         self.active_batch: dict[
@@ -204,9 +212,17 @@ class TokenGenerationScheduler(Scheduler):
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
 
+    def _retrieve_pending_requests(self) -> None:
+        while True:
+            try:
+                req_id, req_data = self.request_q.get_nowait()
+                self.pending_reqs.append((req_id, req_data))
+            except queue.Empty:
+                break
+
     def _should_schedule_ce(self) -> bool:
         # No CE to schedule if queue is empty
-        if self.request_q.empty():
+        if len(self.pending_reqs) == 0:
             return False
 
         # If TG batch is full then no reason to schedule CE
@@ -218,13 +234,10 @@ class TokenGenerationScheduler(Scheduler):
             return True
 
         # If there are less than 10% free blocks, prioritize TG over CE
-        if (
+        return not (
             self.paged_manager is not None
             and self.paged_manager.free_blocks_pct < 0.1
-        ):
-            return False
-
-        return True
+        )
 
     @traced
     def _maybe_chunk_prefill_request(
@@ -288,23 +301,23 @@ class TokenGenerationScheduler(Scheduler):
             ):
                 break
 
-            try:
-                req_id, data = self.request_q.get_nowait()
-                # Unfortunately, when we create a new context we set the cache_seq_id
-                # to be the req idx in tokenizer.py. We probably should not do
-                # this. (TODO: E2EOPT-138)
-                #
-                # We want to ignore the existing cache_seq_id, UNLESS this request
-                # is a partially encoded request due to chunked prefill.
-                if data.start_idx == 0:
-                    data.unassign_from_cache()
-                # Lets assign a new cache slot to this request if it doesn't have one yet.
-                if not data.is_assigned_to_cache:
-                    data.assign_to_cache(self.available_cache_indices.pop())
-                    if self.paged_manager is not None:
-                        self.paged_manager.external_claim([data.cache_seq_id])
-            except queue.Empty:
+            if not self.pending_reqs:
                 break
+
+            req_id, data = self.pending_reqs.popleft()
+            # Unfortunately, when we create a new context we set the cache_seq_id
+            # to be the req idx in tokenizer.py. We probably should not do
+            # this. (TODO: E2EOPT-138)
+            #
+            # We want to ignore the existing cache_seq_id, UNLESS this request
+            # is a partially encoded request due to chunked prefill.
+            if data.start_idx == 0:
+                data.unassign_from_cache()
+            # Lets assign a new cache slot to this request if it doesn't have one yet.
+            if not data.is_assigned_to_cache:
+                data.assign_to_cache(self.available_cache_indices.pop())
+                if self.paged_manager is not None:
+                    self.paged_manager.external_claim([data.cache_seq_id])
 
             orig_prompt_length = data.active_length
             num_steps = 1
@@ -345,17 +358,17 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _return_to_request_queue(
-        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+        self, req_id: str, data: Union[TextContext, TextAndVisionContext]
     ) -> None:
         """Resets a request and returns it to the request queue"""
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
         data.reset()
-        self.request_q.put_front_nowait((req_id, data))
+        self.pending_reqs.appendleft((req_id, data))
 
     @traced
     def _preempt_request(
-        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+        self, req_id: str, data: Union[TextContext, TextAndVisionContext]
     ) -> None:
         """Preempts the most recently received request from active batch"""
         self._return_to_request_queue(req_id, data)
@@ -498,6 +511,8 @@ class TokenGenerationScheduler(Scheduler):
         self,
     ) -> SchedulerOutput:
         """Creates a batch to execute"""
+        self._retrieve_pending_requests()
+
         if self._should_schedule_ce():
             ce_batch = self._try_create_ce_batch()
             if ce_batch.batch_size > 0:
@@ -545,9 +560,7 @@ class TokenGenerationScheduler(Scheduler):
             else self.scheduler_config.max_forward_steps_tg
         )
         num_generated_tokens = batch_size * num_steps
-
-        # Number of pending requests is unknown if qsize is not supported
-        pending_reqs = self.request_q.qsize()
+        num_pending_reqs = len(self.pending_reqs)
 
         def to_human_readable_throughput(tps: float) -> str:
             if tps >= 1_000:
@@ -584,7 +597,7 @@ class TokenGenerationScheduler(Scheduler):
             logger.debug(
                 f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
                 f"Terminated: {terminated_reqs} reqs, "
-                f"Pending: {pending_reqs} reqs | "
+                f"Pending: {num_pending_reqs} reqs | "
                 f"Target: {input_tokens}/{target_tokens_str} toks | "
                 f"Prompt Tput: {prompt_throughput_str}, "
                 f"Generation Tput: {generation_throughput_str} | "
@@ -632,7 +645,7 @@ class TokenGenerationScheduler(Scheduler):
         logger.debug(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
-            f"Pending: {pending_reqs} reqs | "
+            f"Pending: {num_pending_reqs} reqs | "
             f"Target: {input_tokens}/{target_tokens_str} toks | "
             f"Prompt Tput: {prompt_throughput_str}, "
             f"Generation Tput: {generation_throughput_str} | "
@@ -678,8 +691,8 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _handle_terminated_responses(
         self,
-        batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationResponse],
+        batch_executed: dict[str, Union[TextContext, TextAndVisionContext]],
+        batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Task that handles responses"""
         if batch_responses is None:
@@ -700,8 +713,8 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _handle_chunked_requests(
         self,
-        batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationResponse],
+        batch_executed: dict[str, Union[TextContext, TextAndVisionContext]],
+        batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Handle chunked requests"""
         # Only the last request in a batch could be chunked. We discard its response
@@ -709,42 +722,36 @@ class TokenGenerationScheduler(Scheduler):
         last_req = list(batch_executed.values())[-1]
         if last_req.active_idx - last_req.start_idx > 1:
             req_id, data = batch_executed.popitem()
-            self.request_q.put_front_nowait((req_id, data))
+            self.pending_reqs.appendleft((req_id, data))
 
             batch_responses.pop(req_id)
 
     @traced
     def _handle_cancelled_requests(self) -> None:
-        try:
-            while not self.cancel_q.empty():
-                try:
-                    for req_id in self.cancel_q.get_nowait():
-                        if req_id not in self.active_batch:
-                            continue
-                        self.pipeline.release(self.active_batch[req_id])
-                        self.available_cache_indices.add(
-                            self.active_batch[req_id].cache_seq_id
-                        )
-                        del self.active_batch[req_id]
+        while True:
+            try:
+                req_ids = self.cancel_q.get_nowait()
+            except queue.Empty:
+                break
+            for req_id in req_ids:
+                if req_id not in self.active_batch:
+                    continue
+                self.pipeline.release(self.active_batch[req_id])
+                self.available_cache_indices.add(
+                    self.active_batch[req_id].cache_seq_id
+                )
+                del self.active_batch[req_id]
 
-                        self.response_q.put_nowait(
-                            {req_id: EngineResult.cancelled()}
-                        )
-                except queue.Empty:
-                    break
-        except Exception:
-            logger.exception(
-                "An error occurred while handling cancelled requests"
-            )
+                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
 
     @traced
     def _stream_responses_to_frontend(
-        self, batch_responses: dict[str, TextGenerationResponse]
+        self, batch_responses: dict[str, TextGenerationOutput]
     ) -> None:
         if not batch_responses:
             return
 
-        responses: dict[str, EngineResult[TextGenerationResponse]] = {}
+        responses: dict[str, EngineResult[TextGenerationOutput]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:
                 responses[request_id] = EngineResult.complete(response)

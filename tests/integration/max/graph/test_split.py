@@ -31,7 +31,7 @@ def test_split(
     session,  # noqa: ANN001
     input_shape: Shape,
     split_sizes: list[int],
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     input = np.random.uniform(size=input_shape).astype(np.float32)
 

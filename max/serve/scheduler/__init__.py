@@ -31,14 +31,14 @@ from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
 __all__ = [
-    "Scheduler",
-    "load_scheduler",
-    "EmbeddingsScheduler",
-    "EmbeddingsSchedulerConfig",
     "AudioGenerationScheduler",
     "AudioGenerationSchedulerConfig",
+    "EmbeddingsScheduler",
+    "EmbeddingsSchedulerConfig",
     "PrefillRequest",
     "PrefillResponse",
+    "Scheduler",
+    "load_scheduler",
 ]
 
 
@@ -47,7 +47,7 @@ def load_scheduler(
     zmq_ctx: zmq.Context,
     pipeline_config: PipelineConfig,
     settings: Settings,
-    dispatcher_client: DispatcherClient,
+    dispatcher_client: DispatcherClient | None = None,
 ) -> Scheduler:
     if isinstance(pipeline, EmbeddingsGenerator):
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
@@ -105,6 +105,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
         assert isinstance(pipeline, TokenGenerator)
+        if dispatcher_client is None:
+            raise ValueError(
+                "Dispatcher client is required for decode scheduler"
+            )
         return load_decode_scheduler(
             zmq_ctx,
             settings,
@@ -114,6 +118,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, TokenGenerator)
+        if dispatcher_client is None:
+            raise ValueError(
+                "Dispatcher client is required for prefill scheduler"
+            )
         return load_prefill_scheduler(
             zmq_ctx,
             settings,

@@ -85,11 +85,11 @@ class ProfileSession:
         )
 
 
-PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())
+PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())  # noqa: B039
 
 
 def profile_in_session():
-    return PROFILE_SESSION_VAR.get().request_id != None
+    return PROFILE_SESSION_VAR.get().request_id is not None
 
 
 def write_profile(profiler: Profiler, session: ProfileSession) -> None:

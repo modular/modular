@@ -790,17 +790,23 @@ memory-only types are distinguished based on how they hold data:
   `String` field. Register-passable types are declared with the
   [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
 
-  Register-passable types are always passed by value (that is, the values are
-  copied).
-
-* Memory-only types consist of any types that *don't* fit the description of
-  register-passable types. In particular, these types usually have pointers or
+* Memory-only types consist of all other types that *aren't* specifically
+  designated as register-passable types. These types often have pointers or
   references to dynamically-allocated memory. `String`, `List`, and `Dict` are
   all examples of memory-only types.
 
+Register-passable types have a slightly different lifecycle than memory-only
+types, which is discussed in [Life of a value](/mojo/manual/lifecycle/life/).
+
+There are also a number of low-level differences in how the Mojo compiler treats
+register-passable types versus memory-only types, which you probably won't have
+to think about for most Mojo programming. For more information, see
+the [`@register_passable`](/mojo/manual/decorators/register-passable) decorator
+reference.
+
 Our long-term goal is to make this distinction transparent to the user, and
 ensure all APIs work with both register-passable and memory-only types.
-But right now you will see some standard library types that only work with
+But right now you will see a few standard library types that only work with
 register-passable types or only work with memory-only types.
 
 In addition to these two categories, Mojo also has "trivial" types. Conceptually
@@ -818,11 +824,11 @@ so in the future we intend to separate trivial types from the
 Two other things you'll see in Mojo APIs are references to `AnyType` and
 `AnyTrivialRegType`. These are effectively *metatypes*, that is, types of types.
 
-* `AnyType` represents any Mojo type. Mojo treats `AnyType` as a special kind of
-  trait, and you'll find more discussion of it on the
+* `AnyType` is a trait that represents a type with a destructor. You'll find
+  more discussion of it on the
   [Traits page](/mojo/manual/traits#the-anytype-trait).
 * `AnyTrivialRegType` is a metatype representing any Mojo type that's marked
-  register passable.
+  as a trivial type.
 
 You'll see them in signatures like this:
 

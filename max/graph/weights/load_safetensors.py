@@ -19,7 +19,7 @@ from os import PathLike
 from typing import Any, Optional
 
 import numpy.typing as npt
-from max._core.safetensors import safe_open
+from max._core.safetensors import SafeTensor, safe_open
 from max.driver import Tensor
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -50,6 +50,10 @@ class SafetensorWeights(Weights):
     _tensors_to_file_idx: Mapping[str, int]
     _allocated: dict[str, npt.NDArray]
     _st_weight_map: dict[str, Tensor]
+    # This is a mapping of filepaths to SafeTensor handles. This is used to
+    # avoid opening and mapping the same file to virtual memory multiple times,
+    # which can use up all virtual memory.
+    _st_file_handles: dict[PathLike, SafeTensor]
 
     def __init__(
         self,
@@ -60,6 +64,7 @@ class SafetensorWeights(Weights):
         prefix: str = "",
         allocated=None,  # noqa: ANN001
         _st_weight_map: dict[str, Tensor] | None = None,
+        _st_file_handles: dict[PathLike, SafeTensor] | None = None,
     ) -> None:
         self._filepaths = filepaths
         if tensors is not None:
@@ -72,10 +77,17 @@ class SafetensorWeights(Weights):
             for idx, filepath in enumerate(self._filepaths):
                 with safe_open(filepath) as f:
                     self._tensors |= set(f.keys())
-                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}
+                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}  # noqa: SIM118
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
         self._st_weight_map = {} if _st_weight_map is None else _st_weight_map
+        if _st_file_handles is not None:
+            self._st_file_handles = _st_file_handles
+        else:
+            file_handles: dict[PathLike, SafeTensor] = {}
+            for filepath in self._filepaths:
+                file_handles[filepath] = safe_open(filepath)
+            self._st_file_handles = file_handles
 
     @property
     def name(self) -> str:
@@ -95,6 +107,7 @@ class SafetensorWeights(Weights):
                         prefix=name,
                         allocated=self._allocated,
                         _st_weight_map=self._st_weight_map,
+                        _st_file_handles=self._st_file_handles,
                     ),
                 )
 
@@ -110,6 +123,7 @@ class SafetensorWeights(Weights):
             prefix=full_path,
             allocated=self._allocated,
             _st_weight_map=self._st_weight_map,
+            _st_file_handles=self._st_file_handles,
         )
 
     def __getitem__(self, idx: int | str) -> SafetensorWeights:
@@ -128,8 +142,7 @@ class SafetensorWeights(Weights):
             raise KeyError(msg)
 
         filepath = self._filepaths[self._tensors_to_file_idx[self.name]]
-        with safe_open(filepath) as f:
-            tensor = f.get_tensor(self.name)
+        tensor = self._st_file_handles[filepath].get_tensor(self.name)
 
         self._st_weight_map[self._prefix] = tensor
         return tensor

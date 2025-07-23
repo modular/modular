@@ -28,6 +28,7 @@ def register_all_models() -> None:
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .granite import granite_arch
+    from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
@@ -49,6 +50,7 @@ def register_all_models() -> None:
         gemma3_multimodal_arch,
         granite_arch,
         internvl_arch,
+        idefics3_arch,
         llama_arch,
         llama4_arch,
         llama_vision_arch,

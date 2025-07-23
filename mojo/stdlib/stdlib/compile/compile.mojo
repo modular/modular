@@ -83,7 +83,7 @@ struct _PopulateInfo:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Info[
+struct CompiledFunctionInfo[
     func_type: AnyTrivialRegType,
     func: func_type,
     target: __mlir_type.`!kgen.target`,
@@ -213,7 +213,7 @@ fn compile_info[
     emission_kind: StaticString = "asm",
     compile_options: StaticString = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> Info[func_type, func, target]:
+]() -> CompiledFunctionInfo[func_type, func, target]:
     """Compiles a function and returns detailed compilation information.
 
     This function takes a Mojo function and compiles it, providing access to the
@@ -235,7 +235,7 @@ fn compile_info[
             architecture.
 
     Returns:
-        An `Info` struct containing:
+        A `CompiledFunctionInfo` struct containing:
         - asm: The generated code in the requested format
         - linkage_name: The mangled function name for linking
         - module_hash: A unique hash of the compiled module
@@ -268,10 +268,9 @@ fn compile_info[
         _type=_Info,
     ]()
 
-    var result = Info[func_type, func, target](
+    return CompiledFunctionInfo[func_type, func, target](
         asm=offload.asm,
         function_name=get_linkage_name[target, func](),
         module_name=offload.module_name,
         num_captures=offload.num_captures,
     )
-    return result

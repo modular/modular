@@ -17,10 +17,10 @@ import tempfile
 from pathlib import Path
 from sys.info import _get_arch
 
-from compile import Info, compile_info
+from compile import CompiledFunctionInfo, compile_info
 
 from .info import A100, DEFAULT_GPU_ARCH
-from .info import Info as HardwareInfo
+from .info import GPUInfo
 
 # ===-----------------------------------------------------------------------===#
 # Targets
@@ -32,7 +32,7 @@ fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
-    alias info = HardwareInfo.from_name[target_arch]() if target_arch else A100
+    alias info = GPUInfo.from_name[target_arch]() if target_arch else A100
     return info.target()
 
 
@@ -54,10 +54,10 @@ fn _compile_code[
     *,
     emission_kind: StaticString = "asm",
     target: __mlir_type.`!kgen.target` = get_gpu_target(),
-    compile_options: StaticString = HardwareInfo.from_target[
+    compile_options: StaticString = GPUInfo.from_target[
         target
     ]().compile_options,
-]() -> Info[func_type, func, target]:
+]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,
         emission_kind=emission_kind,

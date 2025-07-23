@@ -16,20 +16,25 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, Callable, Literal, Optional
+from dataclasses import dataclass
+from math import ceil
+from typing import Any, Callable, Literal, Optional, Union
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import Module, ReturnLogits, Signals
+from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheInputs,
     KVCacheManager,
     KVCacheParams,
+    KVCacheStrategy,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -54,6 +59,40 @@ from .llama3 import Llama3
 from .model_config import Llama3Config
 
 logger = logging.getLogger("max.pipelines")
+
+
+# =============================================================================
+# Pipeline Stage KV Cache Parameters
+# =============================================================================
+
+
+@dataclass
+class PipelineStageKVParams:
+    """Parameters for a specific pipeline stage's KV cache."""
+
+    stage_id: int
+    start_layer: int
+    end_layer: int
+    num_layers_in_stage: int
+    base_params: KVCacheParams
+    device: DeviceRef
+
+    def create_stage_params(self) -> KVCacheParams:
+        """Create KVCacheParams specific to this pipeline stage."""
+        return KVCacheParams(
+            dtype=self.base_params.dtype,
+            n_kv_heads=self.base_params.n_kv_heads,
+            head_dim=self.base_params.head_dim,
+            enable_prefix_caching=self.base_params.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=self.base_params.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=self.base_params.host_kvcache_swap_space_gb,
+            cache_strategy=self.base_params.cache_strategy,
+            page_size=self.base_params.page_size,
+            n_devices=1,  # Single device per stage in pipeline parallel
+            pipeline_parallel_degree=self.base_params.pipeline_parallel_degree,
+            stage_id=self.stage_id,
+            total_num_layers=self.base_params.total_num_layers,
+        )
 
 
 class Llama3Inputs(ModelInputs):
@@ -187,7 +226,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Llama3Config.get_num_layers(huggingface_config)
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[Union[TensorType, BufferType], ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -208,7 +247,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         if len(self.devices) > 1:
             # Flatten kv types for each device
-            flattened_kv_types = [
+            flattened_kv_types: list[TensorType] = [
                 kv_type for sublist in kv_inputs for kv_type in sublist
             ]
 
@@ -216,13 +255,19 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                 devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
 
-            return (
+            # Explicitly construct tuple with mixed types
+            signal_buffer_types: list[BufferType] = signals.input_types()
+
+            # Build the complete input types list
+            all_input_types: list[Union[TensorType, BufferType]] = [
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *signals.input_types(),
-                *flattened_kv_types,
-            )
+            ]
+            all_input_types.extend(signal_buffer_types)
+            all_input_types.extend(flattened_kv_types)
+
+            return tuple(all_input_types)
         else:
             if self._lora_manager:
                 lora_ids, lora_ranks = self._lora_manager.input_symbols(
@@ -315,9 +360,12 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
-            model_names: list[str] = [ctx.model_name for ctx in context_batch]
+            lora_names: list[str | None] = [
+                ctx.lora_name if ctx.lora_name else None
+                for ctx in context_batch
+            ]
             lora_ids, lora_ranks = self._lora_manager.get_lora_graph_inputs(
-                model_names, self.devices[0]
+                lora_names, self.devices[0]
             )
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
@@ -359,10 +407,30 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
         session: InferenceSession,
         available_cache_memory: int,
     ) -> KVCacheManager:
+        # For pipeline parallel, use layers per stage instead of total layers
+        num_layers_for_cache = Llama3Config.get_num_layers(
+            huggingface_config=self.huggingface_config
+        )
+
+        # For pipeline parallel, use n_devices=1 so each stage gets all heads
+        n_devices_for_cache = len(self.devices)
+
+        # Check if this is pipeline parallel mode
+        pp_degree = self.pipeline_config.model_config.pipeline_parallel_degree
+        if pp_degree > 1:
+            # Use layers per stage for pipeline parallel
+
+            num_layers_for_cache = ceil(num_layers_for_cache / pp_degree)
+            # Use single device so each stage gets all heads (not split across devices)
+            n_devices_for_cache = 1
+            logger.debug(
+                f"[PP KV Cache] Main KV manager using {num_layers_for_cache} layers and n_devices=1 (for stage-specific caching)"
+            )
+
         return load_kv_manager(
             params=Llama3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
+                n_devices=n_devices_for_cache,
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),
@@ -370,9 +438,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=Llama3Config.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
+            num_layers=num_layers_for_cache,
             devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.kv_cache_config.kv_cache_page_size,
@@ -421,7 +487,38 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()
-        graph = self._build_graph(self.weights, self.adapter)
+        graph = self._build_graph(self.weights, self.adapter, session)
+
+        # Debug: Check for potential weight registry issues before loading
+        logger.debug(
+            f"[DEBUG] About to load graph with {len(self.state_dict)} weights in registry"
+        )
+        logger.debug(
+            f"[DEBUG] Sample weights in registry: {list(self.state_dict.keys())[:10]}..."
+        )
+
+        # Check if graph has _weights attribute for debugging
+        if hasattr(graph, "_weights"):
+            logger.debug(
+                f"[DEBUG] Graph has {len(graph._weights)} weight definitions"
+            )
+            logger.debug(
+                f"[DEBUG] Graph weight names: {list(graph._weights.keys())[:10]}..."
+            )
+
+            # Check for mismatches
+            graph_weights = set(graph._weights.keys())
+            registry_weights = set(self.state_dict.keys())
+
+            missing_from_registry = graph_weights - registry_weights
+            if missing_from_registry:
+                logger.error(
+                    f"[DEBUG] PROBLEM: Graph weights NOT in registry: {missing_from_registry}"
+                )
+                logger.error(
+                    "[DEBUG] This will cause 'Weight not in weights registry' error"
+                )
+
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
         logger.info(
@@ -479,8 +576,219 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         return state_dict
 
+    def _build_pipeline_parallel_graph(
+        self,
+        state_dict: dict[str, WeightData],
+        model_config: Llama3Config,
+        session: InferenceSession,
+    ) -> Graph:
+        """Build graph for pipeline parallel model with self-contained KV cache management.
+
+        This method handles all session management, KV cache setup, graph compilation,
+        and weight loading internally to simplify the PP model interface.
+        """
+
+        # Calculate stage assignments
+        pp_degree = model_config.pipeline_parallel_degree
+        num_layers = model_config.num_hidden_layers
+
+        # Use shared helper method from pipeline_parallel_llama3
+        from .pipeline_parallel_llama3 import PipelineParallelLlama3
+
+        stage_assignments = PipelineParallelLlama3._compute_stage_assignments(
+            num_layers, pp_degree
+        )
+
+        logger.info(
+            f"[PP] Self-contained graph building for {len(stage_assignments)} stages"
+        )
+
+        # Create stage-specific KV cache managers and collections internally
+        stage_kv_collections = []
+        stage_kv_input_symbols = []
+
+        for stage_idx, (start_layer, end_layer) in enumerate(stage_assignments):
+            num_layers_in_stage = end_layer - start_layer
+            stage_device = self.devices[stage_idx]
+
+            # Create stage-specific KV cache parameters
+            stage_kv_params = Llama3Config.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=1,  # CRITICAL: Single device per stage
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            )
+
+            # Create stage manager internally
+            stage_kv_manager = load_kv_manager(
+                params=stage_kv_params,
+                max_batch_size=self.pipeline_config.max_batch_size,
+                max_seq_len=self.calculate_max_seq_len(
+                    self.pipeline_config,
+                    huggingface_config=self.huggingface_config,
+                ),
+                num_layers=num_layers_in_stage,
+                devices=[stage_device],
+                available_cache_memory=15
+                * 1024
+                * 1024
+                * 1024
+                // pp_degree,  # Split memory
+                page_size=self.kv_cache_config.kv_cache_page_size,
+                session=session,
+            )
+
+            # Get KV input symbols for this stage
+            stage_kv_inputs = stage_kv_manager.input_symbols()[
+                0
+            ]  # Single device per stage
+            stage_kv_input_symbols.append(stage_kv_inputs)
+
+            # Create stage parameters for collection creation
+            stage_params = PipelineStageKVParams(
+                stage_id=stage_idx,
+                start_layer=start_layer,
+                end_layer=end_layer,
+                num_layers_in_stage=num_layers_in_stage,
+                base_params=stage_kv_params,
+                device=DeviceRef(stage_device.label, stage_device.id),
+            )
+
+            # Create collection constructor using regular classes with stage-specific parameters
+            stage_kv_cache_params = stage_params.create_stage_params()
+
+            kv_collection_func: Any
+            if (
+                model_config.kv_params.cache_strategy
+                == KVCacheStrategy.CONTINUOUS
+            ):
+                kv_collection_func = FetchContinuousBatchingKVCacheCollection(
+                    stage_kv_cache_params, num_layers=num_layers_in_stage
+                )
+            elif model_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+                kv_collection_func = FetchPagedKVCacheCollection(
+                    stage_kv_cache_params, num_layers=num_layers_in_stage
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported cache strategy: {model_config.kv_params.cache_strategy}"
+                )
+
+            stage_kv_collections.append(kv_collection_func)
+
+            logger.info(
+                f"[PP] Stage {stage_idx}: {num_layers_in_stage} layers "
+                f"(layers {start_layer}-{end_layer - 1}), "
+                f"device {stage_device.id}, {len(list(stage_kv_inputs))} KV inputs"
+            )
+
+        # Build graph input types: tokens, offsets, return_n_logits, signals, stage KV inputs
+        device_ref = DeviceRef.from_device(self.devices[0])
+
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
+
+        # Flatten all stage KV inputs
+        all_stage_kv_inputs: list[TensorType] = []
+        for stage_kv_inputs in stage_kv_input_symbols:
+            all_stage_kv_inputs.extend(stage_kv_inputs)
+
+        # Explicitly construct pipeline parallel graph inputs with mixed types
+        signal_buffer_types: list[BufferType] = signals.input_types()
+
+        pp_input_types: list[Union[TensorType, BufferType]] = [
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+        ]
+        pp_input_types.extend(signal_buffer_types)
+        pp_input_types.extend(all_stage_kv_inputs)
+
+        pp_graph_inputs = tuple(pp_input_types)
+
+        logger.info(f"[PP] Self-contained graph inputs: {len(pp_graph_inputs)}")
+
+        # Create PP model without session dependency
+        from .pipeline_parallel_llama3 import PipelineParallelLlama3
+
+        pp_model: PipelineParallelLlama3 = PipelineParallelLlama3(model_config)
+
+        # Load weights internally
+        filtered_state_dict = {
+            k: v for k, v in state_dict.items() if k != "rope_freqs.weight"
+        }
+        pp_model.load_state_dict(
+            filtered_state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=False,
+        )
+
+        self.state_dict = pp_model.state_dict()
+
+        # Build graph with stage-specific KV caches
+        with Graph(
+            getattr(self.huggingface_config, "model_type", "llama3"),
+            input_types=pp_graph_inputs,
+        ) as graph:
+            tokens, input_row_offsets, return_n_logits, *variadic_args = (
+                graph.inputs
+            )
+
+            # Extract signal buffers
+            signal_buffers = [
+                v.buffer for v in variadic_args[: len(self.devices)]
+            ]
+
+            # Extract stage-specific KV cache inputs
+            kv_cache_start = len(self.devices)
+            current_idx = kv_cache_start
+
+            stage_kv_caches = []
+            for stage_idx, stage_kv_inputs in enumerate(stage_kv_input_symbols):
+                stage_kv_tensors = []
+                stage_kv_list = list(stage_kv_inputs)
+                for _ in range(len(stage_kv_list)):
+                    stage_kv_tensors.append(variadic_args[current_idx].tensor)
+                    current_idx += 1
+
+                # Create stage KV cache collection using the pre-built collection function
+                kv_collection = stage_kv_collections[stage_idx](
+                    *stage_kv_tensors
+                )
+                stage_kv_caches.append(kv_collection)
+
+            logger.info(
+                f"[PP] Self-contained graph created {len(stage_kv_caches)} stage KV caches"
+            )
+
+            # Call PP model with stage-specific KV caches
+            outputs = pp_model(
+                tokens.tensor,
+                stage_kv_caches,  # Stage-specific KV cache collections
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
+
+            graph.output(*outputs)
+            return graph
+
     def _build_graph(
-        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+        self,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+        session: Optional[InferenceSession] = None,
     ) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
@@ -499,29 +807,50 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
+            pipeline_parallel_degree=self.pipeline_config.model_config.pipeline_parallel_degree,
+            tensor_parallel_degree=self.pipeline_config.model_config.tensor_parallel_degree,
         )
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()
 
-        # Build Graph
-        nn_model: Module
+        # Pipeline Parallel case - early return to avoid changing existing logic
+        if model_config.pipeline_parallel_degree > 1:
+            if model_config.tensor_parallel_degree != 1:
+                raise ValueError(
+                    "Hybrid TP+PP not supported yet. Use either TP>1 or PP>1, not both."
+                )
+            logger.info(
+                f"Using Pipeline Parallel with {model_config.pipeline_parallel_degree} stages"
+            )
+
+            # CRITICAL FIX: For PP, override the multi-device KV cache setup
+            # Create separate single-device KV cache managers for each stage
+            if session is None:
+                raise ValueError(
+                    "Session is required for pipeline parallel execution"
+                )
+            return self._build_pipeline_parallel_graph(
+                state_dict, model_config, session
+            )
+
+        # Existing multi-GPU logic (unchanged)
         if len(self.devices) > 1:
-            nn_model = DistributedLlama3(model_config)
+            dist_model: DistributedLlama3 = DistributedLlama3(model_config)
 
             # Load weights.
-            nn_model.load_state_dict(
+            dist_model.load_state_dict(
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
                 strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
             )
 
-            self.state_dict = nn_model.state_dict()
+            self.state_dict = dist_model.state_dict()
 
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=[*graph_inputs],
+                input_types=graph_inputs,
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
@@ -539,7 +868,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
                 kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
 
-                outputs = nn_model(
+                outputs = dist_model(
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
@@ -549,21 +878,22 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
                 graph.output(*outputs)
                 return graph
+
+        # Existing single GPU logic (unchanged)
         else:
-            nn_model = Llama3(model_config)
+            single_model: Llama3 = Llama3(model_config)
 
             if self._lora_manager:
-                self._lora_manager.init_weights(nn_model, state_dict)
+                self._lora_manager.init_weights(single_model, state_dict)
 
             # Load weights.
-            nn_model.load_state_dict(
+            single_model.load_state_dict(
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
                 strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
             )
-
-            self.state_dict = nn_model.state_dict()
+            self.state_dict = single_model.state_dict()
 
             with Graph("llama3", input_types=graph_inputs) as graph:
                 if self._lora_manager:
@@ -586,7 +916,7 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                         return_n_logits,
                         *kv_cache_inputs,
                     ) = graph.inputs
-                outputs = nn_model(
+                outputs = single_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
                     return_n_logits.tensor,

@@ -21,7 +21,6 @@ modular_py_library(
         requirement("msgspec"),
         requirement("numpy"),
         requirement("psutil"),
-        requirement("sentinel"),
         requirement("pyzmq"),
         requirement("torch"),
     ],

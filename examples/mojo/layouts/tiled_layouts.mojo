@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+# DOC: mojo/docs/manual/layout/layouts.mdx
+
 from layout import IntTuple, Layout, print_layout
 from layout.layout import (
     blocked_product,

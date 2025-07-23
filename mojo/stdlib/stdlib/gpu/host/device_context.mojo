@@ -41,7 +41,7 @@ from sys.param_env import _is_bool_like
 
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
-from compile.compile import Info
+from compile.compile import CompiledFunctionInfo
 from gpu.host.compile import (
     _compile_code,
     _cross_compilation,
@@ -1538,7 +1538,7 @@ struct DeviceFunction[
     var _handle: _DeviceFunctionPtr
     """Internal handle to the compiled device function."""
 
-    var _func_impl: Info[func_type, func, target]
+    var _func_impl: CompiledFunctionInfo[func_type, func, target]
     """Compilation information for the function."""
 
     fn __copyinit__(out self, existing: Self):
@@ -2601,7 +2601,7 @@ struct DeviceContext(Copyable, Movable):
     """
 
     alias device_info = DEFAULT_GPU
-    """`gpu.info.Info` object for the default accelerator."""
+    """`GPUInfo` object for the default accelerator."""
 
     alias device_api = Self.device_info.api
     """Device API for the default accelerator (for example, "cuda" or

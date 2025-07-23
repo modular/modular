@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Lifetimes, origins, and references](../../../../docs/manual/values/lifetimes.mdx)
+[Lifetimes, origins, and references](../../../../../docs/manual/values/lifetimes.mdx)
 section of the Mojo Manual.
 
 Contents:

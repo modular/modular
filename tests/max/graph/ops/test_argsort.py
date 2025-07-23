@@ -30,7 +30,7 @@ supported_tensor_types = tensor_types(
 )
 def test_argsort_output_tensor_types(
     graph_builder,  # noqa: ANN001
-    input_type: TensorType,  # noqa: ANN001
+    input_type: TensorType,
 ) -> None:
     expected_type = input_type.cast(DType.int64)
     with graph_builder(input_types=[input_type]) as graph:

@@ -222,19 +222,29 @@ different types, you can explicitly convert a value to the desired type either
 by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
 passing it as an argument to the constructor of the target type.
 
+For example, to fix the previous example, add an explicit conversion:
+
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
-print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
-print("simd4:", simd4)
+var i8: Int8 = 8
+var f64: Float64 = 64.0
+result = Float64(i8) * f64
+```
+
+Here are some more examples of converting SIMD values using both constructors
+and the `cast()` method:
+
+```mojo
+simd4 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+simd5 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd6 = simd4 * simd5.cast[DType.float32]()  # Convert with cast() method
+print("simd6:", simd6)
+simd7 = simd5 + SIMD[DType.int16, 4](simd4)  # Convert with SIMD constructor
+print("simd7:", simd7)
 ```
 
 ```output
-simd3: [-2.2, 6.6, -13.200001, 22.0]
-simd4: [1, 5, 1, 9]
-```
+simd6: [-2.2, 6.6, -13.200001, 22.0]
+simd7: [1, 5, 1, 9]```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
 you can specify an `Int` type exponent. All values in the `SIMD` are
@@ -406,9 +416,9 @@ compared.
   `SIMD[DType.bool]` result. For example:
 
     ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = simd1 > 2  # SIMD[DType.bool, 4]
-    print(simd2)
+    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    simd5 = simd4 > 2  # SIMD[DType.bool, 4]
+    print(simd5)
     ```
 
     ```output
@@ -421,9 +431,9 @@ compared.
   provided and produces a `SIMD[DType.bool]` result. For example:
 
     ```mojo
-    simd1 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd2 = simd1 > 0.5  # SIMD[DType.bool, 4]
-    print(simd2)
+    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+    simd7 = simd6 > 0.5  # SIMD[DType.bool, 4]
+    print(simd7)
     ```
 
     ```output
@@ -599,19 +609,19 @@ the character encoding.
 var animal: String = "bird"
 
 is_cat_eq = "cat" == animal
-print(StaticString('Is "cat" equal to "{}"?').format(animal), is_cat_eq)
+print('Is "cat" equal to "{}"?'.format(animal), is_cat_eq)
 
 is_cat_ne = "cat" != animal
-print(StaticString('Is "cat" not equal to "{}"?').format(animal), is_cat_ne)
+print('Is "cat" not equal to "{}"?'.format(animal), is_cat_ne)
 
 is_bird_eq = "bird" == animal
-print(StaticString('Is "bird" equal to "{}"?').format(animal), is_bird_eq)
+print('Is "bird" equal to "{}"?'.format(animal), is_bird_eq)
 
 is_cat_gt = "CAT" > animal
-print(StaticString('Is "CAT" greater than "{}"?').format(animal), is_cat_gt)
+print('Is "CAT" greater than "{}"?'.format(animal), is_cat_gt)
 
 is_ge_cat = animal >= "CAT"
-print(StaticString('Is "{}" greater than or equal to "CAT"?').format(animal), is_ge_cat)
+print('Is "{}" greater than or equal to "CAT"?'.format(animal), is_ge_cat)
 ```
 
 ```output
@@ -889,7 +899,7 @@ operator. For example, you could implement the `-` negative operator for a
 `MyInt` struct like this:
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -952,7 +962,7 @@ argument, we need to implement an `__radd__()` method, because the built-in
 type.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -1017,7 +1027,7 @@ As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt(
     Comparable
 ):
@@ -1161,15 +1171,20 @@ will not be based on the `ComplexSIMD` struct or be compatible with it.
 
 Our `Complex` struct is an example of a simple value type consisting of trivial
 numeric fields and requiring no special constructor or destructor behaviors.
-This means that we can take advantage of Mojo's
-[`@value`](/mojo/manual/decorators/value) decorator, which is described in
-[Simple value types](/mojo/manual/lifecycle/life#value-decorator), to
-automatically implement a member-wise initializer (a constructor with arguments
-for each field), a copy constructor, a move constructor, and a destructor.
+This means we can use the
+[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
+decorator, which declares that the type can be trivially copied, moved, and
+destroyed—and doesn't need a copy constructor, move constructor, or destructor.
+
+For the time being, we'll also use the
+[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
+automatically implement a field-wise initializer (a constructor with arguments
+for each field).
 
 ```mojo
-@value
-struct Complex():
+@fieldwise_init
+@register_passable("trivial")
+struct Complex:
     var re: Float64
     var im: Float64
 ```
@@ -1190,7 +1205,7 @@ As a convenience, let's add an explicit constructor to handle the case of
 creating a `Complex` instance with an imaginary component of 0.
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex():
     var re: Float64
     var im: Float64
@@ -1199,6 +1214,9 @@ struct Complex():
         self.re = re
         self.im = im
 ```
+
+Since this constructor also handles creating a `Complex` instance with both real
+and imaginary components, we don't need the `@fieldwise_init` decorator anymore.
 
 Now we can create a `Complex` instance and provide just a real component.
 
@@ -1222,7 +1240,7 @@ methods in [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex(
     Writable,
     Stringable,

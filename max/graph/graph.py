@@ -70,7 +70,7 @@ class KernelLibrary:
     _context: mlir.Context
     _analysis: _graph.Analysis
 
-    def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:
+    def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:  # noqa: B006
         # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
         # Get rid of this and properly setup the context instead.
         mock_session = InferenceSession()
@@ -192,7 +192,7 @@ def _to_mlir(o):  # noqa: ANN001
     return o
 
 
-def _set_output_param_decls(op: Operation, params: dict[str, None]):
+def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
     # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
     # - nanobind doesn't allow custom metaclasses, but __instancecheck__
     #   must be defined on a metaclass
@@ -306,7 +306,7 @@ class Graph:
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
         *args,
-        custom_extensions: list[Path] = [],
+        custom_extensions: list[Path] = [],  # noqa: B006
         context: Optional[mlir.Context] = None,
         kernel_library: Optional[KernelLibrary] = None,
         module: Optional[mlir.Module] = None,
@@ -425,7 +425,7 @@ class Graph:
         forward: Optional[Callable] = None,
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
-        custom_extensions: list[Path] = [],
+        custom_extensions: list[Path] = [],  # noqa: B006
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
 
@@ -601,7 +601,7 @@ class Graph:
         op,  # noqa: ANN001
         *args,
         _ip: Optional[mlir.InsertionPoint] = None,
-        **kwargs,  # noqa: ANN001
+        **kwargs,
     ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):  # noqa: ANN001
@@ -644,7 +644,7 @@ class Graph:
                                 staged_op = ops[idx - 1]
                                 break
                         else:
-                            assert False, (
+                            assert False, (  # noqa: B011
                                 "Could not find constructed operation in current block"
                             )
                     self._verify_op(staged_op)

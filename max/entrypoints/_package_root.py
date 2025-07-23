@@ -22,12 +22,12 @@ def get_package_root() -> Path | None:
     """Returns the package root of this installation, or None if running in a Bazel environment"""
     current_path = Path(__file__).parent
 
-    # Walk up the directory tree until we find lib/liborc_rt.a or hit root
+    # Walk up the directory tree until we find bin/mojo or hit root
     # This is currently supposed to work for two cases:
     # - Set of Conda packages.
     # - Monolithic Pip wheel installation.
     while current_path != current_path.parent:  # Stop at root directory
-        if (current_path / "lib" / "liborc_rt.a").exists():
+        if (current_path / "bin" / "mojo").exists():
             logging.debug(f"Located MAX SDK assets at {current_path}")
             return current_path
         current_path = current_path.parent

@@ -53,7 +53,7 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
 
     if n % chunks != 0:
         raise ValueError(
-            "chunk: {chunks=} must statically divide {x.shape[axis]=}"
+            f"chunk: {chunks=} must statically divide {x.shape[axis]=}"
         )
 
     # Determine chunk size using ceiling division.

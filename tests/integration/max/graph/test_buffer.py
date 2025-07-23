@@ -109,7 +109,7 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:  # noqa: ANN001
 def test_load_mutate_store(
     n,  # noqa: ANN001
     buffer_graph: Graph,
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -135,7 +135,7 @@ def test_load_mutate_store(
 def test_load_mutate_store_ellipsis(
     n,  # noqa: ANN001
     buffer_graph: Graph,
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -159,7 +159,7 @@ def test_load_mutate_store_ellipsis(
 def test_store_slice_load_slice(
     n,  # noqa: ANN001
     buffer_tensor_graph: Graph,
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     with buffer_tensor_graph as graph:
         tensor = graph.inputs[0].tensor
@@ -195,7 +195,7 @@ def test_store_slice_load_slice(
 )
 def test_inplace_user_supplied(
     custom_ops_path,  # noqa: ANN001
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], device=DeviceRef.CPU())
 

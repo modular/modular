@@ -96,7 +96,7 @@ def custom_ops_path() -> Path:
 )
 def test_while_loop_inplace_user_supplied(
     custom_ops_path,  # noqa: ANN001
-    session: InferenceSession,  # noqa: ANN001
+    session: InferenceSession,
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 

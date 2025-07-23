@@ -106,7 +106,7 @@ class TokenSkippingGGUFReader(gguf.GGUFReader):
                 )
                 for qword_byte_offset in range(8)
             ]
-            for i in range(int(count[0])):
+            for i in range(int(count[0])):  # noqa: B007
                 str_length = qword_views[offs % 8][offs // 8]
                 offs += str_length + 8
             return offs - orig_offs

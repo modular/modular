@@ -33,10 +33,9 @@ from transformers import (
 if TYPE_CHECKING:
     from .config import PipelineConfig
 from max.interfaces import (
-    EmbeddingsResponse,
+    EmbeddingsOutput,
     GenerationStatus,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.pipelines.core import (
@@ -123,7 +122,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
 
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -186,15 +185,16 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         generated_tokens = generated_tokens.cpu()
 
         # Prepare the response, pruning away completed requests as we go.
-        res: dict[str, TextGenerationResponse] = {}
+        res: dict[str, TextGenerationOutput] = {}
         for batch_idx, (request_id, context) in enumerate(batch.items()):
             status = GenerationStatus.ACTIVE
-            res[request_id] = TextGenerationResponse([], status)
+            tokens = []
+
             for step in range(num_steps):
                 next_token_id = generated_tokens[batch_idx, step].item()
 
                 # Update context
-                context.update(next_token_id)
+                context.update(int(next_token_id))
                 next_token = np.array([next_token_id])
                 self._cache.tokens[context.cache_seq_id] = np.append(
                     self._cache.tokens[context.cache_seq_id], next_token
@@ -206,21 +206,25 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
                     else context.max_length
                 )
 
+                # Add token to the list
+                tokens.append(int(next_token_id))
+
                 if next_token_id in self._eos_token_id:
                     status = GenerationStatus.END_OF_SEQUENCE
-                    res[request_id].update_status(status)
-                elif context.current_length > max_length:
+                elif context.current_length >= max_length:
                     status = GenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].update_status(status)
-                elif context.current_length == max_length:
-                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
-                    status = GenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].update_status(status)
-                else:
-                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
 
-                if status.is_done:
+                context.update_status(status)
+                if context.is_done:
                     break
+
+            # Create the TextGenerationOutput for this request
+            res[request_id] = TextGenerationOutput(
+                request_id=request_id,
+                tokens=tokens,
+                final_status=status,
+                log_probabilities=None,
+            )
 
         return res
 
@@ -356,7 +360,7 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
 
     def encode(
         self, batch: dict[str, TextContext]
-    ) -> dict[str, EmbeddingsResponse]:
+    ) -> dict[str, EmbeddingsOutput]:
         """Encodes a batch of text inputs."""
 
         # Flatten our batch for consistent indexing.
@@ -374,10 +378,10 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
         )
 
         # Prepare the response.
-        res: dict[str, EmbeddingsResponse] = {}
+        res: dict[str, EmbeddingsOutput] = {}
         for batch_index, request_id in enumerate(batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
-            res[request_id] = EmbeddingsResponse(request_embeddings)
+            res[request_id] = EmbeddingsOutput(request_embeddings)
         return res
 
 

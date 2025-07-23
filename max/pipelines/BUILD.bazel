@@ -12,7 +12,6 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/lib",
-        requirement("aiohttp"),
         requirement("gguf"),
         requirement("hf-transfer"),
         requirement("huggingface-hub"),

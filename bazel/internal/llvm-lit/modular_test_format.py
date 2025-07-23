@@ -21,8 +21,10 @@ import re
 import lit
 from lit.formats import ShTest
 
-_MODULAR_PATH_REGEX = re.compile(r"(^| |=)/[^ ]+/_main/", flags=re.M)
-_EXTERNAL_PATH_REGEX = re.compile(r"(^| |=)/[^ ]+/external/", flags=re.M)
+_MODULAR_PATH_REGEX = re.compile(r"(^| |=)/[^ ]+/_main/", flags=re.MULTILINE)
+_EXTERNAL_PATH_REGEX = re.compile(
+    r"(^| |=)/[^ ]+/external/", flags=re.MULTILINE
+)
 
 
 class ModularShTest(ShTest):

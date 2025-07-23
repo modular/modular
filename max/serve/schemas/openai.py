@@ -476,6 +476,7 @@ class CreateChatCompletionStreamResponse(BaseModel):
         None,
         description='An optional field that will only be present when you set `stream_options: {"include_usage": true}` in your request.\nWhen present, it contains a null value except for the last chunk which contains the token usage statistics for the entire request.\n',
     )
+    lora: Optional[str] = Field(None, description='The LoRA adapter to generate the completion.')
 
 
 class CreateChatCompletionImageResponse(BaseModel):
@@ -3378,6 +3379,12 @@ class CreateCompletionRequest(BaseModel):
         ...,
         description='ID of the model to use. You can use the [List models](/docs/api-reference/models/list) API to see all of your available models, or see our [Model overview](/docs/models/overview) for descriptions of them.\n',
     )
+    lora: Optional[
+        str
+    ] = Field(
+        None,
+        description='ID of the LoRA adapter to use. If the LoRA ID is present but is not a valid LoRA, the base model will be used instead.\n',
+    )
     prompt: Union[str, List[str], List[int], List[PromptItem]] = Field(
         ...,
         description='The prompt(s) to generate completions for, encoded as a string, array of strings, array of tokens, or array of token arrays.\n\nNote that <|endoftext|> is the document separator that the model sees during training, so if a prompt is not specified the model will generate as if from the beginning of a new document.\n',
@@ -3491,6 +3498,7 @@ class CreateCompletionResponse(BaseModel):
         ..., description='The object type, which is always "text_completion"'
     )
     usage: Optional[CompletionUsage] = None
+    lora: Optional[str] = Field(None, description='The LoRA adapter used for completion.')
 
 
 class ChatCompletionTool(BaseModel):
@@ -3584,6 +3592,9 @@ class CreateChatCompletionResponse(BaseModel):
         ..., description='The object type, which is always `chat.completion`.'
     )
     usage: Optional[CompletionUsage] = None
+    lora: Optional[str] = Field(
+        None, description='The LoRA adapter used for the chat completion.'
+    )
 
 
 class Choice2(BaseModel):
@@ -4808,6 +4819,12 @@ class CreateChatCompletionRequest(BaseModel):
         description='ID of the model to use. See the [model endpoint compatibility](/docs/models/model-endpoint-compatibility) table for details on which models work with the Chat API.',
         examples=['gpt-4o'],
     )
+    lora: Optional[
+        str
+    ] = Field(
+        None,
+        description='ID of the LoRA adapter to use. If the LoRA ID is present but is not a valid LoRA, the base model will be used instead.\n',
+    )
     frequency_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
@@ -5212,6 +5229,7 @@ class CreateAudioGenerationRequest(BaseModel):
     response_format: Literal['wav', 'mp3', 'pcm'] = Field(..., description='The response format for the audio generation.')
     speed: float = Field(..., description='The speed of the audio generation.')
     min_tokens: int = Field(default=0, description='Generate at least this many tokens, even if we generate EOS before we get there.')
+    lora: Optional[str] = Field(..., description='The model to use for the audio generation.')
 
 class CreateAudioGenerationResponse(BaseModel):
     audio_data: bytes = Field(..., description='The audio data for the audio generation.')

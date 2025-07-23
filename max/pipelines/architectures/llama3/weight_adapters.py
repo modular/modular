@@ -74,6 +74,27 @@ def convert_safetensor_state_dict(
                 new_state_dict[key] = weight_data.astype(
                     pipeline_config.model_config._applied_dtype_cast_to.dtype
                 )
+
+    # The GPTQ algorithm only use a subset of its keys based on the specific
+    # configuration, while the unused keys remain present in the state dict
+    # but are filled with dummy values for compatibility reasons. We have
+    # `strict=True`, so we need to remove those unused keys when we're running
+    # a GPTQ Llama model.
+    if hasattr(huggingface_config, "quantization_config"):
+        UNUSED_KEYS = [".bias", ".qzeros"]
+        if huggingface_config.quantization_config["desc_act"] == True:
+            UNUSED_KEYS.append("v_proj.perm_idx")
+            UNUSED_KEYS.append("k_proj.perm_idx")
+        else:
+            UNUSED_KEYS.append("perm_idx")
+        keys_to_remove = [
+            key
+            for key in new_state_dict
+            if any(key.endswith(suffix) for suffix in UNUSED_KEYS)
+        ]
+        for key in keys_to_remove:
+            new_state_dict.pop(key, None)
+
     return new_state_dict
 
 
@@ -105,4 +126,12 @@ def convert_gguf_state_dict(
         for before, after in LLAMA_GGUF_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
+
+    # GGUF bakes `rope_freqs` into the weights file, because `Llama.cpp` expects
+    # to just load and use it as a precomputed tensor. On the other hand, in
+    # the HuggingFace ecosystem, rotary positional encodings are not parameters;
+    # they are deterministic and computed from the config at runtime. So, we
+    # need to remove `rope_freqs.weight` from the state dict.
+    new_state_dict.pop("rope_freqs.weight", None)
+
     return new_state_dict

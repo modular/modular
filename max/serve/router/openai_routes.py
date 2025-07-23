@@ -206,6 +206,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     system_fingerprint=None,
                     usage=usage,
                     service_tier=None,
+                    lora=request.lora_name,
                 )
                 n_tokens += 1
                 payload = response.model_dump_json()
@@ -315,6 +316,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 system_fingerprint=None,
                 service_tier=None,
                 usage=usage,
+                lora=request.lora_name,
             )
             return response
         finally:
@@ -638,6 +640,7 @@ async def openai_create_chat_completion(
             id=request_id,
             index=0,
             model_name=completion_request.model,
+            lora_name=completion_request.lora,
             messages=request_messages,
             images=request_images,
             tools=tools,
@@ -812,6 +815,7 @@ class CompletionStreamResponse(BaseModel):
     choices: list[CompletionResponseStreamChoice]
     object: Literal["text_completion"]
     usage: Optional[CompletionUsage] = Field(default=None)
+    lora: Optional[str] = Field(default=None)
 
 
 def _process_log_probabilities(
@@ -868,6 +872,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     created=int(datetime.now().timestamp()),
                     model=self.pipeline.model_name,
                     object="text_completion",
+                    lora=request.lora_name,
                 )
                 n_tokens += 1
                 del tracer  # create_completion_stream_response
@@ -944,6 +949,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 model=self.pipeline.model_name,
                 object="text_completion",
                 system_fingerprint=None,
+                lora=requests[0].lora_name,
             )
             return response
         except:
@@ -1059,6 +1065,7 @@ async def openai_create_completion(
                 logprobs=completion_request.logprobs,
                 echo=completion_request.echo,
                 sampling_params=sampling_params,
+                lora_name=completion_request.lora,
             )
             token_requests.append(tgr)
 
@@ -1153,6 +1160,7 @@ async def create_streaming_audio_speech(
             sampling_params=sampling_params,
             audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
             audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
+            lora=audio_generation_request.lora,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,

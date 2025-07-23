@@ -19,50 +19,50 @@ import mojo_module as def_staticmethod
 import pytest
 
 
-def _test_takes_zero_returns(fut: Callable[[], str]):
-    setattr(sys.modules[__name__], "s", "just a python string")
+def _test_takes_zero_returns(fut: Callable[[], str]) -> None:
+    setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     result = fut()
     assert result == "just another python string"
 
 
-def _test_takes_one_returns(fut: Callable[[str], str]):
+def _test_takes_one_returns(fut: Callable[[str], str]) -> None:
     result = fut("foo")
     assert result == "foo"
 
 
-def _test_takes_two_returns(fut: Callable[[str, str], str]):
+def _test_takes_two_returns(fut: Callable[[str, str], str]) -> None:
     result = fut("foo", "bar")
     assert result == "foobar"
 
 
-def _test_takes_three_returns(fut: Callable[[str, str, str], str]):
+def _test_takes_three_returns(fut: Callable[[str, str, str], str]) -> None:
     result = fut("foo", "bar", "baz")
     assert result == "foobarbaz"
 
 
-def test_takes_zero_returns():
+def test_takes_zero_returns() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_zero_returns(dummy.takes_zero_returns)
 
 
-def test_takes_one_returns():
+def test_takes_one_returns() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_one_returns(dummy.takes_one_returns)
 
 
-def test_takes_two_returns():
+def test_takes_two_returns() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_two_returns(dummy.takes_two_returns)
 
 
-def test_takes_three_returns():
+def test_takes_three_returns() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_three_returns(dummy.takes_three_returns)
 
 
-def test_takes_zero_raises_returns():
+def test_takes_zero_raises_returns() -> None:
     dummy = def_staticmethod.Dummy
-    setattr(sys.modules[__name__], "s", "a special python string")
+    setattr(sys.modules[__name__], "s", "a special python string")  # noqa: B010
     with pytest.raises(Exception) as cm:
         dummy.takes_zero_raises_returns()
     assert cm.value.args == ("`s` must be 'just a python string'",)
@@ -70,7 +70,7 @@ def test_takes_zero_raises_returns():
     _test_takes_zero_returns(dummy.takes_zero_raises_returns)
 
 
-def test_takes_one_raises_returns():
+def test_takes_one_raises_returns() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_one_raises_returns("quux")
@@ -79,7 +79,7 @@ def test_takes_one_raises_returns():
     _test_takes_one_returns(dummy.takes_one_raises_returns)
 
 
-def test_takes_two_raises_returns():
+def test_takes_two_raises_returns() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_two_raises_returns("quux", "bar")
@@ -88,7 +88,7 @@ def test_takes_two_raises_returns():
     _test_takes_two_returns(dummy.takes_two_raises_returns)
 
 
-def test_takes_three_raises_returns():
+def test_takes_three_raises_returns() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_three_raises_returns("quux", "bar", "baz")
@@ -97,56 +97,56 @@ def test_takes_three_raises_returns():
     _test_takes_three_returns(dummy.takes_three_raises_returns)
 
 
-def _test_takes_zero(fut: Callable[[], None]):
-    setattr(sys.modules[__name__], "s", "just a python string")
+def _test_takes_zero(fut: Callable[[], None]) -> None:
+    setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     fut()
     assert (
-        getattr(sys.modules[__name__], "s")
+        getattr(sys.modules[__name__], "s")  # noqa: B009
         == "Hark! A mojo function calling into Python, called from Python!"
     )
 
 
-def _test_takes_one(fut: Callable[[list], None]):
+def _test_takes_one(fut: Callable[[list], None]) -> None:
     list_obj = [1, 2, 5]
     fut(list_obj)
     assert list_obj[0] == "baz"
 
 
-def _test_takes_two(fut: Callable[[list, str], None]):
+def _test_takes_two(fut: Callable[[list, str], None]) -> None:
     list_obj = [1, 2, 5]
     fut(list_obj, "foo")
     assert list_obj[0] == "foo"
 
 
-def _test_takes_three(fut: Callable[[list, str, str], None]):
+def _test_takes_three(fut: Callable[[list, str, str], None]) -> None:
     list_obj = [1, 2, 5]
     fut(list_obj, "foo", "bar")
     assert list_obj[0] == "foobar"
 
 
-def test_takes_zero():
+def test_takes_zero() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_zero(dummy.takes_zero)
 
 
-def test_takes_one():
+def test_takes_one() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_one(dummy.takes_one)
 
 
-def test_takes_two():
+def test_takes_two() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_two(dummy.takes_two)
 
 
-def test_takes_three():
+def test_takes_three() -> None:
     dummy = def_staticmethod.Dummy
     _test_takes_three(dummy.takes_three)
 
 
-def test_takes_zero_raises():
+def test_takes_zero_raises() -> None:
     dummy = def_staticmethod.Dummy
-    setattr(sys.modules[__name__], "s", "a special python string")
+    setattr(sys.modules[__name__], "s", "a special python string")  # noqa: B010
     with pytest.raises(Exception) as cm:
         dummy.takes_zero_raises()
     assert cm.value.args == ("`s` must be 'just a python string'",)
@@ -154,7 +154,7 @@ def test_takes_zero_raises():
     _test_takes_zero(dummy.takes_zero_raises)
 
 
-def test_takes_one_raises():
+def test_takes_one_raises() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_one_raises([1, 2])
@@ -163,7 +163,7 @@ def test_takes_one_raises():
     _test_takes_one(dummy.takes_one_raises)
 
 
-def test_takes_two_raises():
+def test_takes_two_raises() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_two_raises([1, 2], "foo")
@@ -172,7 +172,7 @@ def test_takes_two_raises():
     _test_takes_two(dummy.takes_two_raises)
 
 
-def test_takes_three_raises():
+def test_takes_three_raises() -> None:
     dummy = def_staticmethod.Dummy
     with pytest.raises(Exception) as cm:
         dummy.takes_three_raises([1, 2], "foo", "bar")

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-from max.interfaces import EmbeddingsResponse, EngineResult
+from max.interfaces import EmbeddingsOutput, EngineResult
 from max.pipelines.core import (
     EmbeddingsGenerator,
     TextContext,
@@ -57,7 +57,7 @@ class EmbeddingsScheduler(Scheduler):
             deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[EmbeddingsResponse]]
+            dict[str, EngineResult[EmbeddingsOutput]]
         ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
 
     @traced

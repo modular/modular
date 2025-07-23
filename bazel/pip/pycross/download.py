@@ -34,8 +34,7 @@ class Download:
         self.filename = os.path.basename(self.url).replace("%2B", "+")
         self.is_wheel = self.filename.endswith(".whl")
         filename_without_ext = os.path.splitext(self.filename)[0]
-        if filename_without_ext.endswith(".tar"):
-            filename_without_ext = filename_without_ext[:-4]
+        filename_without_ext = filename_without_ext.removesuffix(".tar")
 
         self.name = (
             "pycross_lock_file_"

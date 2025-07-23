@@ -10,20 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the RandomWeight class."""
+#
+# This file only tests the debug_assert function
+#
+# ===----------------------------------------------------------------------=== #
 
-import torch
-from max.dtype import DType
-from max.graph.weights import RandomWeights
+
+def main():
+    alias res = test_debug_assert_compile_time()
+
+    # CHECK: 33
+    print(res)
 
 
-def test_random_weight() -> None:
-    """Tests that random weight creation works, checking shape and dtype."""
-    weights = RandomWeights()
-    _ = weights.vision_model.gated_positional_embedding.gate.allocate(
-        DType.bfloat16, [1]
-    )
-    materialized_weights = weights.allocated_weights
-    weight_name = "vision_model.gated_positional_embedding.gate"
-    assert weight_name in materialized_weights
-    assert materialized_weights[weight_name].dtype == torch.bfloat16
+fn test_debug_assert_compile_time() -> Int:
+    debug_assert(True, "ok")
+    debug_assert[assert_mode="safe"](True, "ok")
+    debug_assert[assert_mode="safe", cpu_only=True](True, "ok")
+
+    return 33

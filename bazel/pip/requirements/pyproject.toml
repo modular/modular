@@ -45,7 +45,6 @@ dependencies = [
   "opentelemetry-sdk",
   "packaging",
   "pre-commit",
-  "prometheus-async",
   "prometheus-client",
   "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
@@ -70,7 +69,6 @@ dependencies = [
   "regex",
   "safetensors",
   "sentencepiece",
-  "sentinel==1.0.0",
   "setuptools",
   "simpy",
   "sphinx==7.4.7",
@@ -127,6 +125,10 @@ dependencies = [
   "types-PyYAML",
   "types-setuptools",
   "types-tabulate",
+
+  # tts
+  "zhon",
+  "zhconv",
 ]
 
 [dependency-groups]

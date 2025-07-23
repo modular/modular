@@ -15,9 +15,15 @@
 import mojo_module
 
 
-def test_basic_raw():
+def test_basic_raw() -> None:
     result = mojo_module.mojo_count_args(1, 2)
-
     assert result == 2
 
-    print("Result from Mojo 🔥:", result)
+    result = mojo_module.mojo_count_args_with_kwargs(1, 2, 3)
+    assert result == 3
+
+    result = mojo_module.mojo_count_args_with_kwargs(1, 2, c=3)
+    assert result == 3
+
+    result = mojo_module.mojo_count_args_with_kwargs(a=1, b=2, c=3)
+    assert result == 3

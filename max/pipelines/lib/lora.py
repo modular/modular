@@ -62,13 +62,11 @@ def is_lora_kind(key: str) -> bool:
     """
     Whether the key is a lora kind
     """
-    if (
+    return bool(
         LoRAType.A.value in key
         or LoRAType.B.value in key
         or LoRAType.BIAS.value in key
-    ):
-        return True
-    return False
+    )
 
 
 class LoRAModel:
@@ -236,6 +234,7 @@ class LoRAManager:
 
     def __init__(
         self,
+        base_model_path: str,
         base_weights: Weights,
         max_num_loras: int,
         max_lora_rank: int,
@@ -249,6 +248,7 @@ class LoRAManager:
             max_num_loras (int): The maximum number of LoRA models to manage concurrently.
             lora_paths: (list[str]): An optional list of local LoRAs to load on initialization.
         """
+        self.base_model_path = base_model_path
         self.base_weights = base_weights
         self.max_num_loras = max_num_loras
         self.max_lora_rank = max_lora_rank
@@ -268,7 +268,7 @@ class LoRAManager:
         """
         return self._lora_index_to_id.index(name)
 
-    def _model_name_to_id(self, name: str) -> int:
+    def _model_name_to_id(self, name: str | None) -> int:
         """
         Maps the model name to it's assigned slot id.
         """
@@ -278,13 +278,13 @@ class LoRAManager:
             else self.max_num_loras - 1
         )
 
-    def _model_name_to_rank(self, name: str) -> int:
-        """s
+    def _model_name_to_rank(self, name: str | None) -> int:
+        """
         Maps the model name to it's rank.
         """
         return self._loras[name].rank if name in self._loras else 0
 
-    def _model_names_to_ids(self, model_names: list[str]) -> list[int]:
+    def _model_names_to_ids(self, model_names: list[str | None]) -> list[int]:
         """
         Maps the list of model names to their assigned slots.
         If a model isn't a valid loaded LoRA, we assume the base model is
@@ -292,7 +292,7 @@ class LoRAManager:
         """
         return [self._model_name_to_id(name) for name in model_names]
 
-    def _model_names_to_ranks(self, model_names: list[str]) -> list[int]:
+    def _model_names_to_ranks(self, model_names: list[str | None]) -> list[int]:
         """
         Maps the list of model names to their assigned ranks.
         If a model isn't a valid loaded LoRA, we assume the base model is
@@ -302,7 +302,7 @@ class LoRAManager:
 
     def get_lora_graph_inputs(
         self,
-        model_names: list[str],
+        model_names: list[str | None],
         device: Device,
     ) -> tuple[Tensor, ...]:
         """
@@ -313,6 +313,14 @@ class LoRAManager:
             input_row_offsets: The offsets for each sequence in the batch
             device: The device
         """
+        for name in model_names:
+            if name and name not in self._loras:
+                raise RuntimeError(
+                    "Issuing a request with a non-existent LoRA. "
+                    f"Requested LoRA with name: {name}. Valid LoRA names are: "
+                    f"{list(self._loras.keys())}"
+                )
+
         ids = self._model_names_to_ids(model_names)
         ranks = self._model_names_to_ranks(model_names)
 
@@ -346,8 +354,8 @@ class LoRAManager:
         lora_ids: list[str] = []
 
         for lora_path in lora_paths:
-            lora_id = self.load_adapter(lora_path)
-            lora_ids.append(lora_id)
+            if lora_id := self.load_adapter(lora_path):
+                lora_ids.append(lora_id)
 
         return lora_ids
 
@@ -375,10 +383,10 @@ class LoRAManager:
                 return i
 
         raise RuntimeError(
-            f"No available LoRA slots left. Current max is: {self.max_num_loras - 1} (last slot reserved for inactive LoRAs)"
+            f"No available LoRA slots left. Current max is: {self.max_num_loras - 1}"
         )
 
-    def load_adapter(self, path: str) -> str:
+    def load_adapter(self, path: str) -> str | None:
         """
         Loads a single LoRA adapter from the given path and registers it under a unique name.
 
@@ -414,12 +422,10 @@ class LoRAManager:
             self._lora_index_to_id[slot] = lora.name
             self._loras[lora.name] = lora
             return lora.name
-        else:
-            logger.warning(
-                f"LoRA with name {name} already exists in LoRA registry, not reloading."
-            )
 
-            return name
+        raise RuntimeError(
+            f"LoRA with name {name} already exists in LoRA registry."
+        )
 
     def unload_adapter(self, lora: str) -> None:
         """
@@ -585,7 +591,7 @@ class LoRAManager:
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
-    ):
+    ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
 
@@ -608,7 +614,7 @@ class LoRAManager:
             for req_id, _ in sorted(
                 batch.items(),
                 key=lambda item: self._model_name_to_rank(
-                    getattr(item[1], "model_name")
+                    getattr(item[1], "model_name")  # noqa: B009
                 ),
             )
         }

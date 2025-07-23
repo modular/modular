@@ -12,7 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to deploy MAX Serve on an EC2 instance.
+Description: CloudFormation template to deploy MAX on an EC2 instance.
 
 Parameters:
   InstanceType:
@@ -20,7 +20,7 @@ Parameters:
     Default: g5.4xlarge
     AllowedValues:
       - g5.4xlarge
-    Description: EC2 instance type for the MAX Serve deployment.
+    Description: EC2 instance type for the MAX deployment.
 
   AmiId:
     Type: AWS::EC2::Image::Id
@@ -204,7 +204,7 @@ Resources:
           # Pull and run the MAX Serve container
           echo "Pulling and running MAX Serve container..."
           # Add error checking for docker pull
-          if ! sudo docker pull docker.modular.com/modular/max-nvidia-full:latest; then
+          if ! sudo docker pull modular/max-nvidia-full:latest; then
             echo "Failed to pull container image"
             /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
             exit 1
@@ -220,7 +220,7 @@ Resources:
             --gpus 1 \
             -p 80:8000 \
             --ipc=host \
-            docker.modular.com/modular/max-nvidia-full:latest \
+            modular/max-nvidia-full:latest \
             --model-path ${HuggingFaceRepoId})
 
           if [ $? -ne 0 ]; then

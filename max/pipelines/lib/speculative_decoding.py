@@ -32,8 +32,7 @@ from max.graph.weights import (
 from max.interfaces import (
     GenerationStatus,
     InputContext,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.nn import ReturnLogits
@@ -218,7 +217,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
-            adapter=weight_adapters.get(_target_weights_format, None),
+            adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
         )
 
@@ -321,7 +320,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
-            adapter=weight_adapters.get(_draft_weights_format, None),
+            adapter=weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
         )
 
@@ -384,11 +383,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
-        return (
-            num_steps
-            if num_available_steps > num_steps
-            else num_available_steps
-        )
+        return min(num_available_steps, num_steps)
 
     @traced
     def prepare_batch(
@@ -403,7 +398,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         merged_draft_offsets: Optional[Tensor] = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
-        for i, context in enumerate(batch):
+        for i, context in enumerate(batch):  # noqa: B007
             if not model.kv_manager.contains(context.cache_seq_id):
                 model.kv_manager.external_claim([context.cache_seq_id])
 
@@ -571,7 +566,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
 
         # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
-        for i, context in enumerate(batch):
+        for i, context in enumerate(batch):  # noqa: B007
             context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
         return (
             num_steps,
@@ -630,7 +625,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def next_token(
         self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.
@@ -781,7 +776,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: dict[str, T],
         context_batch: list[T],
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Build response from updated contexts.
 
         Args:
@@ -789,13 +784,15 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             context_batch: The list of context objects
 
         Returns:
-            Dictionary mapping request IDs to TextGenerationResponse objects
+            Dictionary mapping request IDs to TextGenerationOutput objects
         """
-        res: dict[str, TextGenerationResponse] = {}
+        res: dict[str, TextGenerationOutput] = {}
         request_ids = list(batch.keys())
 
-        for idx, context in enumerate(context_batch):
-            res[request_ids[idx]] = TextGenerationResponse([], context.status)
+        for _, context in enumerate(context_batch):
+            tokens = []
+            log_probabilities = []
+            final_status = context.status
 
             # Identify the Max Length
             context_max_length = upper_bounded_default(
@@ -804,7 +801,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
             # TODO: This resets the context object for a new sequence.
             # We may want to make this more explicit
-            for i, (token, log_probs) in enumerate(
+            for i, (token, log_probs) in enumerate(  # noqa: B007
                 context.outstanding_completion_tokens()
             ):
                 # Break early if beyond max length
@@ -812,16 +809,25 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
                 if current_length >= context_max_length:
                     context.update_status(GenerationStatus.MAXIMUM_LENGTH)
-                    res[request_ids[idx]].update_status(context.status)
-
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
+                    final_status = context.status
+                    tokens.append(token)
+                    if log_probs is not None:
+                        log_probabilities.append(log_probs)
                     break
                 else:
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
+                    tokens.append(token)
+                    if log_probs is not None:
+                        log_probabilities.append(log_probs)
+
+            # Create TextGenerationOutput
+            res[context.request_id] = TextGenerationOutput(
+                request_id=context.request_id,
+                tokens=tokens,
+                final_status=final_status,
+                log_probabilities=log_probabilities
+                if log_probabilities
+                else None,
+            )
 
         return res
 

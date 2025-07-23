@@ -16,22 +16,29 @@ from os import abort
 
 from python import PythonObject as PO  # for brevity of signatures below
 from python.bindings import check_arguments_arity
+from collections import OwnedKwargsDict
 
 
 struct PyObjectFunction[
-    func_type: AnyTrivialRegType, self_type: AnyType = NoneType
+    func_type: AnyTrivialRegType,
+    self_type: AnyType = NoneType,
+    has_kwargs: Bool = False,
 ]:
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 
     This currently supports function types with up to 6 positional arguments,
-    as well as raising functions, and both functions that return a PythonObject
-    or nothing.
+    both functions that raise and those that don't, both functions that return a PythonObject
+    or nothing, and both functions that accept keyword arguments and those that don't.
 
     The self_type parameter controls self parameter handling:
     - NoneType (default): No self parameter expected
     - PythonObject: Self parameter is a PythonObject (for methods)
     - Other types: Self parameter will be auto-downcast from PythonObject
+
+    The has_kwargs parameter indicates whether this function accepts keyword arguments:
+    - False (default): Function does not accept kwargs
+    - True: Function's last parameter is OwnedKwargsDict[PythonObject]
 
     Note:
         This is a private implementation detail of the Python bindings, and have
@@ -50,24 +57,61 @@ struct PyObjectFunction[
     alias _0e = fn () raises
     alias _0 = fn ()
 
+    alias _0er_kwargs = fn (OwnedKwargsDict[PO]) raises -> PO
+    alias _0r_kwargs = fn (OwnedKwargsDict[PO]) -> PO
+    alias _0e_kwargs = fn (OwnedKwargsDict[PO]) raises
+    alias _0_kwargs = fn (OwnedKwargsDict[PO])
+
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0er, NoneType], f: Self._0er):
+    fn __init__(out self: PyObjectFunction[Self._0er], f: Self._0er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0r, NoneType], f: Self._0r):
+    fn __init__(out self: PyObjectFunction[Self._0r], f: Self._0r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0e, NoneType], f: Self._0e):
+    fn __init__(out self: PyObjectFunction[Self._0e], f: Self._0e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0, NoneType], f: Self._0):
+    fn __init__(out self: PyObjectFunction[Self._0], f: Self._0):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._0er_kwargs, has_kwargs=True],
+        f: Self._0er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._0r_kwargs, has_kwargs=True],
+        f: Self._0r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._0e_kwargs, has_kwargs=True],
+        f: Self._0e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._0_kwargs, has_kwargs=True],
+        f: Self._0_kwargs,
+    ):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -78,6 +122,11 @@ struct PyObjectFunction[
     alias _1r = fn (PO) -> PO
     alias _1e = fn (PO) raises
     alias _1 = fn (PO)
+
+    alias _1er_kwargs = fn (PO, OwnedKwargsDict[PO]) raises -> PO
+    alias _1r_kwargs = fn (PO, OwnedKwargsDict[PO]) -> PO
+    alias _1e_kwargs = fn (PO, OwnedKwargsDict[PO]) raises
+    alias _1_kwargs = fn (PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -99,6 +148,40 @@ struct PyObjectFunction[
     fn __init__(out self: PyObjectFunction[Self._1, self_type], f: Self._1):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._1er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._1er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1r_kwargs, self_type, has_kwargs=True],
+        f: Self._1r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1e_kwargs, self_type, has_kwargs=True],
+        f: Self._1e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._1_kwargs, self_type, has_kwargs=True],
+        f: Self._1_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 1 argument (typed self methods - 0 additional arguments)
     # ===-------------------------------------------------------------------===#
@@ -107,6 +190,17 @@ struct PyObjectFunction[
     alias _1r_self = fn (UnsafePointer[self_type]) -> PO
     alias _1e_self = fn (UnsafePointer[self_type]) raises
     alias _1_self = fn (UnsafePointer[self_type])
+
+    alias _1er_self_kwargs = fn (
+        UnsafePointer[self_type], OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _1r_self_kwargs = fn (
+        UnsafePointer[self_type], OwnedKwargsDict[PO]
+    ) -> PO
+    alias _1e_self_kwargs = fn (
+        UnsafePointer[self_type], OwnedKwargsDict[PO]
+    ) raises
+    alias _1_self_kwargs = fn (UnsafePointer[self_type], OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -136,6 +230,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._1er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._1er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._1r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._1r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._1e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._1e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._1_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._1_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 2 arguments (typed self methods - 1 additional argument)
     # ===-------------------------------------------------------------------===#
@@ -144,6 +278,19 @@ struct PyObjectFunction[
     alias _2r_self = fn (UnsafePointer[self_type], PO) -> PO
     alias _2e_self = fn (UnsafePointer[self_type], PO) raises
     alias _2_self = fn (UnsafePointer[self_type], PO)
+
+    alias _2er_self_kwargs = fn (
+        UnsafePointer[self_type], PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _2r_self_kwargs = fn (
+        UnsafePointer[self_type], PO, OwnedKwargsDict[PO]
+    ) -> PO
+    alias _2e_self_kwargs = fn (
+        UnsafePointer[self_type], PO, OwnedKwargsDict[PO]
+    ) raises
+    alias _2_self_kwargs = fn (
+        UnsafePointer[self_type], PO, OwnedKwargsDict[PO]
+    )
 
     @doc_private
     @implicit
@@ -173,6 +320,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._2er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._2er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._2r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._2r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._2e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._2e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._2_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._2_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 3 arguments (typed self methods - 2 additional arguments)
     # ===-------------------------------------------------------------------===#
@@ -181,6 +368,19 @@ struct PyObjectFunction[
     alias _3r_self = fn (UnsafePointer[self_type], PO, PO) -> PO
     alias _3e_self = fn (UnsafePointer[self_type], PO, PO) raises
     alias _3_self = fn (UnsafePointer[self_type], PO, PO)
+
+    alias _3er_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _3r_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, OwnedKwargsDict[PO]
+    ) -> PO
+    alias _3e_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, OwnedKwargsDict[PO]
+    ) raises
+    alias _3_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, OwnedKwargsDict[PO]
+    )
 
     @doc_private
     @implicit
@@ -210,6 +410,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._3er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._3er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._3r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._3r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._3e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._3e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._3_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._3_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 4 arguments (typed self methods - 3 additional arguments)
     # ===-------------------------------------------------------------------===#
@@ -218,6 +458,19 @@ struct PyObjectFunction[
     alias _4r_self = fn (UnsafePointer[self_type], PO, PO, PO) -> PO
     alias _4e_self = fn (UnsafePointer[self_type], PO, PO, PO) raises
     alias _4_self = fn (UnsafePointer[self_type], PO, PO, PO)
+
+    alias _4er_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _4r_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, OwnedKwargsDict[PO]
+    ) -> PO
+    alias _4e_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises
+    alias _4_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, OwnedKwargsDict[PO]
+    )
 
     @doc_private
     @implicit
@@ -247,6 +500,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._4er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._4er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._4r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._4r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._4e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._4e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._4_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._4_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 2 arguments
     # ===-------------------------------------------------------------------===#
@@ -255,6 +548,11 @@ struct PyObjectFunction[
     alias _2r = fn (PO, PO) -> PO
     alias _2e = fn (PO, PO) raises
     alias _2 = fn (PO, PO)
+
+    alias _2er_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    alias _2r_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) -> PO
+    alias _2e_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) raises
+    alias _2_kwargs = fn (PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -276,6 +574,40 @@ struct PyObjectFunction[
     fn __init__(out self: PyObjectFunction[Self._2, self_type], f: Self._2):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._2er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._2er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2r_kwargs, self_type, has_kwargs=True],
+        f: Self._2r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2e_kwargs, self_type, has_kwargs=True],
+        f: Self._2e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._2_kwargs, self_type, has_kwargs=True],
+        f: Self._2_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 3 arguments
     # ===-------------------------------------------------------------------===#
@@ -284,6 +616,11 @@ struct PyObjectFunction[
     alias _3r = fn (PO, PO, PO) -> PO
     alias _3e = fn (PO, PO, PO) raises
     alias _3 = fn (PO, PO, PO)
+
+    alias _3er_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    alias _3r_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    alias _3e_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) raises
+    alias _3_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -305,6 +642,40 @@ struct PyObjectFunction[
     fn __init__(out self: PyObjectFunction[Self._3, self_type], f: Self._3):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._3er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._3er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3r_kwargs, self_type, has_kwargs=True],
+        f: Self._3r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3e_kwargs, self_type, has_kwargs=True],
+        f: Self._3e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._3_kwargs, self_type, has_kwargs=True],
+        f: Self._3_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 4 arguments
     # ===-------------------------------------------------------------------===#
@@ -313,6 +684,11 @@ struct PyObjectFunction[
     alias _4r = fn (PO, PO, PO, PO) -> PO
     alias _4e = fn (PO, PO, PO, PO) raises
     alias _4 = fn (PO, PO, PO, PO)
+
+    alias _4er_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    alias _4r_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    alias _4e_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    alias _4_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -334,6 +710,40 @@ struct PyObjectFunction[
     fn __init__(out self: PyObjectFunction[Self._4, self_type], f: Self._4):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._4er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._4er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4r_kwargs, self_type, has_kwargs=True],
+        f: Self._4r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4e_kwargs, self_type, has_kwargs=True],
+        f: Self._4e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._4_kwargs, self_type, has_kwargs=True],
+        f: Self._4_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 5 arguments (typed self methods - 4 additional arguments)
     # ===-------------------------------------------------------------------===#
@@ -342,6 +752,19 @@ struct PyObjectFunction[
     alias _5r_self = fn (UnsafePointer[self_type], PO, PO, PO, PO) -> PO
     alias _5e_self = fn (UnsafePointer[self_type], PO, PO, PO, PO) raises
     alias _5_self = fn (UnsafePointer[self_type], PO, PO, PO, PO)
+
+    alias _5er_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _5r_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) -> PO
+    alias _5e_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises
+    alias _5_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, OwnedKwargsDict[PO]
+    )
 
     @doc_private
     @implicit
@@ -371,6 +794,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._5er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._5er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._5r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._5r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._5e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._5e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._5_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._5_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 5 arguments
     # ===-------------------------------------------------------------------===#
@@ -379,6 +842,13 @@ struct PyObjectFunction[
     alias _5r = fn (PO, PO, PO, PO, PO) -> PO
     alias _5e = fn (PO, PO, PO, PO, PO) raises
     alias _5 = fn (PO, PO, PO, PO, PO)
+
+    alias _5er_kwargs = fn (
+        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _5r_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    alias _5e_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    alias _5_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -400,6 +870,40 @@ struct PyObjectFunction[
     fn __init__(out self: PyObjectFunction[Self._5, self_type], f: Self._5):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._5er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._5er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5r_kwargs, self_type, has_kwargs=True],
+        f: Self._5r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5e_kwargs, self_type, has_kwargs=True],
+        f: Self._5e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._5_kwargs, self_type, has_kwargs=True],
+        f: Self._5_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 6 arguments (typed self methods - 5 additional arguments)
     # ===-------------------------------------------------------------------===#
@@ -410,6 +914,19 @@ struct PyObjectFunction[
     alias _6r_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO) -> PO
     alias _6e_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO) raises
     alias _6_self = fn (UnsafePointer[self_type], PO, PO, PO, PO, PO)
+
+    alias _6er_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _6r_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) -> PO
+    alias _6e_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises
+    alias _6_self_kwargs = fn (
+        UnsafePointer[self_type], PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    )
 
     @doc_private
     @implicit
@@ -439,6 +956,46 @@ struct PyObjectFunction[
     ):
         self._func = f
 
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._6er_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._6er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._6r_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._6r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._6e_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._6e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._6_self_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._6_self_kwargs,
+    ):
+        self._func = f
+
     # ===-------------------------------------------------------------------===#
     # 6 arguments
     # ===-------------------------------------------------------------------===#
@@ -447,6 +1004,13 @@ struct PyObjectFunction[
     alias _6r = fn (PO, PO, PO, PO, PO, PO) -> PO
     alias _6e = fn (PO, PO, PO, PO, PO, PO) raises
     alias _6 = fn (PO, PO, PO, PO, PO, PO)
+
+    alias _6er_kwargs = fn (
+        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) raises -> PO
+    alias _6r_kwargs = fn (PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    alias _6e_kwargs = fn (PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    alias _6_kwargs = fn (PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -466,6 +1030,40 @@ struct PyObjectFunction[
     @doc_private
     @implicit
     fn __init__(out self: PyObjectFunction[Self._6, self_type], f: Self._6):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[
+            Self._6er_kwargs, self_type, has_kwargs=True
+        ],
+        f: Self._6er_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6r_kwargs, self_type, has_kwargs=True],
+        f: Self._6r_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6e_kwargs, self_type, has_kwargs=True],
+        f: Self._6e_kwargs,
+    ):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(
+        out self: PyObjectFunction[Self._6_kwargs, self_type, has_kwargs=True],
+        f: Self._6_kwargs,
+    ):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -506,6 +1104,34 @@ struct PyObjectFunction[
                     )
                 )
 
+    @staticmethod
+    fn _convert_kwargs(
+        py_kwargs: PythonObject,
+    ) raises -> OwnedKwargsDict[PythonObject]:
+        """Convert a Python dictionary to an OwnedKwargsDict.
+
+        Args:
+            py_kwargs: Python dictionary containing keyword arguments.
+
+        Returns:
+            An OwnedKwargsDict containing the keyword arguments.
+        """
+        var result = OwnedKwargsDict[PythonObject]()
+
+        # Handle the case where kwargs is None or empty
+        if not py_kwargs._obj_ptr:
+            return result
+
+        # Iterate through the Python dictionary and populate OwnedKwargsDict
+        var items = py_kwargs.items()
+        for item in items:
+            var key = item[0]
+            var value = item[1]
+            var key_str = String(key)
+            result[key_str] = value
+
+        return result
+
     # ===-------------------------------------------------------------------===#
     # Compile-time check utilities
     # ===-------------------------------------------------------------------===#
@@ -524,6 +1150,10 @@ struct PyObjectFunction[
             or Self._has_type[Self._0r]()
             or Self._has_type[Self._0e]()
             or Self._has_type[Self._0]()
+            or Self._has_type[Self._0er_kwargs]()
+            or Self._has_type[Self._0r_kwargs]()
+            or Self._has_type[Self._0e_kwargs]()
+            or Self._has_type[Self._0_kwargs]()
         ):
             return arity == 0
         elif (
@@ -535,6 +1165,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._1r_self]()
             or Self._has_type[Self._1e_self]()
             or Self._has_type[Self._1_self]()
+            or Self._has_type[Self._1er_kwargs]()
+            or Self._has_type[Self._1r_kwargs]()
+            or Self._has_type[Self._1e_kwargs]()
+            or Self._has_type[Self._1_kwargs]()
+            or Self._has_type[Self._1er_self_kwargs]()
+            or Self._has_type[Self._1r_self_kwargs]()
+            or Self._has_type[Self._1e_self_kwargs]()
+            or Self._has_type[Self._1_self_kwargs]()
         ):
             return arity == 1
         elif (
@@ -546,6 +1184,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._2r_self]()
             or Self._has_type[Self._2e_self]()
             or Self._has_type[Self._2_self]()
+            or Self._has_type[Self._2er_kwargs]()
+            or Self._has_type[Self._2r_kwargs]()
+            or Self._has_type[Self._2e_kwargs]()
+            or Self._has_type[Self._2_kwargs]()
+            or Self._has_type[Self._2er_self_kwargs]()
+            or Self._has_type[Self._2r_self_kwargs]()
+            or Self._has_type[Self._2e_self_kwargs]()
+            or Self._has_type[Self._2_self_kwargs]()
         ):
             return arity == 2
         elif (
@@ -557,6 +1203,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._3r_self]()
             or Self._has_type[Self._3e_self]()
             or Self._has_type[Self._3_self]()
+            or Self._has_type[Self._3er_kwargs]()
+            or Self._has_type[Self._3r_kwargs]()
+            or Self._has_type[Self._3e_kwargs]()
+            or Self._has_type[Self._3_kwargs]()
+            or Self._has_type[Self._3er_self_kwargs]()
+            or Self._has_type[Self._3r_self_kwargs]()
+            or Self._has_type[Self._3e_self_kwargs]()
+            or Self._has_type[Self._3_self_kwargs]()
         ):
             return arity == 3
         elif (
@@ -568,6 +1222,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._4r_self]()
             or Self._has_type[Self._4e_self]()
             or Self._has_type[Self._4_self]()
+            or Self._has_type[Self._4er_kwargs]()
+            or Self._has_type[Self._4r_kwargs]()
+            or Self._has_type[Self._4e_kwargs]()
+            or Self._has_type[Self._4_kwargs]()
+            or Self._has_type[Self._4er_self_kwargs]()
+            or Self._has_type[Self._4r_self_kwargs]()
+            or Self._has_type[Self._4e_self_kwargs]()
+            or Self._has_type[Self._4_self_kwargs]()
         ):
             return arity == 4
         elif (
@@ -579,6 +1241,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._5r_self]()
             or Self._has_type[Self._5e_self]()
             or Self._has_type[Self._5_self]()
+            or Self._has_type[Self._5er_kwargs]()
+            or Self._has_type[Self._5r_kwargs]()
+            or Self._has_type[Self._5e_kwargs]()
+            or Self._has_type[Self._5_kwargs]()
+            or Self._has_type[Self._5er_self_kwargs]()
+            or Self._has_type[Self._5r_self_kwargs]()
+            or Self._has_type[Self._5e_self_kwargs]()
+            or Self._has_type[Self._5_self_kwargs]()
         ):
             return arity == 5
         elif (
@@ -590,6 +1260,14 @@ struct PyObjectFunction[
             or Self._has_type[Self._6r_self]()
             or Self._has_type[Self._6e_self]()
             or Self._has_type[Self._6_self]()
+            or Self._has_type[Self._6er_kwargs]()
+            or Self._has_type[Self._6r_kwargs]()
+            or Self._has_type[Self._6e_kwargs]()
+            or Self._has_type[Self._6_kwargs]()
+            or Self._has_type[Self._6er_self_kwargs]()
+            or Self._has_type[Self._6r_self_kwargs]()
+            or Self._has_type[Self._6e_self_kwargs]()
+            or Self._has_type[Self._6_self_kwargs]()
         ):
             return arity == 6
         else:
@@ -720,6 +1398,155 @@ struct PyObjectFunction[
             elif self._has_type[Self._6]():
                 return rebind[Self._6](self._func)(
                     arg0, arg1, arg2, arg3, arg4, arg5
+                )
+
+        constrained[False, "unsupported arity or signature"]()
+        return PO()
+
+    @always_inline("nodebug")
+    fn _call_func(self, py_args: PO, py_kwargs: PO) raises -> PO:
+        constrained[
+            has_kwargs, "should only be used for functions that accept kwargs"
+        ]()
+        var kwargs = Self._convert_kwargs(py_kwargs)
+
+        @parameter
+        if Self._has_arity(0):
+            check_arguments_arity(0, py_args)
+
+            @parameter
+            if self._has_type[Self._0er_kwargs]():
+                return rebind[Self._0er_kwargs](self._func)(kwargs)
+            elif self._has_type[Self._0r_kwargs]():
+                return rebind[Self._0r_kwargs](self._func)(kwargs)
+            elif self._has_type[Self._0e_kwargs]():
+                return rebind[Self._0e_kwargs](self._func)(kwargs)
+            elif self._has_type[Self._0_kwargs]():
+                return rebind[Self._0_kwargs](self._func)(kwargs)
+        elif Self._has_arity(1):
+            check_arguments_arity(1, py_args)
+            var arg0 = py_args[0]
+
+            @parameter
+            if self._has_type[Self._1er_kwargs]():
+                return rebind[Self._1er_kwargs](self._func)(arg0, kwargs)
+            elif self._has_type[Self._1r_kwargs]():
+                return rebind[Self._1r_kwargs](self._func)(arg0, kwargs)
+            elif self._has_type[Self._1e_kwargs]():
+                return rebind[Self._1e_kwargs](self._func)(arg0, kwargs)
+            elif self._has_type[Self._1_kwargs]():
+                return rebind[Self._1_kwargs](self._func)(arg0, kwargs)
+        elif Self._has_arity(2):
+            check_arguments_arity(2, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+
+            @parameter
+            if self._has_type[Self._2er_kwargs]():
+                return rebind[Self._2er_kwargs](self._func)(arg0, arg1, kwargs)
+            elif self._has_type[Self._2r_kwargs]():
+                return rebind[Self._2r_kwargs](self._func)(arg0, arg1, kwargs)
+            elif self._has_type[Self._2e_kwargs]():
+                return rebind[Self._2e_kwargs](self._func)(arg0, arg1, kwargs)
+            elif self._has_type[Self._2_kwargs]():
+                return rebind[Self._2_kwargs](self._func)(arg0, arg1, kwargs)
+        elif Self._has_arity(3):
+            check_arguments_arity(3, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+
+            @parameter
+            if self._has_type[Self._3er_kwargs]():
+                return rebind[Self._3er_kwargs](self._func)(
+                    arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._3r_kwargs]():
+                return rebind[Self._3r_kwargs](self._func)(
+                    arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._3e_kwargs]():
+                return rebind[Self._3e_kwargs](self._func)(
+                    arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._3_kwargs]():
+                return rebind[Self._3_kwargs](self._func)(
+                    arg0, arg1, arg2, kwargs
+                )
+        elif Self._has_arity(4):
+            check_arguments_arity(4, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+
+            @parameter
+            if self._has_type[Self._4er_kwargs]():
+                return rebind[Self._4er_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._4r_kwargs]():
+                return rebind[Self._4r_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._4e_kwargs]():
+                return rebind[Self._4e_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._4_kwargs]():
+                return rebind[Self._4_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, kwargs
+                )
+        elif Self._has_arity(5):
+            check_arguments_arity(5, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+
+            @parameter
+            if self._has_type[Self._5er_kwargs]():
+                return rebind[Self._5er_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._5r_kwargs]():
+                return rebind[Self._5r_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._5e_kwargs]():
+                return rebind[Self._5e_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._5_kwargs]():
+                return rebind[Self._5_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+        elif Self._has_arity(6):
+            check_arguments_arity(6, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+            var arg5 = py_args[5]
+
+            @parameter
+            if self._has_type[Self._6er_kwargs]():
+                return rebind[Self._6er_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                )
+            elif self._has_type[Self._6r_kwargs]():
+                return rebind[Self._6r_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                )
+            elif self._has_type[Self._6e_kwargs]():
+                return rebind[Self._6e_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                )
+            elif self._has_type[Self._6_kwargs]():
+                return rebind[Self._6_kwargs](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
                 )
 
         constrained[False, "unsupported arity or signature"]()
@@ -884,7 +1711,6 @@ struct PyObjectFunction[
                 return rebind[Self._5_self](self._func)(
                     self_arg, arg0, arg1, arg2, arg3
                 )
-
         elif Self._has_arity(6):
             check_arguments_arity(5, py_args)
             var arg0 = py_args[0]

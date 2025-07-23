@@ -45,12 +45,13 @@ from layout.tensor_core_async import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import (
-    elect_one_sync_with_mask,
+    elect_one_sync,
     block_rank_in_cluster,
     cluster_sync,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
+from linalg.mmaop_sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -206,7 +207,7 @@ fn blackwell_tma_pair_umma_kernel[
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
-    var elect_one_thread = elect_one_sync_with_mask()
+    var elect_one_thread = elect_one_sync()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
 
@@ -227,33 +228,6 @@ fn blackwell_tma_pair_umma_kernel[
     var mma_phase: UInt32 = 0
 
     tmem_addr = ptr_tmem_addr[0]
-
-    alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    alias b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
-    ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
-    alias b_stride01 = b_canonical_layout[0].stride[1].value()
-    alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
-
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
-        a_smem_tile.ptr
-    )
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
-        b_smem_tile.ptr
-    )
-
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
-        accum_type,
-        a_type,
-        b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
-        transpose_b=transpose_b,
-    ]()
 
     var rank_m = block_id_in_cluster.x
     var rank_n = block_id_in_cluster.y
@@ -282,6 +256,21 @@ fn blackwell_tma_pair_umma_kernel[
     var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
         b_mma_mask | b_mma_mask << 1
     )
+    var mma_op = MmaOpSM100_SS[
+        c_type,
+        a_type,
+        b_type,
+        block_tile_shape,
+        mma_shape,
+        accum_type=accum_type,
+        cta_group=cta_group,
+        cluster_shape = Index(
+            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        ),
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
+    ]()
 
     for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
@@ -331,27 +320,16 @@ fn blackwell_tma_pair_umma_kernel[
             tma_mbar[0].wait(tma_phase)
             tma_phase ^= 1
 
-            if elect_one_warp:
-                adesc = adesc_base
-                bdesc = bdesc_base
+            if elect_one_warp and elect_one_thread:
+                mma_op.mma(
+                    a_smem_tile,
+                    b_smem_tile,
+                    tmem_addr,
+                    init_c=(i == 0),  # Initialize C on first iteration
+                )
 
-                @parameter
-                for j in range(num_k_mmas):
-                    var c_scale = 0 if i == 0 and j == 0 else 1
-                    alias idx = IntTuple(0, MMA_K * j)
-                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
-                    if elect_one_thread:
-                        mma[cta_group](
-                            adesc + a_offset,
-                            bdesc + b_offset,
-                            tmem_addr,
-                            idesc,
-                            c_scale=c_scale,
-                        )
+                mma_op.commit(mma_mbar)
 
-                if elect_one_thread:
-                    mma_arrive_multicast[cta_group](mma_mbar, c_mma_mask)
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
@@ -488,6 +466,8 @@ fn blackwell_tma_pair_umma_kernel[
     if elect_one_warp:
         tcgen05_release_allocation_lock[cta_group]()
         tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+
+    cluster_sync()
 
 
 fn blackwell_matmul_tma_pair_mma[

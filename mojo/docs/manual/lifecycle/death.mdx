@@ -16,38 +16,40 @@ Then, Mojo immediately ends the value's lifetime and calls the `__del__()`
 destructor to perform any necessary cleanup for the type.
 
 For example, notice when the `__del__()` destructor is called for each instance
-of `MyPet`:
+of `Balloon`:
 
 ```mojo
-@value
-struct MyPet:
-    var name: String
-    var age: Int
+@fieldwise_init
+struct Balloon(Writable):
+    var color: String
+
+    fn write_to[W: Writer](self, mut writer: W) -> None:
+        writer.write(String("a ", self.color, " balloon"))
 
     fn __del__(owned self):
-        print("Destruct", self.name)
+        print("Destroyed", String(self))
 
-fn pets():
-    var a = MyPet("Loki", 4)
-    var b = MyPet("Sylvie", 2)
-    print(a.name)
-    # a.__del__() runs here for "Loki"
 
-    a = MyPet("Charlie", 8)
-    # a.__del__() runs immediately because "Charlie" is never used
+def main():
+    var a = Balloon("red")
+    var b = Balloon("blue")
+    print(a)
+    # a.__del__() runs here for "red" Balloon
 
-    print(b.name)
+    a = Balloon("green")
+    # a.__del__() runs immediately because "green" Balloon is never used
+
+    print(b)
     # b.__del__() runs here
 
-pets()
 ```
 
 ```output
-Loki
-Destruct Loki
-Destruct Charlie
-Sylvie
-Destruct Sylvie
+a red balloon
+Destroyed a red balloon
+Destroyed a green balloon
+a blue balloon
+Destroyed a blue balloon
 ```
 
 Notice that each initialization of a value is matched with a call to the
@@ -137,13 +139,10 @@ need to implement the destructor.
 For example, consider this simple struct:
 
 ```mojo
-struct MyPet:
-    var name: String
-    var age: Int
-
-    fn __init__(out self, name: String, age: Int):
-        self.name = name
-        self.age = age
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 ```
 
 There's no need to define the `__del__()` destructor for this, because it's a
@@ -155,20 +154,39 @@ memory allocated by its
 [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
 
 ```mojo
-struct HeapArray:
+struct HeapArray(Writable):
     var data: UnsafePointer[Int]
     var size: Int
 
-    fn __init__(out self, size: Int, val: Int):
-        self.size = size
+    fn __init__(out self, *values: Int):
+        self.size = len(values)
         self.data = UnsafePointer[Int].alloc(self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(val)
+            (self.data + i).init_pointee_copy(values[i])
+
+    fn write_to[W: Writer](self, mut writer: W) -> None:
+        writer.write("[")
+        for i in range(self.size):
+            writer.write(self.data[i])
+            if i < self.size - 1:
+                writer.write(", ")
+        writer.write("]")
 
     fn __del__(owned self):
+        print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
+
+
+def main():
+    var a = HeapArray(10, 1, 3, 9)
+    print(a)
+```
+
+```output
+[10, 1, 3, 9]
+Destroying 4 elements
 ```
 
 Note that a pointer doesn't *own* any values in the memory it points to, so
@@ -191,17 +209,14 @@ copy.
 
 It's important to notice that the `__del__()` method is an "extra" cleanup
 event, and your implementation does not override any default destruction
-behaviors. For example, Mojo still destroys all the fields in `MyPet` even
-if you implement `__del__()` to do nothing:
+behaviors. For example, Mojo still destroys all the fields in `Balloons` even
+if you add a `__del__()` method that to do nothing:
 
 ```mojo
-struct MyPet:
-    var name: String
-    var age: Int
-
-    fn __init__(out self, name: String, age: Int):
-        self.name = name
-        self.age = age
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 
     fn __del__(owned self):
         # Mojo destroys all the fields when they're last used
@@ -230,44 +245,47 @@ destroys each field independently with its ASAP destruction policy.
 For example, consider this code that changes the value of a field:
 
 ```mojo
-@value
-struct MyPet:
-    var name: String
-    var age: Int
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 
-fn use_two_strings():
-    var pet = MyPet("Po", 8)
-    print(pet.name)
-    # pet.name.__del__() runs here, because this instance is
+
+def main():
+    var balloons = Balloons("red", 5)
+    print(balloons.color)
+    # balloons.color.__del__() runs here, because this instance is
     # no longer used; it's replaced below
 
-    pet.name = "Lola" # Overwrite pet.name
-    print(pet.name)
-    # pet.__del__() runs here
+    balloons.color = "blue"  # Overwrite balloons.color
+    print(balloons.color)
+    # balloons.__del__() runs here
 ```
 
-The `pet.name` field is destroyed after the first `print()`, because Mojo knows
-that it will be overwritten below. You can also see this behavior when using the
-transfer sigil:
+The `balloons.color` field is destroyed after the first `print()`, because Mojo
+knows that it will be overwritten below. You can also see this behavior when
+using the transfer sigil:
 
 ```mojo
 fn consume(var arg: String):
     pass
 
-fn use(arg: MyPet):
-    print(arg.name)
+
+fn use(arg: Balloons):
+    print(arg.count, arg.color, "balloons.")
+
 
 fn consume_and_use():
-    var pet = MyPet("Selma", 5)
-    consume(pet.name^)
-    # pet.name.__moveinit__() runs here, which destroys pet.name
-    # Now pet is only partially initialized
+    var balloons = Balloons("blue", 8)
+    consume(balloons.color^)
+    # String.__moveinit__() runs here, which invalidates balloons.color
+    # Now balloons is only partially initialized
 
-    # use(pet)  # This fails because pet.name is uninitialized
+    # use(balloons)  # This fails because balloons.color is uninitialized
 
-    pet.name = "Jasper"          # All together now
-    use(pet)                     # This is ok
-    # pet.__del__() runs here (and only if the object is whole)
+    balloons.color = String("orange")  # All together now
+    use(balloons)  # This is ok
+    # balloons.__del__() runs here (and only if the object is whole)
 ```
 
 Notice that the code transfers ownership of the `name` field to `consume()`.
@@ -316,15 +334,16 @@ other languages, and also implicitly a `Self` type).
 :::
 
 Both of these methods face an interesting but obscure problem: they both must
-dismantle the `existing`/`self` value that's `owned`. That is, `__moveinit__()`
-implicitly destroys sub-elements of `existing` in order to transfer ownership
-to a new instance (read more about the [move
-constructor](/mojo/manual/lifecycle/life#move-constructor)),
-while `__del__()` implements the deletion logic for its `self`. As such, they
-both need to own and transform elements of the `owned` value, and they
-definitely don't want the original `owned` value's destructor to also run—that
-could result in a double-free error, and in the case of the `__del__()` method,
-it would become an infinite loop.
+dismantle the `existing`/`self` value that's `owned`. Normally, an `owned`
+argument's destructor is called at the end of the method—when the `owned`
+argument goes out of scope. But this won't work for `__del__()` and
+`__moveinit__()`.
+
+In the case of `__del__()`, this would cause an infinite loop.
+
+In the case of `__moveinit__()`, which moves sub-elements of the `existing`
+value to transfer ownership to a new instance, running the destructor might
+deallocate the resources that it had just moved to the new instance.
 
 To solve this problem, Mojo handles these two methods specially by assuming
 that their whole values are destroyed upon reaching any return from the method.
@@ -337,34 +356,28 @@ and there's no infinite loop to destroy `self`):
 
 ```mojo
 fn consume(var str: String):
-    print('Consumed', str)
+    print("Consumed", str)
 
-struct TwoStrings:
+@fieldwise_init
+struct TwoStrings(Copyable, Movable):
     var str1: String
     var str2: String
 
-    fn __init__(out self, one: String):
-        self.str1 = one
-        self.str2 = "bar"
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.str1 = existing.str1
-        self.str2 = existing.str2
-
     fn __del__(owned self):
-        self.dump() # Self is still whole here
+        self.dump()  # Self is still whole here
         # Mojo calls self.str2.__del__() since str2 isn't used anymore
 
         consume(self.str1^)
-        # self.str1 has been transferred so it is also destroyed now;
+        # self.str1 has been transferred so it is also uninitialized now;
         # `self.__del__()` is not called (avoiding an infinite loop).
 
     fn dump(mut self):
-        print('str1:', self.str1)
-        print('str2:', self.str2)
+        print("str1:", self.str1)
+        print("str2:", self.str2)
 
-fn use_two_strings():
-    var two_strings = TwoStrings("foo")
+
+def main():
+    var two_strings = TwoStrings("foo", "bar")
 ```
 
 ## Explicit lifetime extension

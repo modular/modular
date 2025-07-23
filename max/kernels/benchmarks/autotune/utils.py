@@ -14,5 +14,5 @@
 import rich
 
 
-def pretty_exception_handler(exception_type, exception, traceback):  # noqa: ANN001
+def pretty_exception_handler(exception_type, exception, traceback) -> None:  # noqa: ANN001
     rich.print(f"[bold red]{exception_type.__name__}[/bold red]: {exception}")

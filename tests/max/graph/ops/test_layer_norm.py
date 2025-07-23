@@ -30,7 +30,7 @@ from max.graph import Shape, StaticDim, TensorType, ops
 def test_layer_norm__valid(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    epsilon: float,  # noqa: ANN001
+    epsilon: float,
 ) -> None:
     """Test layer_norm with valid inputs."""
     # Create gamma and beta with same shape as last dimension of input
@@ -62,7 +62,7 @@ static_shapes = st.shared(shapes(dims=static_positive_dims))
 )
 def test_layer_norm__error__gamma_shape_mismatch(
     graph_builder,  # noqa: ANN001
-    input_type: TensorType,  # noqa: ANN001
+    input_type: TensorType,
 ) -> None:
     """Test that layer_norm raises an error when gamma shape doesn't match the last dimension."""
     # Create a gamma tensor with incorrect shape
@@ -97,7 +97,7 @@ def test_layer_norm__error__gamma_shape_mismatch(
 )
 def test_layer_norm__error__beta_shape_mismatch(
     graph_builder,  # noqa: ANN001
-    input_type: TensorType,  # noqa: ANN001
+    input_type: TensorType,
 ) -> None:
     """Test that layer_norm raises an error when beta shape doesn't match the last dimension."""
     # Create a beta tensor with incorrect shape
@@ -132,7 +132,7 @@ def test_layer_norm__error__beta_shape_mismatch(
 def test_layer_norm__error__non_positive_epsilon(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    epsilon: float,  # noqa: ANN001
+    epsilon: float,
 ) -> None:
     """Test that layer_norm raises an error when epsilon is not positive."""
     *_, last_dim = input_type.shape
@@ -159,7 +159,7 @@ def test_layer_norm__error__non_positive_epsilon(
 )
 def test_layer_norm__error__zero_last_dim(
     graph_builder,  # noqa: ANN001
-    input_type: TensorType,  # noqa: ANN001
+    input_type: TensorType,
 ) -> None:
     """Test that layer_norm handles zero-sized last dimension gracefully."""
     *_, last_dim = input_type.shape

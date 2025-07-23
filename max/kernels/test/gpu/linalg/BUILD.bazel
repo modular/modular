@@ -22,6 +22,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm100_1.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_2.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_3.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_4.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
     "test_vendor_blas.mojo": [
@@ -36,7 +37,6 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _FILECHECK_TESTS = [
-    "test_batched_matmul.mojo",
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",

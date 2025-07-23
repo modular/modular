@@ -35,7 +35,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/serve/telemetry",
         requirement("fastapi"),
         requirement("opentelemetry-api"),
-        requirement("prometheus-async"),
         requirement("prometheus-client"),
         requirement("pydantic-settings"),
         requirement("pyinstrument"),

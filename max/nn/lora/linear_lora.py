@@ -118,7 +118,7 @@ class LinearLoRA(Linear):
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
-    ):
+    ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
 

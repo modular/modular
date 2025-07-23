@@ -142,7 +142,7 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
     graph_builder,  # noqa: ANN001
     base_type: TensorType,
     valid_axis: int,
-    invalid_axis: int,  # noqa: ANN001
+    invalid_axis: int,
 ) -> None:
     """Test that transpose raises an error when an axis is out of bounds."""
     with graph_builder(input_types=[base_type]) as graph:
@@ -161,7 +161,7 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
 def test_transpose_error_out_of_bounds_rank_zero(
     graph_builder,  # noqa: ANN001
     base_type: TensorType,
-    axis: int,  # noqa: ANN001
+    axis: int,
 ) -> None:
     """Test that transpose raises an error when an axis is out of bounds for rank 0."""
     # We follow PyTorch's definition for valid axes for transposition on rank 0 tensors

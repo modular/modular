@@ -139,7 +139,7 @@ class MoE(Module):
 
         self._init_experts()
 
-    def _init_experts(self):
+    def _init_experts(self) -> None:
         self.experts: LayerList = LayerList(
             [
                 MLP(

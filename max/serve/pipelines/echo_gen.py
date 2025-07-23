@@ -18,8 +18,7 @@ from typing import Union, cast
 import numpy as np
 from max.interfaces import (
     GenerationStatus,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.pipelines.core import (
@@ -144,20 +143,23 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
 
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int = 1
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         responses = {}
 
         for request_id, context in batch.items():
             if request_id not in responses:
-                responses[request_id] = TextGenerationResponse(
-                    [], GenerationStatus.ACTIVE
+                responses[request_id] = TextGenerationOutput(
+                    request_id=request_id,
+                    tokens=[],
+                    final_status=GenerationStatus.ACTIVE,
+                    log_probabilities=None,
                 )
 
             # Initialize echo index if not exists
             if request_id not in self._echo_indices:
                 self._echo_indices[request_id] = 0
 
-            for step in range(num_steps):
+            for step in range(num_steps):  # noqa: B007
                 echo_idx = self._echo_indices[request_id]
                 prompt_tokens = context.prompt_tokens
 
@@ -173,18 +175,16 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
                     context.update(next_token_id)
 
                     # Add to response
-                    responses[request_id].append_token(
-                        TextResponse(next_token=next_token_id)
-                    )
+                    responses[request_id].tokens.append(next_token_id)
 
                     # Move to the next token
                     self._echo_indices[request_id] += 1
 
                 else:
                     # Finished echoing all tokens or reached max length
-                    responses[request_id].update_status(
-                        GenerationStatus.MAXIMUM_LENGTH
-                    )
+                    responses[
+                        request_id
+                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
                     # Clean up the echo index
                     if request_id in self._echo_indices:
                         del self._echo_indices[request_id]

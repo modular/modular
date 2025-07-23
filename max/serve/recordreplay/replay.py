@@ -217,7 +217,7 @@ def _format_big_duration(seconds: float) -> str:
         pieces.append(f"{minutes:02d}m")
     elif minutes:
         pieces.append(f"{minutes}m")
-    pieces.append(f"{int(math.floor(seconds)):02d}s")
+    pieces.append(f"{math.floor(seconds):02d}s")
     return "".join(pieces)
 
 
@@ -539,7 +539,7 @@ async def replay_recording(
     notifier.adjust_total_tasks(len(recording))
     try:
         async with TaskGroup() as task_group:
-            for i in range(concurrency):
+            for i in range(concurrency):  # noqa: B007
                 task_group.create_task(worker())
     finally:
         if unwind_on_error:

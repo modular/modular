@@ -90,7 +90,7 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
         with self._lock:
             # Send initial state with all existing entries
             if self._cache_state:
-                for memory_tier in self._cache_state.keys():
+                for memory_tier in self._cache_state:
                     if self._cache_state[memory_tier]:
                         initial_update = KVCacheStateUpdate(
                             update_type=UpdateType.UPDATE_TYPE_ADDED,

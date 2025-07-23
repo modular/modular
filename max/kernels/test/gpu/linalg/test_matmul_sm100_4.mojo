@@ -1,0 +1,921 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from math import align_up
+from sys import sizeof
+from hashlib import default_comp_time_hasher
+from buffer.buffer import NDBuffer
+from buffer.dimlist import DimList
+
+from layout.layout_tensor import LayoutTensorIter
+from gpu import WARP_SIZE, barrier
+from gpu.sync import named_barrier
+
+alias WARP_GROUP_SIZE = 128
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.memory import AddressSpace, tma_store_fence
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
+from layout import Layout, LayoutTensor
+from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
+from layout.tensor_core_async import (
+    tile_layout_k_major,
+    tile_layout_mn_major,
+    tile_to_descriptor,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from gpu.cluster import (
+    elect_one_sync_with_mask,
+    block_rank_in_cluster,
+    cluster_sync,
+)
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+    PipelineState,
+)
+
+from linalg import vendor_blas
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+    assert_almost_equal,
+    random,
+    zero,
+)
+from internal_utils._utils import ValOrDim, dynamic, static
+
+
+@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+fn blackwell_tma_pair_umma_kernel[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,  # must pass mma_m by mma_n as this layout, since that's how much each output has to be
+    a_desc_layout: Layout,
+    b_desc_layout: Layout,
+    c_desc_layout: Layout,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    transpose_b: Bool = True,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    cta_group: Int = 2,
+    num_pipeline_stages: UInt = 2,
+](
+    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
+    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    num_iters: UInt,
+):
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias num_m_mmas = BM // (mma_shape[0] // cta_group)
+    alias num_n_mmas = BN // (mma_shape[1] // cta_group)
+
+    alias CLUSTER_M = Int(cluster_shape[0])
+    alias CLUSTER_N = Int(cluster_shape[1])
+
+    alias a_tma_load_size = a_desc_layout.size()
+    alias b_tma_load_size = b_desc_layout.size()
+    alias a_tma_rows = a_desc_layout.shape[0].value()
+    alias b_tma_rows = b_desc_layout.shape[0].value()
+
+    alias a_smem_layout = tile_layout_k_major[
+        a_type, BM, BK, swizzle_mode=a_swizzle
+    ]()
+    alias b_smem_layout = tile_layout_k_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]() if transpose_b else tile_layout_mn_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]()
+
+    var warp_id = thread_idx.x // WARP_SIZE
+    var local_thread_id = thread_idx.x % WARP_SIZE
+    # FIRST_EDIT: introduce epilogue warp group variable
+    var is_epilogue_wg = warp_id <= 3
+    var is_mainloop_wg = warp_id >= 4
+
+    alias c_smem_tile_t = LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+
+    base_ptr_smem = rebind[
+        UnsafePointer[
+            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
+        ]
+    ](
+        external_memory[
+            Scalar[a_type],
+            address_space = AddressSpace.SHARED,
+            alignment=128,
+        ]()
+    )  # pointer to first byte of scratchpad
+
+    alias a_smem_size = a_smem_layout.size()
+    alias b_smem_size = b_smem_layout.size()
+    alias c_smem_size = c_layout.size()
+
+    var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
+    var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
+        Scalar[b_type]
+    ]()
+    var c_smem_base = (
+        (b_smem_base + b_smem_size * num_pipeline_stages)
+        .bitcast[Scalar[c_type]]()
+        .static_alignment_cast[128]()
+    )
+
+    var a_smem = LayoutTensorIter[
+        a_type,
+        a_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        circular=True,
+    ](
+        a_smem_base.static_alignment_cast[128](),
+        a_smem_size * num_pipeline_stages,
+    )
+
+    var b_smem = LayoutTensorIter[
+        b_type,
+        b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        circular=True,
+    ](
+        b_smem_base.static_alignment_cast[128](),
+        b_smem_size * num_pipeline_stages,
+    )
+
+    var c_smem_tile = c_smem_tile_t(c_smem_base)
+
+    var smem_poll = (c_smem_base + c_smem_size).bitcast[Int64]()
+
+    alias accum_type = get_accum_type[a_type]()
+
+    alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
+    var c_frag = SIMD[accum_type, c_frag_size]()
+
+    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    # Leader CTAs expect SMEM from itself and their peers
+    alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
+
+    var ptr_tmem_addr = smem_poll.bitcast[
+        UInt32
+    ]()  # this gets 16 bytes of space
+    var tma_mbar_ptr = smem_poll + 2  # adding 8 bytes for ptr_tmem_addr
+    var mma_mbar_ptr = tma_mbar_ptr + (
+        2 * num_pipeline_stages
+    )  # +1 is addition of 8 bytes, each barrier is 8 bytes
+    var math_barrier_base = mma_mbar_ptr + (2 * num_pipeline_stages)
+
+    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    math_barrier = math_barrier_base.bitcast[SharedMemBarrier]()
+
+    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_thread = elect_one_sync_with_mask()
+    var elect_one_cta = block_rank_in_cluster() % 2 == 0
+    alias max_tmem_cols = 512
+
+    if elect_one_warp:
+        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+
+    # Ensure all threads sees initialized mbarrier and
+    # tensor memory allocation
+    barrier()
+
+    if elect_one_warp and elect_one_thread:
+
+        @parameter
+        for i in range(num_pipeline_stages):
+            tma_mbar[i].init()
+            mma_mbar[i].init(
+                cluster_shape[0] // cta_group + cluster_shape[1] - 1
+            )  # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
+        math_barrier[].init()
+
+    cluster_sync()
+
+    var tma_phase = PipelineState[num_pipeline_stages]()
+    var mma_phase = PipelineState[num_pipeline_stages](0, 1, 0)
+
+    tmem_addr = ptr_tmem_addr[0]
+
+    alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
+    alias b_canonical_layout = tile_to_descriptor[
+        b_type, b_smem_layout, is_k_major=transpose_b
+    ]()
+    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
+    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
+    alias b_stride01 = b_canonical_layout[0].stride[1].value()
+    alias b_stride11 = b_canonical_layout[1].stride[1].value()
+    alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
+
+    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem[].ptr)
+    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem[].ptr)
+
+    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+        accum_type,
+        a_type,
+        b_type,
+        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        transpose_b=transpose_b,
+    ]()
+
+    var rank_m = block_id_in_cluster.x
+    var rank_n = block_id_in_cluster.y
+
+    # (peer_id, mma_coord_m, mma_coord_n)
+    var peer_cta_coord = (
+        rank_m % cta_group,
+        rank_m // cta_group,
+        rank_n,
+    )  # v,m,n
+
+    var a_multicast_mask: UInt16 = 0x0
+    var b_multicast_mask: UInt16 = 0x0
+
+    # TODO: find a generic way to calculate multicast mask
+    @parameter
+    for i in range(CLUSTER_N):
+        a_multicast_mask |= 1 << (i * CLUSTER_M)
+    # they all have the same v and m, but different n,
+
+    @parameter
+    for i in range(CLUSTER_M // cta_group):
+        b_multicast_mask |= 1 << (i * cta_group)
+
+    a_multicast_mask <<= rank_m
+    b_multicast_mask <<= peer_cta_coord[0]
+    b_multicast_mask <<= rank_n * CLUSTER_M
+
+    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
+    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
+    var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
+        b_mma_mask | b_mma_mask << 1
+    )
+
+    # example of first block in index
+    # original a_multicast_mask:  1000100010001
+    # a_multicast_mask 100010001000100 (shifted left by 1 in this case)
+    # b_multicast_mask 10100000000
+    # a_mma_mask       100010001000100
+    # b_mma_mask       10100000000
+    # c_mma_mask       1100111111001100
+
+    var producer_warp = warp_id == 4
+    var consumer_warp = warp_id == 5
+
+    var myself_in_binary = 1 << Int(block_rank_in_cluster())
+    # var my_peer_in_binary = 1 << Int(block_rank_in_cluster() + 1)
+    # var cta_group_in_binary = myself_in_binary | my_peer_in_binary
+
+    if is_mainloop_wg and producer_warp:
+        if local_thread_id == 0:
+            for i in range(num_iters):
+                var producer_stage = mma_phase.index()
+                var producer_phase = mma_phase.phase()
+                mma_mbar[producer_stage].wait(producer_phase)
+                mma_phase.step()
+
+                if elect_one_cta:
+                    tma_mbar[producer_stage].expect_bytes(expected_bytes)
+
+                var a_gmem_slice_coord = (
+                    peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
+                )
+                var b_gmem_slice_coord = (
+                    peer_cta_coord[1] * b_tma_rows
+                    + peer_cta_coord[0] * BN
+                    + block_idx.y * MMA_N
+                )
+
+                var a_smem_tile = a_smem.next(producer_stage)[]
+                var b_smem_tile = b_smem.next(producer_stage)[]
+
+                var a_smem_slice = __type_of(a_smem_tile)(
+                    a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+                )
+                var b_smem_slice = __type_of(b_smem_tile)(
+                    b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+                )
+
+                a_tma_op.async_multicast_load[cta_group](
+                    a_smem_slice,
+                    tma_mbar[producer_stage],
+                    (UInt(i) * BK, a_gmem_slice_coord),
+                    a_multicast_mask,
+                )
+
+                b_tma_op.async_multicast_load[cta_group](
+                    b_smem_slice,
+                    tma_mbar[producer_stage],
+                    (UInt(i) * BK, b_gmem_slice_coord),
+                    b_multicast_mask,
+                )
+
+    if (
+        elect_one_cta
+        and is_mainloop_wg
+        and consumer_warp
+        and local_thread_id == 0
+    ):
+        for i in range(num_iters):
+            var consumer_stage = tma_phase.index()
+            var consumer_phase = tma_phase.phase()
+            var stage_offset_a = consumer_stage * a_expected_bytes
+            var stage_offset_b = consumer_stage * b_expected_bytes
+
+            tma_mbar[consumer_stage].wait(consumer_phase)
+            tma_phase.step()
+
+            adesc = adesc_base + stage_offset_a
+            bdesc = bdesc_base + stage_offset_b
+
+            @parameter
+            for j in range(BK // mma_shape[2]):
+                mma[cta_group](
+                    adesc,
+                    bdesc,
+                    tmem_addr,
+                    idesc,
+                    c_scale=0 if i == 0 and j == 0 else 1,
+                )
+                adesc += mma_shape[2] * sizeof[a_type]()
+                bdesc += b_k_stride
+
+            mma_arrive_multicast[cta_group](
+                mma_mbar + consumer_stage,
+                c_mma_mask,  # ?? <- Do we still need the mask?
+            )
+
+        # -----------------------------------------------------------------------------------
+        # NOTE ON ARRIVAL ORDERING
+        # -----------------------------------------------------------------------------------
+        # two lanes of the same warp cannot issue the two arrivals. only local thread 0.
+        # lane 0 signalling its own CTA’s barrier and lane 1 signalling the peer CTA’s barrier
+        # did not work. why?
+        #
+        # lane 1 can reach the `arrive_cluster()` call before lane 0 finished the final `mma`
+        # so peer CTA’s epilogue warp is unblocked before mma finishes
+        # so it reads partially-written data and corrupts the output with 0's
+        #
+        # Using a `syncwarp()` between the `mma` loop and the two arrivals can fix it
+        # but it is slower than having only lane 0 do both arrivals
+        # -----------------------------------------------------------------------------------
+        math_barrier[].arrive_cluster(Int(block_rank_in_cluster()))  # my CTA
+        math_barrier[].arrive_cluster(
+            Int(block_rank_in_cluster() + 1)
+        )  # peer CTA
+
+    if is_epilogue_wg:
+        math_barrier[].wait()
+        # For tcgen05.ld 16x256, we need to split the register to deal with
+        # loading 32 lanes for each warp.
+        var c_frag_upper: SIMD[accum_type, c_frag_size // 2]
+        var c_frag_lower: SIMD[accum_type, c_frag_size // 2]
+
+        # warp_id 0 -> 0, 16
+        # warp_id 1 -> 32, 48
+        # warp_id 2 -> 64, 80
+        # warp_id 3 -> 96, 112
+        c_frag_upper = tcgen05_ld[
+            datapaths=16,
+            bits=256,
+            repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
+            dtype=accum_type,
+            pack=False,
+            width = c_frag_upper.size,
+        ](tmem_addr | ((warp_id * 32) << 16))
+
+        c_frag_lower = tcgen05_ld[
+            datapaths=16,
+            bits=256,
+            repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
+            dtype=accum_type,
+            pack=False,
+            width = c_frag_lower.size,
+        ](tmem_addr | ((warp_id * 32 + 16) << 16))
+        # NOTE: When splitting c_smem store to multiple iterations,
+        # only the store is split; the movement of c
+        # from tensor memory to registers remains unchanged.
+        tcgen05_load_wait()
+
+        alias C_WBM = BM // 2 if MMA_M == 128 else BM // 4
+        alias C_WBN = BN if MMA_M == 128 else MMA_N
+        var c_coord_x = warp_id % 2 if MMA_M == 128 else warp_id
+        var c_coord_y = warp_id // 2 if MMA_M == 128 else 0
+
+        c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
+
+        # TODO: In case when c_smem takes up too much shared memory,
+        # split the c_smem store to multiple iteration
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                c_warp_tile_split_upper = c_warp_tile.tile[
+                    BM // 4 if MMA_M == 128 else BM // 8,
+                    BN if MMA_M == 128 else MMA_N,
+                ](0, 0)
+                c_warp_tile_split_lower = c_warp_tile.tile[
+                    BM // 4 if MMA_M == 128 else BM // 8,
+                    BN if MMA_M == 128 else MMA_N,
+                ](1, 0)
+
+                c_smem_frag_upper = c_warp_tile_split_upper.vectorize[
+                    1, 2
+                ]().distribute[Layout.row_major(8, 4)](lane_id())
+
+                c_smem_frag_lower = c_warp_tile_split_lower.vectorize[
+                    1, 2
+                ]().distribute[Layout.row_major(8, 4)](lane_id())
+
+                alias num_vecs_m = c_smem_frag_upper.layout.shape[0].value()
+                alias num_vecs_n = c_smem_frag_upper.layout.shape[1].value()
+
+                @parameter
+                for n_vec in range(num_vecs_n):
+
+                    @parameter
+                    for m_vec in range(num_vecs_m):
+                        alias i_vec = n_vec * num_vecs_m + m_vec
+
+                        c_smem_frag_upper[m_vec, n_vec] = rebind[
+                            c_smem_frag_upper.element_type
+                        ](
+                            SIMD[accum_type, 2](
+                                c_frag_upper[2 * i_vec],
+                                c_frag_upper[2 * i_vec + 1],
+                            ).cast[c_type]()
+                        )
+
+                        c_smem_frag_lower[m_vec, n_vec] = rebind[
+                            c_smem_frag_lower.element_type
+                        ](
+                            SIMD[accum_type, 2](
+                                c_frag_lower[2 * i_vec],
+                                c_frag_lower[2 * i_vec + 1],
+                            ).cast[c_type]()
+                        )
+
+        named_barrier[WARP_GROUP_SIZE]()
+
+        # SMEM -> GMEM: Direct TMA store
+        # UMMA (tensor memory) → registers → shared memory → global memory
+        #           c_frag                   c_smem_tile      c_tma_op
+
+        var row_start = block_idx.x * BM
+
+        var col_start = block_idx.y * MMA_N
+
+        if thread_idx.x == 0:
+            tma_store_fence()
+            c_tma_op.async_store(c_smem_tile, (col_start, row_start))
+            c_tma_op.commit_group()
+            c_tma_op.wait_group[0]()
+
+        if elect_one_warp:
+            tcgen05_release_allocation_lock[cta_group]()
+            tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+
+
+fn blackwell_matmul_tma_pair_mma[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    *,
+    transpose_b: Bool,
+    umma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    cta_group: Int = 1,
+    num_pipeline_stages: UInt = 8,
+](
+    c_device: NDBuffer[c_type, 2, _, c_shape],
+    a_device: NDBuffer[a_type, 2, _, a_shape],
+    b_device: NDBuffer[b_type, 2, _, b_shape],
+    M: Int,
+    N: Int,
+    K: Int,
+    ctx: DeviceContext,
+) raises:
+    var a = from_ndbuffer_row_major(a_device)
+    var b = from_ndbuffer_row_major(b_device)
+    var c = from_ndbuffer_row_major(c_device)
+
+    constrained[
+        transpose_b,
+        "Only support transposed B",
+    ]()
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    alias MMA_M = umma_shape[0]
+    alias MMA_N = umma_shape[1]
+    alias MMA_K = umma_shape[2]
+
+    a_tma_op = create_tma_tile[
+        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+    ](ctx, a)
+
+    b_tma_op = create_tma_tile[
+        b_type,
+        2,
+        Index(
+            BN // (cluster_shape[0] // cta_group), BK
+        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+        is_k_major=transpose_b,
+        swizzle_mode=b_swizzle,
+    ](ctx, b)
+
+    c_tma_op = create_tma_tile[BM, MMA_N](ctx, c)
+
+    alias smem_size = (
+        (BM * BK * sizeof[a_type]()) * num_pipeline_stages
+        + (BN * BK * sizeof[b_type]()) * num_pipeline_stages
+        + (BM * MMA_N * sizeof[c_type]())
+    ) + (16 + 16 + 16 + 16) * num_pipeline_stages
+
+    alias kernel = blackwell_tma_pair_umma_kernel[
+        a_type,
+        b_type,
+        c_type,
+        __type_of(a_tma_op).layout,
+        __type_of(b_tma_op).layout,
+        __type_of(c_tma_op).layout,
+        __type_of(a_tma_op).desc_layout,
+        __type_of(b_tma_op).desc_layout,
+        __type_of(c_tma_op).desc_layout,
+        block_tile_shape,
+        umma_shape,
+        transpose_b=transpose_b,
+        cluster_shape=cluster_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        cta_group=cta_group,
+        num_pipeline_stages=num_pipeline_stages,
+    ]
+
+    ctx.enqueue_function[kernel](
+        a_tma_op,
+        b_tma_op,
+        c_tma_op,
+        K // BK,
+        grid_dim=(
+            align_up(M // BM, Int(cluster_shape[0])),
+            align_up(N // BN // cta_group, Int(cluster_shape[1])),
+            1,
+        ),
+        block_dim=(32 * 6),
+        shared_mem_bytes=smem_size,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+    )
+
+
+def test_blackwell_matmul_tma_pair_mma[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    transpose_b: Bool = True,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    benchmark: Bool = False,
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+    var M = m.value
+    var N = n.value
+    var K = k.value
+
+    if not benchmark:
+        print(M, "x", N, "x", K)
+
+    alias static_a_shape = DimList(m.dim, k.dim)
+    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
+        k.dim, n.dim
+    )
+    alias static_c_shape = DimList(m.dim, n.dim)
+    var dynamic_a_shape = DimList(m.value, k.value)
+    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
+        k.value, n.value
+    )
+    var dynamic_c_shape = DimList(m.value, n.value)
+
+    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
+    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
+    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+
+    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
+        dynamic_a_shape, ctx=ctx
+    )
+    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
+        dynamic_b_shape, ctx=ctx
+    )
+    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
+        dynamic_c_shape, ctx=ctx
+    )
+    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
+        dynamic_c_shape, ctx=ctx
+    )
+
+    # Initialize matmul operands
+    random(a_host.tensor)
+    random(b_host.tensor)
+    zero(c_host.tensor)
+    zero(c_host_ref.tensor)
+
+    # Move operands to the Device
+    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
+    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+
+    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
+    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+
+    blackwell_matmul_tma_pair_mma[
+        transpose_b=transpose_b,
+        umma_shape=mma_shape,
+        block_tile_shape=block_tile_shape,
+        cluster_shape=cluster_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        cta_group=2,
+    ](
+        c_device.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        M,
+        N,
+        K,
+        ctx,
+    )
+
+    if benchmark:
+        alias num_runs = 100
+        alias num_warmup = 100
+
+        @always_inline
+        @parameter
+        fn run_kernel(ctx: DeviceContext) raises:
+            blackwell_matmul_tma_pair_mma[
+                transpose_b=transpose_b,
+                umma_shape=mma_shape,
+                block_tile_shape=block_tile_shape,
+                cluster_shape=cluster_shape,
+                a_swizzle=a_swizzle,
+                b_swizzle=b_swizzle,
+                cta_group=2,
+            ](
+                c_device.tensor,
+                a_device.tensor,
+                b_device.tensor,
+                M,
+                N,
+                K,
+                ctx,
+            )
+
+        # Warmup
+        for _ in range(num_warmup):
+            run_kernel(ctx)
+        ctx.synchronize()
+        # print("finished warmup")
+
+        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var sectime = nstime * 1e-9
+        var TFlop = 2.0 * M * N * K * 1e-12
+        # Round TFLOPS to two decimal places for cleaner output
+        var tflops = TFlop / sectime
+        var tflops_rounded = round(tflops, 2)
+        print(String(M, "x", N, "x", K), sectime * 1000, tflops_rounded)
+    else:
+        vendor_blas.matmul(
+            ctx,
+            c_device_ref.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
+
+        ctx.synchronize()
+
+        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.synchronize()
+
+        alias rtol = 1e-2
+        assert_almost_equal(
+            c_host.tensor,
+            c_host_ref.tensor,
+            atol=0.0001,
+            rtol=rtol,
+        )
+        print("\n=== TEST PASSED ===\n")
+
+    _ = c_device
+    _ = c_device_ref
+    _ = a_host
+    _ = b_host
+    _ = c_host_ref
+    _ = c_host
+    _ = a_device
+    _ = b_device
+
+
+fn get_dic_of_shapes(
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+) -> Tuple[Int, Int, Int]:
+    try:
+        return dic_bro[index]
+    except error:
+        print("error")
+        return (128, 128, 128)
+
+
+fn make_dic_of_shapes() -> (
+    Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
+):
+    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
+    dic[0] = (512, 2560, 8192)
+    dic[1] = (512, 8192, 2048)
+    dic[2] = (512, 14336, 8192)
+    dic[3] = (512, 8192, 7168)
+    dic[4] = (4096, 2560, 8192)
+    dic[5] = (4096, 8192, 2048)
+    dic[6] = (4096, 14336, 8192)
+    dic[7] = (4096, 8192, 7168)
+    dic[8] = (8192, 2560, 8192)
+    dic[9] = (8192, 8192, 2048)
+    dic[10] = (8192, 14336, 8192)
+    dic[11] = (8192, 8192, 7168)
+    return dic
+
+
+fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+    alias a_type = DType.bfloat16
+    alias b_type = DType.bfloat16
+    alias c_type = DType.bfloat16
+    alias umma_shape = Index(64, 128, 16)
+    alias transpose_b = True
+    alias BK = 64
+
+    alias dic_of_shapes = make_dic_of_shapes()
+
+    print("Benchmarking blackwell_matmul_tma_umma_kernel")
+    print("============================================")
+    print("M, N, K, time(ms), TFLOPS")
+
+    @parameter
+    for i in range(len(dic_of_shapes)):
+        alias shape = get_dic_of_shapes(i, dic_of_shapes)
+        try:
+            test_blackwell_matmul_tma_pair_mma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(
+                    64, 64, 64
+                ),  # TODO: change the shape of the C tile to be 256, BN to 128, bring out in 2 iterations
+                Index(128, 128, 16),
+                cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                benchmark=True,
+            ](ctx, dynamic(shape[0]), static[shape[1]](), static[shape[2]]())
+        except error:
+            print("error")
+
+
+def main():
+    with DeviceContext() as ctx:
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 64, 64),
+            Index(128, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(256), static[512](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 128, 64),
+            Index(128, 256, 16),
+            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(256), static[1024](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 128, 64),
+            Index(128, 256, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, static[128](), static[512](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 128, 64),
+            Index(128, 256, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(128), static[256](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 64, 64),
+            Index(256, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(1024), static[256](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 64, 64),
+            Index(256, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(1024), static[1024](), static[128]())
+
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 64, 64),
+            Index(128, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(8192), static[2560](), static[8192]())
+
+        # Run the benchmark
+        print("\n\n========== Running Benchmarks ==========\n")
+        benchmark_blackwell_matmul(ctx)

@@ -24,13 +24,11 @@ opentelemetry-exporter-otlp-proto-http>=1.27.0
 opentelemetry-exporter-prometheus>=0.50b0
 opentelemetry-sdk>=1.29.0,<2.0
 pillow>=10.3.0
-prometheus-async>=22.2.0
 prometheus-client>=0.21.0
 pydantic-settings>=2.7.1
 pydantic
 pyinstrument>=5.0.1
 python-json-logger>=2.0.7
-sentinel>=0.3.0
 sse-starlette>=2.1.2
 starlette==0.41.2 # transitively included by sse-starlette, >=0.40.0 is required for resolving CVE-2024-47874, 0.41.3 introduces a breaking change against mypy (https://github.com/encode/starlette/discussions/2757)
 tokenizers>=0.19.0

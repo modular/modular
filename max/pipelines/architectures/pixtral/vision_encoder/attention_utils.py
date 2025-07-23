@@ -79,7 +79,7 @@ def causal_attention_mask_2d(
     Args:
 
         num_patches_list: A list of integers, where each entry represents the number of patches
-        in a block (e.g., (num_patches_in_height × num_patches_in_width) patches per image block).
+        in a block (e.g., (num_patches_in_height x num_patches_in_width) patches per image block).
         It is list representing the sizes of different blocks in terms of patches.
 
         patch_embeds:A tensor of shape [batch_size, num_patches, hidden_size] representing the

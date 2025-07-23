@@ -225,6 +225,23 @@ def test_range_compile_time():
     for i in range(Int32(10)):
         assert_true(i >= 0)
 
+    @parameter
+    for i in range(1, UInt16(10), 2):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(1, Int16(10), 2):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in reversed(range(1, Int16(10), 2)):
+        assert_true(i >= 0)
+
+    @parameter
+    for i in range(Int64(10), 1, -2):
+        assert_true(i > 0)
+        assert_true(i <= 10)
+
 
 def main():
     test_range_len()

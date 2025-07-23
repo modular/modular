@@ -203,8 +203,8 @@ async def _async_worker(
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
-            dispatcher_factory=dispatcher_factory,
             pipeline_task=pipeline_task,
+            dispatcher_factory=dispatcher_factory,
         ) as engine_queue,
         TokenGeneratorPipeline(
             model_name=model_name,
@@ -225,7 +225,7 @@ async def _async_worker(
             # Lambda to do a full text generation for a request.
             async def all_tokens(prompt: str) -> str:
                 sampling_params = SamplingParams(
-                    max_new_tokens=request.max_new_tokens
+                    max_new_tokens=request.max_new_tokens  # noqa: B023
                 )
                 gen_request = TokenGeneratorRequest(
                     id=str(uuid.uuid4()),

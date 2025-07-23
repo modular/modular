@@ -77,10 +77,10 @@ single_version_override(
 # TODO: Remove when >0.4.1 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-votbwv5MIO/0FlrO8T39tJ5B+iBWrIOjKSGfZVNExzo=",
-    strip_prefix = "rules_mojo-98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f",
+    integrity = "sha256-CjiuX8ekwcfWW1ZBTd5c2zALL8Ijf8+NJhL3F9wFsHM=",
+    strip_prefix = "rules_mojo-67ddb44ffc94a23e91fc1e8da7f05b725fa86b97",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/98c040e1fb258b1fcdc8c8b2d28c8e7fbec24d5f.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/67ddb44ffc94a23e91fc1e8da7f05b725fa86b97.tar.gz",
     ],
 )
 

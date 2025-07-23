@@ -50,11 +50,9 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
-    GenerationStatus,
     InputContext,
     LogProbabilities,
-    TextGenerationResponse,
-    TextResponse,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.nn.kv_cache import (
@@ -222,6 +220,7 @@ class PipelineModel(ABC, Generic[T]):
 
         self._lora_manager = (
             LoRAManager(
+                pipeline_config.model_config.model_path,
                 weights,
                 self.pipeline_config.lora_config.max_num_loras,
                 self.pipeline_config.lora_config.max_lora_rank,
@@ -662,11 +661,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
-        return (
-            num_steps
-            if num_available_steps > num_steps
-            else num_available_steps
-        )
+        return min(num_available_steps, num_steps)
 
     @traced
     def prepare_batch(
@@ -970,7 +965,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         batch: dict[str, T],
         num_steps: int,
-    ) -> dict[str, TextGenerationResponse]:
+    ) -> dict[str, TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -1186,12 +1181,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )  # pops multistep_execution_loop_steps
         generated_tokens_host = generated_tokens.to_numpy()
 
-        # Prepare the response, pruning away completed requests as we go.
-        res: dict[str, TextGenerationResponse] = {}
-        tracer.push("prepare_response")
+        # Update the context object.
+        tracer.push("update_context")
+        res: dict[str, TextGenerationOutput] = {}
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = GenerationStatus.ACTIVE
-            res[request_id] = TextGenerationResponse([], status)
             for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
@@ -1206,13 +1199,27 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 context.update(
                     new_token=next_token, log_probabilities=log_probs
                 )
-                res[request_id].update_status(context.status)
                 if context.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.
+            tokens = []
+            log_probabilities: Optional[list[LogProbabilities]] = None
+            if compute_log_probabilities:
+                log_probabilities = []
+
+            status = context.status
             for token, log_probs in context.outstanding_completion_tokens():
-                res[request_id].append_token(TextResponse(token, log_probs))
+                tokens.append(token)
+                if log_probabilities is not None and log_probs is not None:
+                    log_probabilities.append(log_probs)
+
+            res[request_id] = TextGenerationOutput(
+                request_id=request_id,
+                tokens=tokens,
+                log_probabilities=log_probabilities,
+                final_status=status,
+            )
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

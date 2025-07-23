@@ -240,9 +240,6 @@ struct LinkedList[
         self._head = other._head
         self._tail = other._tail
         self._size = other._size
-        other._head = Self._NodePointer()
-        other._tail = Self._NodePointer()
-        other._size = 0
 
     fn __del__(owned self):
         """Clean up the list by freeing all nodes.

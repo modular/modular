@@ -24,10 +24,10 @@ class StopDetector:
         self.stop: list[str]
 
         # Clean up self.stop: List[str]
-        if stop == None:
+        if stop is None:
             self.stop = []
         else:
-            if type(stop) == str:
+            if isinstance(stop, str):
                 self.stop = [stop]
             else:
                 self.stop = list(stop)

@@ -16,12 +16,12 @@ from download import Download
 from packaging.tags import Tag
 
 
-def test_throws_missing_keys():
+def test_throws_missing_keys() -> None:
     with pytest.raises(ValueError, match="Missing required keys in blob"):
         Download({})
 
 
-def test_initialize_wheel():
+def test_initialize_wheel() -> None:
     blob = {
         "hash": "sha256:1234567890abcdef",
         "url": "https://example.com/package_thing-1.0.0-py3-none-any.whl",
@@ -56,7 +56,7 @@ def test_initialize_wheel():
     )
 
 
-def test_initialize_sdist():
+def test_initialize_sdist() -> None:
     blob = {
         "hash": "sha256:abcdef1234567890",
         "url": "https://example.com/package_thing-1.0.0.tar.gz",
@@ -85,4 +85,4 @@ def test_initialize_sdist():
     with pytest.raises(
         NotImplementedError, match="Tags are only supported for wheels."
     ):
-        download.tags
+        download.tags  # noqa: B018

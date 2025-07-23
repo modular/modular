@@ -176,8 +176,8 @@ fn test_conv_transposed[
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     # Rounded C and F size for pre-packed filter.
-    alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
+    # alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
+    # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
     alias input_layout = Layout.row_major[rank + 2]()

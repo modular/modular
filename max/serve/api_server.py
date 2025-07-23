@@ -122,8 +122,8 @@ async def lifespan(
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
-                    dispatcher_factory,
                     serving_settings.pipeline_task,
+                    dispatcher_factory=dispatcher_factory,
                 )
             )
 
