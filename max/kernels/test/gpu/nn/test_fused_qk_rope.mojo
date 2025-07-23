@@ -38,7 +38,11 @@ def _init_device_ndbuffer_from_goldens[
 ]:
     """Initializes a device buffer with a set of golden values."""
     host_tensor = HostNDBuffer[dtype, len(shape), shape=shape]()
-    memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=len(goldens))
+    memcpy(
+        dest=host_tensor.tensor.data,
+        src=goldens.unsafe_ptr(),
+        count=len(goldens),
+    )
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[
@@ -134,7 +138,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
                     batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
                 )
             ),
-            src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
+            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
 
@@ -150,12 +154,12 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     cache_lengths = DeviceNDBuffer[
         DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
-    ctx.enqueue_copy(cache_lengths.buffer, start_positions.data)
+    ctx.enqueue_copy(cache_lengths.buffer, start_positions.unsafe_ptr())
 
     lookup_table_dev = DeviceNDBuffer[
         DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
-    ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.data)
+    ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.unsafe_ptr())
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block_dev.tensor,
@@ -186,7 +190,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
         "invalid expected q out init",
     )
     expected_q_out = NDBuffer[dtype, rank = q_dev.rank, shape = q_dev.shape](
-        expected_q_out_buffer.data
+        expected_q_out_buffer.unsafe_ptr()
     )
     expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
@@ -230,7 +234,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
                     batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
                 )
             ),
-            expected_k_out_buffer.data + (batch_idx * seq_len * dim),
+            expected_k_out_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
             len(expected_k_out_buffer) // batch_size,
         )

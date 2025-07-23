@@ -77,8 +77,8 @@ struct Rewriter:
                 self.c,
                 insert_before.c,
                 len(args),
-                args.data.bitcast[Type.cType](),
-                locations.data.bitcast[Location.cType](),
+                args.unsafe_ptr().bitcast[Type.cType](),
+                locations.unsafe_ptr().bitcast[Location.cType](),
             )
         )
 
@@ -103,7 +103,10 @@ struct Rewriter:
 
     fn replace_op_with(mut self, op: Operation, values: List[Value]):
         _c.Rewrite.mlirRewriterBaseReplaceOpWithValues(
-            self.c, op.c, len(values), values.data.bitcast[Value.cType]()
+            self.c,
+            op.c,
+            len(values),
+            values.unsafe_ptr().bitcast[Value.cType](),
         )
 
     fn replace_op_with(mut self, op: Operation, new_op: Operation):
@@ -125,7 +128,7 @@ struct Rewriter:
             source.c,
             op.c,
             len(arg_values),
-            arg_values.data.bitcast[Value.cType](),
+            arg_values.unsafe_ptr().bitcast[Value.cType](),
         )
 
     fn merge_blocks(
@@ -136,7 +139,7 @@ struct Rewriter:
             source.c,
             dest.c,
             len(arg_values),
-            arg_values.data.bitcast[Value.cType](),
+            arg_values.unsafe_ptr().bitcast[Value.cType](),
         )
 
     fn move_op_before(mut self, op: Operation, existing_op: Operation):
@@ -173,13 +176,13 @@ struct Rewriter:
         _c.Rewrite.mlirRewriterBaseReplaceAllValueRangeUsesWith(
             self.c,
             len(values),
-            values.data.bitcast[Value.cType](),
-            to.data.bitcast[Value.cType](),
+            values.unsafe_ptr().bitcast[Value.cType](),
+            to.unsafe_ptr().bitcast[Value.cType](),
         )
 
     fn replace_all_uses_with(mut self, op: Operation, to: List[Value]):
         _c.Rewrite.mlirRewriterBaseReplaceAllOpUsesWithValueRange(
-            self.c, op.c, len(to), to.data.bitcast[Value.cType]()
+            self.c, op.c, len(to), to.unsafe_ptr().bitcast[Value.cType]()
         )
 
     fn replace_all_uses_with(mut self, op: Operation, to: Operation):
@@ -194,7 +197,7 @@ struct Rewriter:
             self.c,
             op.c,
             len(new_values),
-            new_values.data.bitcast[Value.cType](),
+            new_values.unsafe_ptr().bitcast[Value.cType](),
             block.c,
         )
 

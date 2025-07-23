@@ -116,7 +116,7 @@ fn bench_string_split[
             res = _split[has_maxsplit=False](items, sequence.value(), -1)
         else:
             res = _split[has_maxsplit=False](items, None, -1)
-        keep(res.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -161,7 +161,7 @@ fn bench_string_splitlines[
     @parameter
     fn call_fn() raises:
         var res = items.splitlines()
-        keep(res.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))

@@ -294,26 +294,26 @@ def test_list_reverse_move_count():
     vec.append(MoveCounter(5))
 
     assert_equal(len(vec), 5)
-    assert_equal(vec.data[0].value, 1)
-    assert_equal(vec.data[1].value, 2)
-    assert_equal(vec.data[2].value, 3)
-    assert_equal(vec.data[3].value, 4)
-    assert_equal(vec.data[4].value, 5)
+    assert_equal(vec[0].value, 1)
+    assert_equal(vec[1].value, 2)
+    assert_equal(vec[2].value, 3)
+    assert_equal(vec[3].value, 4)
+    assert_equal(vec[4].value, 5)
 
-    assert_equal(vec.data[0].move_count, 1)
-    assert_equal(vec.data[1].move_count, 1)
-    assert_equal(vec.data[2].move_count, 1)
-    assert_equal(vec.data[3].move_count, 1)
-    assert_equal(vec.data[4].move_count, 1)
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 1)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 1)
+    assert_equal(vec[4].move_count, 1)
 
     vec.reverse()
 
     assert_equal(len(vec), 5)
-    assert_equal(vec.data[0].value, 5)
-    assert_equal(vec.data[1].value, 4)
-    assert_equal(vec.data[2].value, 3)
-    assert_equal(vec.data[3].value, 2)
-    assert_equal(vec.data[4].value, 1)
+    assert_equal(vec[0].value, 5)
+    assert_equal(vec[1].value, 4)
+    assert_equal(vec[2].value, 3)
+    assert_equal(vec[3].value, 2)
+    assert_equal(vec[4].value, 1)
 
     # NOTE:
     # Earlier elements went through 2 moves and later elements went through 3
@@ -322,11 +322,11 @@ def test_list_reverse_move_count():
     # earlier element to a temporary (+1 move), directly move the later element
     # into the position the earlier element was in, and then move from the
     # temporary into the later position (+1 move).
-    assert_equal(vec.data[0].move_count, 2)
-    assert_equal(vec.data[1].move_count, 2)
-    assert_equal(vec.data[2].move_count, 1)
-    assert_equal(vec.data[3].move_count, 3)
-    assert_equal(vec.data[4].move_count, 3)
+    assert_equal(vec[0].move_count, 2)
+    assert_equal(vec[1].move_count, 2)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 3)
+    assert_equal(vec[4].move_count, 3)
 
 
 def test_list_insert():
@@ -529,11 +529,11 @@ def test_list_extend_non_trivial():
     assert_equal(v1[3].value, "Bar")
     assert_equal(v1[4].value, "Baz")
 
-    assert_equal(v1.data[0].move_count, 1)
-    assert_equal(v1.data[1].move_count, 1)
-    assert_equal(v1.data[2].move_count, 2)
-    assert_equal(v1.data[3].move_count, 2)
-    assert_equal(v1.data[4].move_count, 2)
+    assert_equal(v1[0].move_count, 1)
+    assert_equal(v1[1].move_count, 1)
+    assert_equal(v1[2].move_count, 2)
+    assert_equal(v1[3].move_count, 2)
+    assert_equal(v1[4].move_count, 2)
 
 
 def test_2d_dynamic_list():
@@ -940,7 +940,7 @@ def _test_copyinit_trivial_types[dt: DType, hint_trivial_type: Bool]():
         y = x
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
-        assert_not_equal(x.data, y.data)
+        assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))
         for i in range(current_size):
             assert_equal(i, x[i])
             assert_equal(y[i], x[i])

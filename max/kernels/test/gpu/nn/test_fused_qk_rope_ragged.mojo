@@ -34,7 +34,11 @@ def _init_device_ndbuffer_from_goldens[
 ]:
     """Initializes a device buffer with a set of golden values."""
     host_tensor = HostNDBuffer[dtype, len(shape), shape=shape]()
-    memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=len(goldens))
+    memcpy(
+        dest=host_tensor.tensor.data,
+        src=goldens.unsafe_ptr(),
+        count=len(goldens),
+    )
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[

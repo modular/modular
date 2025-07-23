@@ -177,7 +177,8 @@ struct Span[
             list: The list to which the span refers.
         """
         self._data = (
-            list.data.address_space_cast[address_space]()
+            list.unsafe_ptr()
+            .address_space_cast[address_space]()
             .static_alignment_cast[alignment]()
             .origin_cast[mut, origin]()
         )
