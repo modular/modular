@@ -50,7 +50,7 @@ from rich.progress import (
 )
 from utils import pretty_exception_handler
 
-CONSOLE = Console()
+CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
 LINE = "\n" + 80 * "-"
 
@@ -80,7 +80,7 @@ def configure_logging(
         logging.basicConfig(format="%(message)s", handlers=[debug_handler])
     else:
         logging.basicConfig(format="%(levelname)s: %(message)s")
-        CONSOLE = Console(force_terminal=False, color_system=None)
+        CONSOLE = Console(width=80, force_terminal=False, color_system=None)
 
     log_level = (
         logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
@@ -442,8 +442,8 @@ class Spec:
         try:
             logging.info(f"Loading yaml [{file}]" + LINE)
             return Spec.loads(file.read_text())
-        except Exception:
-            raise ValueError(f"Could not load spec from {file}")  # noqa: B904
+        except Exception as e:
+            raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
 
     @staticmethod
     def load_yaml_list(yaml_path_list: list[str]) -> Spec:

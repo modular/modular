@@ -45,11 +45,11 @@ fn bench_func[
         "gemm/dtype=", dtype, "/m=", M, "/n=", N, "/k=", N, "/stages=", stages
     )
 
-    if mode == Mode.BENCHMARK:
+    if Mode.BENCHMARK == mode:
         m.bench_function[bench_iter](BenchId(name))
-    if mode == Mode.VERIFY:
+    if Mode.VERIFY == mode:
         print("verifying dummy results...PASS")
-    if mode == Mode.RUN:
+    if Mode.RUN == mode:
         print("pretending to run the kernel...PASS")
 
 
@@ -65,11 +65,12 @@ fn main() raises:
     var mode = Mode(arg_parse("mode", "benchmark"))
 
     print("mode=" + String(mode))
-    if mode == Mode.RUN:
+
+    if Mode.RUN == mode:
         print("-- mode: run kernel once")
-    if mode == Mode.BENCHMARK:
+    if Mode.BENCHMARK == mode:
         print("-- mode: run kernel benchmark")
-    if mode == Mode.VERIFY:
+    if Mode.VERIFY == mode:
         print("-- mode: verify kernel")
 
     var m = Bench(
