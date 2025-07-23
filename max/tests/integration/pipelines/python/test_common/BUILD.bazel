@@ -30,6 +30,7 @@ modular_py_library(
         ":process_isolation",
         ":registry",
         ":test_data",
+        ":torch_hooks",
         ":torch_utils",
         ":verify_utils",
     ],
@@ -245,5 +246,16 @@ modular_py_library(
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "torch_hooks",
+    srcs = ["torch_print_hook.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/nn/hooks:base_print_hook",
+        requirement("torch"),
     ],
 )
