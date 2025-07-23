@@ -295,9 +295,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, *_],
+    a_buf: NDBuffer[a_type, rank, *_],
+    b_buf: NDBuffer[b_type, rank, *_],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -811,9 +811,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, *_],
+    a_buf: NDBuffer[a_type, rank, *_],
+    b_buf: NDBuffer[b_type, rank, *_],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
