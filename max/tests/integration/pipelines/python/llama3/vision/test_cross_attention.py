@@ -230,7 +230,8 @@ def test_cross_attention(
 
     # Phase 3: execution.
 
-    seq_ids = kv_manager.claim(n=batch_size)
+    seq_ids = list(kv_manager.available)[:batch_size]
+    kv_manager.external_claim(seq_ids)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
     batch = [

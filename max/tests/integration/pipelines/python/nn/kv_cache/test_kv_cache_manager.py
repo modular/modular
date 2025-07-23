@@ -10,11 +10,23 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
+    KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
+
+
+def claim_sequence_ids(kv_manager: KVCacheManager, n: int) -> list[int]:
+    """Helper function to claim sequence IDs and call external_claim.
+
+    This replaces the deprecated claim() method.
+    """
+    # Get the first n available sequence IDs
+    seq_ids = list(kv_manager.available)[:n]
+    kv_manager.external_claim(seq_ids)
+    return seq_ids
 
 
 @pytest.mark.asyncio
@@ -34,7 +46,7 @@ async def test_step() -> None:
     )
 
     # Claim three items
-    seq_ids = kv_manager.claim(n=3)
+    seq_ids = claim_sequence_ids(kv_manager, 3)
 
     prompt_lens = [3, 4, 7]
     batch = [
@@ -82,15 +94,15 @@ async def test_claim_and_release() -> None:
 
     # Claim 5 ids
     outstanding = 11
-    seq_ids = kv_manager.claim(n=5)
+    seq_ids = claim_sequence_ids(kv_manager, 5)
     assert len(seq_ids) == 5
-    assert len(kv_manager.slots_remaining) == outstanding
+    assert len(kv_manager.available) == outstanding
 
     # Claim another 3 ids
-    seq_ids_2 = kv_manager.claim(n=3)
+    seq_ids_2 = claim_sequence_ids(kv_manager, 3)
     assert len(seq_ids_2) == 3
     outstanding -= 3
-    assert len(kv_manager.slots_remaining) == outstanding
+    assert len(kv_manager.available) == outstanding
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
@@ -99,7 +111,7 @@ async def test_claim_and_release() -> None:
     # Release all ids
     for i, id in enumerate(seq_ids + seq_ids_2):
         kv_manager.release(seq_id=id)
-        assert len(kv_manager.slots_remaining) == outstanding + i + 1
+        assert len(kv_manager.available) == outstanding + i + 1
 
 
 @pytest.mark.asyncio
@@ -130,7 +142,7 @@ async def test_fetch_continuous() -> None:
         )[0]
 
     # Claim 5 items
-    seq_ids = kv_manager.claim(n=5)
+    seq_ids = claim_sequence_ids(kv_manager, 5)
 
     # Fetch 3 of the 5 ids
     kv_collection = kv_manager.fetch(

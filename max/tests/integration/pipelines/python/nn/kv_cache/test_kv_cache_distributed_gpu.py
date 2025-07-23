@@ -44,7 +44,8 @@ async def test_kv_cache_multi_gpu() -> None:
             devices=list_of_devices,
             session=inference_session,
         )
-        seq_id = kv_manager.claim(n=1)[0]
+        seq_id = 0
+        kv_manager.external_claim([seq_id])
 
         batch = [create_text_context(seq_id, np.empty(1))]
         list_of_kv_tuples = kv_manager.fetch(batch)

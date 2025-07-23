@@ -470,10 +470,9 @@ def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
     g = construct()
 
     # Claim seq_ids in cache
-    seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
+    seq_ids_to_claim = list(kv_manager.available)[:batch_size]
+    kv_manager.external_claim(seq_ids_to_claim)
+    seq_ids = seq_ids_to_claim
 
     input_row_offsets = Tensor(
         DType.uint32,

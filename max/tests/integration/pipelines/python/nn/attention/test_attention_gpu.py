@@ -261,7 +261,10 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 
     # Phase 3: execution.
 
-    seq_ids = kv_manager.claim(n=batch_size)
+    seq_ids = []
+    for i in range(batch_size):
+        kv_manager.external_claim([i])
+        seq_ids.append(i)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
     batch = [
@@ -454,9 +457,9 @@ def test_kv_cache_paged_mla_prefill() -> None:
     g = construct()
     # Claim seq_ids in cache
     seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
+    for i in range(batch_size):
+        kv_manager.external_claim([i])
+        seq_ids.append(i)
 
     input_row_offsets = Tensor(
         DType.uint32,

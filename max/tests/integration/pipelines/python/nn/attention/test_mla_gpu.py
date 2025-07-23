@@ -83,9 +83,9 @@ def test_mla_prefill_plan() -> None:
 
     # Claim seq_ids in cache.
     seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
+    for i in range(batch_size):
+        kv_manager.external_claim([i])
+        seq_ids.append(i)
 
     # Compute input row offsets for ragged tensors.
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
@@ -214,9 +214,9 @@ def test_mla_decompress_k_cache() -> None:
 
     # Claim seq_ids in cache.
     seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
+    for i in range(batch_size):
+        kv_manager.external_claim([i])
+        seq_ids.append(i)
 
     # Compute input row offsets for ragged tensors.
     input_row_offsets = Tensor(DType.uint32, [batch_size + 1])

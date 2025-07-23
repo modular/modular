@@ -604,10 +604,8 @@ def attention_lora_max_output(
     lora_ranks = np.full(total_seq_len, config.rank, dtype=np.uint32)
     lora_input_row_offsets = np.arange(total_seq_len + 1, dtype=np.uint32)
 
-    seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
+    seq_ids = list(kv_manager.available)[:batch_size]
+    kv_manager.external_claim(seq_ids)
 
     batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
 
