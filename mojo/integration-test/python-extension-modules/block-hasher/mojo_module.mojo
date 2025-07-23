@@ -104,7 +104,7 @@ fn _mojo_block_hasher[
 
         prev_hash = curr_hash
 
-    return PythonObject(from_owned_ptr=result_py_list)
+    return PythonObject(from_owned=result_py_list)
 
 
 @export

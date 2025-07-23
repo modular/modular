@@ -83,7 +83,7 @@ fn case_raise_empty_error() -> PythonObject:
 
     cpython.PyErr_SetNone(error_type)
 
-    return PythonObject(from_owned_ptr=PyObjectPtr())
+    return PythonObject(from_owned=PyObjectPtr())
 
 
 fn case_raise_string_error() -> PythonObject:
@@ -93,7 +93,7 @@ fn case_raise_string_error() -> PythonObject:
 
     cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
 
-    return PythonObject(from_owned_ptr=PyObjectPtr())
+    return PythonObject(from_owned=PyObjectPtr())
 
 
 # Returning New Mojo Values

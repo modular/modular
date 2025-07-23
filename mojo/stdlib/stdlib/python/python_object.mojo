@@ -107,7 +107,7 @@ struct _PyIter(Copyable):
         var cpy = Python().cpython()
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
-        return PythonObject(from_owned_ptr=curr_item)
+        return PythonObject(from_owned=curr_item)
 
 
 @register_passable
@@ -145,7 +145,7 @@ struct PythonObject(
         """
         return self
 
-    fn __init__(out self, *, from_owned_ptr: PyObjectPtr):
+    fn __init__(out self, *, from_owned: PyObjectPtr):
         """Initialize this object from an owned reference-counted Python object
         pointer.
 
@@ -154,14 +154,14 @@ struct PythonObject(
         CPython API.
 
         Args:
-            from_owned_ptr: An owned pointer to a Python object.
+            from_owned: An owned pointer to a Python object.
 
         References:
         - https://docs.python.org/3/glossary.html#term-strong-reference
         """
-        self._obj_ptr = from_owned_ptr
+        self._obj_ptr = from_owned
 
-    fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
+    fn __init__(out self, *, from_borrowed: PyObjectPtr):
         """Initialize this object from a borrowed reference-counted Python
         object pointer.
 
@@ -170,7 +170,7 @@ struct PythonObject(
         CPython API.
 
         Args:
-            from_borrowed_ptr: A borrowed pointer to a Python object.
+            from_borrowed: A borrowed pointer to a Python object.
 
         References:
         - https://docs.python.org/3/glossary.html#term-borrowed-reference
@@ -180,8 +180,8 @@ struct PythonObject(
         #   We were passed a Python "borrowed reference", so for it to be
         #   safe to store this reference, we must increment the reference
         #   count to convert this to a "strong reference".
-        cpy.Py_IncRef(from_borrowed_ptr)
-        self._obj_ptr = from_borrowed_ptr
+        cpy.Py_IncRef(from_borrowed)
+        self._obj_ptr = from_borrowed
 
     @always_inline
     fn __init__[T: Movable](out self, *, var alloc: T) raises:
@@ -235,7 +235,7 @@ struct PythonObject(
             none: None.
         """
         var cpy = Python().cpython()
-        self = Self(from_borrowed_ptr=cpy.Py_None())
+        self = Self(from_borrowed=cpy.Py_None())
 
     @implicit
     fn __init__(out self, value: Bool):
@@ -245,7 +245,7 @@ struct PythonObject(
             value: The boolean value.
         """
         var cpy = Python().cpython()
-        self = Self(from_owned_ptr=cpy.PyBool_FromLong(c_long(Int(value))))
+        self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
 
     @implicit
     fn __init__(out self, value: Int):
@@ -255,7 +255,7 @@ struct PythonObject(
             value: The integer value.
         """
         var cpy = Python().cpython()
-        self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
+        self = Self(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
 
     @implicit
     fn __init__[dtype: DType](out self, value: Scalar[dtype]):
@@ -274,16 +274,16 @@ struct PythonObject(
         @parameter
         if dtype is DType.bool:
             var val = c_long(Int(value))
-            self = Self(from_owned_ptr=cpy.PyBool_FromLong(val))
+            self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
             var val = c_size_t(value.cast[DType.index]().value)
-            self = Self(from_owned_ptr=cpy.PyLong_FromSize_t(val))
+            self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
             var val = c_ssize_t(value.cast[DType.index]().value)
-            self = Self(from_owned_ptr=cpy.PyLong_FromSsize_t(val))
+            self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
             var val = c_double(value.cast[DType.float64]())
-            self = Self(from_owned_ptr=cpy.PyFloat_FromDouble(val))
+            self = Self(from_owned=cpy.PyFloat_FromDouble(val))
 
     @implicit
     fn __init__(out self, string: StringSlice) raises:
@@ -299,7 +299,7 @@ struct PythonObject(
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.get_error()
-        self = Self(from_owned_ptr=unicode)
+        self = Self(from_owned=unicode)
 
     @implicit
     fn __init__(out self, value: StringLiteral) raises:
@@ -326,7 +326,7 @@ struct PythonObject(
         Args:
             slice: The dictionary value.
         """
-        self = Self(from_owned_ptr=_slice_to_py_object_ptr(slice))
+        self = Self(from_owned=_slice_to_py_object_ptr(slice))
 
     @always_inline
     fn __init__[
@@ -375,7 +375,7 @@ struct PythonObject(
             if result == -1:
                 raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     fn __init__(
         out self,
@@ -404,7 +404,7 @@ struct PythonObject(
             if result != 0:
                 raise Error("internal error: PyDict_SetItem failed")
 
-        return PythonObject(from_owned_ptr=dict_obj_ptr)
+        return PythonObject(from_owned=dict_obj_ptr)
 
     fn __copyinit__(out self, existing: Self):
         """Copy the object.
@@ -414,7 +414,7 @@ struct PythonObject(
         Args:
             existing: The value to copy.
         """
-        self = Self(from_borrowed_ptr=existing._obj_ptr)
+        self = Self(from_borrowed=existing._obj_ptr)
 
     fn __del__(owned self):
         """Destroy the object.
@@ -444,7 +444,7 @@ struct PythonObject(
         var iter_ptr = cpython.PyObject_GetIter(self._obj_ptr)
         if not iter_ptr:
             raise cpython.get_error()
-        return _PyIter(PythonObject(from_owned_ptr=iter_ptr))
+        return _PyIter(PythonObject(from_owned=iter_ptr))
 
     fn __getattr__(self, var name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
@@ -459,7 +459,7 @@ struct PythonObject(
         var result = cpython.PyObject_GetAttrString(self._obj_ptr, name^)
         if not result:
             raise cpython.get_error()
-        return PythonObject(from_owned_ptr=result)
+        return PythonObject(from_owned=result)
 
     fn __setattr__(self, var name: String, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
@@ -541,7 +541,7 @@ struct PythonObject(
         cpython.Py_DecRef(key_obj)
         if not result:
             raise cpython.get_error()
-        return PythonObject(from_owned_ptr=result)
+        return PythonObject(from_owned=result)
 
     fn __getitem__(self, *args: Slice) raises -> PythonObject:
         """Return the sliced value for the given Slice or Slices.
@@ -571,7 +571,7 @@ struct PythonObject(
         cpython.Py_DecRef(key_obj)
         if not result:
             raise cpython.get_error()
-        return PythonObject(from_owned_ptr=result)
+        return PythonObject(from_owned=result)
 
     fn __setitem__(self, *args: PythonObject, value: PythonObject) raises:
         """Set the value with the given key or keys.
@@ -1194,7 +1194,7 @@ struct PythonObject(
         cpy.Py_DecRef(kwargs_)
         if not result:
             raise cpy.get_error()
-        return PythonObject(from_owned_ptr=result)
+        return PythonObject(from_owned=result)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1506,7 +1506,7 @@ fn _unsafe_alloc_init[
     """
     var obj_py_ptr = _unsafe_alloc[T](type_obj_ptr)
     _unsafe_init(obj_py_ptr, mojo_value^)
-    return PythonObject(from_owned_ptr=obj_py_ptr)
+    return PythonObject(from_owned=obj_py_ptr)
 
 
 # ===-----------------------------------------------------------------------===#
