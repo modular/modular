@@ -49,9 +49,40 @@ struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
 
 @register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType](Sized):
-    """A utility class to access variadic function arguments. Provides a "list"
-    view of the function argument so that the size of the argument list and each
-    individual argument can be accessed.
+    """A utility class to access homogeneous variadic function arguments.
+
+    `VariadicList` is used when you need to accept variadic arguments where all
+    arguments have the same type. Unlike `VariadicPack` (which is heterogeneous),
+    `VariadicList` requires all elements to have the same concrete type.
+
+    At runtime, `VariadicList` is treated as a homogeneous array. Because all
+    the elements have the same type, each element has the same size and memory
+    layout, so the compiler can generate code that works to access any index
+    at runtime.
+
+    Therefore, indexing into `VariadicList` can use runtime indices with regular
+    `for` loops, whereas indexing into `VariadicPack` requires compile-time
+    indices using `@parameter for` loops.
+
+    For example, in the following function signature, `*args: Int` creates a
+    `VariadicList` because it uses a single type `Int` instead of a variadic type
+    parameter. The `*` before `args` indicates that `args` is a variadic argument,
+    which means that the function can accept any number of arguments, but all
+    arguments must have the same type `Int`.
+
+    ```mojo
+    fn sum_values(*args: Int) -> Int:
+        var total = 0
+
+        # Can use regular for loop because args is a VariadicList
+        for i in range(len(args)):
+            total += args[i]  # All elements are Int, so uniform access
+
+        return total
+
+    def main():
+        print(sum_values(1, 2, 3, 4, 5))
+    ```
 
     Parameters:
         type: The type of the elements in the list.
@@ -302,8 +333,47 @@ struct VariadicPack[
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ](Sized):
-    """A utility class to access variadic pack  arguments and provide an API for
-    doing things with them.
+    """A utility class to access heterogeneous variadic function arguments.
+
+    `VariadicPack` is used when you need to accept variadic arguments where each
+    argument can have a different type, but all types conform to a common trait.
+    Unlike `VariadicList` (which is homogeneous), `VariadicPack` allows each
+    element to have a different concrete type.
+
+    `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
+    struct at runtime. Because `VariadicPack` is a heterogeneous tuple (not an
+    array), each element can have a different size and memory layout, which
+    means the compiler needs to know the exact type of each element at compile
+    time to generate the correct memory layout and access code.
+
+    Therefore, indexing into `VariadicPack` requires compile-time indices using
+    `@parameter for` loops, whereas indexing into `VariadicList` uses runtime
+    indices.
+
+    For example, in the following function signature, `*args: *ArgTypes` creates a
+    `VariadicPack` because it uses a variadic type parameter `*ArgTypes` instead
+    of a single type. The `*` before `ArgTypes` indicates that `ArgTypes` is a
+    variadic type parameter, which means that the function can accept any number
+    of arguments, and each argument can have a different type. This allows each
+    argument to have a different type while all types must conform to the
+    `Intable` trait.
+
+    ```mojo
+    fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
+        var total = 0
+
+        # Must use @parameter for loop because args is a VariadicPack
+        @parameter
+        for i in range(args.__len__()):
+            # Each args[i] has a different concrete type from *ArgTypes
+            # The compiler generates specific code for each iteration
+            total += Int(args[i])
+
+        return total
+
+    def main():
+        print(count_many_things(5, 11.7, 12))  # Prints: 28
+    ```
 
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
