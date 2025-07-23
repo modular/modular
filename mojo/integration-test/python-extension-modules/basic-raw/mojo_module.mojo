@@ -43,19 +43,23 @@ fn PyInit_mojo_module() -> PythonObject:
 
 @export
 fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
-    var cpython = Python().cpython()
+    """Count the provided arguments.
 
-    return PythonObject(cpython.PyObject_Length(args))._obj_ptr
+    Return value: New reference.
+    """
+    return mojo_count_args_with_kwargs(py_self, args, {})
 
 
 @export
 fn mojo_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
 ) -> PyObjectPtr:
-    var cpython = Python().cpython()
-    if kwargs:
-        return PythonObject(
-            cpython.PyObject_Length(args) + cpython.PyObject_Length(kwargs)
-        )._obj_ptr
-    else:
-        return PythonObject(cpython.PyObject_Length(args))._obj_ptr
+    """Count the provided arguments and keyword arguments.
+
+    Return value: New reference.
+    """
+    var cpy = Python().cpython()
+    var count = cpy.PyObject_Length(args) + (
+        cpy.PyObject_Length(kwargs) if kwargs else 0
+    )
+    return cpy.PyLong_FromSsize_t(count)
