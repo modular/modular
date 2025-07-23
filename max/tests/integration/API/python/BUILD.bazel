@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "modular_run_binary_test", "requirement")
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests-pure",
@@ -208,80 +208,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         requirement("numpy"),
-    ],
-)
-
-modular_run_binary_test(
-    name = "pipelines_multi_gpu_smoke_test",
-    args = [
-        "generate",
-        "--model-path",
-        "hf-internal-testing/tiny-random-LlamaForCausalLM",
-        "--devices=gpu:0,1,2,3",
-        "--max-batch-size=1",
-        "--max-new-tokens=32",
-        "--max-num-steps=1",
-        "--max-length=512",
-    ],
-    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    gpu_constraints = ["//:has_4_gpus"],
-    tags = [
-        "AITLIB-293",
-        "gpu",
-        "manual",
-        "no-sandbox",
-        "requires-network",
-    ],
-)
-
-modular_run_binary_test(
-    name = "pipelines_multi_gpu_smoke_test_with_subgraphs",
-    args = [
-        "generate",
-        "--model-path",
-        "hf-internal-testing/tiny-random-LlamaForCausalLM",
-        "--devices=gpu:0,1,2,3",
-        "--max-batch-size=1",
-        "--max-new-tokens=32",
-        "--max-num-steps=1",
-        "--max-length=512",
-        "--use-subgraphs",
-    ],
-    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    gpu_constraints = ["//:has_4_gpus"],
-    tags = [
-        "AITLIB-293",
-        "gpu",
-        "manual",
-        "no-sandbox",
-        "requires-network",
-    ],
-)
-
-modular_run_binary_test(
-    name = "pipelines_speculative_decoding_smoke_test",
-    args = [
-        "generate",
-        "--draft-model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
-        "--model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
-        "--quantization-encoding=float32",
-        "--devices=gpu",
-        "--cache-strategy=paged",
-        "--kv-cache-page-size=128",
-        "--max-batch-size=4",
-        "--max-num-steps=10",
-        "--max-length=512",
-        "--device-memory-utilization=0.3",
-        "--prompt=\"The meaning of life is\"",
-    ],
-    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "AITLIB-293",
-        "gpu",
-        "manual",
-        "no-sandbox",
-        "requires-network",
     ],
 )
 

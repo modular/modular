@@ -155,6 +155,52 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_pipelines_multi_gpu_smoke",
+    size = "enormous",
+    srcs = ["test_pipelines_multi_gpu_smoke.py"],
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = [
+        # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
+        # should still run under a new generic pipeline that isn't presubmit
+        # due to compilation times.
+        "AITLIB-293",
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("transformers"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_speculative_decoding_gpu",
+    srcs = ["test_pipelines_speculative_decoding_gpu.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("transformers"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
     deps = [
