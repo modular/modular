@@ -419,7 +419,11 @@ class InternVLProcessor:
         """
         if images is None or len(images) == 0:
             # Text-only case - just tokenize normally
-            return self.tokenizer(text, add_special_tokens=add_special_tokens)
+            return self.tokenizer(
+                text,
+                add_special_tokens=add_special_tokens,
+                return_tensors="np",
+            )
 
         # Process images and format prompt (without actual image preprocessing)
         processed_text = text

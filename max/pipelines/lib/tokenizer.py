@@ -24,7 +24,6 @@ from collections.abc import Sequence
 from typing import Any, Optional, Union, cast
 
 import numpy as np
-import torch
 from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -572,7 +571,6 @@ class TextAndVisionTokenizer(
             if request.images
             else None
         )
-        # PixtralProcessor returns a torch tensor or a list of torch tensors.
         # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt, images=images, add_special_tokens=add_special_tokens
@@ -608,14 +606,13 @@ class TextAndVisionTokenizer(
                 raise ValueError(msg)
             pixel_values = processed_inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
-                pixel_values = tuple(
-                    tensor.numpy() if torch.is_tensor(tensor) else tensor
-                    for tensor in pixel_values
-                )
-            elif torch.is_tensor(pixel_values):
-                pixel_values = (pixel_values.numpy(),)
+                pixel_values = tuple(pixel_values)
             elif isinstance(pixel_values, np.ndarray):
                 pixel_values = (pixel_values,)
+            else:
+                raise ValueError(
+                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
+                )
 
             if "aspect_ratio_ids" in processed_inputs:
                 extra_model_args["aspect_ratio_ids"] = (
