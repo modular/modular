@@ -233,3 +233,6 @@ mutation.
 
 - [#4954](https://github.com/modular/modular/issues/4954) - `InlineArray`
   now does not call the copy constructor when being moved.
+
+- [#5066](https://github.com/modular/modular/issues/5066) - Correctly fill
+  64-bit values on AMD in `enqueue_fill`.
