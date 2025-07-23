@@ -1,16 +1,38 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library")
 
-# The hook lib does not import torch, since the caller may be using
-# the GPU or CPU version of torch.
 modular_py_library(
-    name = "hooks",
-    srcs = glob(["*.py"]),
+    name = "base_print_hook",
+    srcs = [
+        "base_print_hook.py",
+        "identity.py",
+    ],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/nn",
+    ],
+)
+
+modular_py_library(
+    name = "print_hook",
+    srcs = ["print_hook.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":base_print_hook",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/nn",
-        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "hooks",
+    srcs = [
+        "__init__.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":print_hook",
     ],
 )
