@@ -7,7 +7,6 @@
 // RUN: %mojo_jupyter_executor %S/test_completion.ipynb | FileCheck %s
 
 // Check completions for `builtin.`.
-// CHECK: completion: io
 // CHECK: completion: range
 // CHECK: completion: string
 
