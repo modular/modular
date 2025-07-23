@@ -836,7 +836,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         """Releases resources associated with this context.
 
         Args:
-            context (TokenGeneratorContext): Finished context.
+            context (InputContext): Finished context.
 
         """
         self._draft_model.kv_manager.release(context.cache_seq_id)

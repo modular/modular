@@ -25,12 +25,10 @@ from typing import Any, Callable, Generic, Optional, TypeVar
 import numpy as np
 from max.interfaces import (
     AudioGenerationMetadata,
-    AudioGeneratorOutput,
-    TextGenerationRequest,
-)
-from max.pipelines.core import (
     AudioGenerationRequest,
+    AudioGeneratorOutput,
     PipelineTokenizer,
+    TextGenerationRequest,
 )
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
@@ -111,7 +109,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         total_sw = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
-            request.id,
+            request.request_id,
             request.index,
             total_sw.elapsed_ms,
         )
@@ -134,7 +132,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 async for response in self.engine_queue.stream(
-                    request.id, context
+                    request.request_id, context
                 ):
                     for i, token in enumerate(response.tokens):
                         # We intentionally do not use `with Trace(...)` to minimize
@@ -157,11 +155,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             ):
                                 # Tell the scheduler to stop generating this request
                                 self.engine_queue.cancel_push_socket.put(
-                                    [request.id]
+                                    [request.request_id]
                                 )
 
                                 logger.debug(
-                                    f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
+                                    f"Cancelling {request.request_id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
                                 )
                             del tracer  # stop_detector.step
 
@@ -199,7 +197,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
-                    request.id,
+                    request.request_id,
                     request.index,
                     total_sw.elapsed_ms,
                 )
@@ -217,7 +215,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         total_sw = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
-            request.id,
+            request.request_id,
             request.index,
             total_sw.elapsed_ms,
         )
@@ -228,7 +226,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
             with record_ms(METRICS.output_time):
                 async for response in self.engine_queue.stream(
-                    request.id, context
+                    request.request_id, context
                 ):
                     return EmbeddingsGeneratorOutput(
                         embeddings=response.embeddings
@@ -237,7 +235,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
-                    request.id,
+                    request.request_id,
                     request.index,
                     total_sw.elapsed_ms,
                 )
@@ -349,7 +347,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         total_sw = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
-            request.id,
+            request.request_id,
             request.index,
             total_sw.elapsed_ms,
         )
@@ -360,7 +358,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
             with record_ms(METRICS.output_time):
                 async for response in self.engine_queue.stream(
-                    request.id, context
+                    request.request_id, context
                 ):
                     audio_metadata = await self._collect_audio_metadata(
                         response, context
@@ -377,7 +375,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
-                    request.id,
+                    request.request_id,
                     request.index,
                     total_sw.elapsed_ms,
                 )

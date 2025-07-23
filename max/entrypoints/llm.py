@@ -227,7 +227,7 @@ async def _async_worker(
                     max_new_tokens=request.max_new_tokens  # noqa: B023
                 )
                 gen_request = TextGenerationRequest(
-                    id=str(uuid.uuid4()),
+                    request_id=str(uuid.uuid4()),
                     index=0,
                     model_name=model_name,
                     prompt=prompt,

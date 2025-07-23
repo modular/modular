@@ -18,13 +18,13 @@ from typing import Union, cast
 import numpy as np
 from max.interfaces import (
     GenerationStatus,
+    PipelineTokenizer,
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TokenGenerator,
 )
 from max.pipelines.core import (
-    PipelineTokenizer,
     TextContext,
 )
 
@@ -115,7 +115,7 @@ class EchoPipelineTokenizer(
 
         # Create TextContext manually
         context = TextContext(
-            request_id=request.id,
+            request_id=request.request_id,
             prompt=prompt,
             max_length=max_length,
             tokens=encoded_prompt,

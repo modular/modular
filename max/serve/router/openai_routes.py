@@ -33,16 +33,14 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
+    AudioGenerationRequest,
+    PipelineTokenizer,
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
-)
-from max.pipelines.core import (
-    AudioGenerationRequest,
-    PipelineTokenizer,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -169,7 +167,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             async for token in self.pipeline.next_token(request):
                 self.logger.debug(
                     "Streaming: %s, TOKEN: %d, %s",
-                    request.id,
+                    request.request_id,
                     n_tokens,
                     token.decoded_token,
                 )
@@ -200,7 +198,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CreateChatCompletionStreamResponse(
-                    id=request.id,
+                    id=request.request_id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
                     model=self.pipeline.model_name,
@@ -220,7 +218,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             # Note that for SSE, the server will have already responded with a
             # 200 when establishing the connection.
             status_code = 400 if isinstance(e, ValueError) else 500
-            logger.exception("Exception in request %s", request.id)
+            logger.exception("Exception in request %s", request.request_id)
             error_response = ErrorResponse(
                 error=Error(
                     code=str(status_code), message=str(e), param="", type=""
@@ -310,7 +308,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 )
 
             response = CreateChatCompletionResponse(
-                id=request.id,
+                id=request.request_id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
                 model=self.pipeline.model_name,
@@ -639,7 +637,7 @@ async def openai_create_chat_completion(
             stop=completion_request.stop,
         )
         token_request = TextGenerationRequest(
-            id=request_id,
+            request_id=request_id,
             index=0,
             model_name=completion_request.model,
             lora_name=completion_request.lora,
@@ -777,7 +775,7 @@ async def openai_create_embeddings(
 
         embedding_requests = [
             TextGenerationRequest(
-                id=f"{request_id}_{idx}",
+                request_id=f"{request_id}_{idx}",
                 index=idx,
                 model_name=embeddings_request.model,
                 prompt=input_text,
@@ -848,7 +846,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             async for token in self.pipeline.next_token(request):
                 self.logger.debug(
                     "Streaming: %s, TOKEN: %d, %s",
-                    request.id,
+                    request.request_id,
                     n_tokens,
                     token.decoded_token,
                 )
@@ -869,7 +867,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CompletionStreamResponse(
-                    id=request.id,
+                    id=request.request_id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
                     model=self.pipeline.model_name,
@@ -889,7 +887,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             yield "[DONE]"
         except queue.Full as qe:
             status_code = 529
-            logger.exception("Request queue full %s", request.id)
+            logger.exception("Request queue full %s", request.request_id)
             yield JSONResponse(
                 status_code=status_code,
                 content={"detail": "Too Many Requests"},
@@ -897,7 +895,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
         except ValueError as e:
             status_code = 500
-            logger.exception("ValueError in request %s", request.id)
+            logger.exception("ValueError in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
                 status_code=status_code,
@@ -943,9 +941,9 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 )
             response = CreateCompletionResponse(
                 # CreateCompletionResponse.id refers to the http request, while
-                # request.id refers to the prompt. We don't have access to the
-                # http request id in this context, so use requests[0].id
-                id=requests[0].id,
+                # request.request_id refers to the prompt. We don't have access to the
+                # http request id in this context, so use requests[0].request_id
+                id=requests[0].request_id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
                 model=self.pipeline.model_name,
@@ -1057,8 +1055,8 @@ async def openai_create_completion(
                 stop=completion_request.stop,
             )
             tgr = TextGenerationRequest(
-                # Generate a unique id for each prompt in the request
-                id=f"{http_req_id}_{i}",
+                # Generate a unique request_id for each prompt in the request
+                request_id=f"{http_req_id}_{i}",
                 index=i,
                 model_name=completion_request.model,
                 prompt=prompt,
@@ -1155,7 +1153,7 @@ async def create_streaming_audio_speech(
             min_new_tokens=audio_generation_request.min_tokens
         )
         audio_request = AudioGenerationRequest(
-            id=request_id,
+            request_id=request_id,
             input=audio_generation_request.input,
             index=audio_generation_request.index,
             model=audio_generation_request.model,

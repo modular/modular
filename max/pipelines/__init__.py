@@ -19,7 +19,6 @@ from .core import (
     PipelinesFactory,
     TextAndVisionContext,
     TextContext,
-    TokenGeneratorContext,
     TTSContext,
 )
 from .lib.config import (
@@ -56,7 +55,6 @@ from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
-    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
@@ -80,7 +78,6 @@ __all__ = [
     "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
-    "PipelineTokenizer",
     "PipelinesFactory",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",

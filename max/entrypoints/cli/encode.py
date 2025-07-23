@@ -19,14 +19,18 @@ import logging
 import uuid
 from typing import Optional
 
-from max.interfaces import EmbeddingsOutput, PipelineTask, TextGenerationRequest
+from max.interfaces import (
+    EmbeddingsOutput,
+    PipelineTask,
+    PipelineTokenizer,
+    TextGenerationRequest,
+)
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.core import (
     EmbeddingsGenerator,
-    PipelineTokenizer,
 )
 
 from .metrics import EmbeddingsMetrics
@@ -45,7 +49,7 @@ async def _run_pipeline_encode(
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
         TextGenerationRequest(
-            id=req_id, index=0, prompt=prompt, model_name=MODEL_NAME
+            request_id=req_id, index=0, prompt=prompt, model_name=MODEL_NAME
         )
     )
     pipeline_request = {req_id: context}

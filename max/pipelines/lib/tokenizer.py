@@ -21,19 +21,18 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, TypeVar, Union, cast
 
 import numpy as np
 from max.interfaces import (
+    PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 from max.pipelines.core import (
-    PipelineTokenizer,
     TextAndVisionContext,
     TextContext,
-    TokenGeneratorContext,
 )
 from PIL import Image
 from transformers import (
@@ -48,6 +47,8 @@ from transformers import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 
 
 class IdentityPipelineTokenizer(
@@ -358,7 +359,7 @@ class TextTokenizer(
         )
 
         context = TextContext(
-            request_id=request.id,
+            request_id=request.request_id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             eos_sequences=eos_sequences,
@@ -643,7 +644,7 @@ class TextAndVisionTokenizer(
             eos_token_ids = self._default_eos_token_ids
 
         context = TextAndVisionContext(
-            request_id=request.id,
+            request_id=request.request_id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,

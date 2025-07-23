@@ -12,21 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from .audio_generation import (
-    AudioGenerationRequest,
     AudioGenerator,
     AudioGeneratorContext,
 )
 from .embeddings_generation import EmbeddingsGenerator
-from .text_generation import (
-    PipelineTokenizer,
-    TokenGeneratorContext,
-)
 
 __all__ = [
-    "AudioGenerationRequest",
     "AudioGenerator",
     "AudioGeneratorContext",
     "EmbeddingsGenerator",
-    "PipelineTokenizer",
-    "TokenGeneratorContext",
 ]
