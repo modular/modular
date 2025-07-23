@@ -134,8 +134,7 @@ fn test_gelu_float64():
 fn erf_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    var eval = libm_call[dtype, simd_width, "erff", "err"](arg)
-    return eval
+    return libm_call["erff", "err"](arg)
 
 
 @always_inline
