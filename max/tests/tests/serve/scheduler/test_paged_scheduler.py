@@ -209,9 +209,9 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         self.prev_num_steps = num_steps
 
         # Claim cache rows for context.
-        for context in batch.values():
-            if not self.kv_manager.contains(context.cache_seq_id):
-                self.kv_manager.external_claim([context.cache_seq_id])
+        for _, context in batch.items():
+            if not self.kv_manager.contains(context.request_id):
+                self.kv_manager.external_claim(context.request_id)
 
         ctxs: list[TextContext] = list(batch.values())
 
@@ -248,7 +248,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         return responses
 
     def release(self, context: TextContext) -> None:
-        self.kv_manager.release(context.cache_seq_id)
+        self.kv_manager.release(context.request_id)
 
 
 @dataclass
@@ -352,9 +352,8 @@ def enqueue_request(
         max_seq_len=max_seq_len,
         shared_prefix=shared_prefix,
     )
-    req_id = f"req{uuid4()}"
     assert context.active_length == prompt_len
-    socket.put_nowait((req_id, context))
+    socket.put_nowait((context.request_id, context))
 
 
 def enqueue_request_with_prompt(
@@ -366,9 +365,8 @@ def enqueue_request_with_prompt(
         max_length=max_seq_len,
         tokens=tokens,
     )
-    req_id = f"req{uuid4()}"
 
-    socket.put_nowait((req_id, context))
+    socket.put_nowait((context.request_id, context))
 
 
 CE = BatchType.ContextEncoding
