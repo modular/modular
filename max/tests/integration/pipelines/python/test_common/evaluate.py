@@ -14,10 +14,9 @@ from typing import Any, Optional, TypedDict
 
 import numpy as np
 import requests
-from max.interfaces import TextGenerationRequest
+from max.interfaces import PipelineTokenizer, TextGenerationRequest
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
-from max.pipelines.core import PipelineTokenizer
 from typing_extensions import NotRequired
 
 from .test_data import MockTextGenerationRequest
@@ -132,7 +131,7 @@ async def run_model_async(
 
         context = await tokenizer.new_context(
             TextGenerationRequest(
-                id="",
+                request_id="",
                 index=len(batch_contexts),
                 prompt=request.prompt,
                 model_name="llama3",

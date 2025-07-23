@@ -39,7 +39,7 @@ async def test_smollm2_with_lora_adapter() -> None:
 
     context = await tokenizer.new_context(
         TextGenerationRequest(
-            id="test_lora",
+            request_id="test_lora",
             index=0,
             prompt=prompt,
             model_name=lora_path,  # Use LoRA adapter
@@ -87,7 +87,7 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate with base model
     base_context = await tokenizer.new_context(
         TextGenerationRequest(
-            id="base",
+            request_id="base",
             index=0,
             prompt=prompt,
             model_name="base",  # Don't use LoRA
@@ -98,7 +98,7 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate with LoRA model
     lora_context = await tokenizer.new_context(
         TextGenerationRequest(
-            id="lora",
+            request_id="lora",
             index=0,
             prompt=prompt,
             model_name=lora_path,  # Use LoRA
@@ -161,7 +161,7 @@ async def test_multiple_lora_adapters() -> None:
     for i, (prompt, model_name) in enumerate(prompts):
         context = await tokenizer.new_context(
             TextGenerationRequest(
-                id=f"req_{i}",
+                request_id=f"req_{i}",
                 index=i,
                 prompt=prompt,
                 model_name=model_name,

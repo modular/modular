@@ -638,7 +638,7 @@ def capture_max_layer_outputs(
         async def create_max_context():
             return await max_pipeline_data.tokenizer.new_context(
                 TextGenerationRequest(
-                    id="test",
+                    request_id="test",
                     index=0,
                     prompt=prompt,
                     model_name=pipeline,

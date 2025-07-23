@@ -46,7 +46,7 @@ async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:  # noqa: AN
     request = TextGenerationRequest(
         messages=[TextGenerationRequestMessage(role="user", content="test")],
         index=0,
-        id="test-id",
+        request_id="test-id",
         model_name="test-model",
     )
 
@@ -125,7 +125,7 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:  # noqa: 
         ],
         images=[test_image],
         index=0,
-        id="test-id",
+        request_id="test-id",
         model_name="test-model",
     )
 
@@ -198,7 +198,7 @@ async def test_internvl_tokenizer_image_placement(mocker) -> None:  # noqa: ANN0
         ],
         images=[test_image],
         index=0,
-        id="test-id",
+        request_id="test-id",
         model_name="test-model",
     )
 

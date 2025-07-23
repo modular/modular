@@ -48,7 +48,7 @@ async def test_internvl_tokenizer_with_image() -> None:
     # Compare text-only vs text+image tokenization
     text_context = await max_tokenizer.new_context(
         TextGenerationRequest(
-            id=str(uuid.uuid4()),
+            request_id=str(uuid.uuid4()),
             index=0,
             model_name=model_id,
             prompt=test_text,
@@ -56,7 +56,7 @@ async def test_internvl_tokenizer_with_image() -> None:
     )
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
-            id=str(uuid.uuid4()),
+            request_id=str(uuid.uuid4()),
             index=0,
             model_name=model_id,
             prompt=test_text,

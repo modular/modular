@@ -10,9 +10,8 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
-from max.interfaces import TextGenerationRequest
+from max.interfaces import PipelineTokenizer, TextGenerationRequest
 from max.pipelines import EmbeddingsPipeline
-from max.pipelines.core import PipelineTokenizer
 
 
 def encode(
@@ -58,7 +57,7 @@ async def encode_async(
         curr_req_id = str(uuid.uuid4())
         context = await tokenizer.new_context(
             TextGenerationRequest(
-                id="",
+                request_id="",
                 index=0,
                 prompt=prompt,
                 model_name=type(pipeline).__name__,

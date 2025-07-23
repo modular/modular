@@ -49,7 +49,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
     sampling_params = SamplingParams(max_new_tokens=50)
     request = TextGenerationRequest(
         model_name=pipeline_config.model_config.model_path,
-        id=request_id,
+        request_id=request_id,
         index=0,
         messages=[
             TextGenerationRequestMessage(

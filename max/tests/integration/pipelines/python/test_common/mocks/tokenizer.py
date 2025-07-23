@@ -12,9 +12,12 @@ from collections.abc import Sequence
 from typing import TypeVar, Union
 
 import numpy as np
-from max.interfaces import InputContext, TextGenerationRequest
-from max.pipelines.core import (
+from max.interfaces import (
+    InputContext,
     PipelineTokenizer,
+    TextGenerationRequest,
+)
+from max.pipelines.core import (
     TextContext,
 )
 

@@ -32,10 +32,9 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
-from max.interfaces import PipelineTask
+from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
-from max.pipelines.core import interfaces
 from max.pipelines.lib import PipelineEngine
 from test_common import (
     evaluate,
@@ -104,7 +103,7 @@ class MaxPipelineAndTokenizer:
         pipelines.TextGenerationPipeline,
         pipelines.EmbeddingsPipeline,
     ]  # TODO(kcaverly): Move to only TextGenerationPipeline
-    tokenizer: interfaces.PipelineTokenizer
+    tokenizer: PipelineTokenizer
 
 
 @dataclass

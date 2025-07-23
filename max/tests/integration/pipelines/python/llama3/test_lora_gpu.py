@@ -75,7 +75,7 @@ async def test_pipeline_lora(
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            id="",
+            request_id="",
             index=0,
             prompt=prompt_a,
             model_name=llama_3_1_8b_lora_local_path,
@@ -116,7 +116,7 @@ async def test_lora_vs_base_model_logits(
 
     base_context = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            id="base_test",
+            request_id="base_test",
             index=0,
             prompt=prompt,
             model_name="llama3",  # Any string
@@ -125,7 +125,7 @@ async def test_lora_vs_base_model_logits(
     )
     lora_context = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            id="lora_test",
+            request_id="lora_test",
             index=1,  # Reset index since we released the previous context
             prompt=prompt,
             model_name="llama3",
