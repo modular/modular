@@ -10,6 +10,7 @@ from .log_probabilities import LogProbabilities
 from .pipeline import PipelineOutput
 from .pipeline_variants import (
     AudioGenerationMetadata,
+    AudioGenerationRequest,
     AudioGenerationResponse,
     AudioGeneratorOutput,
     EmbeddingsOutput,
@@ -21,27 +22,28 @@ from .pipeline_variants import (
     TextGenerationResponseFormat,
     TokenGenerator,
 )
+from .request import Request, RequestID
 from .scheduler import SchedulerResult, SchedulerStatus
 from .status import GenerationStatus
 from .task import PipelineTask
+from .tokenizer import PipelineTokenizer
 
 __all__ = [
     "AudioGenerationMetadata",
+    "AudioGenerationRequest",
     "AudioGenerationResponse",
     "AudioGeneratorOutput",
     "EmbeddingsOutput",
     "EngineStatus",
     "GenerationStatus",
-    "GenerationStatus",
     "InputContext",
-    "LogProbabilities",
     "LogProbabilities",
     "PipelineOutput",
     "PipelineTask",
-    "PipelineTask",
+    "PipelineTokenizer",
+    "Request",
+    "RequestID",
     "SamplingParams",
-    "SamplingParams",
-    "SchedulerResult",
     "SchedulerResult",
     "SchedulerStatus",
     "TextGenerationOutput",
@@ -51,8 +53,6 @@ __all__ = [
     "TextGenerationRequestTool",
     "TextGenerationResponse",
     "TextGenerationResponseFormat",
-    "TextGenerationResponseFormat",
     "TextResponse",
-    "TokenGenerator",
     "TokenGenerator",
 ]

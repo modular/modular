@@ -14,7 +14,7 @@ from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 from typing_extensions import TypeAlias
 
-from .context import RequestID
+from .request import RequestID
 
 
 class PipelineInputs:
