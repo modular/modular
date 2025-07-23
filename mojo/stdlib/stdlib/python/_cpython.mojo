@@ -1555,7 +1555,7 @@ struct CPython(Copyable, Defaultable, Movable):
 
         var error: String
         try:
-            error = String(PythonObject(from_owned_ptr=err_ptr))
+            error = String(PythonObject(from_owned=err_ptr))
         except e:
             return abort[Error](
                 "internal error: Python exception occurred but cannot be"

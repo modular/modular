@@ -688,7 +688,7 @@ struct PythonTypeBuilder(Copyable, Movable):
         if not type_obj_ptr:
             raise cpython.get_error()
 
-        var type_obj = PythonObject(from_owned_ptr=type_obj_ptr)
+        var type_obj = PythonObject(from_owned=type_obj_ptr)
 
         # Every Mojo type that is exposed to Python must have EXACTLY ONE
         # `PyTypeObject` instance that represents it. That is important for
@@ -1023,8 +1023,8 @@ fn _py_init_function_wrapper[
     Python.
     """
 
-    var kwargs = PythonObject(from_borrowed_ptr=kwargs_ptr)
-    var args = PythonObject(from_borrowed_ptr=args_ptr)
+    var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+    var args = PythonObject(from_borrowed=args_ptr)
 
     var cpython = Python().cpython()
 
@@ -1086,8 +1086,8 @@ fn _py_c_function_wrapper[
     # We turn these into owned references, knowing that their destructors will
     # appropriately decrement the reference count.
 
-    var py_self = PythonObject(from_borrowed_ptr=py_self_ptr)
-    var args = PythonObject(from_borrowed_ptr=args_ptr)
+    var py_self = PythonObject(from_borrowed=py_self_ptr)
+    var args = PythonObject(from_borrowed=args_ptr)
 
     # SAFETY:
     #   Call the user provided function, and take ownership of the
@@ -1140,7 +1140,7 @@ fn _py_c_function_wrapper[
                 )
 
                 # Return a NULL `PyObject*`.
-                return PythonObject(from_owned_ptr=PyObjectPtr())
+                return PythonObject(from_owned=PyObjectPtr())
 
     # TODO:
     #   Does this lead to multiple levels of indirect function calls for
@@ -1159,9 +1159,9 @@ fn _py_c_function_with_kwargs_wrapper[
     Python.
     """
 
-    var py_self = PythonObject(from_borrowed_ptr=py_self_ptr)
-    var kwargs = PythonObject(from_borrowed_ptr=kwargs_ptr)
-    var args = PythonObject(from_borrowed_ptr=args_ptr)
+    var py_self = PythonObject(from_borrowed=py_self_ptr)
+    var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+    var args = PythonObject(from_borrowed=args_ptr)
 
     return user_func(py_self, args, kwargs).steal_data()
 
@@ -1376,7 +1376,7 @@ fn _get_type_name(obj: PythonObject) raises -> String:
 
     var actual_type = cpython.Py_TYPE(obj._obj_ptr)
     var actual_type_name = PythonObject(
-        from_owned_ptr=cpython.PyType_GetName(actual_type)
+        from_owned=cpython.PyType_GetName(actual_type)
     )
 
     return String(actual_type_name)

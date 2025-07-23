@@ -141,10 +141,10 @@ struct Python(Defaultable):
         var cpython = Self().cpython()
         # PyImport_AddModule returns a read-only reference.
         var module = PythonObject(
-            from_borrowed_ptr=cpython.PyImport_AddModule(name)
+            from_borrowed=cpython.PyImport_AddModule(name)
         )
         var dict_obj = PythonObject(
-            from_borrowed_ptr=cpython.PyModule_GetDict(module._obj_ptr)
+            from_borrowed=cpython.PyModule_GetDict(module._obj_ptr)
         )
         if file:
             # We compile the code as provided and execute in the module
@@ -160,7 +160,7 @@ struct Python(Defaultable):
             )
             if not code_obj_ptr:
                 raise cpython.get_error()
-            var code = PythonObject(from_owned_ptr=code_obj_ptr)
+            var code = PythonObject(from_owned=code_obj_ptr)
 
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
@@ -173,7 +173,7 @@ struct Python(Defaultable):
             if not result_ptr:
                 raise cpython.get_error()
 
-            var result = PythonObject(from_owned_ptr=result_ptr)
+            var result = PythonObject(from_owned=result_ptr)
             _ = result^
             _ = code^
             return module
@@ -186,7 +186,7 @@ struct Python(Defaultable):
             )
             if not result:
                 raise cpython.get_error()
-            return PythonObject(from_owned_ptr=result)
+            return PythonObject(from_owned=result)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
@@ -245,7 +245,7 @@ struct Python(Defaultable):
         var module_ptr = cpython.PyImport_ImportModule(module^)
         if not module_ptr:
             raise cpython.get_error()
-        return PythonObject(from_owned_ptr=module_ptr)
+        return PythonObject(from_owned=module_ptr)
 
     @staticmethod
     fn create_module(name: StaticString) raises -> PythonObject:
@@ -273,7 +273,7 @@ struct Python(Defaultable):
         if not module_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=module_ptr)
+        return PythonObject(from_owned=module_ptr)
 
     @staticmethod
     fn add_functions(
@@ -411,7 +411,7 @@ struct Python(Defaultable):
             On failure to construct the dictionary or convert the values to
             Python objects.
         """
-        return PythonObject(from_owned_ptr=Self._dict(kwargs))
+        return PythonObject(from_owned=Self._dict(kwargs))
 
     @staticmethod
     fn dict[
@@ -452,7 +452,7 @@ struct Python(Defaultable):
             if result == -1:
                 raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=dict_obj_ptr)
+        return PythonObject(from_owned=dict_obj_ptr)
 
     @staticmethod
     fn list[
@@ -476,7 +476,7 @@ struct Python(Defaultable):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned_ptr=obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn _list[
@@ -503,7 +503,7 @@ struct Python(Defaultable):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned_ptr=obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @always_inline
     @staticmethod
@@ -548,7 +548,7 @@ struct Python(Defaultable):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned_ptr=obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @always_inline
     @staticmethod
@@ -594,7 +594,7 @@ struct Python(Defaultable):
             A PythonObject that holds the type object.
         """
         var cpython = Python().cpython()
-        return PythonObject(from_owned_ptr=cpython.PyObject_Type(obj._obj_ptr))
+        return PythonObject(from_owned=cpython.PyObject_Type(obj._obj_ptr))
 
     @staticmethod
     fn none() -> PythonObject:
@@ -623,7 +623,7 @@ struct Python(Defaultable):
         if not py_str_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=py_str_ptr)
+        return PythonObject(from_owned=py_str_ptr)
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
@@ -644,7 +644,7 @@ struct Python(Defaultable):
         if not py_obj_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=py_obj_ptr)
+        return PythonObject(from_owned=py_obj_ptr)
 
     @staticmethod
     fn float(obj: PythonObject) raises -> PythonObject:
@@ -665,7 +665,7 @@ struct Python(Defaultable):
         if not float_obj:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=float_obj)
+        return PythonObject(from_owned=float_obj)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
