@@ -403,8 +403,10 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
     // on the struct, whose values come through 'bindings'.  Remap.
     if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
       assert(decl.getValueAttr() && "Struct's alias should have value");
-      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getParams();
-      assert(paramDecls.size() == paramValues.size() &&
+      DenseMap<StringAttr, size_t> paramDeclIndices;
+      for (auto [idx, paramDecl] : llvm::enumerate(structDecl.getParams()))
+        paramDeclIndices[paramDecl.getName()] = idx;
+      assert(paramDeclIndices.size() == paramValues.size() &&
              "incorrect number of type parameters for struct");
 
       // If the reference is to a member of the struct that has bindings, remap
@@ -420,70 +422,28 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       //        use(X.a1) # Ok
       //        use(X[1].a2) # Ok
       //        use(X.a2) # Error: 'a' needs to be bound
-      //
-      // TODO: Should this return a parametric alias instead?
-      ParserParameterEvaluator evaluator(emitter.shared, paramDecls,
+      // To check whether the value (incl. its type) of this alias depends on
+      // unbound parameters, walk the attribute and check for ParamDeclRefAttrs
+      // to values that are UnboundAttrs.
+      TypedAttr aliasValue = decl.getValueAttr();
+      WalkResult findUnboundParams =
+          aliasValue.walk([&](ParamDeclRefAttr attr) -> WalkResult {
+            if (auto it = paramDeclIndices.find(attr.getName());
+                it != paramDeclIndices.end() &&
+                isa<UnboundAttr>(paramValues[it->second])) {
+              emitter.shared.emitError(refLoc, "cannot access alias '")
+                  << declName << "' with unbound parameter '"
+                  << structDecl.getName() << "." << attr.getName().str() << "'";
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          });
+      if (findUnboundParams.wasInterrupted())
+        return {};
+
+      ParserParameterEvaluator evaluator(emitter.shared, structDecl.getParams(),
                                          paramValues);
-      TypedAttr result = evaluator.getReboundAttribute(decl.getValueAttr());
-      // Check to make sure that no unbound parameters were used.
-      if (!result
-               .walk([&](UnboundAttr) -> WalkResult {
-                 return WalkResult::interrupt();
-               })
-               .wasInterrupted()) {
-        // If everything is ok, then we're done.
-        return result;
-      }
-
-      // FIXME: We currently have a weird version of "parameterized aliases"
-      // that accidentally works out, including things like:
-      //
-      //   struct _lit_mut_cast[
-      //       is_mutable: Bool, //,
-      //       result_mutable: Bool,
-      //       operand: Origin[is_mutable],
-      //   ]: ...
-      //   struct Origin[is_mutable: Bool]:
-      //       alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
-      //
-      // The access to SomeOrigin.cast_from returns an alias that has unbound
-      // parameters from `_lit_mut_cast`, instead of returning a parameterized
-      // alias.  We want this to continue to work until it gets built the right
-      // way, so perpetuate a hack that retains it.
-      if (!llvm::count_if(paramValues, [](TypedAttr attr) {
-            return isa<UnboundAttr>(attr);
-          }))
-        return result;
-
-      // Otherwise, we need to diagnose an error.  We don't know which
-      // UnboundAttr is the problem, so work harder to get a good error message:
-      // We replace the UnboundAttrs with something that has a name we can
-      // diagnose.
-      SmallVector<TypedAttr> paramsToBind;
-      for (auto [paramDecl, paramValue] : llvm::zip(paramDecls, paramValues)) {
-        if (!isa<UnboundAttr>(paramValue))
-          paramsToBind.push_back(paramValue);
-        else {
-          // The type may have been remapped due to earlier parameters, so use
-          // the type of paramValue, not paramDecl.
-          paramsToBind.push_back(
-              ParamDeclRefAttr::get(paramDecl.getName(), paramValue.getType()));
-        }
-      }
-      ParserParameterEvaluator evaluatorForError(emitter.shared, paramDecls,
-                                                 paramsToBind);
-      result = evaluatorForError.getReboundAttribute(decl.getValueAttr());
-
-      // Check to make sure that no unbound parameters were used.
-      result.walk([&](ParamDeclRefAttr attr) -> WalkResult {
-        emitter.shared.emitError(refLoc, "cannot access alias '")
-            << declName << "' with unbound parameter '" << structDecl.getName()
-            << "." << attr.getName().str() << "'";
-        result = TypedAttr();
-        return WalkResult::interrupt();
-      });
-      assert(!result && "didn't find the problematic parameter");
-      return {};
+      return evaluator.getReboundAttribute(aliasValue);
     }
 
     // Ignore 'if' and other control flow things.
