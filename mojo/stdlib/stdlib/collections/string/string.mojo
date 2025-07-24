@@ -91,7 +91,7 @@ from sys.ffi import c_char
 
 from bit import count_leading_zeros
 from memory import memcpy, memset, memcmp
-from python import PythonConvertible, PythonObject, ConvertibleFromPython
+from python import PythonObject, ConvertibleFromPython, ConvertibleToPython
 
 from io.write import (
     _TotalWritableBytes,
@@ -110,13 +110,13 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     ExplicitlyCopyable,
     FloatableRaising,
     IntableRaising,
     KeyElement,
     PathLike,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,

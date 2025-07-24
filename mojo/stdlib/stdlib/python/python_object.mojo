@@ -29,7 +29,7 @@ from .python import Python
 from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
 
-trait PythonConvertible:
+trait ConvertibleToPython:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
@@ -113,10 +113,10 @@ struct _PyIter(Copyable):
 @register_passable
 struct PythonObject(
     Boolable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     Movable,
-    PythonConvertible,
     SizedRaising,
     Writable,
 ):
@@ -330,7 +330,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: PythonConvertible & Copyable
+        *Ts: ConvertibleToPython & Copyable
     ](out self, var *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
@@ -348,7 +348,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: PythonConvertible & Copyable
+        *Ts: ConvertibleToPython & Copyable
     ](out self, var *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 

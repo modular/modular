@@ -68,7 +68,7 @@ from builtin.format_int import _try_write_int
 from builtin.math import Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
-from python import PythonConvertible, PythonObject, Python
+from python import ConvertibleToPython, PythonObject, Python
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -245,6 +245,7 @@ struct SIMD[dtype: DType, size: Int](
     Boolable,
     CeilDivable,
     Ceilable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     DevicePassable,
@@ -254,7 +255,6 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Movable,
     Powable,
-    PythonConvertible,
     Representable,
     Roundable,
     Sized,
