@@ -337,14 +337,8 @@ modular_cc_library(
 
 modular_cc_library(
     name = "MArchTarget",
-    srcs = glob(
-        ["lib/MArchTarget/*.cpp"],
-        exclude = [
-            "lib/MArchTarget/Host.cpp",
-            "lib/MArchTarget/MArchTargetMinimal.cpp",
-        ],
-    ),
-    hdrs = glob(["include/Support/MArchTarget/*.h"]),
+    srcs = ["lib/MArchTarget/MArchTarget.cpp"],
+    hdrs = ["include/Support/MArchTarget/MArchTarget.h"],
     deps = [
         ":Base",
         ":CPUCache",
