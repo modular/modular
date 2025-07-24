@@ -61,7 +61,6 @@ modular_cc_library(
         "include/Support/Random.h",
         "include/Support/ReferenceCounted.h",
         "include/Support/STLExtras.h",
-        "include/Support/SymbolExport.h",
         "include/Support/TypeID.h",
         "include/Support/Version.h",
     ],
@@ -76,6 +75,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Globals",
+        ":SymbolExport",
         "//Config",
         "//Support/MOTR",
         "@llvm-project//llvm:Support",
@@ -821,11 +821,10 @@ cc_autolink_deps(
 modular_shared_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
-    hdrs = glob(["include/Support/Globals/*.h"]) + [
-        "include/Support/SymbolExport.h",
-    ],
+    hdrs = glob(["include/Support/Globals/*.h"]),
     output_name = "MSupportGlobals",
     deps = [
+        ":SymbolExport",
         ":mlir-typeid-registry",
         "@llvm-project//mlir:Support",
     ],
