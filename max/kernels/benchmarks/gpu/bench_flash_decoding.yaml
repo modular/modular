@@ -23,7 +23,7 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  $num_partitions: 1
+  $num_partitions: [0, 1] # 0: auto-partitioning, 1: single-partition.
   $seq_len: 1
   $batch_size: [4, 16, 32, 64, 128, 256]
   $num_keys: [32, 64, 128, 256, 512, 1024, 1536, 2048]
