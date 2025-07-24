@@ -20,9 +20,7 @@ from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.nn.kv_cache.paged_cache import block_utils
 from test_common.context_utils import create_text_context
 
-# When setting this to True, we get some test failures when block_size=1 due
-# to hash collisions.
-block_utils.ENABLE_MOJO_BLOCK_HASHER = False
+block_utils.ENABLE_MOJO_BLOCK_HASHER = True
 
 
 def gen_prompt(length: int) -> np.ndarray:

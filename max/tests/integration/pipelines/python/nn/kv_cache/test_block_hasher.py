@@ -76,11 +76,6 @@ def check_for_collisions(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_mojo_hasher", [True, False])
 async def test_collision(use_mojo_hasher: bool) -> None:
-    if use_mojo_hasher:
-        pytest.skip(
-            "Mojo hasher fails this test as it results in hash collisions."
-        )
-
     block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
     block_size = 1
 
@@ -94,11 +89,6 @@ async def test_collision(use_mojo_hasher: bool) -> None:
 @pytest.mark.parametrize("use_mojo_hasher", [False, True])
 @pytest.mark.parametrize("block_size", [1, 128])
 async def test_collision_random(use_mojo_hasher: bool, block_size: int) -> None:
-    if use_mojo_hasher:
-        pytest.skip(
-            "Mojo hasher fails this test as it results in hash collisions."
-        )
-
     block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
     # Picking too large of number of iterations can cause test to timeout.
     iterations = 10
