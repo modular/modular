@@ -279,7 +279,6 @@ def prefill_scheduler(
             pipeline=mock_pipeline,
             scheduler_config=config,
             paged_manager=prefill_paged_manager,
-            zmq_ctx=prefill_client_zmq_ctx,
             dispatcher_client=prefill_client,
         )
 
