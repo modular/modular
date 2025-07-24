@@ -10,7 +10,10 @@ exports_files([
 
 modular_py_library(
     name = "mblack-lib",
-    srcs = glob(["src/**/*.py"]),
+    srcs = glob(
+        ["src/**/*.py"],
+        exclude = ["src/mblack/__main__.py"],
+    ),
     data = glob(["src/**/*.txt"]),
     imports = ["src"],
     tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
