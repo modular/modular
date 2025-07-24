@@ -264,36 +264,12 @@ class DecodeScheduler(Scheduler):
                 # Break loop when no items in queue
                 break
 
-            except Exception as e:
-                logger.error(e)
-                raise e
-
     def update_batch(self) -> None:
         """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
 
         Adds new requests to the batch up to the maximum batch size. For each request, attempts to prefetch
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
-
-        # Walk the active batch, and prefetch for all existing items.
-        candidate_request_ids = list(self.active_batch.keys())
-        for candidate_request_id in candidate_request_ids:
-            # If we have already removed the candidate_request, move on
-            if candidate_request_id not in self.active_batch:
-                break
-
-            # If the request_id is in the active batch, try and prefetch.
-            request_context = self.active_batch[candidate_request_id]
-
-            # TODO: Shrink num_steps appropriately.
-            num_steps = self.scheduler_config.max_forward_steps_tg
-            # If prefetch fails, pre-empt the request and continue evaluating
-            # the batch
-            if not self.paged_manager.prefetch(request_context, num_steps):
-                raise RuntimeError("""
-                    Prefetching memory failed for new decode request.
-                    This is likely due to memory contention concerns among the batch.
-                    Please decrease the batch size and try again.""")
 
         # Walk all outstanding prefill responses
         # Notifications provides a list of completed XferReqData.xfer_name
@@ -316,31 +292,32 @@ class DecodeScheduler(Scheduler):
                 completed_transfer_name
             )
 
-            # Calculate num_steps
-            num_available_steps = (
-                prefill_response.context.compute_num_available_steps(
-                    prefill_response.context.max_length
-                )
-            )
-            num_steps = min(
-                num_available_steps, self.scheduler_config.max_forward_steps_tg
-            )
-
-            # Prefetch data early, only add to batch if we can prefetch successfully.
-            if not self.paged_manager.prefetch(
-                prefill_response.context, num_steps
-            ):
-                self.prefill_responses[completed_transfer_name] = (
-                    prefill_response
-                )
-                continue
-
             # Add to active batch.
             self.active_batch[prefill_response.id] = prefill_response.context
             self.pending_prefill_requests.remove(prefill_response.id)
 
             # Remove from completed transfers.
             self.completed_transfers.remove(completed_transfer_name)
+
+        # Walk the active batch, and prefetch for all existing items.
+        candidate_request_ids = list(self.active_batch.keys())
+        for candidate_request_id in candidate_request_ids:
+            # If we have already removed the candidate_request, move on
+            if candidate_request_id not in self.active_batch:
+                break
+
+            # If the request_id is in the active batch, try and prefetch.
+            request_context = self.active_batch[candidate_request_id]
+
+            # TODO: Shrink num_steps appropriately.
+            num_steps = self.scheduler_config.max_forward_steps_tg
+            # If prefetch fails, pre-empt the request and continue evaluating
+            # the batch
+            if not self.paged_manager.prefetch(request_context, num_steps):
+                raise RuntimeError("""
+                    Prefetching memory failed for new decode request.
+                    This is likely due to memory contention concerns among the batch.
+                    Please decrease the batch size and try again.""")
 
     @traced
     def calculate_batch_num_steps(self) -> int:
@@ -411,9 +388,6 @@ class DecodeScheduler(Scheduler):
         Args:
             responses: Dictionary mapping request IDs to their text generation responses.
         """
-        if responses is None:
-            return
-
         for request_id, response in responses.items():
             if response.is_done:
                 # Release from pipeline and active batch.
