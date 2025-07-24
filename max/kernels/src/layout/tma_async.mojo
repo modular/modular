@@ -526,6 +526,19 @@ struct PipelineState[num_stages: Int](Copyable, Defaultable, Movable):
                 self._index = 0
                 self._phase ^= 1
 
+    @always_inline
+    fn next(mut self) -> Self:
+        """Advance the pipeline state to the next stage and return the new state.
+
+        This function is used to move to the next buffer in a multi-buffer
+        pipeline, implementing circular buffer semantics.
+
+        Returns:
+            The new pipeline state after advancing to the next stage.
+        """
+        self.step()
+        return self
+
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
 # Each TMATensorTile provides an asynchronous load of a specific tile at specified tile coordinates.
