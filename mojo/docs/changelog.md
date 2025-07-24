@@ -241,3 +241,6 @@ mutation.
 
 - [#5066](https://github.com/modular/modular/issues/5066) - Correctly fill
   64-bit values on AMD in `enqueue_fill`.
+
+- [#4982](https://github.com/modular/modular/issues/4982) - Add `toggle_all`
+  to `BitSet`.
