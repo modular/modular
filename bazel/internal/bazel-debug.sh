@@ -28,10 +28,6 @@ set -euo pipefail
 target=""
 default_config="lldb"
 before_target=()
-vscode=0
-gdb=0
-system_lldb=0
-xctrace=0
 for arg in "$@"
 do
   if [[ "$arg" != -* ]]; then
@@ -39,16 +35,16 @@ do
     shift
     break
   elif [[ "$arg" = --vscode ]]; then
-    vscode=1
+    export MODULAR_VSCODE_DEBUG="1"
     shift
   elif [[ "$arg" = --gdb ]]; then
-    gdb=1
+    export MODULAR_GDB="1"
     shift
   elif [[ "$arg" = --system-lldb ]]; then
-    system_lldb=1
+    export MODULAR_SYSTEM_LLDB="1"
     shift
   elif [[ "$arg" = --xctrace ]]; then
-    xctrace=1
+    export MODULAR_XCTRACE="1"
     shift
   else
     before_target+=("$arg")
@@ -60,7 +56,7 @@ script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 repo_root="$(git -C "$script_root" rev-parse --show-toplevel)"
 wrapper="$repo_root/bazelw"
 
-previous_pwd="$PWD"
+export MODULAR_LLDB_PWD="$PWD"
 current_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ "$repo_root" != "$current_repo_root" ]]; then
   # Only cd if required so relative bazel targets work
@@ -96,8 +92,7 @@ elif [[ "$kind" == modular_genrule ]]; then
 fi
 
 before_target+=("--config=$default_config")
-MODULAR_XCTRACE="$xctrace" MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" "$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
+"$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
 if [[ "$run_debug_script" == "true" ]]; then
-  MODULAR_XCTRACE="$xctrace" MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
-   MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
+  exec /tmp/lldb.sh
 fi
