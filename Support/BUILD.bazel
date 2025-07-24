@@ -394,7 +394,7 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Buffer",
-        ":MDialect",
+        ":ML",
         ":Profiling",
         "@llvm-project//mlir:BytecodeReader",
         "@llvm-project//mlir:BytecodeWriter",
@@ -555,21 +555,12 @@ gentbl_cc_library(
 modular_cc_library(
     name = "MDialect",
     srcs = glob(["lib/MDialect/*.cpp"]),
-    hdrs = glob([
-        "include/Support/MDialect/*.h",
-    ]) + [
-        # The dialect files include some files that belong to other logical
-        # packages in an apparent set of ordering violations. These create
-        # loops in the logical package structure. Just encode these explicit
-        # exceptions for now.
-        "include/Support/Compiler/Bytecode.h",
-        "include/Support/Compiler/MLIRDenseAttr.h",
-        "include/Support/MArchTarget/Host.h",
-    ],
+    hdrs = glob(["include/Support/MDialect/*.h"]),
     deps = [
         ":ADT",
         ":Base",
         ":Buffer",
+        ":Compiler",
         ":Context",
         ":DeviceSpecs",
         ":MAttrInterfaces",
@@ -653,6 +644,7 @@ modular_cc_library(
         ":DebugInfoExprAttrInterfaces",
         ":DebugInfoIncGen",
         ":DebugInfoTypeInterfaces",
+        ":MDialect",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//mlir:FunctionInterfaces",
     ],
