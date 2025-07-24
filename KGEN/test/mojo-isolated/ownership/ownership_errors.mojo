@@ -582,3 +582,13 @@ fn test_unused_var(mut mut_arg: Int):
 
     # expected-warning @+1 {{ref 'z' was never used, remove it?}}
     ref z = mut_arg
+
+
+@fieldwise_init
+struct SP[n: Int]:
+  pass
+
+fn test_no_unused_warning() -> Int:
+  s = SP[2]()
+  # COM: no warning expected as there's a use of the variable.
+  return s.n
