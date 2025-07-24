@@ -40,7 +40,7 @@ from sys import CompilationTarget
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
-from utils.numerics import inf, isinf, isnan, nan, neg_inf
+from utils.numerics import isinf, isnan
 
 
 fn test_sin() raises:
@@ -72,8 +72,13 @@ def test_copysign():
 
     assert_equal(1, copysign(Float32(1), Float32(2)))
     assert_equal(-1, copysign(Float32(1), Float32(-2)))
-    assert_equal(neg_inf[DType.float32](), copysign(inf[DType.float32](), -2.0))
-    assert_equal(-nan[DType.float32](), copysign(nan[DType.float32](), -2.0))
+    assert_equal(
+        DType.neg_inf[DType.float32](),
+        copysign(DType.inf[DType.float32](), -2.0),
+    )
+    assert_equal(
+        -DType.nan[DType.float32](), copysign(DType.nan[DType.float32](), -2.0)
+    )
 
     # Test some cases with 0 and signed zero
     assert_equal(1, copysign(Float32(1.0), Float32(0.0)))
@@ -91,8 +96,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
     alias atol = 1e-8
     alias rtol = 1e-5
 
-    alias inf_ = inf[dtype]()
-    alias nan_ = nan[dtype]()
+    alias inf_ = DType.inf[dtype]()
+    alias nan_ = DType.nan[dtype]()
     alias v = T(0.1, 0.2)
 
     fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
@@ -159,7 +164,7 @@ def test_isclose():
     alias dtype = DType.float32
     alias S = Scalar[dtype]
     alias T = SIMD[dtype, 4]
-    alias nan_ = nan[dtype]()
+    alias nan_ = DType.nan[dtype]()
 
     assert_true(isclose(S(2), S(2)))
     assert_true(isclose(S(2), S(2), rtol=1e-9))
@@ -485,9 +490,9 @@ def test_lcm():
 
 
 def test_ulp():
-    assert_true(isnan(ulp(nan[DType.float32]())))
-    assert_true(isinf(ulp(inf[DType.float32]())))
-    assert_true(isinf(ulp(-inf[DType.float32]())))
+    assert_true(isnan(ulp(DType.nan[DType.float32]())))
+    assert_true(isinf(ulp(DType.inf[DType.float32]())))
+    assert_true(isinf(ulp(-DType.inf[DType.float32]())))
     assert_almost_equal(ulp(Float64(0)), 5e-324)
     assert_equal(ulp(Float64.MAX_FINITE), 1.99584030953472e292)
     assert_equal(ulp(Float64(5)), 8.881784197001252e-16)
@@ -560,8 +565,8 @@ def test_clamp():
 
 
 def test_atanh():
-    assert_equal(atanh(Float32(1)), inf[DType.float32]())
-    assert_equal(atanh(Float32(-1)), -inf[DType.float32]())
+    assert_equal(atanh(Float32(1)), DType.inf[DType.float32]())
+    assert_equal(atanh(Float32(-1)), -DType.inf[DType.float32]())
     assert_true(isnan(atanh(Float32(2))))
     assert_true(isnan(atanh(Float32(-2))))
     assert_almost_equal(

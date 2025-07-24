@@ -137,7 +137,7 @@ from sys import sizeof
 from tensor_internal import IOUnknown
 from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 import gpu.warp as warp
 import gpu.warp as warpre_wait
