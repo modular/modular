@@ -338,7 +338,7 @@ struct TileScheduler[
 
         # Get swizzled indices based on the total number of aligned M blocks
         m_block_idx, n_block_idx = self._get_swizzled_block_idx(
-            self.num_aligned_m_blocks, next_block_idx
+            self.num_aligned_m_blocks, Int(next_block_idx)
         )
         return True
 

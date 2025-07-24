@@ -857,7 +857,7 @@ fn multistage_gemm_kernel[
         WM,
         WN,
         Int(num_threads_per_warp_k_part),
-        num_pipeline_stages,
+        Int(num_pipeline_stages),
         transpose_b,
         k_group_size = config.k_group_size,
         swizzle_a = is_nvidia_gpu(),
@@ -867,7 +867,7 @@ fn multistage_gemm_kernel[
         b_gmem_iter,
         a_smem_iter,
         b_smem_iter,
-        ceildiv(K // num_warp_k_partitions, BK),
+        Int(ceildiv(K // num_warp_k_partitions, BK)),
     )
 
     # reduce within the threadblock
@@ -877,9 +877,9 @@ fn multistage_gemm_kernel[
             BM,
             BN,
             Int(num_threads_per_warp_k_part),
-            num_warp_k_partitions,
+            Int(num_warp_k_partitions),
         ](
-            warp_k_part_id,
+            Int(warp_k_part_id),
             c_reg_tile,
         )
         if warp_k_part_id > 0:
@@ -944,7 +944,7 @@ fn multistage_gemm_kernel[
                     for j in range(dst_simd_width_x):
                         if m + j < M:
                             epilogue[alignment=alignment](
-                                (m + j, n), vec[j].cast[c_type]()
+                                (Int(m + j), Int(n)), vec[j].cast[c_type]()
                             )
 
     # Store FP32 mma results to half precision buffer in global memory.
@@ -1020,7 +1020,7 @@ fn multistage_gemm_kernel[
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
-                        (m, n),
+                        (Int(m), Int(n)),
                         accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
@@ -1033,7 +1033,7 @@ fn multistage_gemm_kernel[
                 )
                 var semaphore = Semaphore(locks.offset(bid), Int(thread_idx.x))
                 semaphore.fetch()
-                semaphore.wait(block_idx.z)
+                semaphore.wait(Int(block_idx.z))
 
                 # For the very first block the comes in, it needs to just copy and not reduce_copy
                 if block_idx.z == 0:
@@ -1160,9 +1160,11 @@ fn multistage_gemm_split_k_kernel[
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](num_partitions, Int(block_idx.z))
+    var a_part = a.split[axis=1, alignment=BK](
+        Int(num_partitions), Int(block_idx.z)
+    )
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
-        num_partitions, Int(block_idx.z)
+        Int(num_partitions), Int(block_idx.z)
     )
 
     @parameter
