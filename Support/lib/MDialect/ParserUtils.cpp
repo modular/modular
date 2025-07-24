@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Compiler/ParserUtils.h"
+#include "Support/MDialect/ParserUtils.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
