@@ -17,6 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
+from builtin.variadics import VariadicOf
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -36,9 +37,8 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
     """
 
     alias _mlir_type = __mlir_type[
-        `!kgen.pack<:!kgen.variadic<`,
-        Copyable & Movable,
-        `> `,
+        `!kgen.pack<:`,
+        VariadicOf[Copyable & Movable],
         element_types,
         `>`,
     ]
@@ -153,9 +153,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
         """
 
         @parameter
-        fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, Copyable & Movable, `>`]
-        ) -> Int:
+        fn variadic_size(x: VariadicOf[Copyable & Movable]) -> Int:
             return __mlir_op.`pop.variadic.size`(x)
 
         alias result = variadic_size(element_types)
