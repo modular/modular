@@ -243,7 +243,7 @@ fn consumer_main_loop[
                 a_smem_tile,
                 b_smem_tile,
                 c_reg_tile,
-                local_warp_group_idx,
+                Int(local_warp_group_idx),
             )
             wgmma_op.commit_group()
             wgmma_op.wait_group()
@@ -337,7 +337,7 @@ fn warp_specialized_gemm_output[
     var c_gmem_offset = tile_crd_idx[2]
     var c_gmem_split_crd_idx = c_gmem_tile.tile_with_offset[
         BM // num_consumer, BN
-    ](local_warp_group_idx, 0)
+    ](Int(local_warp_group_idx), 0)
     var c_gmem_split = c_gmem_split_crd_idx[0]
     alias c_coord_type = __type_of(c_gmem_corner_coords)
     var warp_id = warp_group_thread_idx // WARP_SIZE
@@ -409,10 +409,10 @@ fn warp_specialized_gemm_output[
                                 ),
                             )
                         ](
-                            warp_group_thread_idx,
+                            Int(warp_group_thread_idx),
                             i,
                             m_mma,
-                            local_warp_group_idx,
+                            Int(local_warp_group_idx),
                         )
                         var offset = c_smem_tile.ptr.offset(
                             st_matrix_swizzle(
@@ -654,7 +654,7 @@ fn warp_specialized_gemm_output[
 
                     var warp_tile_crd_idx = c_gmem_split.tile_with_offset[
                         wgmma_shape[0] // 4, wgmma_shape[1]
-                    ](m_mma * 4 + warp_id, n_mma)
+                    ](Int(m_mma * 4 + warp_id), n_mma)
                     var warp_tile = warp_tile_crd_idx[0]
                     var warp_tile_coords = rebind[c_coord_type](
                         warp_tile_crd_idx[1]
@@ -694,7 +694,7 @@ fn warp_specialized_gemm_output[
                         var n = Int(coords[1] + dst_n_offset)
 
                         alias alignment = alignof[SIMD[c_type, 2]]()
-                        if m < M and n < N:
+                        if m < Int(M) and n < N:
 
                             @parameter
                             if elementwise_lambda_fn:
@@ -728,7 +728,7 @@ fn warp_specialized_gemm_output[
                     # A warp group is 4x1 warps.
                     warp_tile = c_gmem_split.tile[
                         wgmma_shape[0] // 4, wgmma_shape[1]
-                    ](m_mma * 4 + warp_id, n_mma)
+                    ](Int(m_mma * 4 + warp_id), n_mma)
 
                     # Tile at (mma_id, 0) is a long vector containing all fragments
                     # for this warp.
@@ -757,7 +757,7 @@ fn warp_specialized_gemm_output[
                 # A warp group is 4x1 warps.
                 var warp_tile_crd_idx = c_gmem_split.tile_with_offset[
                     wgmma_shape[0] // 4, wgmma_shape[1]
-                ](m_mma * 4 + warp_id, n_mma, 0, 0)
+                ](Int(m_mma * 4 + warp_id), n_mma, 0, 0)
                 var warp_tile = warp_tile_crd_idx[0]
                 var warp_tile_coords = rebind[c_coord_type](
                     warp_tile_crd_idx[1]
@@ -765,7 +765,9 @@ fn warp_specialized_gemm_output[
                 warp_tile_coords = (
                     warp_tile_coords
                     + c_gmem_corner_coords
-                    + c_coord_type(wgmma_shape[0] * local_warp_group_idx, 0)
+                    + c_coord_type(
+                        wgmma_shape[0] * Int(local_warp_group_idx), 0
+                    )
                 )
 
                 # A single fragment matrix is the 8x8 output shard by a warp.
@@ -1482,8 +1484,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 warp_group_thread_idx,
                 local_warp_group_idx,
                 thread_idx.x - WARPGROUP_SIZE,
-                block_y,
-                block_x,
+                Int(block_y),
+                Int(block_x),
             )
             work_info = scheduler.fetch_next_work()
 
@@ -1645,7 +1647,7 @@ fn hopper_matmul_tma_wgmma_kernel[
         if fp8_promotion_iter != 0:
             promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
-    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
     warp_id = get_warp_id()
 
     @parameter
@@ -1658,7 +1660,7 @@ fn hopper_matmul_tma_wgmma_kernel[
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
             warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + warp_id, n_mma
+                Int(m_mma * 4 + warp_id), n_mma
             )
 
             # Tile at (mma_id, 0) is a long vector containing all fragments
@@ -2273,7 +2275,7 @@ fn warp_specialize_gemm_with_multicasting[
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
@@ -2374,8 +2376,8 @@ fn warp_specialize_gemm_with_multicasting[
                 grid_shape=grid_shape_adjusted,
                 schedule=schedule,
                 transpose_b=True,
-                num_threads=num_threads,
-                pipeline_stages = config.num_pipeline_stages,
+                num_threads = Int(num_threads),
+                pipeline_stages = Int(config.num_pipeline_stages),
                 partitioned_multicast = config.partitioned_multicast,
                 use_tma_store=use_tma_store,
                 pdl_level = config.pdl_level(),
@@ -2417,8 +2419,8 @@ fn warp_specialize_gemm_with_multicasting[
                 c_swizzle=c_swizzle,
                 cluster_shape=cluster_shape,
                 transpose_b=True,
-                num_threads=num_threads,
-                pipeline_stages = config.num_pipeline_stages,
+                num_threads = Int(num_threads),
+                pipeline_stages = Int(config.num_pipeline_stages),
                 partitioned_multicast = config.partitioned_multicast,
                 use_tma_store=use_tma_store,
                 pdl_level = config.pdl_level(),
@@ -2461,8 +2463,8 @@ fn warp_specialize_gemm_with_multicasting[
             cluster_shape=cluster_shape,
             c_swizzle=c_swizzle,
             transpose_b=True,
-            num_threads=num_threads,
-            pipeline_stages = config.num_pipeline_stages,
+            num_threads = Int(num_threads),
+            pipeline_stages = Int(config.num_pipeline_stages),
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
             pdl_level = config.pdl_level(),

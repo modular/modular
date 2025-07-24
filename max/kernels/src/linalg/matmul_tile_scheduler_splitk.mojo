@@ -400,7 +400,7 @@ struct SplitKTileScheduler[
             UInt(problem_blocks[1]),
             UInt(cluster_shape[1]),
         )
-        return problem_blocks_m * problem_blocks_n
+        return Int(problem_blocks_m * problem_blocks_n)
 
     @staticmethod
     @always_inline
@@ -547,7 +547,7 @@ struct SplitKTileScheduler[
                     Self.wait_eq(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        warp_group_thread_idx,
+                        Int(warp_group_thread_idx),
                         lock_idx,
                         work_tile_info.k_start,
                     )
@@ -556,7 +556,7 @@ struct SplitKTileScheduler[
                     Self.wait_lt(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        warp_group_thread_idx,
+                        Int(warp_group_thread_idx),
                         lock_idx,
                         1,
                     )
@@ -574,7 +574,7 @@ struct SplitKTileScheduler[
             Self.arrive_set(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                warp_group_thread_idx,
+                Int(warp_group_thread_idx),
                 lock_idx,
                 increment,
             )
@@ -584,7 +584,7 @@ struct SplitKTileScheduler[
             Self.wait_eq(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                warp_group_thread_idx,
+                Int(warp_group_thread_idx),
                 lock_idx,
                 work_tile_info.k_start,
             )

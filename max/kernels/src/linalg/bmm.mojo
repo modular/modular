@@ -546,17 +546,17 @@ fn naive_batched_matmul_kernel[
     var n: UInt = c_buff.dim(2)
     var k: UInt = a_buff.dim(2)
 
-    var x = global_idx.x
-    var y = global_idx.y
-    var z = block_idx.z
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
+    var z = Int(block_idx.z)
 
-    if z >= batch_size or x >= n or y >= m:
+    if UInt(z) >= batch_size or UInt(x) >= n or UInt(y) >= m:
         return
     var val = Scalar[accum_type](0)
-    for ki in range(k):
+    for ki in range(Int(k)):
         val += (
-            a_buff[Int(z), y, ki].cast[accum_type]()
-            * b_buff[Int(z), ki, x].cast[accum_type]()
+            a_buff[z, y, ki].cast[accum_type]()
+            * b_buff[z, ki, x].cast[accum_type]()
         )
 
     @parameter
@@ -565,11 +565,11 @@ fn naive_batched_matmul_kernel[
         var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
             z, c_buff_nd_shape
         )
-        nd_corrds[rank - 1] = Int(x)
-        nd_corrds[rank - 2] = Int(y)
+        nd_corrds[rank - 1] = x
+        nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[Index(Int(z), Int(y), Int(x))] = val.cast[c_type]()
+        c_buff[Index(z, y, x)] = val.cast[c_type]()
 
 
 fn batched_matmul_kernel_gpu[

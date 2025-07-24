@@ -419,8 +419,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
                     warp_group_thread_idx,
                     local_warp_group_idx,
                     thread_idx.x - WARPGROUP_SIZE,
-                    block_y,
-                    block_x,
+                    Int(block_y),
+                    Int(block_x),
                 )
 
             # Get next work tile
@@ -640,7 +640,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
@@ -760,8 +760,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         splits=splits,
         raster_order=raster_order,
         transpose_b=True,
-        num_threads=num_threads,
-        pipeline_stages = config.num_pipeline_stages,
+        num_threads = Int(num_threads),
+        pipeline_stages = Int(config.num_pipeline_stages),
         partitioned_multicast = config.partitioned_multicast,
         use_tma_store=use_tma_store,
         pdl_level = config.pdl_level(),
