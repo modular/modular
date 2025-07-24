@@ -63,6 +63,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 fn blackwell_matmul_tma_umma_kernel[
     a_type: DType,
     b_type: DType,
