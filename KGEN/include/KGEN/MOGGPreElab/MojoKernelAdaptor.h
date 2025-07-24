@@ -183,6 +183,11 @@ struct MojoKernelOperandAdaptor {
                underlyingType);
   }
 
+  bool isVariadicContextType() const {
+    return std::holds_alternative<DevicesContextPtrListOperandAdaptor>(
+        underlyingType);
+  }
+
   bool isScalarType() const {
     return std::holds_alternative<ScalarOperandAdaptor>(underlyingType);
   }
