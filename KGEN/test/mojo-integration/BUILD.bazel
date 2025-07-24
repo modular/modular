@@ -4,6 +4,12 @@ _DATA = [
     "inputs/**",
 ]
 
+filegroup(
+    name = "fixtures",
+    testonly = True,
+    srcs = glob(["inputs/**/*.mojo"]),
+)
+
 lit_tests(
     name = "test",
     srcs = glob(
@@ -13,7 +19,7 @@ lit_tests(
         ],
         exclude = _DATA,
     ),
-    data = glob(["inputs/**/*.mojo"]),
+    data = [":fixtures"],
     mojo_deps = [
         "@mojo//:_mlir",
         "@mojo//:stdlib",
@@ -40,7 +46,7 @@ lit_tests(
     # This tests require the stdlib and mlirc srcs, where other tests do
     # not require them
     srcs = glob(["*.test"]),
-    data = glob(["inputs/**/*.mojo"]) + [
+    data = [":fixtures"] + [
         "//open-source/max/max/_mlir/src:_mlir_srcs",
         "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
     ],
