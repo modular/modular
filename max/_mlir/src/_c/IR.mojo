@@ -23,7 +23,7 @@
 from collections.string import StaticString
 
 
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 from .ffi import MLIR_func
 from .Support import *

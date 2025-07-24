@@ -34,7 +34,7 @@ with open("my_file.txt", "r") as f:
 from os import PathLike, abort
 from sys import external_call, sizeof
 from memory import AddressSpace, Span
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning

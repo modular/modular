@@ -14,7 +14,7 @@
 from testing import assert_equal
 
 from memory.memory import memset_zero
-from utils.write import (
+from io.write import (
     Writable,
     Writer,
     _write_hex,

@@ -43,7 +43,7 @@ from memory import memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
-from utils.write import Writable, Writer
+from io.write import Writable, Writer
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 

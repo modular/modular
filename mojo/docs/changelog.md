@@ -179,6 +179,7 @@ mutation.
 - A new `io` module is available in the library. Some core input/output types
   previously in the `builtin` module have been moved and imports may need to be
   adjusted.
+  - `utils/write.mojo` got moved to `io/write.mojo` as well.
 
 ### Tooling changes
 

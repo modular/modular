@@ -21,7 +21,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 from .AffineMap import MlirAffineMap
 from .ffi import MLIR_func

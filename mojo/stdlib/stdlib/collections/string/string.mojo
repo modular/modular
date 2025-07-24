@@ -93,12 +93,12 @@ from bit import count_leading_zeros
 from memory import memcpy, memset, memcmp
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils.write import (
+from io.write import (
     _TotalWritableBytes,
     _WriteBufferStack,
     STACK_BUFFER_BYTES,
 )
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 
 # ===----------------------------------------------------------------------=== #

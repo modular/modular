@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 from memory import Span
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 

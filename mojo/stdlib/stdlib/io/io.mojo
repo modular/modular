@@ -34,7 +34,7 @@ from sys.info import CompilationTarget
 
 from .file_descriptor import FileDescriptor
 from memory import bitcast
-from utils.write import _WriteBufferHeap, _WriteBufferStack
+from io.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
