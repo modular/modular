@@ -1,11 +1,18 @@
 import * as assert from "assert";
+import * as path from "path";
 import { ChildProcess, spawn } from "child_process";
+import { readFile } from "fs/promises";
+import { setTimeout } from "timers/promises";
 import {
   ClientCapabilities,
   DidOpenTextDocumentNotification,
+  Hover,
+  HoverRequest,
   InitializeParams,
   MessageConnection,
+  Position,
   PublishDiagnosticsParams,
+  Range,
 } from "vscode-languageserver-protocol";
 import { createMessageConnection } from "vscode-languageserver-protocol/node";
 
@@ -71,11 +78,13 @@ export class LanguageServer {
 
     await this.connection.sendRequest("shutdown");
 
-    this.serverProcess.kill();
+    if (!this.serverProcess.kill()) return;
+
     let exitedPromise = new Promise((resolve) =>
       this.serverProcess.once("exit", resolve)
     );
-    await exitedPromise;
+    let timeout = setTimeout(5000);
+    await Promise.race([exitedPromise, timeout]);
   }
 }
 
@@ -87,11 +96,25 @@ export class Document {
   }
 
   private _content: string;
+  private _lines: string[] = [];
   private version = 0;
 
   constructor(private server: LanguageServer, uri: string, content: string) {
     this.uri = uri;
     this._content = content;
+    this._lines = content.split("\n");
+  }
+
+  public static async fromFile(
+    server: LanguageServer,
+    file: string
+  ): Promise<Document> {
+    file = path.resolve(file);
+    let content = await readFile(file, {
+      encoding: "utf-8",
+    });
+
+    return new Document(server, `file://${file}`, content);
   }
 
   async open() {
@@ -106,5 +129,59 @@ export class Document {
         },
       }
     );
+  }
+
+  /// Find the first position that a substring appears in the document. Throws
+  /// if the substring is not within the document.
+  public findFirstPosition(substr: string): Position {
+    assert.doesNotMatch(substr, /\n/, "substr cannot contain a newline");
+
+    for (let line = 0; line < this._lines.length; ++line) {
+      let lineContent = this._lines[line];
+      let offset = lineContent.indexOf(substr);
+      if (offset !== -1) {
+        return {
+          line,
+          character: offset,
+        };
+      }
+    }
+
+    throw new Error("substring not found in document content");
+  }
+
+  public findLastPosition(substr: string): Position {
+    assert.doesNotMatch(substr, /\n/, "substr cannot contain a newline");
+
+    for (let line = this._lines.length - 1; line > 0; --line) {
+      let lineContent = this._lines[line];
+      let offset = lineContent.indexOf(substr);
+      if (offset !== -1) {
+        return {
+          line,
+          character: offset,
+        };
+      }
+    }
+
+    throw new Error("substring not found in document content");
+  }
+
+  public findFirstRange(substr: string): Range {
+    let pos = this.findFirstPosition(substr);
+
+    return {
+      start: pos,
+      end: { line: pos.line, character: pos.character + substr.length },
+    };
+  }
+
+  async hover(position: Position): Promise<Hover | null> {
+    return this.server.connection.sendRequest(HoverRequest.type, {
+      textDocument: {
+        uri: this.uri,
+      },
+      position,
+    });
   }
 }

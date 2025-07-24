@@ -8,6 +8,7 @@ mocha_test(
     name = "test",
     srcs = [":compile"],
     data = [
+        ":test_data",
         "//KGEN/tools/mojo-lsp-server",
     ],
     env = {
@@ -15,9 +16,14 @@ mocha_test(
     },
 )
 
+filegroup(
+    name = "test_data",
+    srcs = glob(["data/**/*.mojo"]),
+)
+
 ts_project(
     name = "compile",
-    srcs = glob(["*.ts"]),
+    srcs = glob(["src/**/*.ts"]),
     transpiler = "tsc",
     tsconfig = {
         "compilerOptions": {

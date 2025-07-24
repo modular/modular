@@ -4,7 +4,11 @@ load("@mojo-lsp-server-node-tests//KGEN/test/mojo-lsp-server-node:mocha/package_
 load("//bazel:api.bzl", "mojo_test_environment")
 
 def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
-    mojo_test_environment(name = "mojo_test_env", data = ["@mojo//:stdlib"], testonly = True)
+    mojo_test_environment(name = "mojo_test_env", data = [
+        "@mojo//:stdlib",
+        "//SDK/lib/API/mojo/max/tensor",
+        "@mojo//:compiler_internal",
+    ], testonly = True)
 
     bin.mocha_test(
         name = name,
@@ -14,7 +18,7 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
             "--reporter-options",
             "configFile=$(location //KGEN/test/mojo-lsp-server-node:mocha-reporters.json)",
             "--config=$(location //KGEN/test/mojo-lsp-server-node:.mocharc.json)",
-            native.package_name() + "/*.spec.js",
+            native.package_name() + "/**/*.spec.js",
         ] + args,
         data = data + srcs + [
             "//KGEN/test/mojo-lsp-server-node:node_modules/mocha-junit-reporter",
@@ -22,6 +26,8 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
             "//KGEN/test/mojo-lsp-server-node:mocha-reporters.json",
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",
             "@mojo//:stdlib",
+            "//SDK/lib/API/mojo/max/tensor",
+            "@mojo//:compiler_internal",
             ":mojo_test_env",
         ],
         env = env | {
