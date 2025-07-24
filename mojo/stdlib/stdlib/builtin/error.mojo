@@ -20,7 +20,7 @@ from collections.string.format import _CurlyEntryFormattable
 from sys.ffi import c_char
 
 from memory import memcpy
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # Error

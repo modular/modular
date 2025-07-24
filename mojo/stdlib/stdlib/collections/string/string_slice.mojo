@@ -74,7 +74,7 @@ from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, PythonConvertible, PythonObject
 
-from utils.write import _WriteBufferStack, _TotalWritableBytes
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
