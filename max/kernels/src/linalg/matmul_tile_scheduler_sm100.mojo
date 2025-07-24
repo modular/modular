@@ -67,7 +67,9 @@ struct TileScheduler[
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ]:
     alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
-    var clc_response: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]
+    var clc_response: UnsafePointer[
+        UInt128, address_space = AddressSpace.SHARED
+    ]
     var full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ]
@@ -79,7 +81,7 @@ struct TileScheduler[
     fn __init__(
         out self,
         clc_response_ptr: UnsafePointer[
-            UInt64, address_space = AddressSpace.SHARED
+            UInt128, address_space = AddressSpace.SHARED
         ],
         full_mbar_ptr: UnsafePointer[
             SharedMemBarrier, address_space = AddressSpace.SHARED
@@ -95,7 +97,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn work_info_from_clc_response(
-        result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]
+        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
     ) -> WorkInfo:
         alias asm = """{
             .reg .pred p1;
@@ -138,7 +140,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + (consumer_state.index() * 2)
+            self.clc_response + consumer_state.index()
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -154,14 +156,14 @@ struct TileScheduler[
         var pred: UInt32 = 1 if lane_id < Self.cluster_size else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
-            2 * sizeof[UInt64](),
+            sizeof[UInt128](),
             UInt32(lane_id),
             pred,
         )
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + (clc_state.index() * 2),
+                self.clc_response + clc_state.index(),
                 (self.full_mbar + clc_state.index()).bitcast[Int64](),
             )
 
