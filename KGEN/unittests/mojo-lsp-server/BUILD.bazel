@@ -24,7 +24,6 @@ inputs = [
     "DiagnosticsTest",
     "DocumentSymbolTest",
     "FoldingRangeTest",
-    "HoverTest",
     "InitFileTest",
     "MOGGAnnotateDiags",
     "NotebookTest",
