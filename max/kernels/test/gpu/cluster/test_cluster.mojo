@@ -38,8 +38,8 @@ from utils.static_tuple import StaticTuple
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
 fn cluster_launch_control(data: UnsafePointer[Float32], n: UInt):
     result = stack_allocation[
-        2,
-        UInt64,
+        1,
+        UInt128,
         address_space = AddressSpace.SHARED,
         alignment=16,
     ]()
@@ -103,8 +103,8 @@ fn pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
     var clc_response = stack_allocation[
-        num_stages * 2,
-        UInt64,
+        num_stages,
+        UInt128,
         address_space = AddressSpace.SHARED,
         alignment=16,
     ]()
@@ -166,7 +166,7 @@ fn pipeline_test_kernel[
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():
                 clusterlaunchcontrol_try_cancel[multicast=True](
-                    clc_response + (write_idx * 2),
+                    clc_response + write_idx,
                     (full_mbar + write_idx).bitcast[Int64](),
                 )
 
@@ -177,7 +177,7 @@ fn pipeline_test_kernel[
             full_mbar[full_idx].wait(pipeline_state.phase())
             is_valid = Bool(
                 clusterlaunchcontrol_query_cancel_is_canceled(
-                    clc_response + (full_idx * 2)
+                    clc_response + full_idx
                 )
             )
             empty_mbar[full_idx].arrive_cluster(0)

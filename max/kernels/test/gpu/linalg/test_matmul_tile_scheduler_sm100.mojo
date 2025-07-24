@@ -32,8 +32,8 @@ from gpu.sync import syncwarp
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
     var clc_response = stack_allocation[
-        num_stages * 2,
-        UInt64,
+        num_stages,
+        UInt128,
         address_space = AddressSpace.SHARED,
         alignment=16,
     ]()
