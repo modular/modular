@@ -112,6 +112,36 @@ struct GemmShape(Copyable, Movable):
         """
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
+    @staticmethod
+    fn get[
+        transpose_b: Bool,
+        layout_c: Layout,
+        layout_a: Layout,
+        layout_b: Layout,
+    ](
+        c: LayoutTensor[_, layout_c, _, **_],
+        a: LayoutTensor[_, layout_a, _, **_],
+        b: LayoutTensor[_, layout_b, _, **_],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: LayoutTensor with allocated output space.
+            a: LayoutTensor containing matrix operand A.
+            b: LayoutTensor containing matrix operand B.
+        """
+
+        # We only want a 2D tensor for now
+        constrained[c.rank == 2]()
+        constrained[a.rank == 2]()
+        constrained[b.rank == 2]()
+
+        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
+
     # TODO: re-enable using IndexList.
     @always_inline
     fn __getitem__(self, idx: Int) -> Int:
@@ -249,6 +279,31 @@ fn _get_tile_n_k[
         tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
             b.dim(0), b.dim(1)
         )
+    return tile_n_k
+
+
+@always_inline
+fn _get_tile_n_k[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    kernel_cols: Int,
+    transpose_b: Bool,
+    layout: Layout,
+](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
+    constrained[b.rank == 2]()
+    var tile_n_k: IndexList[2]
+
+    @parameter
+    if not transpose_b:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(1), b.dim(0)
+        )
+    else:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(0), b.dim(1)
+        )
+
     return tile_n_k
 
 
