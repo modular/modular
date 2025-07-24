@@ -360,7 +360,6 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         #   Support a way to get the name of the function from its parameter
         #   type, similar to `get_linkage_name()`?
 
-        # FIXME: PyMethodDef is capturing the pointer without an origin.
         var with_kwargs = func.isa[PyCFunctionWithKeywords]()
         var func_ptr = rebind[OpaquePointer](
             func[PyCFunctionWithKeywords]
