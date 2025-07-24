@@ -7,4 +7,4 @@
 batch_size=1
 max_length=8192
 evaluator=mistral-evals
-tasks=mathvista
+tasks=mathvista,chartqa,docvqa
