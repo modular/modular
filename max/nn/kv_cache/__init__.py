@@ -37,6 +37,7 @@ from .paged_cache import (
     PagedKVCacheManager,
     PagedKVCacheType,
     XferReqData,
+    available_port,
 )
 from .registry import (
     estimate_kv_cache_size,
@@ -68,6 +69,7 @@ __all__ = [
     "PagedKVCacheType",
     "RaggedKVCacheInputs",
     "XferReqData",
+    "available_port",
     "build_max_lengths_tensor",
     "estimate_kv_cache_size",
     "infer_optimal_batch_size",
