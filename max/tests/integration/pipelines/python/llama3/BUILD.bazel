@@ -80,7 +80,6 @@ modular_py_test(
         ],
     ) + [
         "conftest.py",
-        "torch_utils.py",
     ],
     data = [
         "//Kernels/tools/gpu-query",

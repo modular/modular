@@ -17,7 +17,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = ["*_gpu.py"],
+        exclude = [
+            "*_gpu.py",
+            "shared_conv_impl.py",
+        ],
     ),
     imports = ["."],
     deps = [
