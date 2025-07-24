@@ -34,7 +34,7 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import is_triple
+from sys.info import has_nvidia_gpu_accelerator, is_triple
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 

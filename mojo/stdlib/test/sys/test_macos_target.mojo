@@ -15,30 +15,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import (
-    is_big_endian,
-    is_little_endian,
-    os_is_linux,
-    os_is_macos,
-    os_is_windows,
-)
+from sys import CompilationTarget, is_big_endian, is_little_endian
 from sys.info import _macos_version
 
 from testing import assert_false, assert_true
 
 
 fn test_os_query() raises:
-    assert_true(os_is_macos())
-
-    assert_false(os_is_linux())
-
-    assert_false(os_is_windows())
+    assert_true(CompilationTarget.is_macos())
+    assert_false(CompilationTarget.is_linux())
+    assert_false(CompilationTarget.is_windows())
 
     # The mac systems are either arm64 or intel, so they are always little
     # endian at the moment.
 
     assert_true(is_little_endian())
-
     assert_false(is_big_endian())
 
 
