@@ -20,7 +20,7 @@ All functions are constrained to NVIDIA SM90+ GPUs and will raise an error if us
 Note: These are low-level primitives that correspond directly to PTX/NVVM instructions and should be used
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, _RegisterPackType
 from sys.info import _is_sm_9x_or_newer
 from sys.info import _is_sm_100x_or_newer
 from sys._assembly import inlined_assembly
@@ -309,13 +309,11 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
 
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
-    block_dim: UnsafePointer[UInt32],
     result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED],
-):
+) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
 
     Args:
-        block_dim: A pointer to 4 `UInt32`s that will store the coordinates of the first CTAID in the canceled cluster.
         result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
 
     Only supported on NVIDIA SM100+ GPUs."""
@@ -327,24 +325,26 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
         ),
     ]()
 
-    alias asm = """
-        .reg .b128 %result;
-        mov.b128 %result, {$4, $5};
-        clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, $3}, %result;
-        """
+    alias asm = """{
+        .reg .b128 result;
+        mov.b128 result, {$3, $4};
+        clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, _}, result;
+        }"""
 
-    inlined_assembly[
+    var coordinates = inlined_assembly[
         asm,
-        NoneType,
+        _RegisterPackType[UInt32, UInt32, UInt32],
         has_side_effect=True,
-        constraints="=r,=r,=r,=r,l,l",
+        constraints="=r,=r,=r,l,l",
     ](
-        block_dim[0],
-        block_dim[1],
-        block_dim[2],
-        block_dim[3],
         result[0],
         result[1],
+    )
+
+    return Tuple[UInt32, UInt32, UInt32](
+        coordinates[0],
+        coordinates[1],
+        coordinates[2],
     )
 
 

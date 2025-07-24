@@ -23,6 +23,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm100_2.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_3.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_4.mojo": ["//:b200_gpu"],
+    "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
     "test_vendor_blas.mojo": [
