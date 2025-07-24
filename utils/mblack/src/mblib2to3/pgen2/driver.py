@@ -332,7 +332,20 @@ def load_packaged_grammar(
             if cache_dir
             else None
         )
-        return load_grammar(grammar_source, gp=gp)
+        # Fix MOTO-1264: Force grammar regeneration to prevent stale cache issues
+        # Always force regeneration when no cache directory is specified (development mode)
+        force_regen = gp is None
+        
+        # Clean up any existing pickle files in source directory to force regeneration
+        if gp is None:
+            default_pickle = _generate_pickle_name(grammar_source)
+            if os.path.exists(default_pickle):
+                try:
+                    os.remove(default_pickle)
+                except OSError:
+                    pass  # Ignore errors if we can't remove it
+        
+        return load_grammar(grammar_source, gp=gp, force=force_regen)
     pickled_name = _generate_pickle_name(
         os.path.basename(grammar_source), cache_dir
     )
