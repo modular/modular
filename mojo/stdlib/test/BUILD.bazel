@@ -200,7 +200,6 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
-        data = _DATA,
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         env = _ENV.get(src, {}),
         expect_crash = src in _EXPECT_CRASH,

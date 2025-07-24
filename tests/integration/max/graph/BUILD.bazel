@@ -21,6 +21,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
+        exclude = ["modular_graph_test.py"],
     ),
     data = [
         "//SDK/integration-test:compile_config_ops",
