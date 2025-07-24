@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Support/DebugInfoEncoding.h"
+#include "KGEN/KGENDialect/DebugInfoEncoding.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 
 using namespace M;
