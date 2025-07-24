@@ -7,11 +7,10 @@
 
 import numpy as np
 import pytest
-from common import available_port
 from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 from max.dtype import DType
-from max.nn.kv_cache import KVTransferEngine
+from max.nn.kv_cache import KVTransferEngine, available_port
 
 
 def test_constructor() -> None:
@@ -64,10 +63,16 @@ def test_initiate_send_xfer() -> None:
     )
 
     engine_1 = KVTransferEngine(
-        "engine_1", blocks_1, total_num_pages, listen_port=available_port()
+        "engine_1",
+        blocks_1,
+        total_num_pages=total_num_pages,
+        listen_port=available_port(),
     )
     engine_2 = KVTransferEngine(
-        "engine_2", blocks_2, total_num_pages, listen_port=available_port()
+        "engine_2",
+        blocks_2,
+        total_num_pages=total_num_pages,
+        listen_port=available_port(),
     )
 
     engine_1.connect(engine_2.metadata)

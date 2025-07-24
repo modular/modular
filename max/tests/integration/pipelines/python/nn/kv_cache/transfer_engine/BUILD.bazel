@@ -3,10 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
-        srcs = [
-            src,
-            "common.py",
-        ],
+        srcs = [src],
         data = ["//AsyncRT:plugin_ucx"],
         env = {
             # TODO(GENAI-170): Make plugin directory discovery more robust and work
@@ -28,8 +25,5 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
             requirement("torch"),
         ],
     )
-    for src in glob(
-        ["*.py"],
-        exclude = ["common.py"],
-    )
+    for src in glob(["*.py"])
 ]

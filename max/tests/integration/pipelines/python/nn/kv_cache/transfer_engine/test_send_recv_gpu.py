@@ -13,7 +13,6 @@ from threading import Thread
 
 import numpy as np
 import pytest
-from common import available_port
 from max.driver import CPU, Device
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
@@ -21,6 +20,7 @@ from max.nn.kv_cache import (
     KVTransferEngineMetadata,
     XferReqData,
 )
+from max.nn.kv_cache.paged_cache.transfer_engine import available_port
 
 
 def transfer_routine_sender(
@@ -54,10 +54,16 @@ def test_send_recv_basic(device: Device) -> None:
     )
 
     engine_1 = KVTransferEngine(
-        "engine_1", blocks_1, total_num_pages, listen_port=available_port()
+        "engine_1",
+        blocks_1,
+        total_num_pages=total_num_pages,
+        listen_port=available_port(),
     )
     engine_2 = KVTransferEngine(
-        "engine_2", blocks_2, total_num_pages, listen_port=available_port()
+        "engine_2",
+        blocks_2,
+        total_num_pages=total_num_pages,
+        listen_port=available_port(),
     )
 
     engine_1.connect(engine_2.metadata)

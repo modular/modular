@@ -9,13 +9,13 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
-from common import available_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     XferReqData,
+    available_port,
 )
 
 
@@ -42,7 +42,7 @@ def test_send_recv_basic() -> None:
         engine = KVTransferEngine(
             "engine_1",
             blocks,
-            total_num_pages,
+            total_num_pages=total_num_pages,
             listen_port=available_port(),
         )
 
@@ -80,7 +80,7 @@ def test_send_recv_basic() -> None:
         engine = KVTransferEngine(
             "engine_2",
             blocks,
-            total_num_pages,
+            total_num_pages=total_num_pages,
             listen_port=available_port(),
         )
 
