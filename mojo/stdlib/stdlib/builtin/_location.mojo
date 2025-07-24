@@ -42,6 +42,23 @@ struct _SourceLocation(Copyable, Movable, Stringable, Writable):
         """
         return String("At ", self, ": ", msg)
 
+    @no_inline
+    fn _prefix[
+        append_message: fn[W: Writer] (mut writer: W) capturing
+    ](self) -> Error:
+        """Return the given message prefixed with the pretty-printer location.
+
+        Parameters:
+            append_message: The function to write the message to be appended.
+        """
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write("At ", self, ": ")
+            append_message(writer)
+
+        return Error.__init__[write_to]()
+
     fn write_to[W: Writer](self, mut writer: W):
         """
         Formats the source location to the provided Writer.
