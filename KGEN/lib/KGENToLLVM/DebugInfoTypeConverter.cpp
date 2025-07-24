@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CODialect/COTypes.h"
+#include "KGEN/KGENDialect/DebugInfoEncoding.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/Support/DebugInfoEncoding.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Support/DebugStringHelper.h"
 

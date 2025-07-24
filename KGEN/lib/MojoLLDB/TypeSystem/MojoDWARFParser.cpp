@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoDWARFParser.h"
+#include "KGEN/KGENDialect/DebugInfoEncoding.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
-#include "KGEN/Support/DebugInfoEncoding.h"
 #include "MojoTypeSystem.h"
 #include "Support/ErrorOr.h"
 #include "lldb/Symbol/CompileUnit.h"

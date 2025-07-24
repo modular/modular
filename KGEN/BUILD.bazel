@@ -940,10 +940,7 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(
-        [
-            "include/KGEN/KGENDialect/*.h",
-            "include/KGEN/Support/*.h",
-        ],
+        ["include/KGEN/Support/*.h"],
         exclude = [
             "include/KGEN/Support/ForceLinkMLIRC.h",
         ],
