@@ -2,23 +2,8 @@ load("//bazel:api.bzl", "modular_py_library")
 
 modular_py_library(
     name = "support",
-    srcs = [
-        "human_readable_formatter.py",
-        "math.py",
-        "paths.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":notebook",
-    ],
-)
-
-modular_py_library(
-    name = "notebook",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/entrypoints:mojo",
     ],
