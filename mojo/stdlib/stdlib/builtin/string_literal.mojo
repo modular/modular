@@ -22,7 +22,7 @@ from sys.ffi import c_char
 from collections.string.format import _FormatCurlyEntry
 from collections.string.string_slice import _to_string_list
 
-from python import PythonConvertible, PythonObject
+from python import ConvertibleToPython, PythonObject
 
 
 # ===-----------------------------------------------------------------------===#
@@ -34,6 +34,7 @@ from python import PythonConvertible, PythonObject
 @nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
@@ -41,8 +42,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     IntableRaising,
     Movable,
     PathLike,
-    PythonConvertible,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,

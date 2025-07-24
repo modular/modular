@@ -152,6 +152,10 @@ mutation.
     - registering initializers that take arguments. Types no longer need to be
       `Defaultable` to be exposed and created from Python.
 
+  - The `PythonConvertible` trait has been renamed to `ConvertibleToPython`.
+    This is now consistent with the `ConvertibleFromPython` trait, modeling
+    Mojo types that can be converted either to or from a `PythonObject`.
+
 - Added `Iterator` trait for modeling types that produce a sequence of values.
 
   A type can implement `Iterator` by providing `__next__()` and `__has_next__()`
