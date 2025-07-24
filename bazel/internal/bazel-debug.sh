@@ -31,6 +31,7 @@ before_target=()
 vscode=0
 gdb=0
 system_lldb=0
+xctrace=0
 for arg in "$@"
 do
   if [[ "$arg" != -* ]]; then
@@ -45,6 +46,9 @@ do
     shift
   elif [[ "$arg" = --system-lldb ]]; then
     system_lldb=1
+    shift
+  elif [[ "$arg" = --xctrace ]]; then
+    xctrace=1
     shift
   else
     before_target+=("$arg")
@@ -92,7 +96,8 @@ elif [[ "$kind" == modular_genrule ]]; then
 fi
 
 before_target+=("--config=$default_config")
-MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" "$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
+MODULAR_XCTRACE="$xctrace" MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" "$wrapper" "$subcommand" "${before_target[@]}" "$target" "$@"
 if [[ "$run_debug_script" == "true" ]]; then
-  MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
+  MODULAR_XCTRACE="$xctrace" MODULAR_LLDB_PWD="$previous_pwd" MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
+   MODULAR_SYSTEM_LLDB="$system_lldb" MODULAR_GDB="$gdb" MODULAR_VSCODE_DEBUG="$vscode" exec /tmp/lldb.sh
 fi
