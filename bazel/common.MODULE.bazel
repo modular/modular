@@ -3,7 +3,7 @@
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
-bazel_dep(name = "aspect_rules_js", version = "2.3.8")
+bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
@@ -54,15 +54,6 @@ single_version_override(
     patches = [
         # https://github.com/aspect-build/rules_py/pull/463
         "//bazel/public-patches:rules_py_main.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "aspect_rules_js",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/aspect-build/rules_js/pull/2277
-        "//bazel/public-patches:rules_js_env_inherit.patch",
     ],
 )
 
