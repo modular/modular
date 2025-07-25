@@ -12,7 +12,6 @@ from typing import cast
 
 import numpy as np
 import pytest
-import torch
 from max._core.nixl import (
     Agent,
     AgentConfig,
@@ -24,11 +23,6 @@ from max._core.nixl import (
 )
 from max.driver import CPU, Accelerator, Device, Tensor
 from numpy.typing import ArrayLike
-
-
-def _get_tensor_base_addr(tensor: Tensor) -> int:
-    """Get the base address of a tensor."""
-    return torch.from_dlpack(tensor).data_ptr()
 
 
 def create_agent(
@@ -160,8 +154,8 @@ def test_memory_transfer(device: Device) -> None:
     dst_offset = buffer_size_1 // 4
     src_offset = 0
     bytes_to_copy = buffer_size_1 // 2
-    src_base = _get_tensor_base_addr(buffer_1) + src_offset
-    dst_base = _get_tensor_base_addr(buffer_2) + dst_offset
+    src_base = buffer_1._data_ptr() + src_offset
+    dst_base = buffer_2._data_ptr() + dst_offset
 
     # Create xfer request
     xfer_dlist_src = TransferDescriptorList(
