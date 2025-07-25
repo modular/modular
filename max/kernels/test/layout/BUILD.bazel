@@ -13,10 +13,18 @@ _FILECHECK_TESTS = [
     "test_vectorized_matmul.mojo",
 ]
 
+_EXTRA_CONSTRAINTS = {
+    "test_tensor_masked.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:layout",
             "@mojo//:stdlib",
