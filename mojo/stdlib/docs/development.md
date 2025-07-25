@@ -47,8 +47,8 @@ externally maintained
 [Mojo Dev Container](https://github.com/benz0li/mojo-dev-container) with all
 prerequisites installed.
 
-The Dev Container also includes the unit test dependencies `lit` and `FileCheck`
-(from LLVM) and has `pre-commit` already set up.
+The unit test dependency `lit` is also pre-installed and `pre-commit` is
+already set up.
 
 See [Mojo Dev Container &gt; Usage](https://github.com/benz0li/mojo-dev-container#usage)
 on how to use with [Github Codespaces](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace-for-a-repository#creating-a-codespace-for-a-repository)
