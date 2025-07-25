@@ -266,9 +266,9 @@ fn mma[
         alias b_wtile_dim1 = BK if transpose_b else WN
         var b_wtile_coord0 = Int(warp_col) if transpose_b else 0
         var b_wtile_coord1 = 0 if transpose_b else Int(warp_col)
-        var b_warp_tile = b_smem_iter.next_unsafe(0)[].tile[
-            b_wtile_dim0, b_wtile_dim1
-        ](b_wtile_coord0, b_wtile_coord1)
+        var b_warp_tile = b_smem_tile.tile[b_wtile_dim0, b_wtile_dim1](
+            b_wtile_coord0, b_wtile_coord1
+        )
 
         @parameter
         for k_mma in range(num_k_mmas2):
@@ -514,7 +514,13 @@ struct SharedMemoryManager[
         self,
         out result: LayoutTensorIter[
             dtype,
-            Layout.row_major(BK, BN),
+            Layout.row_major(BK, BN) if token_gen else Layout(
+                IntTuple(Int(depth + depth // 8), IntTuple(8, 4)),
+                IntTuple(
+                    8,
+                    IntTuple(1, Int(depth + depth // 8) * 8),
+                ),
+            ),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
             circular=True,
@@ -1061,19 +1067,7 @@ fn mha_single_batch_amd[
 
             alias padding = depth // 8
             alias padding_tile = depth_tile_size // 8
-            var v_smem_iter_tensor = LayoutTensor[
-                q_type,
-                Layout(
-                    IntTuple(Int(depth + padding), IntTuple(8, 4)),
-                    IntTuple(
-                        8,
-                        IntTuple(1, Int(depth + padding) * 8),
-                    ),
-                ),
-                # Layout.row_major(depth, BK),
-                MutableAnyOrigin,
-                address_space = AddressSpace.SHARED,
-            ](smem_manager.get_v_iter().ptr)
+            var v_smem_iter_tensor = smem_manager.get_v_iter().next_unsafe(0)[]
 
             # if thread_idx.x == 0:
             #     _ = v_smem_iter_tensor.fill(-1)
