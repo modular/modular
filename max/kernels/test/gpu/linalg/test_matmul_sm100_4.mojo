@@ -33,7 +33,6 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     LayoutTensor,
-    MutableAnyOrigin,
     IntTuple,
     UNKNOWN_VALUE,
 )
