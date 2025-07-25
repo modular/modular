@@ -926,9 +926,21 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                         .getSpecialFunctionInfo()
                         .hasSelfResult();
 
-    // Infer information from this signature holistically.
+    // Infer information from this signature holistically. Inference is only
+    // considered a failure if any internal conflicts were reached, such as when
+    // two arguments have differing requirements for a parameter (these
+    // conflicts are indicated by additional failures added to inferenceDiags).
+    // `infer` returning failure due to failing to infer later parameters should
+    // not be considered an immediate failure. As long as earlier parameters
+    // were inferred successfully, we should still return a valid PValue so
+    // inference continues down the parameter list. This ensures an error is
+    // reported only when we reach the actual parameter that caused the
+    // inference failure, instead of being reported too early and misleading the
+    // user.
+    size_t existingFailures = inferenceDiags.getNumFailures();
     if (failed(inference.infer(signature, operands, variadicKwOperands,
-                               returnsSelf)))
+                               returnsSelf)) &&
+        inferenceDiags.getNumFailures() > existingFailures)
       return PValue();
 
     // See if we inferred information about the next value.

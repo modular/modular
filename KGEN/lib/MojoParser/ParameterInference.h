@@ -60,6 +60,8 @@ public:
   /// values to the overload resolution diagnostic.
   void attach(PogListAttr params, InflightDiag &diag, size_t numActual = 0);
 
+  size_t getNumFailures() const { return diags.size(); }
+
   struct FailedInference {
     size_t paramIdx;
     const ExprNode *argExpr;

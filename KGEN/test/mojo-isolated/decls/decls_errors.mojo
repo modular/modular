@@ -277,7 +277,8 @@ fn badPackCalls(value: Int):
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': could not deduce parameter 'Ts' of callee 'examplePack}}
+  # expected-error @below {{invalid call to 'examplePack': could not deduce parameter 'Ts' of callee 'examplePack'}}
+  # expected-note @below {{failed to infer parameter 'Ts', parameter isn't used in any argument}}
   examplePack(packArgOverload)
   # expected-error @below {{invalid call to 'first_and_rest': could not deduce parameter 'T' of callee 'first_and_rest'}}
   # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}

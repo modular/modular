@@ -477,6 +477,7 @@ struct ParamType[p: Int]:
     pass
 
 
+@fieldwise_init
 struct MemParamType[p: Int]:
     pass
 
@@ -536,6 +537,18 @@ fn invalid_params[f: fn (ParamType) -> None]():
     # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
     # expected-note @below {{parameter isn't used in any argument}}
     f(1)
+
+
+# expected-note @below {{function declared here}}
+fn mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3]):
+    pass
+
+
+fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
+    var a = MemParamType[1]()
+    # expected-error @below {{invalid call to 'mem_param_with_ref': argument #1 cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
+    # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
+    mem_param_with_ref(a, b)
 
 
 # expected-note @below {{declared here}}
