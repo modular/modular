@@ -1,5 +1,5 @@
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "TOP_LEVEL_TAG")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -126,7 +126,7 @@ platform(
         "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
         "test.resources:gpu-1": "0.01",
     },
 )
@@ -146,7 +146,7 @@ platform(
         "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-rocm",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
         "test.resources:gpu-1": "0.01",
     },
 )
