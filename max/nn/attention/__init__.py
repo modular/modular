@@ -31,7 +31,10 @@ from .mask_config import (
     MHAMaskVariant,
     PositionalEncodingVariant,
 )
-from .multi_latent_attention import LatentAttentionWithRope
+from .multi_latent_attention import (
+    DistributedLatentAttentionWithRope,
+    LatentAttentionWithRope,
+)
 from .multihead_attention import MultiheadAttention
 from .ragged_attention import RaggedAttention
 
@@ -44,6 +47,7 @@ __all__ = [
     "AttentionWithRopeV1",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
+    "DistributedLatentAttentionWithRope",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
