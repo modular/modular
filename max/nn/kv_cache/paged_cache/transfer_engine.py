@@ -23,17 +23,11 @@ from collections import defaultdict
 from uuid import uuid4
 
 import msgspec
-import torch
 from max._core import nixl
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
-
-
-def _get_tensor_base_addr(tensor: Tensor) -> int:
-    """Get the base address of a tensor."""
-    return torch.from_dlpack(tensor).data_ptr()
 
 
 def available_port(
@@ -208,7 +202,7 @@ class KVTransferEngine:
         self.memory_type = (
             nixl.MemoryType.DRAM if device.is_host else nixl.MemoryType.VRAM
         )
-        self.base_addr = _get_tensor_base_addr(self.tensor)
+        self.base_addr = self.tensor._data_ptr()
         num_bytes = self.tensor.num_elements * self.tensor.dtype.size_in_bytes
         self.reg_dlist = nixl.RegistrationDescriptorList(
             type=self.memory_type,
