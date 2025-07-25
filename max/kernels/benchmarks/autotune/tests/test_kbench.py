@@ -34,9 +34,14 @@ kernel_benchmarks_root = get_abs_path("open-source/max/max/kernels/benchmarks/")
 os.environ["KERNEL_BENCHMARKS_ROOT"] = str(kernel_benchmarks_root)
 
 
-def _invoke_cli(cli: Command, test_cases: list[str], exit_code: int = os.EX_OK):
+# TODO: refactor to match the expected results
+def _invoke_cli(
+    cli: Command,
+    test_cases: list[str],
+    exit_code: int = os.EX_OK,
+):
     os_env = os.environ.copy()
-    for test_cmd in test_cases:
+    for _, test_cmd in enumerate(test_cases):
         try:
             result = CliRunner().invoke(cli, test_cmd, env=os_env)
             assert result.exit_code == exit_code, result.output
@@ -78,6 +83,17 @@ def test_kbench():
 
     pd.testing.assert_series_equal(df["name"], baseline_df["name"])
     pd.testing.assert_series_equal(df["spec"], baseline_df["spec"])
+
+
+def test_kbench_cache():
+    print("here")
+    _invoke_cli(
+        kbench_cli,
+        test_cases=[
+            "-cc",
+            "-cc -v",
+        ],
+    )
 
 
 def test_kplot():
