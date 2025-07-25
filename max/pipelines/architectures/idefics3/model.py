@@ -21,8 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import cast
 
 import numpy as np
-import torch
-from max.driver import Device, Tensor
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import DLPackCompatible, InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
@@ -91,6 +90,39 @@ def _assert_image_embeddings_invariant(
         f"Vision embedding shape mismatch: {embed_count} embeddings "
         f"but {indices_count} indices."
     )
+
+
+_INF_SESSION = None
+_CAST_MODEL = None
+
+
+def _cast_to_dtype(
+    tensor: np.ndarray, old_dtype: DType, new_dtype: DType
+) -> Tensor:
+    original_shape = tensor.shape
+    global _INF_SESSION
+    if not _INF_SESSION:
+        _INF_SESSION = InferenceSession(devices=[CPU()])
+
+    global _CAST_MODEL
+    if not _CAST_MODEL:
+        with Graph(
+            "cast",
+            input_types=[
+                TensorType(
+                    dtype=old_dtype,
+                    shape=["dim"],
+                    device=DeviceRef.from_device(CPU()),
+                )
+            ],
+        ) as graph:
+            graph.output(graph.inputs[0].cast(new_dtype))  # type: ignore
+
+        _CAST_MODEL = _INF_SESSION.load(graph)
+
+    result = _CAST_MODEL(tensor.reshape(-1))[0]
+    assert isinstance(result, Tensor)
+    return Tensor.from_dlpack(result.to_numpy().reshape(original_shape))
 
 
 class _VisionStacker:
@@ -557,16 +589,9 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
         final_images = self._stacker.stack(images)
 
-        # Convert numpy array to torch tensor float32
-        torch_tensor = torch.tensor(final_images, dtype=torch.float32)
-
-        # Convert torch tensor to bfloat16
-        torch_tensor_bf16 = torch_tensor.to(dtype=torch.bfloat16)
-
-        # Convert to MAX Tensor
-        tensor = Tensor.from_dlpack(torch_tensor_bf16).to(self.devices[0])
-
-        return tensor
+        return _cast_to_dtype(final_images, DType.float32, DType.bfloat16).to(
+            self.devices[0]
+        )
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
