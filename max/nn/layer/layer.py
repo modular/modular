@@ -436,7 +436,7 @@ def _array_from_weight_loader(
         # Store the original shape and dtype of the weight (used in layers like
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
-        data = data.view(DType.uint8)
+        data.data = data.data.view(np.uint8)
 
     if weight.quantization_encoding:
         # TODO: Set the quantized weight shape correctly when initializing the
