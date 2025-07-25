@@ -16,8 +16,7 @@ from collections import OptionalReg
 from math import ceildiv
 
 from bit import log2_floor
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer import Dim
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -1394,29 +1393,25 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
 
 fn multistage_gemm_q[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList, //,
+    b_layout: Layout, //,
     *,
     group_size: Int,
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: LayoutTensor[c_type, c_layout, **_],
+    a: LayoutTensor[a_type, a_layout, **_],
+    b: LayoutTensor[b_type, b_layout, **_],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
     var N = c.dim[1]()
-
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
 
     alias smem_usage = q_smem_usage[config, group_size]()
     alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
@@ -1455,11 +1450,11 @@ fn multistage_gemm_q[
                 if adjusted_smem < max_smem:
                     alias gemm_kernel_type = multistage_qgemm_kernel[
                         c_type,  # c_type
-                        tensor_c.layout,
+                        c.layout,
                         a_type,  # a_type
-                        tensor_a.layout,
+                        a.layout,
                         b_type,  # b_type
-                        tensor_b.layout,
+                        b.layout,
                         group_size,
                         pack_factor,
                         True,
@@ -1468,9 +1463,9 @@ fn multistage_gemm_q[
                     ]
 
                     ctx.enqueue_function[gemm_kernel_type](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=adjusted_config.grid_dim(M, N),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
@@ -1483,11 +1478,11 @@ fn multistage_gemm_q[
 
     alias gemm_kernel_type = multistage_qgemm_kernel[
         c_type,  # c_type
-        tensor_c.layout,
+        c.layout,
         a_type,  # a_type
-        tensor_a.layout,
+        a.layout,
         b_type,  # b_type
-        tensor_b.layout,
+        b.layout,
         group_size,
         pack_factor,
         True,
@@ -1496,9 +1491,9 @@ fn multistage_gemm_q[
     ]
 
     ctx.enqueue_function[gemm_kernel_type](
-        tensor_c,
-        tensor_a,
-        tensor_b,
+        c,
+        a,
+        b,
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
@@ -1511,14 +1506,17 @@ fn multistage_gemm_q[
 @always_inline
 fn matmul_gpu_qint4[
     c_type: DType,
-    a_type: DType, //,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_layout: Layout, //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[DType.uint8, 2, _, _],
+    c: LayoutTensor[c_type, c_layout, **_],
+    a: LayoutTensor[a_type, a_layout, **_],
+    b: LayoutTensor[DType.uint8, b_layout, **_],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
@@ -1532,14 +1530,17 @@ fn matmul_gpu_qint4[
 @always_inline
 fn matmul_gpu_qint4_impl[
     c_type: DType,
-    a_type: DType, //,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_layout: Layout, //,
     group_size: Int,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[DType.uint8, 2, _, _],
+    c: LayoutTensor[c_type, c_layout, **_],
+    a: LayoutTensor[a_type, a_layout, **_],
+    b: LayoutTensor[DType.uint8, b_layout, **_],
     ctx: Optional[DeviceContext],
 ) raises:
     # constrained[is_gpu[target](), "unsupported target"]()
@@ -1547,14 +1548,14 @@ fn matmul_gpu_qint4_impl[
 
     alias pack_factor = 8
 
-    alias a_shape = a.shape
-    alias b_shape = b.shape
-    alias c_shape = c.shape
+    alias a_shape = a.layout.shape
+    alias b_shape = b.layout.shape
+    alias c_shape = c.layout.shape
     var shape = GemmShape.get[transpose_b=True](c, a, b)
     var m = shape.M
 
-    alias static_K = a_shape.get[1]()
-    alias static_N = c_shape.get[1]()
+    alias static_K = Int(a_shape[1])
+    alias static_N = Int(c_shape[1])
 
     @parameter
     if static_K == 4096 and static_N == 4096:
@@ -1571,13 +1572,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M16_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M16_config, cuda_ctx)
             return
         if 16 < m <= 32:
             alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1592,13 +1587,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M32_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M32_config, cuda_ctx)
             return
         if 32 < m <= 64:
             alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1613,13 +1602,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M64_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M64_config, cuda_ctx)
             return
         if 64 < m <= 128:
             alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1634,13 +1617,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M128_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M128_config, cuda_ctx)
             return
         if 128 < m <= 512:
             alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1655,13 +1632,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M512_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M512_config, cuda_ctx)
             return
 
     @parameter
@@ -1679,13 +1650,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M16_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M16_config, cuda_ctx)
             return
         if 16 < m <= 32:
             alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1700,13 +1665,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M32_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M32_config, cuda_ctx)
             return
         if 32 < m <= 64:
             alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1721,13 +1680,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M64_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M64_config, cuda_ctx)
             return
         if 64 < m <= 128:
             alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1742,13 +1695,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M128_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M128_config, cuda_ctx)
             return
         if 128 < m <= 256:
             alias M256_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1763,13 +1710,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M256_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M256_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M256_config, cuda_ctx)
             return
 
     @parameter
@@ -1787,13 +1728,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M16_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M16_config, cuda_ctx)
             return
         if 16 < m <= 32:
             alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1808,13 +1743,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M32_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M32_config, cuda_ctx)
             return
         if 32 < m <= 64:
             alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1829,13 +1758,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M64_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M64_config, cuda_ctx)
             return
         if 64 < m <= 256:
             alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1850,13 +1773,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M128_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M128_config, cuda_ctx)
             return
 
     @parameter
@@ -1874,13 +1791,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M16_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M16_config, cuda_ctx)
             return
         if 16 < m <= 32:
             alias M32_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1895,13 +1806,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M32_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M32_config, cuda_ctx)
             return
         if 32 < m <= 64:
             alias M64_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1916,13 +1821,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M64_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M64_config, cuda_ctx)
             return
         if 64 < m <= 128:
             alias M128_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1937,13 +1836,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M128_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M128_config, cuda_ctx)
             return
         if 128 < m <= 512:
             alias M512_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1958,13 +1851,7 @@ fn matmul_gpu_qint4_impl[
                 pack_factor=pack_factor,
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-                M512_config,
-                cuda_ctx,
-            )
+            ](c, a, b, M512_config, cuda_ctx)
             return
 
     alias default_config = MatmulConfig[a_type, DType.uint8, c_type, True](
@@ -1980,22 +1867,17 @@ fn matmul_gpu_qint4_impl[
         pack_factor=pack_factor,
         config=default_config,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](
-        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
-        default_config,
-        cuda_ctx,
-    )
+    ](c, a, b, default_config, cuda_ctx)
 
 
 @always_inline
 fn gpu_qint4_repack_Q4_0[
-    b_shape: DimList, //,
+    b_layout: Layout,
+    b_packed_layout: Layout, //,
     target: StaticString,
 ](
-    b: NDBuffer[DType.uint8, 2, _, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, _, b_shape],
+    b: LayoutTensor[DType.uint8, b_layout, **_],
+    b_packed: LayoutTensor[DType.uint8, b_packed_layout, **_],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
@@ -2007,25 +1889,18 @@ fn gpu_qint4_repack_Q4_0[
     alias BN = 128
     alias BK = 1024
 
-    alias N = b.shape.get[0]()
-    alias K = b.shape.get[1]() // group_bytes * group_size
-
-    var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
-    )
-    var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_shape]](b_packed)
-    )
+    alias N = Int(b.layout.shape[0])
+    alias K = Int(b.layout.shape[1]) // group_bytes * group_size
 
     var smem_usage: Int = BN * 2 * group_bytes
 
     alias repack = repack_Q4_0_for_sm8x[
-        tensor_b.layout, tensor_packed_b.layout, DType.bfloat16
+        b.layout, b_packed.layout, DType.bfloat16
     ]
 
     cuda_ctx.enqueue_function[repack](
-        tensor_b,
-        tensor_packed_b,
+        b,
+        b_packed,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
@@ -2035,17 +1910,32 @@ fn gpu_qint4_repack_Q4_0[
 
 @always_inline
 fn gpu_qint4_repack_GPTQ[
-    b_shape: DimList,
-    b_packed_shape: DimList, //,
+    b_layout: Layout,
+    b_packed_layout: Layout, //,
     group_size: Int,
     target: StaticString,
+    perm_idx_layout: Layout = Layout.row_major[1](),
 ](
-    b: NDBuffer[DType.uint8, 2, _, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, _, b_packed_shape],
-    perm_idx: OptionalReg[NDBuffer[DType.int32, 1, MutableAnyOrigin]] = None,
+    b: LayoutTensor[DType.uint8, b_layout, **_],
+    b_packed: LayoutTensor[DType.uint8, b_packed_layout, **_],
+    perm_idx: OptionalReg[
+        LayoutTensor[DType.int32, perm_idx_layout, MutableAnyOrigin]
+    ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
+    constrained[
+        b.rank == 2,
+        "b must be a 2D tensor",
+    ]()
+    constrained[
+        b_packed.rank == 2,
+        "b_packed must be a 2D tensor",
+    ]()
+    constrained[
+        perm_idx.T.rank == 1,
+        "perm_idx must be a 1D tensor",
+    ]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -2053,66 +1943,52 @@ fn gpu_qint4_repack_GPTQ[
     alias BN = 128
     alias BK = 1024
 
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[0]() // group_bytes * group_size
+    alias N = Int(b.layout.shape[1])
+    alias K = Int(b.layout.shape[0]) // group_bytes * group_size
 
     constrained[
-        N == b_packed.shape.get[0](),
+        N == Int(b_packed.layout.shape[0]),
         "qmatmul: Mismatched input/output dimension.",
     ]()
     constrained[
-        K == (b_packed.shape.get[1]() // group_bytes * group_size),
+        K == (Int(b_packed.layout.shape[1]) // group_bytes * group_size),
         "qmatmul: Mismatched input/output dimension.",
     ]()
-
-    var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
-    )
-    var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_packed_shape]](
-            b_packed
-        )
-    )
 
     var smem_usage: Int = BN * 2 * group_bytes
 
     if perm_idx:
         alias perm_shape = DimList((K,))
-        var tensor_perm = from_ndbuffer_row_major(
-            rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin, perm_shape]](
-                perm_idx.value()
-            )
-        )
 
         alias repack = repack_GPTQ_for_sm8x[
-            tensor_b.layout,
-            tensor_packed_b.layout,
+            b.layout,
+            b_packed.layout,
             DType.bfloat16,
             group_size,
             True,
-            perm_layout = tensor_perm.layout,
+            perm_layout = perm_idx.T.layout,
         ]
 
         cuda_ctx.enqueue_function[repack](
-            tensor_b,
-            tensor_packed_b,
-            tensor_perm,
+            b,
+            b_packed,
+            perm_idx,
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
         )
 
     else:
         alias repack = repack_GPTQ_for_sm8x[
-            tensor_b.layout,
-            tensor_packed_b.layout,
+            b.layout,
+            b_packed.layout,
             DType.bfloat16,
             group_size,
             False,
         ]
 
         cuda_ctx.enqueue_function[repack](
-            tensor_b,
-            tensor_packed_b,
+            b,
+            b_packed,
             UnsafePointer[Int32](),
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
