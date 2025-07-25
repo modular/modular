@@ -22,7 +22,6 @@ struct LibraryProperty:
     alias MINOR_VERSION = Self(1)
     alias PATCH_LEVEL = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
