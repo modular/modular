@@ -56,14 +56,13 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    if padding[0] < 0 or padding[1] < 0:
-        raise Error("Padding must be non-negative.")
-
-    if stride[0] <= 0 or stride[1] <= 0:
-        raise Error("Stride must be positive.")
-
-    if dilation[0] <= 0 or dilation[1] <= 0:
-        raise Error("Dilation must be positive.")
+    constrained[stride[0] > 0 and stride[1] > 0, "Stride must be positive"]()
+    constrained[
+        dilation[0] > 0 and dilation[1] > 0, "Dilation must be positive"
+    ]()
+    constrained[
+        padding[0] >= 0 and padding[1] >= 0, "Padding must be non-negative"
+    ]()
 
     var N = output.dim(0)
     var C = output.dim(1)
