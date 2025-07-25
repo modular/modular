@@ -18,7 +18,7 @@ from typing import Callable, Union
 from max import mlir
 from max._core import Attribute
 from max._core.dialects import builtin, kgen
-from max.driver import Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
 from max.graph import (
@@ -427,7 +427,29 @@ class MaxOp:
             # so we call it here.
             # registered_fake with real inputs will create buffers for the outputs
             model = compiled_model(*args)
-            converted = map(Tensor.from_dlpack, args)
+
+            # Torch `__dlpack__(stream=...)` has substantial overhead.
+            # - Manually retrieving and syncing the stream drops dlpack marshalling
+            #   from ~60us per tensor to ~15us per tensor.
+            # - Further optimizations are possible. Moving more of this behavior
+            #   into a single C++ ffi call can drop overhead to ~2us.
+            # - Generally users shouldn't be putting this marshalling into their
+            #   inner loop. Gains are much more substantial for larger graphs
+            #   which can take advantage of MAX's automatic kernel fusion.
+            def fast_from_dlpack(t: torch.Tensor):
+                if t.device.type == "cuda":
+                    stream = torch.cuda.current_stream(t.device).cuda_stream
+                    device = max_device(t.device)
+                    data = t.__dlpack__()
+                    try:
+                        return Tensor._from_dlpack(data, device, stream)
+                    except Exception:
+                        # This approach fails when passing the tensor across threads.
+                        # Fall back to letting torch slowly sync streams.
+                        return Tensor.from_dlpack(t)
+                return Tensor.from_dlpack(t)
+
+            converted = map(fast_from_dlpack, args)
             model(*converted)
 
         name = f"max::torch.{self.name}"
@@ -536,8 +558,8 @@ def max_shape(shape: torch.Size) -> Shape:
     return Shape([int(dim) for dim in shape])
 
 
-def max_device(device: torch.device) -> DeviceRef:
-    """Returns the equivalent MAX device for a PyTorch device."""
+def max_device_ref(device: torch.device) -> DeviceRef:
+    """Returns the equivalent MAX graph device for a PyTorch device."""
     type = device.type
     index = device.index or 0
     if type == "cpu":
@@ -548,11 +570,17 @@ def max_device(device: torch.device) -> DeviceRef:
         raise TypeError(f"Unable to convert {type} to a MAX device type.")
 
 
+def max_device(device: torch.device) -> Device:
+    """Returns the equivalent MAX device for a PyTorch device."""
+    DeviceType = {"cuda": Accelerator, "cpu": CPU}[device.type]
+    return DeviceType(device.index)
+
+
 def max_tensor_type(tensor: torch.Tensor) -> TensorType:
     """Returns the equivalent MAX tensor type for a PyTorch tensor."""
     dtype = DType.from_torch(tensor.dtype)
     shape = max_shape(tensor.shape)
-    device = max_device(tensor.device)
+    device = max_device_ref(tensor.device)
     return TensorType(dtype, shape, device=device)
 
 
