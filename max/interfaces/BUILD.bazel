@@ -10,5 +10,6 @@ modular_py_library(
     deps = [
         requirement("msgspec"),
         requirement("numpy"),
+        requirement("typing-extensions"),
     ],
 )
