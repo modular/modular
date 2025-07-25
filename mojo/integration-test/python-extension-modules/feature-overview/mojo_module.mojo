@@ -101,7 +101,7 @@ fn create_string() raises -> PythonObject:
 
 
 fn case_mojo_raise() raises -> PythonObject:
-    raise String("Mojo error")
+    raise Error("Mojo error")
 
 
 fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
@@ -158,7 +158,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
         ).origin_cast[mut=True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
-            raise String("cannot make name longer than current name")
+            raise Error("cannot make name longer than current name")
 
         self0[].name = String(new_name)
 

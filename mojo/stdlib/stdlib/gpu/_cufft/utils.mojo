@@ -50,4 +50,4 @@ fn _get_dylib_function[
 @always_inline
 fn check_error(stat: Status) raises:
     if stat != Status.CUFFT_SUCCESS:
-        raise String("CUFFT ERROR: ", stat)
+        raise Error("CUFFT ERROR: ", stat)

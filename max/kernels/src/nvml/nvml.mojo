@@ -102,7 +102,7 @@ struct DriverVersion(Copyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Copyable, EqualityComparable, Movable, Stringable):
+struct Result(Copyable, EqualityComparable, Movable, Stringable, Writable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -205,102 +205,76 @@ struct Result(Copyable, EqualityComparable, Movable, Stringable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    @no_inline
-    fn __str__(self) -> String:
+    fn write_to[W: Writer](self, mut writer: W):
         if self == Result.SUCCESS:
-            return "SUCCESS"
+            writer.write("SUCCESS")
+        elif self == Result.UNINITIALIZED:
+            writer.write("NVML_UNINITIALIZED")
+        elif self == Result.INVALID_ARGUMENT:
+            writer.write("NVML_INVALID_ARGUMENT")
+        elif self == Result.NOT_SUPPORTED:
+            writer.write("NVML_NOT_SUPPORTED")
+        elif self == Result.NO_PERMISSION:
+            writer.write("NVML_NO_PERMISSION")
+        elif self == Result.ALREADY_INITIALIZED:
+            writer.write("NVML_ALREADY_INITIALIZED")
+        elif self == Result.NOT_FOUND:
+            writer.write("NVML_NOT_FOUND")
+        elif self == Result.INSUFFICIENT_SIZE:
+            writer.write("NVML_INSUFFICIENT_SIZE")
+        elif self == Result.INSUFFICIENT_POWER:
+            writer.write("NVML_INSUFFICIENT_POWER")
+        elif self == Result.DRIVER_NOT_LOADED:
+            writer.write("NVML_DRIVER_NOT_LOADED")
+        elif self == Result.TIMEOUT:
+            writer.write("NVML_TIMEOUT")
+        elif self == Result.IRQ_ISSUE:
+            writer.write("NVML_IRQ_ISSUE")
+        elif self == Result.LIBRARY_NOT_FOUND:
+            writer.write("NVML_LIBRARY_NOT_FOUND")
+        elif self == Result.FUNCTION_NOT_FOUND:
+            writer.write("NVML_FUNCTION_NOT_FOUND")
+        elif self == Result.CORRUPTED_INFOROM:
+            writer.write("NVML_CORRUPTED_INFOROM")
+        elif self == Result.GPU_IS_LOST:
+            writer.write("NVML_GPU_IS_LOST")
+        elif self == Result.RESET_REQUIRED:
+            writer.write("NVML_RESET_REQUIRED")
+        elif self == Result.OPERATING_SYSTEM:
+            writer.write("NVML_OPERATING_SYSTEM")
+        elif self == Result.LIB_RM_VERSION_MISMATCH:
+            writer.write("NVML_LIB_RM_VERSION_MISMATCH")
+        elif self == Result.IN_USE:
+            writer.write("NVML_IN_USE")
+        elif self == Result.MEMORY:
+            writer.write("NVML_MEMORY")
+        elif self == Result.NO_DATA:
+            writer.write("NVML_NO_DATA")
+        elif self == Result.VGPU_ECC_NOT_SUPPORTED:
+            writer.write("NVML_VGPU_ECC_NOT_SUPPORTED")
+        elif self == Result.INSUFFICIENT_RESOURCES:
+            writer.write("NVML_INSUFFICIENT_RESOURCES")
+        elif self == Result.FREQ_NOT_SUPPORTED:
+            writer.write("NVML_FREQ_NOT_SUPPORTED")
+        elif self == Result.ARGUMENT_VERSION_MISMATCH:
+            writer.write("NVML_ARGUMENT_VERSION_MISMATCH")
+        elif self == Result.DEPRECATED:
+            writer.write("NVML_DEPRECATED")
+        elif self == Result.NOT_READY:
+            writer.write("NVML_NOT_READY")
+        elif self == Result.GPU_NOT_FOUND:
+            writer.write("NVML_GPU_NOT_FOUND")
+        else:
+            writer.write("NVML_UNKNOWN")
 
-        if self == Result.UNINITIALIZED:
-            return "NVML_UNINITIALIZED"
-
-        if self == Result.INVALID_ARGUMENT:
-            return "NVML_INVALID_ARGUMENT"
-
-        if self == Result.NOT_SUPPORTED:
-            return "NVML_NOT_SUPPORTED"
-
-        if self == Result.NO_PERMISSION:
-            return "NVML_NO_PERMISSION"
-
-        if self == Result.ALREADY_INITIALIZED:
-            return "NVML_ALREADY_INITIALIZED"
-
-        if self == Result.NOT_FOUND:
-            return "NVML_NOT_FOUND"
-
-        if self == Result.INSUFFICIENT_SIZE:
-            return "NVML_INSUFFICIENT_SIZE"
-
-        if self == Result.INSUFFICIENT_POWER:
-            return "NVML_INSUFFICIENT_POWER"
-
-        if self == Result.DRIVER_NOT_LOADED:
-            return "NVML_DRIVER_NOT_LOADED"
-
-        if self == Result.TIMEOUT:
-            return "NVML_TIMEOUT"
-
-        if self == Result.IRQ_ISSUE:
-            return "NVML_IRQ_ISSUE"
-
-        if self == Result.LIBRARY_NOT_FOUND:
-            return "NVML_LIBRARY_NOT_FOUND"
-
-        if self == Result.FUNCTION_NOT_FOUND:
-            return "NVML_FUNCTION_NOT_FOUND"
-
-        if self == Result.CORRUPTED_INFOROM:
-            return "NVML_CORRUPTED_INFOROM"
-
-        if self == Result.GPU_IS_LOST:
-            return "NVML_GPU_IS_LOST"
-
-        if self == Result.RESET_REQUIRED:
-            return "NVML_RESET_REQUIRED"
-
-        if self == Result.OPERATING_SYSTEM:
-            return "NVML_OPERATING_SYSTEM"
-
-        if self == Result.LIB_RM_VERSION_MISMATCH:
-            return "NVML_LIB_RM_VERSION_MISMATCH"
-
-        if self == Result.IN_USE:
-            return "NVML_IN_USE"
-
-        if self == Result.MEMORY:
-            return "NVML_MEMORY"
-
-        if self == Result.NO_DATA:
-            return "NVML_NO_DATA"
-
-        if self == Result.VGPU_ECC_NOT_SUPPORTED:
-            return "NVML_VGPU_ECC_NOT_SUPPORTED"
-
-        if self == Result.INSUFFICIENT_RESOURCES:
-            return "NVML_INSUFFICIENT_RESOURCES"
-
-        if self == Result.FREQ_NOT_SUPPORTED:
-            return "NVML_FREQ_NOT_SUPPORTED"
-
-        if self == Result.ARGUMENT_VERSION_MISMATCH:
-            return "NVML_ARGUMENT_VERSION_MISMATCH"
-
-        if self == Result.DEPRECATED:
-            return "NVML_DEPRECATED"
-
-        if self == Result.NOT_READY:
-            return "NVML_NOT_READY"
-
-        if self == Result.GPU_NOT_FOUND:
-            return "NVML_GPU_NOT_FOUND"
-
-        return "NVML_UNKNOWN"
+    fn __str__(self) -> String:
+        return String(self)
 
 
 @always_inline
 fn _check_error(err: Result) raises:
     if err != Result.SUCCESS:
-        raise String(err)
+        raise Error(err)
 
 
 # ===-----------------------------------------------------------------------===#

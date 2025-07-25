@@ -177,7 +177,7 @@ $L__BB0_2:
             if i < 2:
                 print("out[", i, "]: ", out[i])
             if out[i] != 3.0:
-                raise String("Bad value out[", i, "] is ", out[i])
+                raise Error("Bad value out[", i, "] is ", out[i])
 
 
 fn main() raises:

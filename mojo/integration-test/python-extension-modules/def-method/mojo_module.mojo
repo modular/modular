@@ -102,7 +102,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
             "hasattr(sys.modules['test_module'], 'deny_name')"
         )
         if s:
-            raise String("name cannot be accessed")
+            raise Error("name cannot be accessed")
 
         return PythonObject(self_ptr[].name)
 
@@ -150,7 +150,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
     fn erase_name(py_self: PythonObject) raises:
         var self_ptr = Self._get_self_ptr(py_self)
         if not self_ptr[].name:
-            raise String("cannot erase name if it's already empty")
+            raise Error("cannot erase name if it's already empty")
 
         self_ptr[].name = String()
 
@@ -160,7 +160,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
         try:
             self_ptr[].age = Int(age)
         except e:
-            raise String("cannot set age to ") + String(age)
+            raise Error("cannot set age to ", String(age))
 
     @staticmethod
     fn set_name_and_age(

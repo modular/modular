@@ -76,7 +76,7 @@ fn _to_sass[
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
-        raise String(
+        raise Error(
             "the `nvdisasm` binary does not exist in '", nvdisasm_path, "'"
         )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
@@ -104,7 +104,7 @@ fn _ptxas_compile[
 ) raises -> String:
     alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
     if not ptxas_path.exists():
-        raise String("the `ptxas` binary does not exist in '", ptxas_path, "'")
+        raise Error("the `ptxas` binary does not exist in '", ptxas_path, "'")
     # Compile the PTX code to an ELF file. Here we care about the diagnostics.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"

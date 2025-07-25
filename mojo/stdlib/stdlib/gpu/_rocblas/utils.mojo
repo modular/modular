@@ -50,4 +50,4 @@ fn _get_dylib_function[
 @always_inline
 fn check_error(stat: Status) raises:
     if stat != Status.SUCCESS:
-        raise String("ROCBLAS ERROR:", stat)
+        raise Error("ROCBLAS ERROR:", stat)
