@@ -15,12 +15,11 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from sys.info import _get_arch
+from sys.info import _get_arch, _TargetType
 
 from compile import CompiledFunctionInfo, compile_info
 
-from .info import A100, DEFAULT_GPU_ARCH
-from .info import GPUInfo
+from .info import A100, DEFAULT_GPU_ARCH, GPUInfo
 
 # ===-----------------------------------------------------------------------===#
 # Targets
@@ -31,7 +30,7 @@ from .info import GPUInfo
 fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = DEFAULT_GPU_ARCH,
-]() -> __mlir_type.`!kgen.target`:
+]() -> _TargetType:
     alias info = GPUInfo.from_name[target_arch]() if target_arch else A100
     return info.target()
 
@@ -53,7 +52,7 @@ fn _compile_code[
     /,
     *,
     emission_kind: StaticString = "asm",
-    target: __mlir_type.`!kgen.target` = get_gpu_target(),
+    target: _TargetType = get_gpu_target(),
     compile_options: StaticString = GPUInfo.from_target[
         target
     ]().compile_options,
@@ -73,7 +72,7 @@ fn _compile_code[
 
 @no_inline
 fn _to_sass[
-    target: __mlir_type.`!kgen.target` = get_gpu_target()
+    target: _TargetType = get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
@@ -99,7 +98,7 @@ fn _to_sass[
 
 @no_inline
 fn _ptxas_compile[
-    target: __mlir_type.`!kgen.target` = get_gpu_target()
+    target: _TargetType = get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:
