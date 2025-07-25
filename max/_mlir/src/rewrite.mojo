@@ -25,11 +25,9 @@ struct Rewriter:
     alias cType = _c.Rewrite.MlirRewriterBase
     var c: Self.cType
 
-    @implicit
     fn __init__(out self, context: Context):
         self.c = _c.Rewrite.mlirIRRewriterCreate(context.c)
 
-    @implicit
     fn __init__(out self, op: Operation):
         self.c = _c.Rewrite.mlirIRRewriterCreateFromOp(op.c)
 

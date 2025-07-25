@@ -22,7 +22,6 @@ struct FunctionType(Copyable, DialectType, Movable):
     var inputs: List[Type]
     var results: List[Type]
 
-    @implicit
     fn __init__(out self, ctx: Context):
         self = Self(ctx, List[Type](), List[Type]())
 

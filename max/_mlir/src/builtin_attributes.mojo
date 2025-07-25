@@ -38,7 +38,6 @@ struct BoolAttr(Copyable, DialectAttribute, Movable):
 struct TypeAttr(Copyable, DialectAttribute, Movable):
     var type: Type
 
-    @implicit
     fn __init__(out self, type: Type):
         self.type = type
 
