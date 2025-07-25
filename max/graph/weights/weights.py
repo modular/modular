@@ -24,19 +24,54 @@ from typing import (
     runtime_checkable,
 )
 
+import numpy as np
 import numpy.typing as npt
-
-try:
-    import torch  # type: ignore
-except ImportError:
-    torch = None
+from max.driver import CPU, Tensor
 from max.dtype import DType
 
+from .. import Graph, TensorType
 from ..quantization import QuantizationEncoding
 from ..type import DeviceRef, Shape, ShapeLike
 from ..weight import Weight
 
 _Self = TypeVar("_Self", bound="Weights")
+
+_INF_SESSION = None
+_CAST_MODEL = None
+
+
+def _cast_to_dtype(
+    tensor: np.ndarray, old_dtype: DType, new_dtype: DType
+) -> np.ndarray:
+    # FIXME: This is a circular dep
+    from max.engine import InferenceSession  # type: ignore
+
+    original_shape = tensor.shape
+    global _INF_SESSION
+    if not _INF_SESSION:
+        _INF_SESSION = InferenceSession(devices=[CPU()])
+
+    global _CAST_MODEL
+    if not _CAST_MODEL:
+        with Graph(
+            "cast",
+            input_types=[
+                TensorType(
+                    dtype=old_dtype,
+                    shape=["dim"],
+                    device=DeviceRef.from_device(CPU()),
+                )
+            ],
+        ) as graph:
+            graph.output(graph.inputs[0].cast(new_dtype))  # type: ignore
+
+        _CAST_MODEL = _INF_SESSION.load(graph)
+
+    result = _CAST_MODEL(tensor.reshape(-1))[0]
+    assert isinstance(result, Tensor)
+    if new_dtype == DType.bfloat16:
+        result = result.view(DType.float16)
+    return result.to_numpy().reshape(original_shape)
 
 
 @runtime_checkable
@@ -130,31 +165,16 @@ class WeightData:
     def astype(self, dtype: DType) -> WeightData:
         if self.dtype == dtype:
             return self
-        if self.dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(torch.bfloat16)
-            data = data.to(dtype.to_torch()).numpy()
-        elif dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(self.dtype.to_torch())
-            data = data.to(torch.bfloat16).view(torch.float16).numpy()
+        if self.dtype == DType.bfloat16 or dtype == DType.bfloat16:
+            data = _cast_to_dtype(self.data, self.dtype, dtype)
         else:
             data = self.data.astype(dtype.to_numpy())
         return WeightData(
-            data=data, name=self.name, dtype=dtype, shape=Shape(data.shape)
+            data=data,
+            name=self.name,
+            dtype=dtype,
+            shape=Shape(data.shape),
         )
-
-    def view(self, dtype: DType) -> WeightData:
-        if self.dtype == dtype:
-            return self
-
-        # Compute the new shape for the updated dtype.
-        if dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(dtype.to_torch())
-        else:
-            data = self.data.view(dtype.to_numpy())
-        return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
 
     def __repr__(self) -> str:
         return f"WeightData({self.dtype}, {self.shape})"
