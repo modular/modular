@@ -6331,10 +6331,14 @@ struct GGMLQ40Dequantize:
         input: InputTensor[dtype = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+            var input_tensor = input.to_layout_tensor()
+            var output_tensor = output.to_layout_tensor()
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
-                output.shape(),
+                input_tensor,
+                output_tensor,
+                rebind[IndexList[output_tensor.rank]](
+                    output_tensor.runtime_layout.shape.value.canonicalize()
+                ),
             )
 
     @staticmethod
@@ -6414,8 +6418,8 @@ struct GGMLQ4KDequantize:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             q4_k_dequantize_impl(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
+                input.to_layout_tensor(),
+                output.to_layout_tensor(),
             )
 
     @staticmethod
@@ -6501,10 +6505,14 @@ struct GGMLQ6KDequantize:
         input: InputTensor[dtype = DType.uint8, rank=2],
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+            var input_tensor = input.to_layout_tensor()
+            var output_tensor = output.to_layout_tensor()
             q6_k_dequantize_impl(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
-                output.shape(),
+                input_tensor,
+                output_tensor,
+                rebind[IndexList[output_tensor.rank]](
+                    output_tensor.runtime_layout.shape.value.canonicalize()
+                ),
             )
 
     @staticmethod
