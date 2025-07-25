@@ -99,8 +99,7 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        # Ensure the test has at least 24GB of GPU memory available.
-        "test.resources:gpu-memory": "24",
+        "test.resources:gpu-memory": "23",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -173,7 +172,7 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "resources:gpu-memory": "24",
+        "resources:gpu-memory": "23",
     },
     gpu_constraints = ["//:has_multi_gpu"],  # Requires multiple GPUs
     tags = [

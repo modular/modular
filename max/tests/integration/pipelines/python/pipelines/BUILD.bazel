@@ -59,8 +59,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/*_gpu.py"]),
     exec_properties = {
-        # Ensure the test has at least 24GB of GPU memory available.
-        "test.resources:gpu-memory": "24",
+        "test.resources:gpu-memory": "23",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [

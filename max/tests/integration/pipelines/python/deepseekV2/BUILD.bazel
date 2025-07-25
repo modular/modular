@@ -44,6 +44,9 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/deepseekV2/testdata"
         ),
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",

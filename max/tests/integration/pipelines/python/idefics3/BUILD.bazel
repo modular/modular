@@ -68,6 +68,9 @@ modular_py_test(
 modular_py_test(
     name = "test_connector",
     srcs = ["test_connector.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [

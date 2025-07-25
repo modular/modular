@@ -37,6 +37,9 @@ modular_py_test(
         "configs/internvl-8B.json",
         "//SDK:max",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_multi_gpu"],
     imports = ["."],
     tags = [
