@@ -172,6 +172,44 @@ initializeBuilderForFunctions(ASTDecl &curDeclScope, OpBuilder &builder,
 // StmtParser
 //===----------------------------------------------------------------------===//
 
+/// This class either holds generated `LIT::LoopOp` or an error kind (not error
+/// message) indicating where the error occurred, which helps to either keep
+/// running parser to get more errors or stop parsing.
+struct LoopResult {
+  enum class ErrorKind {
+    none,
+    inLoopBody,
+    inLoopStmt,
+  };
+
+  LoopResult(LIT::LoopOp loopOp) : loopOp(loopOp) {
+    assert(loopOp && "expected non-nullptr `LIT:ForOp`");
+  }
+
+  LoopResult(ErrorKind kind) : error(kind) {
+    assert(error != ErrorKind::none && "expected error kind to be set");
+  }
+
+  explicit operator bool() const { return loopOp != nullptr; }
+  bool hasErrorInLoopBody() const {
+    assert(!loopOp && "`LIT::ForOp` was successfully parsed");
+    return error == ErrorKind::inLoopBody;
+  }
+  bool hasErrorInLoopStmt() const {
+    assert(!loopOp && "`LIT::ForOp` was successfully parsed");
+    return error == ErrorKind::inLoopStmt;
+  }
+
+  LIT::LoopOp getLoopOp() const {
+    assert(loopOp && "expected non-nullptr `LIT:ForOp`");
+    return loopOp;
+  }
+
+private:
+  LIT::LoopOp loopOp = nullptr;
+  ErrorKind error = ErrorKind::none;
+};
+
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
 namespace {
@@ -230,9 +268,11 @@ struct StmtParser : public ParserBase {
   // closure on success when in the scope of the loop, and the specified
   // 'errorFn' if there is a semantic error with the sequence expression or
   // target.
-  LIT::LoopOp emitForStmt(SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
-                          std::function<LogicalResult()> bodyFn,
-                          std::function<void()> errorFn = {});
+  // Return a struct with parsed ForOp or error kind to either abord parsing of
+  // the parent suite or keep parsing it to get more errors.
+  LoopResult emitForStmt(SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
+                         std::function<LogicalResult()> bodyFn,
+                         std::function<void()> errorFn = {});
 
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
@@ -1108,13 +1148,19 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
       [&]() -> LogicalResult { return parseSuite(curIndent); },
       [&]() { skipUntilIndentation(curIndent); });
 
-  if (!forStmt)
-    return success();
+  if (!forStmt) {
+    // If the error happened in the loop body, we stop parsing completely.
+    // If the error happened in the for statement, report it and keep gathering
+    // more errors from the parent suite
+    return failure(forStmt.hasErrorInLoopBody());
+  }
+
+  LIT::LoopOp loopOp = forStmt.getLoopOp();
 
   // The 'else' block is executed only when the condition check fails.
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
-    builder.setInsertionPointToStart(&forStmt.getElseRegion().front());
+    builder.setInsertionPointToStart(&loopOp.getElseRegion().front());
     if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
       return failure();
@@ -1127,10 +1173,12 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 // closure on success when in the scope of the loop, and the specified
 // 'errorFn' if there is a semantic error with the sequence expression or
 // target.
-LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
-                                    ExprNode *seqExpr,
-                                    std::function<LogicalResult()> bodyFn,
-                                    std::function<void()> errorFn) {
+// Return a struct with parsed ForOp or error kind to either abord parsing of
+// the parent suite or keep parsing it to get more errors.
+LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
+                                   ExprNode *seqExpr,
+                                   std::function<LogicalResult()> bodyFn,
+                                   std::function<void()> errorFn) {
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
@@ -1164,7 +1212,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   ASTExprAnd<AnyValue> loadedSeq = {
       getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
   if (!loadedSeq.ir)
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Get an iterator into the iterable by emitting a call to `__iter__`.
   VarDeclOp rangeRef =
@@ -1173,7 +1221,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kMethodCall, seqExpr))
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Create the LoopOp
   auto loopOp = builder.create<LIT::LoopOp>(forLocation);
@@ -1189,14 +1237,14 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
       CallSyntax::kMethodCall, seqExpr);
   if (!hasNextBool)
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
   if (!hasNext)
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   SRValue shouldContinue =
       getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
   if (!shouldContinue)
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   builder.create<LIT::LoopConditionOp>(forLocation, shouldContinue);
 
   // Create the body. Add Target element to the continue block by calling next
@@ -1228,7 +1276,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   } else if (!emitter.emitNamedMethodCall("__next__", std::move(nextOperands),
                                           indvarDest, CallSyntax::kMethodCall,
                                           seqExpr)) {
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   }
 
   builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
@@ -1238,13 +1286,13 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
   // Parse the body of the for loop, using the callback.
   if (failed(bodyFn()))
-    return {};
+    return LoopResult(LoopResult::ErrorKind::inLoopBody);
   builder.create<LIT::LoopContinueOp>(forLocation);
 
   // Create the else region.
   builder.setInsertionPointToStart(elseBlock);
   builder.create<LIT::LoopYieldOp>(forLocation);
-  return loopOp;
+  return LoopResult(loopOp);
 }
 
 // FIXME: This needs to parse this as a target expression and then handle it
@@ -2986,7 +3034,7 @@ emitComprehensionsAnd(StmtParser &stmtEmitter,
           return emitComprehensionsAnd(stmtEmitter, clauses.drop_front(),
                                        callback);
         });
-    return success(forStmt != LIT::LoopOp());
+    return success((bool)forStmt);
   }
   case ComprehensionClause::kIf:
     return emitIfClause(stmtEmitter, clause, [&]() -> LogicalResult {
