@@ -79,11 +79,6 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     attention_dropout: float = 0.0
 
     def __post_init__(self):
-        if self.topk_method != "greedy":
-            raise ValueError(
-                "'greedy' is the only topk_method currently supported"
-            )
-
         if self.hidden_act != "silu":
             raise ValueError(
                 "'silu' is the only hidden_act currently supported"

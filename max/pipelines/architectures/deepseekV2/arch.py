@@ -33,6 +33,7 @@ deepseekV2_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
+    multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
