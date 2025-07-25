@@ -33,7 +33,6 @@ def _mojo_doc_implementation(ctx):
         ] + (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []),
         progress_message = "%{label} generating mojodoc.json",
         env = {
-            "MODULAR_CRASH_REPORTING_ENABLED": "false",
             "TEST_TMPDIR": ".",  # Make sure any cache files are written to somewhere bazel will cleanup
         },
         use_default_shell_env = True,

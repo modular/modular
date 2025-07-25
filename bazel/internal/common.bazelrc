@@ -78,6 +78,11 @@ build --slim_profile=false
 build --test_output=errors
 build --test_summary=terse
 
+# Disable crash reporting for all tests and runs, test rules can override this
+build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
+build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
+run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
+
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
