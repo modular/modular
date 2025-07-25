@@ -25,9 +25,11 @@ f.close()
 """
 from os import abort
 from sys import (
+    CompilationTarget,
+    is_amd_gpu,
+    is_compile_time,
     is_gpu,
-    os_is_linux,
-    os_is_macos,
+    is_nvidia_gpu,
 )
 from sys.ffi import c_ssize_t, external_call
 
@@ -93,7 +95,7 @@ struct FileDescriptor(Writer):
         ]()
 
         @parameter
-        if os_is_macos() or os_is_linux():
+        if CompilationTarget.is_macos() or CompilationTarget.is_linux():
             var read = external_call["read", c_ssize_t](
                 self.value, buffer.unsafe_ptr(), len(buffer)
             )

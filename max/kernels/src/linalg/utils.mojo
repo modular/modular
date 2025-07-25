@@ -16,8 +16,6 @@ from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    is_neoverse_n1,
-    os_is_macos,
     simdwidthof,
     sizeof,
 )
@@ -271,7 +269,7 @@ fn get_matmul_kernel_shape_ARM[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
     @parameter
-    if is_neoverse_n1():
+    if CompilationTarget.is_neoverse_n1():
 
         @parameter
         if kernel_type:
@@ -526,7 +524,7 @@ fn get_pack_data_size[dtype: DType]() -> Int:
         return 4 * KB // sizeof[dtype]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
         return 64 * KB // sizeof[dtype]()
@@ -612,7 +610,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     elif CompilationTarget.has_neon():
 
         @parameter
-        if is_neoverse_n1():
+        if CompilationTarget.is_neoverse_n1():
             return (k % 4096) == 0
         else:
             return m > 32

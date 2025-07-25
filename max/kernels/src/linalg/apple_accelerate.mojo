@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import fma
 from os import abort
-from sys import os_is_macos, simdwidthof
+from sys import CompilationTarget, simdwidthof
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
@@ -83,7 +83,9 @@ fn _init_dylib() -> _OwnedDLHandle:
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
-    constrained[os_is_macos(), "operating system must be macOS"]()
+    constrained[
+        CompilationTarget.is_macos(), "operating system must be macOS"
+    ]()
     return _ffi_get_dylib_function[
         APPLE_ACCELERATE(),
         func_name,
@@ -121,7 +123,10 @@ fn use_apple_accelerate_lib[
     a_type: DType,
     b_type: DType,
 ]() -> Bool:
-    return os_is_macos() and a_type == b_type == c_type is DType.float32
+    return (
+        CompilationTarget.is_macos()
+        and a_type == b_type == c_type is DType.float32
+    )
 
 
 @fieldwise_init

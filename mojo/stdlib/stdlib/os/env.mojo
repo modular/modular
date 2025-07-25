@@ -20,7 +20,7 @@ from os import setenv
 """
 
 
-from sys import external_call, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget, external_call
 from sys.ffi import c_int
 
 
@@ -42,8 +42,9 @@ fn setenv(
       False if the name is empty or contains an `=` character. In any other
       case, True is returned.
     """
-    alias os_is_supported = os_is_linux() or os_is_macos()
-    if not os_is_supported:
+
+    @parameter
+    if CompilationTarget.is_windows():
         return False
 
     var status = external_call["setenv", Int32](
@@ -64,7 +65,8 @@ fn unsetenv(var name: String) -> Bool:
         True if unsetting the variable succeeded. Otherwise, False is returned.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
     return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
@@ -85,9 +87,9 @@ fn getenv(var name: String, default: String = "") -> String:
     Returns:
       The value of the environment variable.
     """
-    alias os_is_supported = os_is_linux() or os_is_macos()
 
-    if not os_is_supported:
+    @parameter
+    if CompilationTarget.is_windows():
         return default
 
     var ptr = external_call["getenv", UnsafePointer[UInt8]](
