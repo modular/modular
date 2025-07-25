@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
 _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
@@ -45,11 +46,22 @@ _FILECHECK_TESTS = [
     "test_gemv.mojo",  # TODO: Remove filecheck usage
 ]
 
+_GPU_MEMORY = {
+    "test_batched_matmul.mojo": "3",
+    "test_hopper_matmul_v0_fp8.mojo": "2",
+    "test_matmul.mojo": "2",
+    "test_matmul_custom.mojo": "3",
+    "test_vendor_blas.mojo": "2",
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -70,6 +82,9 @@ _FILECHECK_TESTS = [
             "test_warp_specialization_gemm.mojo",
             "test_generated_sm90_matmul_ptx.mojo",
         ],  # TODO: Fix assertions exception
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
         tags = ["gpu"] + (
             ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
         ),
