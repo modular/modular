@@ -888,6 +888,20 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   return success();
 }
 
+static StringAttr getFullName(StringAttr closureName, GeneratorOp parent) {
+  MLIRContext *ctx = closureName.getContext();
+  StringRef parentName = parent.getSymName();
+  StringRef closureNameRef = closureName.getValue();
+  SmallString<64> fullName;
+  fullName.reserve(parentName.size() + 1 + closureNameRef.size());
+
+  fullName += parentName;
+  fullName += "::";
+  fullName += closureNameRef;
+
+  return StringAttr::get(ctx, fullName);
+}
+
 // lift closures and replace closure.init
 void OutlineClosuresNewPass::runOnOperation() {
   ModuleOp theModule = getOperation();
@@ -895,9 +909,16 @@ void OutlineClosuresNewPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
   ClosureLifter lifter(symtab, paramCache, debugBuild);
+  SmallVector<StructGeneratorOp> structGenerators;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     bool hasFailure = false;
     generator.walk([&](ClosureInitOp closureInit) {
+      StringAttr symbol =
+          getFullName(getClosureType(closureInit).getName(), generator);
+      if (StructGeneratorOp generatorOp =
+              symtab.lookup<StructGeneratorOp>(symbol))
+        structGenerators.push_back(generatorOp);
+
       hasFailure =
           hasFailure | failed(lifter.liftClosureInit(closureInit, generator));
     });
@@ -945,6 +966,12 @@ void OutlineClosuresNewPass::runOnOperation() {
     generator.walk([&](Operation *op) {
       replacer.recursivelyReplaceElementsIn(op, true, true, true);
     });
+    for (auto structGenerator : structGenerators) {
+      structGenerator.walk([&](Operation *op) {
+        replacer.recursivelyReplaceElementsIn(op, true, true, true);
+      });
+    }
+
     if (hasFailure)
       return signalPassFailure();
   }
