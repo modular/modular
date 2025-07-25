@@ -91,7 +91,6 @@ PINS = {
     "pytorch-triton-rocm": "pytorch-triton-rocm@3.3.0",
     "pyyaml": "pyyaml@6.0.2",
     "pyzmq": "pyzmq@26.3.0",
-    "qwen-vl-utils": "qwen-vl-utils@0.0.10",
     "regex": "regex@2024.11.6",
     "requests": "requests@2.32.3",
     "responses": "responses@0.25.3",
@@ -5174,24 +5173,6 @@ def targets():
     pycross_wheel_library(
         name = "pyzmq@26.3.0",
         wheel = ":_wheel_pyzmq@26.3.0",
-    )
-
-    _qwen_vl_utils_0_0_10_deps = [
-        ":av@14.2.0",
-        ":packaging@24.1",
-        ":pillow@10.4.0",
-        ":requests@2.32.3",
-    ]
-
-    native.alias(
-        name = "_wheel_qwen-vl-utils@0.0.10",
-        actual = "@pycross_lock_file_wheel_qwen_vl_utils_0.0.10_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "qwen-vl-utils@0.0.10",
-        deps = _qwen_vl_utils_0_0_10_deps,
-        wheel = ":_wheel_qwen-vl-utils@0.0.10",
     )
 
     native.alias(
@@ -15677,16 +15658,6 @@ def repositories():
         ],
         sha256 = "5e17cc198dc50a25a0f245e6b1e56f692df2acec3ccae82d1f60c34bfb72bbec",
         downloaded_file_path = "pyzmq-26.3.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_qwen_vl_utils_0.0.10_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/9e/f2/b489f9077bd410f44400d056ad7b0246ee3c516bf9d65b362ea35a57ce1c/qwen_vl_utils-0.0.10-py3-none-any.whl",
-        ],
-        sha256 = "a31d170f1e8c511f79b6bbf5cd77d7e8f7c9b1d68db102be140843fa57b46a0a",
-        downloaded_file_path = "qwen_vl_utils-0.0.10-py3-none-any.whl",
     )
 
     maybe(
