@@ -23,7 +23,6 @@ print(CompilationTarget.is_x86())
 
 from collections.string.string_slice import _get_kgen_string
 
-
 from .ffi import _external_call_const, external_call
 
 alias _TargetType = __mlir_type.`!kgen.target`
@@ -38,8 +37,9 @@ fn _current_target() -> _TargetType:
 struct CompilationTarget[value: _TargetType = _current_target()]:
     """A struct that provides information about a target architecture.
 
-    This struct encapsulates various methods to query target-specific information
-    such as architecture features, OS details, endianness, and memory characteristics.
+    This struct encapsulates various methods to query target-specific
+    information such as architecture features, OS details, endianness, and
+    memory characteristics.
 
     Parameters:
         value: The target architecture to query. Defaults to the current target.
@@ -265,7 +265,7 @@ fn _accelerator_arch() -> StaticString:
     return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
 
 
-fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StaticString:
+fn _get_arch[target: _TargetType]() -> StaticString:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         target,
@@ -470,11 +470,11 @@ fn os_is_windows() -> Bool:
 
 @always_inline("nodebug")
 fn _triple_attr[
-    triple: __mlir_type.`!kgen.target` = _current_target()
+    target: _TargetType = _current_target()
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
-        triple,
+        target,
         `, "triple" : !kgen.string`,
         `> : !kgen.string`,
     ]
@@ -482,7 +482,7 @@ fn _triple_attr[
 
 @always_inline("nodebug")
 fn is_triple[
-    name: StringLiteral, target: __mlir_type.`!kgen.target` = _current_target()
+    name: StringLiteral, target: _TargetType = _current_target()
 ]() -> Bool:
     """Returns True if the target triple of the compiler matches the input and
     False otherwise.
@@ -669,7 +669,7 @@ fn is_amd_gpu[subarch: StaticString]() -> Bool:
 
 @always_inline("nodebug")
 fn is_gpu() -> Bool:
-    """Returns True if the target triple is GPU and  False otherwise.
+    """Returns True if the target triple is GPU and False otherwise.
 
     Returns:
         True if the triple target is GPU and False otherwise.
@@ -678,22 +678,20 @@ fn is_gpu() -> Bool:
 
 
 @always_inline("nodebug")
-fn is_little_endian[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Bool:
-    """Returns True if the host endianness is little and False otherwise.
+fn is_little_endian[target: _TargetType = _current_target()]() -> Bool:
+    """Returns True if the target's endianness is little and False otherwise.
 
     Parameters:
         target: The target architecture.
 
     Returns:
-        True if the host target is little endian and False otherwise.
+        True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
-            _current_target(),
+            target,
             `, "endianness" : !kgen.string`,
             `> : !kgen.string`,
         ],
@@ -704,16 +702,14 @@ fn is_little_endian[
 
 
 @always_inline("nodebug")
-fn is_big_endian[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Bool:
-    """Returns True if the host endianness is big and False otherwise.
+fn is_big_endian[target: _TargetType = _current_target()]() -> Bool:
+    """Returns True if the target's endianness is big and False otherwise.
 
     Parameters:
         target: The target architecture.
 
     Returns:
-        True if the host target is big endian and False otherwise.
+        True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
@@ -730,7 +726,7 @@ fn is_big_endian[
 
 
 @always_inline("nodebug")
-fn is_32bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
+fn is_32bit[target: _TargetType = _current_target()]() -> Bool:
     """Returns True if the maximum integral value is 32 bit.
 
     Parameters:
@@ -743,7 +739,7 @@ fn is_32bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
 
 
 @always_inline("nodebug")
-fn is_64bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
+fn is_64bit[target: _TargetType = _current_target()]() -> Bool:
     """Returns True if the maximum integral value is 64 bit.
 
     Parameters:
@@ -756,9 +752,7 @@ fn is_64bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
 
 
 @always_inline("nodebug")
-fn simdbitwidth[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bits) of the specified target.
 
     Parameters:
@@ -778,9 +772,7 @@ fn simdbitwidth[
 
 
 @always_inline("nodebug")
-fn simdbytewidth[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
 
     Parameters:
@@ -794,9 +786,7 @@ fn simdbytewidth[
 
 
 @always_inline("nodebug")
-fn sizeof[
-    type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -841,9 +831,7 @@ fn sizeof[
 
 
 @always_inline("nodebug")
-fn sizeof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
@@ -867,9 +855,7 @@ fn sizeof[
 
 
 @always_inline("nodebug")
-fn alignof[
-    type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:
@@ -898,9 +884,7 @@ fn alignof[
 
 
 @always_inline("nodebug")
-fn alignof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
@@ -925,8 +909,7 @@ fn alignof[
 
 @always_inline("nodebug")
 fn bitwidthof[
-    type: AnyTrivialRegType,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -942,9 +925,7 @@ fn bitwidthof[
 
 
 @always_inline("nodebug")
-fn bitwidthof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
@@ -961,8 +942,7 @@ fn bitwidthof[
 
 @always_inline("nodebug")
 fn simdwidthof[
-    type: AnyTrivialRegType,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -977,9 +957,7 @@ fn simdwidthof[
 
 
 @always_inline("nodebug")
-fn simdwidthof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:

@@ -23,9 +23,10 @@ from testing import assert_equal
 
 from utils import IndexList, StaticTuple
 from utils.index import product
+from sys.info import _TargetType
 
 
-fn alignof_simd[dtype: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:
+fn alignof_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
     alias pack_size = simdwidthof[dtype, target=simd_target]()
     return alignof[SIMD[dtype, pack_size]]()

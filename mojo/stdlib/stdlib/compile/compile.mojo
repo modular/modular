@@ -41,8 +41,7 @@ print(info)
 from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
-from sys.info import _current_target
-
+from sys.info import _current_target, _TargetType
 
 from .reflection import get_linkage_name
 
@@ -86,7 +85,7 @@ struct _PopulateInfo:
 struct CompiledFunctionInfo[
     func_type: AnyTrivialRegType,
     func: func_type,
-    target: __mlir_type.`!kgen.target`,
+    target: _TargetType,
 ](Stringable, Writable):
     """Contains compilation information and results for a function.
 
@@ -212,7 +211,7 @@ fn compile_info[
     *,
     emission_kind: StaticString = "asm",
     compile_options: StaticString = "",
-    target: __mlir_type.`!kgen.target` = _current_target(),
+    target: _TargetType = _current_target(),
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     """Compiles a function and returns detailed compilation information.
 

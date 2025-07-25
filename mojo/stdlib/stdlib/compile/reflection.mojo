@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target
+from sys.info import _current_target, _TargetType
 
 
 fn get_linkage_name[
     func_type: AnyTrivialRegType, //,
-    target: __mlir_type.`!kgen.target`,
+    target: _TargetType,
     func: func_type,
 ]() -> StaticString:
     """Returns `func` symbol name.

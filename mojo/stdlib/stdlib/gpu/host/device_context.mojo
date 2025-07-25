@@ -34,7 +34,7 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import is_triple
+from sys.info import is_triple, _TargetType
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
@@ -1477,7 +1477,7 @@ struct DeviceStream:
         )
 
 
-fn _is_nvidia_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
+fn _is_nvidia_gpu[target: _TargetType]() -> Bool:
     return is_triple["nvptx64-nvidia-cuda", target]()
 
 
@@ -1501,7 +1501,7 @@ struct DeviceFunction[
     func: func_type,
     declared_arg_types: Optional[VariadicOf[AnyType]],
     *,
-    target: __mlir_type.`!kgen.target` = get_gpu_target(),
+    target: _TargetType = get_gpu_target(),
     compile_options: StaticString = GPUInfo.from_target[
         target
     ]().compile_options,
@@ -2923,7 +2923,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -2983,7 +2983,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3054,7 +3054,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3127,7 +3127,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3198,7 +3198,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3271,7 +3271,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3406,7 +3406,7 @@ struct DeviceContext(Copyable, Movable):
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
