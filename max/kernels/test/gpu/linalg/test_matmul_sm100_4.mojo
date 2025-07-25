@@ -21,7 +21,6 @@ from layout.layout_tensor import LayoutTensorIter
 from gpu import WARP_SIZE, barrier
 from gpu.sync import named_barrier
 
-alias WARP_GROUP_SIZE = 128
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
@@ -98,6 +97,7 @@ fn blackwell_tma_pair_umma_kernel[
     alias MMA_N = mma_shape[1]
     alias num_m_mmas = BM // (mma_shape[0] // cta_group)
     alias num_n_mmas = BN // (mma_shape[1] // cta_group)
+    alias num_output_warps = 4
 
     alias CLUSTER_M = Int(cluster_shape[0])
     alias CLUSTER_N = Int(cluster_shape[1])
@@ -480,7 +480,7 @@ fn blackwell_tma_pair_umma_kernel[
                             ).cast[c_type]()
                         )
 
-        named_barrier[WARP_GROUP_SIZE]()
+        named_barrier[num_output_warps * WARP_SIZE]()
 
         # SMEM -> GMEM: Direct TMA store
         # UMMA (tensor memory) → registers → shared memory → global memory
