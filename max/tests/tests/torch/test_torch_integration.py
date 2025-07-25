@@ -18,7 +18,7 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.torch import CustomOpLibrary, graph_op
-from max.torch.torch import max_device
+from max.torch.torch import max_device_ref
 
 # Select device based on hardware availability
 device = torch.device(
@@ -111,9 +111,11 @@ def test_graph_ops__grayscale(backend: str) -> None:
 def test_graph_ops__specify_input_type(backend: str) -> None:
     # For the test, only support square inputs
     input_type = TensorType(
-        DType.uint8, ["x", "x", 3], device=max_device(device)
+        DType.uint8, ["x", "x", 3], device=max_device_ref(device)
     )
-    output_type = TensorType(DType.uint8, ["x", "x"], device=max_device(device))
+    output_type = TensorType(
+        DType.uint8, ["x", "x"], device=max_device_ref(device)
+    )
 
     @graph_op(input_types=[input_type], output_types=[output_type])
     def max_grayscale(pic: TensorValue):
