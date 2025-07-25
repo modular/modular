@@ -192,8 +192,8 @@ class KbenchCache:
 
     def clear(self) -> None:
         """Remove cache file if it exists."""
+        logging.debug(f"Removing kbench-cache: {self.path}")
         if self.path.exists():
-            logging.debug(f"Removing kbench-cache: {self.path}")
             subprocess.run(["rm", str(self.path)])
 
     def load(self) -> None:
@@ -1579,17 +1579,21 @@ def cli(
     elif tune:
         mode = KBENCH_MODE.TUNE
 
-    if not force:
-        check_gpu_clock()
-
     obj_cache = KbenchCache()
-
     # check kbench_cache and load it if exists:
     if clear_cache:
         obj_cache.clear()
-
     if cached:
         obj_cache.load()
+
+    if not len(files) and not len(files):
+        logging.debug(
+            "Nothing more to do without parameter or shape YAML provided!"
+        )
+        return True
+
+    if not force:
+        check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
