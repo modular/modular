@@ -109,6 +109,11 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn _arch() -> StaticString:
+        return Self.__arch()
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn __arch() -> __mlir_type.`!kgen.string`:
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
@@ -235,7 +240,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         Returns:
             True if the host system is an Apple M1, False otherwise.
         """
-        return Self._arch() == "apple-m1"
+        return StringLiteral[Self.__arch()]() == "apple-m1"
+        # return Self._arch() == "apple-m1"
 
     @staticmethod
     fn is_apple_m2() -> Bool:
@@ -244,7 +250,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         Returns:
             True if the host system is an Apple M2, False otherwise.
         """
-        return Self._arch() == "apple-m2"
+        return StringLiteral[Self.__arch()]() == "apple-m2"
+        # return Self._arch() == "apple-m2"
 
     @staticmethod
     fn is_apple_m3() -> Bool:
@@ -253,7 +260,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         Returns:
             True if the host system is an Apple M3, False otherwise.
         """
-        return Self._arch() == "apple-m3"
+        return StringLiteral[Self.__arch()]() == "apple-m3"
+        # return Self._arch() == "apple-m3"
 
     @staticmethod
     fn is_apple_m4() -> Bool:
@@ -262,7 +270,8 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         Returns:
             True if the host system is an Apple M4, False otherwise.
         """
-        return Self._arch() == "apple-m4"
+        return StringLiteral[Self.__arch()]() == "apple-m4"
+        # return Self._arch() == "apple-m4"
 
     @staticmethod
     fn is_apple_silicon() -> Bool:
