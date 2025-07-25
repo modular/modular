@@ -185,6 +185,8 @@ mutation.
   adjusted.
   - `utils/write.mojo` got moved to `io/write.mojo` as well.
 
+- Added support for NVIDIA GeForce RTX 3090.
+
 ### Tooling changes
 
 - Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match
