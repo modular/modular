@@ -409,7 +409,7 @@ fn matmul[
             beta=beta,
         )
     else:
-        raise String(
+        raise Error(
             "the backend '",
             handle.backend,
             "' is not currently supported",
