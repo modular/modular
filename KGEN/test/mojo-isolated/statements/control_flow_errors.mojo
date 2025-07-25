@@ -200,3 +200,9 @@ fn testBadCM():
   # expected-error @+1 {{context manager of type 'BadCM' defines a consuming __enter__ method as well as an __exit__ method; either remove 'owned' from its '__enter__' method or remove the '__exit__' method}}
   with BadCM():
     pass
+
+fn noIndentError():
+  for i in ListValueInt():
+    # expected-error @+1 {{'AnyStruct[Bool]' does not implement the '__bool__' method}}
+    if Bool: # no error 'statements must start at the beginning of a line' should be printed
+      pass
