@@ -426,3 +426,26 @@ kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>> owned_
    %none = kgen.param.constant: none = <#kgen.none>
    kgen.return %none : !kgen.none
 }
+
+// -----
+
+// COM: Ensure the referenced kgen.struct.generator's closure types and symbols are lowered
+
+#type_value = #kgen.type<typevalue<#kgen.genref<@"make_closure::foo">>, !kgen.closure<@"make_closure", "foo" nonescaping>> : !kgen.type
+module {
+  // CHECK: kgen.struct.generator @"make_closure::foo" = none
+  kgen.struct.generator @"make_closure::foo" = !kgen.closure<@"make_closure", "foo" nonescaping>{
+    kgen.conformance @"fn(b: String) -> None" {
+      // CHECK: kgen.witness "__call__" : (!kgen.pointer<none> read_mem, !kgen.pointer<struct<() memoryOnly>> read_mem) -> !kgen.none = @make_closure_foo<:none #kgen.none>
+      kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@"make_closure", "foo" nonescaping>> read_mem, !kgen.pointer<struct<() memoryOnly>> read_mem) -> !kgen.none = #kgen.closure.symbol<@"make_closure", "foo", #kgen.closure_method<call>, <:!kgen.param_closure<@"make_closure" "foo"> #kgen.closure<@"make_closure" "foo">>>
+    }
+  }
+
+  kgen.generator @"make_closure"(%arg0: index) {
+    %0 = kgen.closure.init()(%arg1: !kgen.pointer<struct<() memoryOnly>> read_mem) -> !kgen.none {
+      %none = kgen.param.constant: none = <#kgen.none>
+      kgen.return %none : !kgen.none
+    } : (), !kgen.pointer<!kgen.closure<@"make_closure", "foo" nonescaping>>
+    kgen.return
+  }
+}
