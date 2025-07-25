@@ -11,7 +11,7 @@ bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
-bazel_dep(name = "rules_mojo", version = "0.4.1")
+bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
@@ -71,16 +71,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:with_cfg_visibility.patch",
-    ],
-)
-
-# TODO: Remove when >0.4.1 is released
-archive_override(
-    module_name = "rules_mojo",
-    integrity = "sha256-CjiuX8ekwcfWW1ZBTd5c2zALL8Ijf8+NJhL3F9wFsHM=",
-    strip_prefix = "rules_mojo-67ddb44ffc94a23e91fc1e8da7f05b725fa86b97",
-    urls = [
-        "https://github.com/modular/rules_mojo/archive/67ddb44ffc94a23e91fc1e8da7f05b725fa86b97.tar.gz",
     ],
 )
 
