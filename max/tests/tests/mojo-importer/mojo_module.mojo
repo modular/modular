@@ -33,17 +33,16 @@ fn plus_one(arg: PythonObject) raises -> PythonObject:
 
 
 fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
-    var cpython = Python().cpython()
-
     alias do_parallelize = True
     var array_len = len(array)
     var array_len_div = math.ceildiv(array_len, num_physical_cores())
 
     @parameter
     fn calc_max(i: Int) -> None:
+        ref cpython = Python().cpython()
         # Each worker needs to hold the GIL to access python objects.
         # It is more efficient to only use Mojo native data structures in worker threads.
-        with GILAcquired(cpython):
+        with GILAcquired(Python(cpython)):
             try:
                 var start_idx = i * array_len_div
                 var end_idx = min((i + 1) * array_len_div, array_len)
@@ -57,10 +56,12 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
             except e:
                 pass
 
+    ref cpython = Python().cpython()
+
     @parameter
     if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
-        with GILReleased(cpython):
+        with GILReleased(Python(cpython)):
             parallelize[calc_max](num_physical_cores())
     else:
         for i in range(0, num_physical_cores()):
