@@ -13,14 +13,7 @@ def custom_op_example_py_binary(
         srcs = srcs,
         data = [
             ":kernel_sources",
-            # Ensure that the `mojo` tool is available.
-            "//KGEN/tools/mojo",
         ] + extra_data,
-        env = {
-            # Note: This relative path works because the default working directory
-            #   for a `modular_py_binary` target is the runfiles root directory.
-            "PATH": "KGEN/tools/mojo:/usr/bin:/bin",
-        },
         imports = ["."],
         mojo_deps = [
             "@mojo//:compiler",

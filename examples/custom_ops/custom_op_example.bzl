@@ -5,7 +5,6 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "require
 def custom_op_example_py_binary(
         name,
         srcs,
-        create_test = True,
         extra_data = [],
         extra_deps = []):
     modular_py_binary(
@@ -13,14 +12,7 @@ def custom_op_example_py_binary(
         srcs = srcs,
         data = [
             ":kernel_sources",
-            # Ensure that the `mojo` tool is available.
-            "//KGEN/tools/mojo",
         ] + extra_data,
-        env = {
-            # Note: This relative path works because the default working directory
-            #   for a `modular_py_binary` target is the runfiles root directory.
-            "PATH": "KGEN/tools/mojo:/usr/bin:/bin",
-        },
         imports = ["."],
         mojo_deps = [
             "@mojo//:compiler",
@@ -37,9 +29,8 @@ def custom_op_example_py_binary(
     )
 
     # Run each example as a simple non-zero-exit-code test.
-    if create_test:
-        modular_run_binary_test(
-            name = name + ".example-test",
-            args = [],
-            binary = name,
-        )
+    modular_run_binary_test(
+        name = name + ".example-test",
+        args = [],
+        binary = name,
+    )
