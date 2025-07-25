@@ -51,8 +51,7 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.fold import fold
 from runtime.asyncrt import DeviceContextPtr
 
@@ -62,8 +61,8 @@ from utils.index import Index, IndexList
 # CHECK-LABEL: test_fold
 fn test[
     dtype: DType, //,
-    input_dim: DimList,
-    output_dim: DimList,
+    input_shape: IndexList[3],
+    output_shape: IndexList[4],
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
     padding: Tuple[Int, Int],
@@ -74,27 +73,39 @@ fn test[
     expected_output: List[Scalar[dtype]],
 ) raises:
     print("== test_fold")
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(input_dim.product[3]())
-    )
-    var input = NDBuffer[dtype, 3, MutableAnyOrigin, input_dim](
-        input_ptr,
-        input_dim,
-    )
-    _copy_values(input, input_values)
 
-    var expected_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(output_dim.product[4]())
+    alias unknown_layout_3d = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
-    var expected = NDBuffer[dtype, 4, MutableAnyOrigin, output_dim](
-        expected_ptr,
-        output_dim,
+    var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
+    var input_data = UnsafePointer[Scalar[dtype]].alloc(input_layout.size())
+    var input = LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin](
+        input_data,
+        input_layout,
     )
-    _copy_values(expected, expected_output)
+    _copy_values_to_layout_tensor(input, input_values)
 
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(expected.num_elements())
-    var output = NDBuffer[dtype, 4, MutableAnyOrigin, output_dim](
-        output_ptr, output_dim
+    alias unknown_layout_4d = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
+    var runtime_layout_4d = RuntimeLayout[unknown_layout_4d].row_major(
+        output_shape
+    )
+    var expected_data = UnsafePointer[Scalar[dtype]].alloc(
+        runtime_layout_4d.size()
+    )
+    var expected = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+        expected_data,
+        runtime_layout_4d,
+    )
+    _copy_values_to_layout_tensor(expected, expected_output)
+
+    var output_data = UnsafePointer[Scalar[dtype]].alloc(
+        runtime_layout_4d.size()
+    )
+    var output = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+        output_data,
+        runtime_layout_4d,
     )
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
@@ -106,16 +117,15 @@ fn test[
     )
 
     # Check results, return on the first failed comparison.
-    var idx = 0
-
-    @parameter
-    for n in range(output_dim.get[0]()):
-        for c in range(output_dim.get[1]()):
-            for h in range(output_dim.get[2]()):
-                for w in range(output_dim.get[3]()):
-                    if expected.data[idx] != output.data[idx]:
-                        print("Input shape: ", input_dim)
-                        print("Output shape: ", output_dim)
+    for n in range(output_shape[0]):
+        for c in range(output_shape[1]):
+            for h in range(output_shape[2]):
+                for w in range(output_shape[3]):
+                    var expected_val = expected[n, c, h, w]
+                    var output_val = output[n, c, h, w]
+                    if expected_val != output_val:
+                        print("Input shape: ", input_shape)
+                        print("Output shape: ", output_shape)
                         print("Output size: ", output_size)
                         print("Kernel size: ", kernel_size)
                         print("Stride: ", stride[0], stride[1])
@@ -127,45 +137,47 @@ fn test[
                         )
                         print(
                             "Golden value: ",
-                            expected.data[idx],
+                            expected_val,
                         )
                         print(
                             "Actual value: ",
-                            output.data[idx],
+                            output_val,
                         )
-                        output_ptr.free()
+                        output_data.free()
+                        expected_data.free()
+                        input_data.free()
                         return
-                    idx += 1
 
     # CHECK: Succeed
     print("Succeed")
 
-    output_ptr.free()
-    expected_ptr.free()
-    input_ptr.free()
+    output_data.free()
+    expected_data.free()
+    input_data.free()
 
 
-fn _copy_values[
+fn _copy_values_to_layout_tensor[
     dtype: DType,
-    rank: Int,
-    dim: DimList,
+    layout: Layout,
 ](
-    buffer: NDBuffer[dtype, rank, MutableAnyOrigin, dim],
+    tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
     values: List[Scalar[dtype]],
 ) raises:
-    if buffer.num_elements() != len(values):
-        raise Error("Buffer size and values size mismatch")
+    var num_elements = tensor.size()
 
-    for i in range(buffer.num_elements()):
-        buffer.data[i] = values[i]
+    if num_elements != len(values):
+        raise Error("Tensor size and values size mismatch")
+
+    for i in range(num_elements):
+        tensor.ptr[i] = values[i]
 
 
 fn main() raises:
     alias dtype = DType.float32
     # fmt: off
     test[
-        input_dim = DimList(1, 6, 15),
-        output_dim = DimList(1, 1, 5, 6),
+        input_shape = IndexList[3](1, 6, 15),
+        output_shape = IndexList[4](1, 1, 5, 6),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -191,8 +203,8 @@ fn main() raises:
 
     # Test with dilation.
     test[
-        input_dim = DimList(1, 6, 4),
-        output_dim = DimList(1, 1, 5, 6),
+        input_shape = IndexList[3](1, 6, 4),
+        output_shape = IndexList[4](1, 1, 5, 6),
         stride=(1, 1),
         dilation=(2, 2),
         padding=(0, 0),
@@ -218,8 +230,8 @@ fn main() raises:
 
     # Test with stride and dilation.
     test[
-        input_dim = DimList(1, 6, 2),
-        output_dim = DimList(1, 1, 5, 6),
+        input_shape = IndexList[3](1, 6, 2),
+        output_shape = IndexList[4](1, 1, 5, 6),
         stride=(2, 2),
         dilation=(2, 2),
         padding=(0, 0),
@@ -245,8 +257,8 @@ fn main() raises:
 
     # Test with stride, dilation and padding.
     test[
-        input_dim = DimList(1, 6, 12),
-        output_dim = DimList(1, 1, 5, 6),
+        input_shape = IndexList[3](1, 6, 12),
+        output_shape = IndexList[4](1, 1, 5, 6),
         stride=(2, 2),
         dilation=(1, 1),
         padding=(1, 1),
@@ -272,8 +284,8 @@ fn main() raises:
 
     # Test with batch > 1.
     test[
-        input_dim = DimList(2, 4, 2),
-        output_dim = DimList(2, 1, 2, 3),
+        input_shape = IndexList[3](2, 4, 2),
+        output_shape = IndexList[4](2, 1, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
@@ -301,8 +313,8 @@ fn main() raises:
 
     # Test with channel size > 1.
     test[
-        input_dim = DimList(1, 8, 2),
-        output_dim = DimList(1, 2, 2, 3),
+        input_shape = IndexList[3](1, 8, 2),
+        output_shape = IndexList[4](1, 2, 2, 3),
         stride=(1, 1),
         dilation=(1, 1),
         padding=(0, 0),
