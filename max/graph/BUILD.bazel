@@ -12,5 +12,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/mlir",
         "//SDK/lib/API/python/max/support",
         requirement("numpy"),
+        requirement("typing-extensions"),
     ],
 )

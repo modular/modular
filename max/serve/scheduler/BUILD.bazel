@@ -22,6 +22,5 @@ modular_py_library(
         requirement("numpy"),
         requirement("psutil"),
         requirement("pyzmq"),
-        requirement("torch"),
     ],
 )

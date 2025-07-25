@@ -17,7 +17,6 @@ modular_py_library(
         requirement("huggingface-hub"),
         requirement("numpy"),
         requirement("pillow"),
-        requirement("torch"),
         requirement("transformers"),
     ],
 )

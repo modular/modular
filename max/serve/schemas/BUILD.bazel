@@ -5,6 +5,7 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )
 

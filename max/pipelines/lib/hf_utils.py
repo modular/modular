@@ -515,7 +515,7 @@ class HuggingFaceRepo:
 
             if torch_dtype := getattr(cfg, "torch_dtype", None):
                 # It's a torch tensor, so this import is guaranteed to work
-                import torch
+                import torch  # type: ignore
 
                 if torch_dtype == torch.float32:
                     supported_encodings.add(SupportedEncoding.float32)
