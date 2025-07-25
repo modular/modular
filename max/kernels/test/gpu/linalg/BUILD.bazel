@@ -51,7 +51,7 @@ _GPU_MEMORY = {
     "test_hopper_matmul_v0_fp8.mojo": "2",
     "test_matmul.mojo": "2",
     "test_matmul_custom.mojo": "3",
-    "test_vendor_blas.mojo": "2",
+    "test_vendor_blas.mojo": "3",
 }
 
 [
