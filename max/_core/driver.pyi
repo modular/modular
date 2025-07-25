@@ -579,8 +579,14 @@ class Tensor:
     def _aligned(self, alignment: int | None = None) -> bool:
         """Returns whether the tensor is aligned to the desired alignment."""
 
+    @overload
     @staticmethod
     def _from_dlpack(arg: object, /) -> Tensor: ...
+    @overload
+    @staticmethod
+    def _from_dlpack(
+        arg0: typing_extensions.CapsuleType, arg1: Device, arg2: int, /
+    ) -> Tensor: ...
     def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
