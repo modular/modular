@@ -5797,17 +5797,14 @@ struct Fold:
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         fold[
             stride= (stride_h, stride_w),
             dilation= (dilation_h, dilation_w),
             padding= (padding_h, padding_w),
             target=target,
         ](
-            input_buf,
-            output_buf,
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
             output_size_tuple,
             kernel_size_tuple,
             ctx,
@@ -5834,7 +5831,7 @@ struct Fold:
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
         return fold_shape(
-            managed_tensor_slice_to_ndbuffer(input),
+            input.to_layout_tensor(),
             output_size_tuple,
             kernel_size_tuple,
         )
