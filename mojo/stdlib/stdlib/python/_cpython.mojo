@@ -1228,35 +1228,35 @@ struct GILAcquired(Movable):
 
     Example:
         ```mojo
-        var cpython = CPython()
-        with GILAcquired(cpython):
+        var python = Python()
+        with GILAcquired(Python(python)):
             # Python objects can be safely accessed here
-            var py_obj = cpython.Py_None()
+            var py_obj = python.cpython().Py_None()
         # GIL is automatically released here
         ```
     """
 
-    var cpython: CPython
+    var python: Python
     """Reference to the CPython instance."""
     var gil_state: PyGILState_STATE
     """The GIL state returned by PyGILState_Ensure."""
 
-    fn __init__(out self, cpython: CPython):
+    fn __init__(out self, python: Python):
         """Acquire the GIL and initialize the context manager.
 
         Args:
-            cpython: The CPython instance to use for GIL operations.
+            python: The CPython instance to use for GIL operations.
         """
-        self.cpython = cpython
+        self.python = python
         self.gil_state = PyGILState_STATE(PyGILState_STATE.PyGILState_UNLOCKED)
 
     fn __enter__(mut self):
         """Acquire the GIL."""
-        self.gil_state = self.cpython.PyGILState_Ensure()
+        self.gil_state = self.python.cpython().PyGILState_Ensure()
 
     fn __exit__(mut self):
         """Release the GIL."""
-        self.cpython.PyGILState_Release(self.gil_state)
+        self.python.cpython().PyGILState_Release(self.gil_state)
 
 
 @fieldwise_init
@@ -1270,8 +1270,8 @@ struct GILReleased(Movable):
 
     Example:
         ```mojo
-        var cpython = CPython()
-        with GILReleased(cpython):
+        var python = Python()
+        with GILReleased(python):
             # GIL is released here, other threads can run
             # Perform CPU-intensive work without Python object access
             perform_heavy_computation()
@@ -1279,32 +1279,35 @@ struct GILReleased(Movable):
         ```
     """
 
-    var cpython: CPython
+    var python: Python
     """Reference to the CPython instance."""
     var thread_state: UnsafePointer[PyThreadState]
     """The thread state returned by PyEval_SaveThread."""
 
-    fn __init__(out self, cpython: CPython):
+    fn __init__(out self, python: Python):
         """Save the current thread state and release the GIL.
 
         Args:
-            cpython: The CPython instance to use for GIL operations.
+            python: The Python instance to use for GIL operations.
         """
-        self.cpython = cpython
+        self.python = python
         self.thread_state = {}
 
     fn __enter__(mut self):
         """Save the current thread state and release the GIL."""
-        self.thread_state = self.cpython.PyEval_SaveThread()
+        self.thread_state = self.python.cpython().PyEval_SaveThread()
 
     fn __exit__(mut self):
         """Restore the thread state and acquire the GIL."""
-        self.cpython.PyEval_RestoreThread(self.thread_state)
+        self.python.cpython().PyEval_RestoreThread(self.thread_state)
 
 
 @fieldwise_init
-struct CPython(Copyable, Defaultable, Movable):
-    """Handle to the CPython interpreter present in the current process."""
+struct CPython(Defaultable, Movable):
+    """Handle to the CPython interpreter present in the current process.
+
+    This type is non-copyable due to its large size. Please refer to it only
+    using either a reference, or the `Python` handle type."""
 
     # ===-------------------------------------------------------------------===#
     # Fields

@@ -74,7 +74,7 @@ fn case_return_arg_tuple(
 
 
 fn case_raise_empty_error() -> PythonObject:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
@@ -84,7 +84,7 @@ fn case_raise_empty_error() -> PythonObject:
 
 
 fn case_raise_string_error() -> PythonObject:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 

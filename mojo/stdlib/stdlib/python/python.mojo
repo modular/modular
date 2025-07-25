@@ -67,7 +67,7 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     return Pointer(to=ptr2[])
 
 
-struct Python(Defaultable):
+struct Python(Copyable, Defaultable):
     """Provides methods that help you use Python code in Mojo."""
 
     var _impl: Pointer[CPython, StaticConstantOrigin]
@@ -82,13 +82,14 @@ struct Python(Defaultable):
 
         self._impl = _get_python_interface()
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy constructor.
+    fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
+        """Construct a `Python` instance from an existing reference
+        to the lower-level singleton `CPython` instance.
 
         Args:
-            existing: The existing instance to copy from.
+            cpython: Reference to the `CPython` singleton.
         """
-        self._impl = existing._impl
+        self._impl = Pointer(to=cpython)
 
     @always_inline
     fn cpython(self) -> ref [StaticConstantOrigin] CPython:
@@ -114,7 +115,7 @@ struct Python(Defaultable):
             `True` if the code executed successfully or `False` if the code
             raised an exception.
         """
-        var cpython = self.cpython()
+        ref cpython = self.cpython()
         # return 0 if the code executed successfully, -1 if it raised an exception.
         return cpython.PyRun_SimpleString(code^) == 0
 
@@ -134,7 +135,7 @@ struct Python(Defaultable):
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        var cpython = Self().cpython()
+        ref cpython = Self().cpython()
         # PyImport_AddModule returns a read-only reference.
         var module = PythonObject(
             from_borrowed=cpython.PyImport_AddModule(name)
@@ -235,7 +236,7 @@ struct Python(Defaultable):
         Returns:
             The Python module.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         # Throw error if it occurred during initialization
         cpython.check_init_error()
         var module_ptr = cpython.PyImport_ImportModule(module^)
@@ -260,7 +261,7 @@ struct Python(Defaultable):
         # Initialize the global instance to the Python interpreter
         # in case this is our first time.
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         # This will throw an error if there are any errors during initialization.
         cpython.check_init_error()
@@ -314,7 +315,7 @@ struct Python(Defaultable):
         Raises:
             If we fail to add the functions to the module.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         var result = cpython.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
@@ -346,7 +347,7 @@ struct Python(Defaultable):
             value: The python object value.
         """
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
             module._obj_ptr,
@@ -370,7 +371,7 @@ struct Python(Defaultable):
 
         Return value: New reference.
         """
-        var cpy = Python().cpython()
+        ref cpy = Python().cpython()
         var dict_obj = cpy.PyDict_New()
 
         for entry in kwargs.items():
@@ -433,7 +434,7 @@ struct Python(Defaultable):
             to Python objects.
         """
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
         if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
@@ -464,7 +465,7 @@ struct Python(Defaultable):
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyList_New(len(values))
 
         for i in range(len(values)):
@@ -490,7 +491,7 @@ struct Python(Defaultable):
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyList_New(len(values))
 
         @parameter
@@ -535,7 +536,7 @@ struct Python(Defaultable):
         Returns:
             A PythonObject representing the tuple.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyTuple_New(len(values))
 
         @parameter
@@ -575,7 +576,7 @@ struct Python(Defaultable):
         Returns:
             Mojo string representing the given Python object.
         """
-        var cpython = self.cpython()
+        ref cpython = self.cpython()
         return cpython.PyUnicode_AsUTF8AndSize(str_obj._obj_ptr)
 
     @staticmethod
@@ -588,7 +589,7 @@ struct Python(Defaultable):
         Returns:
             A PythonObject that holds the type object.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         return PythonObject(from_owned=cpython.PyObject_Type(obj._obj_ptr))
 
     @staticmethod
@@ -613,7 +614,7 @@ struct Python(Defaultable):
         Raises:
             An error if the conversion failed.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var py_str_ptr = cpython.PyObject_Str(obj._obj_ptr)
         if not py_str_ptr:
             raise cpython.get_error()
@@ -634,7 +635,7 @@ struct Python(Defaultable):
         Returns:
             A PythonObject representing the result of the conversion to `int`.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var py_obj_ptr = cpython.PyNumber_Long(obj._obj_ptr)
         if not py_obj_ptr:
             raise cpython.get_error()
@@ -654,7 +655,7 @@ struct Python(Defaultable):
         Raises:
             If the conversion fails.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         var float_obj = cpython.PyNumber_Float(obj._obj_ptr)
         if not float_obj:
@@ -680,7 +681,7 @@ struct Python(Defaultable):
         Returns:
             The value of the `long` object as a `Py_ssize_t`.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj._obj_ptr)
         if long == -1 and cpython.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
@@ -704,7 +705,7 @@ struct Python(Defaultable):
         """
         # TODO: decide if this method should be actually exposed as public,
         # and add tests if so.
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var result = cpython.PyObject_IsTrue(obj._obj_ptr)
         if result == -1:
             raise cpython.get_error()

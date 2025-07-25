@@ -421,7 +421,7 @@ fn test_dict() raises:
     assert_equal(String(empty2), "{}")
 
     # Test that Python.dict uses RC correctly.
-    var cpy = Python().cpython()
+    ref cpy = Python().cpython()
 
     # large integer so it's RC'd
     var n = PythonObject(1000)

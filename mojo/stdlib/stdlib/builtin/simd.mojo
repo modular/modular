@@ -500,7 +500,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_floating_point():
-            var cpy = Python().cpython()
+            ref cpy = Python().cpython()
             var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we
