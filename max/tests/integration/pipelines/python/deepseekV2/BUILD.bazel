@@ -29,7 +29,12 @@ modular_py_library(
 modular_py_test(
     name = "deepseekV2",
     size = "large",
-    srcs = glob(["**/test_*.py"]) + ["conftest.py"],
+    srcs = glob(
+        ["**/test_*.py"],
+        exclude = [
+            "*_distributed.py",
+        ],
+    ) + ["conftest.py"],
     data = [
         "//SDK:max",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
@@ -40,6 +45,41 @@ modular_py_test(
         ),
     },
     gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        ":torch_reference",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        "//Support/python:support",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV2_distributed_tests",
+    size = "large",
+    srcs = glob(["*_distributed.py"]) + ["conftest.py"],
+    data = [
+        "//SDK:max",
+        "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/deepseekV2/testdata"
+        ),
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "10",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
     tags = [
         "gpu",
         "no-sandbox",
