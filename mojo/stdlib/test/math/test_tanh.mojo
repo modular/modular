@@ -144,7 +144,10 @@ def test_tanh_libm[N: Int = 8192]():
     )
 
     var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")
-    assert_almost_equal(err, abs_rel_err)
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
 
     x32.free()
     y32.free()
