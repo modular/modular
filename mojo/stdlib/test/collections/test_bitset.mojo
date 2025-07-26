@@ -109,6 +109,26 @@ def test_bitset_toggle_all():
     assert_equal(len(bs1), 56, msg="BitSet total popcount should be 56")
 
 
+def test_bitset_set_all():
+    var bs = BitSet[64]()
+
+    # set random enough pattern in BitSet
+    for idx in [0, 1, 10, 19, 22, 37, 56, 63]:
+        bs.set(idx)
+
+    # toggle all in BitSet
+    bs.set_all()
+
+    # assert 1 in all idx
+    for idx in range(64):
+        assert_true(
+            bs.test(idx),
+            msg="Bit " + String(idx) + " should be True (1) after set all",
+        )
+
+    assert_equal(len(bs), 64, msg="BitSet total popcount should be 64")
+
+
 def test_bitset_count():
     var bs = BitSet[256]()
 
