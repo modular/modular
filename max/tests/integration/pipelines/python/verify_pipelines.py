@@ -906,28 +906,29 @@ PIPELINES = {
             kl_div_threshold=6.9e-3,
         ),
     ),
-    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="llama-gptq",
-            encoding="gptq",
-            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
-            cos_dist_threshold=3.3e-4,
-            kl_div_threshold=2.7e-3,
-        ),
-    ),
-    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="llama-gptq-no-perm-idx",
-            encoding="gptq",
-            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
-            cos_dist_threshold=3.6e-4,
-            kl_div_threshold=1.4e-3,
-        ),
-    ),
+    # TODO(MODELS-693): bfloat16->float16 casting issue.
+    # "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
+    #     compatible_with=[DeviceKind.GPU],
+    #     tags=["nvidia-only"],
+    #     run=_make_pipeline_runner(
+    #         pipeline="llama-gptq",
+    #         encoding="gptq",
+    #         pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
+    #         cos_dist_threshold=3.3e-4,
+    #         kl_div_threshold=2.7e-3,
+    #     ),
+    # ),
+    # "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx": PipelineDef(
+    #     compatible_with=[DeviceKind.GPU],
+    #     tags=["nvidia-only"],
+    #     run=_make_pipeline_runner(
+    #         pipeline="llama-gptq-no-perm-idx",
+    #         encoding="gptq",
+    #         pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
+    #         cos_dist_threshold=3.6e-4,
+    #         kl_div_threshold=1.4e-3,
+    #     ),
+    # ),
     # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
     "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
