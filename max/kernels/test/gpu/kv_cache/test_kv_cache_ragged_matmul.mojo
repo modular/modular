@@ -243,9 +243,9 @@ def execute_matmul_kv_cache_ragged[
 
     # Execute test.
     _matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.to_layout_tensor(),
-        input_row_offsets_device.to_layout_tensor(),
-        weight_device.to_layout_tensor(),
+        hidden_state_ragged_device.tensor,
+        input_row_offsets_device.tensor,
+        weight_device.tensor,
         k_cache_device,
         v_cache_device,
         ctx,
@@ -430,9 +430,9 @@ def execute_matmul_k_cache_ragged[
 
     # Execute test.
     _matmul_k_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.to_layout_tensor(),
-        input_row_offsets_device.to_layout_tensor(),
-        weight_device.to_layout_tensor(),
+        hidden_state_ragged_device.tensor,
+        input_row_offsets_device.tensor,
+        weight_device.tensor,
         k_cache_device,
         ctx,
     )
@@ -672,12 +672,12 @@ def generic_execute_fused_qkv_cache_ragged[
 
     # execute the matmul
     _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.to_layout_tensor(),
-        input_row_offsets_device.to_layout_tensor(),
-        weight_device.to_layout_tensor(),
+        hidden_state_ragged_device.tensor,
+        input_row_offsets_device.tensor,
+        weight_device.tensor,
         k_cache,
         v_cache,
-        test_output_device.to_layout_tensor(),
+        test_output_device.tensor,
         ctx,
     )
 

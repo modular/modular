@@ -6601,9 +6601,9 @@ struct QMatmulGPU_b4_g32:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[32, target](
-                c.to_layout_tensor(),
-                a.to_layout_tensor(),
-                b.to_layout_tensor(),
+                managed_tensor_slice_to_ndbuffer(c),
+                managed_tensor_slice_to_ndbuffer(a),
+                managed_tensor_slice_to_ndbuffer(b),
                 ctx,
             )
 
@@ -6633,9 +6633,9 @@ struct QMatmulGPU_b4_g128:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[128, target](
-                c.to_layout_tensor(),
-                a.to_layout_tensor(),
-                b.to_layout_tensor(),
+                managed_tensor_slice_to_ndbuffer(c),
+                managed_tensor_slice_to_ndbuffer(a),
+                managed_tensor_slice_to_ndbuffer(b),
                 ctx,
             )
 
@@ -6663,9 +6663,9 @@ struct QMatmulGPURepackGGUF:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            gpu_qint4_repack_Q4_0[target](
-                b.to_layout_tensor(),
-                b_packed.to_layout_tensor(),
+            gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
                 ctx,
             )
 
@@ -6693,8 +6693,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
-                b.to_layout_tensor(),
-                b_packed.to_layout_tensor(),
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
                 ctx=ctx,
             )
 
@@ -6723,9 +6723,11 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
-                b.to_layout_tensor(),
-                b_packed.to_layout_tensor(),
-                perm_idx.to_layout_tensor(),
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
+                rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin]](
+                    managed_tensor_slice_to_ndbuffer(perm_idx)
+                ),
                 ctx=ctx,
             )
 
@@ -6781,12 +6783,12 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
         ctx: The call context pointer, passed by the graph compiler.
     """
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
-        hidden_state.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        weight.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(hidden_state),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        managed_tensor_slice_to_ndbuffer(weight),
         kv_collection,
         layer_idx,
-        output.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(output),
         ctx,
     )
 
@@ -6902,12 +6904,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
         group_size=group_size,
         has_zp=has_zp,
     ](
-        hidden_state.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        weight.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(hidden_state),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        managed_tensor_slice_to_ndbuffer(weight),
         kv_collection,
         layer_idx,
-        output.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(output),
         ctx,
     )
 
@@ -6937,13 +6939,13 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
         group_size=group_size,
         has_zp=has_zp,
     ](
-        hidden_state.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        weight.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(hidden_state),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        managed_tensor_slice_to_ndbuffer(weight),
         kv_collection,
         layer_idx,
-        output.to_layout_tensor(),
-        bias.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(output),
+        managed_tensor_slice_to_ndbuffer(bias),
         ctx,
     )
 
@@ -7099,14 +7101,14 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             target=target
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            managed_tensor_slice_to_ndbuffer(input_scale),
+            managed_tensor_slice_to_ndbuffer(weight_scale),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            managed_tensor_slice_to_ndbuffer(output),
             ctx,
         )
 
@@ -8534,9 +8536,9 @@ struct Struct_kv_matmul_ragged_paged:
         ctx: DeviceContextPtr,
     ) raises:
         kv_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
             kv_collection,
             layer_idx,
             ctx,
@@ -8574,9 +8576,9 @@ struct Struct_k_matmul_ragged_paged:
         ctx: DeviceContextPtr,
     ) raises:
         k_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
             kv_collection,
             layer_idx,
             ctx,
