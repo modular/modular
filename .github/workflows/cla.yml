@@ -54,8 +54,7 @@ jobs:
           # the signatures in a remote repository/organization
           PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
-          # E.g. a CLA or a DCO document
-          path-to-document: "https://github.com/modular/cla/blob/main/CLA.md"
+          path-to-document: "https://github.com/modular/cla/blob/main/CLA.md" # E.g. a CLA or a DCO document
           branch: "main"
           remote-organization-name: "modular"
           remote-repository-name: "cla"
