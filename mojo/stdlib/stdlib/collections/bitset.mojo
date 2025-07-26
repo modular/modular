@@ -249,6 +249,13 @@ struct BitSet[size: UInt](
         for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~UInt64(0)
 
+    fn set_all(mut self):
+        """Sets all bits in the set up to the compile-time `size`."""
+
+        @parameter
+        for i in range(self._words_size):
+            self._words.unsafe_get(i) = ~UInt64(0)
+
     # --------------------------------------------------------------------- #
     # Set operations
     # --------------------------------------------------------------------- #
