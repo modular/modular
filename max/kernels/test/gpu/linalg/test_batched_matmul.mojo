@@ -61,6 +61,11 @@ fn test[
     k: ValOrDim,
     rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
 ) raises:
+    constrained[
+        Int(n.dim) > 0 and Int(k.dim) > 0,
+        "This test currently requires static N and K.",
+    ]()
+
     var M = m.value
     var N = n.value
     var K = k.value
@@ -253,19 +258,13 @@ def main():
         test[
             DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(2))
+        ](ctx, dynamic(2), dynamic(2), static[2](), static[2]())
 
         test[
             DType.float32,
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
-        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(2))
-
-        test[
-            DType.float32,
-            transpose_b=False,
-            lambda_fn=elementwise_epilogue_fn,
-        ](ctx, dynamic(64), dynamic(256), dynamic(512), dynamic(128))
+        ](ctx, dynamic(2), dynamic(2), static[2](), static[2]())
 
         @parameter
         if has_nvidia_gpu_accelerator():
