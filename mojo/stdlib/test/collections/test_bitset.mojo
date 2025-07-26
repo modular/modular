@@ -713,6 +713,7 @@ def main():
     test_bitset_set_test_clear()
     test_bitset_toggle()
     test_bitset_toggle_all()
+    test_bitset_set_all()
     test_bitset_count()
     test_bitset_bounds()
     test_bitset_str_repr()
