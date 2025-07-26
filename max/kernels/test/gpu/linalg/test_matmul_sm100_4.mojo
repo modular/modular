@@ -23,6 +23,7 @@ from gpu.sync import named_barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import warp_id as get_warp_id
 from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -73,6 +74,47 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct WarpRole(Copyable, Movable):
+    var _role: Int32
+
+    alias MainLoad = Self(4)
+    alias Mma = Self(5)
+    alias Epilogue = Self(3)
+
+    @always_inline
+    fn __eq__(self, other: UInt) -> Bool:
+        return self._role == other
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._role == other._role
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._role != other._role
+
+    @always_inline
+    fn __ge__(self, other: UInt) -> Bool:
+        return self._role >= other
+
+    @staticmethod
+    @always_inline
+    fn is_main_load() -> Bool:
+        return Self.MainLoad == get_warp_id()
+
+    @staticmethod
+    @always_inline
+    fn is_mma() -> Bool:
+        return Self.Mma == get_warp_id()
+
+    @staticmethod
+    @always_inline
+    fn is_epilogue() -> Bool:
+        return Self.Epilogue >= get_warp_id()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -136,14 +178,10 @@ fn blackwell_tma_pair_umma_kernel[
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
-    var warp_id = thread_idx.x // WARP_SIZE
-    var local_thread_id = thread_idx.x % WARP_SIZE
-    # FIRST_EDIT: introduce epilogue warp group variable
-    var is_epilogue_wg = warp_id <= 3
-    var is_mainloop_wg = warp_id >= 4
+
     alias c_smem_tile_t = LayoutTensor[
         c_type,
-        c_smem_layout,  # i think c_layout would be (BM, 64), and we want to partition smem, so BM, 128 needed
+        c_smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
@@ -228,6 +266,7 @@ fn blackwell_tma_pair_umma_kernel[
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
+    var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
     if elect_one_warp:
@@ -250,31 +289,24 @@ fn blackwell_tma_pair_umma_kernel[
 
     cluster_sync()
 
-    var tma_phase = PipelineState[num_pipeline_stages]()
-    var mma_phase = PipelineState[num_pipeline_stages](0, 1, 0)
+    var consumer_phase = PipelineState[num_pipeline_stages]()
+    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     tmem_addr = ptr_tmem_addr[0]
 
-    alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    alias b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
-    ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
-    alias b_stride01 = b_canonical_layout[0].stride[1].value()
-    alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
-
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem[].ptr)
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem[].ptr)
-
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
-        accum_type,
+    var mma_op = MmaOpSM100_SS[
+        c_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        block_tile_shape,
+        mma_shape,
+        accum_type=accum_type,
+        cta_group=cta_group,
+        cluster_shape = Index(
+            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        ),
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
 
@@ -305,29 +337,19 @@ fn blackwell_tma_pair_umma_kernel[
     b_multicast_mask <<= peer_cta_coord[0]
     b_multicast_mask <<= rank_n * CLUSTER_M
 
-    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
-    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
-    var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
-        b_mma_mask | b_mma_mask << 1
-    )
-
-    var producer_warp = warp_id == 4
-    var consumer_warp = warp_id == 5
-
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
     var mma_complete_mask = self_mask | peer_mask
 
-    if is_mainloop_wg and producer_warp:
-        if local_thread_id == 0:
+    if WarpRole.is_main_load():
+        if elect_one_sync():
             for i in range(num_iters):
-                var producer_stage = mma_phase.index()
-                var producer_phase = mma_phase.phase()
-                mma_mbar[producer_stage].wait(producer_phase)
-                mma_phase.step()
+                var stage = producer_phase.index()
+                var phase = producer_phase.phase()
+                mma_mbar[stage].wait(phase)
 
                 if elect_one_cta:
-                    tma_mbar[producer_stage].expect_bytes(expected_bytes)
+                    tma_mbar[stage].expect_bytes(expected_bytes)
 
                 var a_gmem_slice_coord = (
                     peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
@@ -338,8 +360,8 @@ fn blackwell_tma_pair_umma_kernel[
                     + block_idx.y * MMA_N
                 )
 
-                var a_smem_tile = a_smem.next(producer_stage)[]
-                var b_smem_tile = b_smem.next(producer_stage)[]
+                var a_smem_tile = a_smem.next(stage)[]
+                var b_smem_tile = b_smem.next(stage)[]
 
                 var a_smem_slice = __type_of(a_smem_tile)(
                     a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
@@ -350,57 +372,46 @@ fn blackwell_tma_pair_umma_kernel[
 
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
-                    tma_mbar[producer_stage],
+                    tma_mbar[stage],
                     (UInt(i) * BK, a_gmem_slice_coord),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
-                    tma_mbar[producer_stage],
+                    tma_mbar[stage],
                     (UInt(i) * BK, b_gmem_slice_coord),
                     b_multicast_mask,
                 )
 
-    if (
-        elect_one_cta
-        and is_mainloop_wg
-        and consumer_warp
-        and local_thread_id == 0
-    ):
+                producer_phase.step()
+
+    if elect_one_cta and WarpRole.is_mma():
         for i in range(num_iters):
-            var consumer_stage = tma_phase.index()
-            var consumer_phase = tma_phase.phase()
-            var stage_offset_a = consumer_stage * a_expected_bytes
-            var stage_offset_b = consumer_stage * b_expected_bytes
+            var stage = consumer_phase.index()
+            var phase = consumer_phase.phase()
 
-            tma_mbar[consumer_stage].wait(consumer_phase)
-            tma_phase.step()
+            tma_mbar[stage].wait(phase)
 
-            adesc = adesc_base + stage_offset_a
-            bdesc = bdesc_base + stage_offset_b
+            var a_smem_tile = a_smem.next(stage)[]
+            var b_smem_tile = b_smem.next(stage)[]
 
-            @parameter
-            for j in range(BK // mma_shape[2]):
-                mma[cta_group](
-                    adesc,
-                    bdesc,
+            if elect_one_sync():
+                mma_op.mma(
+                    a_smem_tile,
+                    b_smem_tile,
                     tmem_addr,
-                    idesc,
-                    c_scale=0 if i == 0 and j == 0 else 1,
+                    init_c=(i == 0),  # Initialize C on first iteration
                 )
-                adesc += mma_shape[2] * sizeof[a_type]()
-                bdesc += b_k_stride
 
-            mma_arrive_multicast[cta_group](
-                mma_mbar + consumer_stage,
-                c_mma_mask,
-            )
+                mma_op.commit(mma_mbar + stage)
+            consumer_phase.step()
 
         # mma arrive multicast will track completion of all mma prior to this barrier.
-        mma_arrive_multicast[cta_group](math_barrier, mma_complete_mask)
+        if elect_one_sync():
+            mma_arrive_multicast[cta_group](math_barrier, mma_complete_mask)
 
-    if is_epilogue_wg:
+    if WarpRole.is_epilogue():
         math_barrier[].wait()
         c_frag_upper, c_frag_lower = c_frag.split()
 
