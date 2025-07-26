@@ -20,7 +20,7 @@ All functions are constrained to NVIDIA SM90+ GPUs and will raise an error if us
 Note: These are low-level primitives that correspond directly to PTX/NVVM instructions and should be used
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, _RegisterPackType
 from sys.info import _is_sm_9x_or_newer
 from sys.info import _is_sm_100x_or_newer
 from sys._assembly import inlined_assembly
@@ -222,12 +222,12 @@ fn cluster_sync_release():
 
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_is_canceled(
-    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]
+    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
 ) -> UInt32:
     """Decodes the cancellation request.
 
     Args:
-        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+        result: A pointer to `UInt128` that make up the cancellation request result to decode.
 
     Returns:
         True if the cancellation request is canceled, False otherwise.
@@ -261,14 +261,16 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
-](result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]) -> UInt32:
+](
+    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
+) -> UInt32:
     """Decodes the cancellation request.
 
     Parameters:
         id: The dimension to decode. Must be one of `x`, `y`, `z`.
 
     Args:
-        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+        result: A pointer to `UInt128` that make up the cancellation request result to decode.
 
     Returns:
         The coordinate of the first CTAID in the canceled cluster.
@@ -290,7 +292,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         """
         {
         .reg .b128 %result;
-        mov.b128 %result, {$1, $2};
+        ld.shared.b128 %result, [$1];
         clusterlaunchcontrol.query_cancel.get_first_ctaid::"""
         + id
         + """.b32.b128 $0, %result;
@@ -302,21 +304,19 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
         asm,
         UInt32,
         has_side_effect=True,
-        constraints="=r,l,l",
-    ](result[0], result[1])
+        constraints="=r,r",
+    ](Int32(Int(result)))
     return ret_val
 
 
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
-    block_dim: UnsafePointer[UInt32],
-    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED],
-):
+    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
+) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
 
     Args:
-        block_dim: A pointer to 4 `UInt32`s that will store the coordinates of the first CTAID in the canceled cluster.
-        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+        result: A pointer to `UInt128` that make up the cancellation request result to decode.
 
     Only supported on NVIDIA SM100+ GPUs."""
     constrained[
@@ -327,24 +327,23 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
         ),
     ]()
 
-    alias asm = """
-        .reg .b128 %result;
-        mov.b128 %result, {$4, $5};
-        clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, $3}, %result;
-        """
+    alias asm = """{
+        .reg .b128 result;
+        ld.shared.b128 result, [$3];
+        clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, _}, result;
+        }"""
 
-    inlined_assembly[
+    var coordinates = inlined_assembly[
         asm,
-        NoneType,
+        _RegisterPackType[UInt32, UInt32, UInt32],
         has_side_effect=True,
-        constraints="=r,=r,=r,=r,l,l",
-    ](
-        block_dim[0],
-        block_dim[1],
-        block_dim[2],
-        block_dim[3],
-        result[0],
-        result[1],
+        constraints="=r,=r,=r,l",
+    ](Int32(Int(result)))
+
+    return Tuple[UInt32, UInt32, UInt32](
+        coordinates[0],
+        coordinates[1],
+        coordinates[2],
     )
 
 
@@ -352,13 +351,13 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
 fn clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
-    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED],
+    result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
     mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
 
     Args:
-        result: A pointer to 2 `UInt64`s (16B aligned) that will store the result of the cancellation request.
+        result: A pointer to `UInt128` (16B aligned) that will store the result of the cancellation request.
         mbar: A pointer to an `Int64` (8B aligned) memory barrier state.
 
     Only supported on NVIDIA SM100+ GPUs."""

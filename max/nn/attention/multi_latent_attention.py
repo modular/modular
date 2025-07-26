@@ -15,11 +15,21 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Union
+from collections.abc import Sequence
+from typing import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+    Weight,
+    ops,
+)
 
+from ..comm import Allreduce
 from ..kernels import (
     flare_mla_decode_ragged,
     flare_mla_decompress_k_cache,
@@ -30,23 +40,22 @@ from ..kernels import (
     matmul_k_cache_ragged,
     rms_norm_key_cache,
 )
-from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-    PagedKVCacheCollection,
-)
-from ..layer import Module
+from ..kv_cache import KVCacheParams, PagedKVCacheCollection
+from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 
 
-class LatentAttentionWithRope(Module):
+class LatentAttentionWithRope(Module, Shardable):
     """Implementation of Latent Attention with Rope."""
 
     # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
     rope: RotaryEmbedding
+
+    _sharding_strategy: ShardingStrategy | None = None
+    """The sharding strategy for the module."""
 
     def __init__(
         self,
@@ -100,6 +109,8 @@ class LatentAttentionWithRope(Module):
         self.kv_params = kv_params
         self.num_key_value_heads = num_key_value_heads
         self.hidden_size = hidden_size
+        self.dtype = dtype
+        self.linear_cls = linear_cls
 
         self.q_lora_rank = q_lora_rank
         self.kv_lora_rank = kv_lora_rank
@@ -111,8 +122,8 @@ class LatentAttentionWithRope(Module):
 
         self.BUFFER_TOK_SIZE = buffer_size
 
-        self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
-        self.scale = self.rope.compute_scale(self.scale)
+        self._scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
+        self.scale = self.rope.compute_scale(self._scale)
         self.devices = devices or [DeviceRef.CPU()]
 
         if self.q_lora_rank is not None:
@@ -171,6 +182,121 @@ class LatentAttentionWithRope(Module):
         )
 
     @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the Module sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the Module sharding strategy.
+
+        Args:
+            strategy: The strategy describing the Module sharding.
+        """
+        if strategy.is_tensor_parallel:
+            self._sharding_strategy = strategy
+
+            if (self.n_heads / strategy.num_devices) % 16 != 0:
+                raise ValueError(
+                    "MLA head per device must be a multiple of 16."
+                )
+
+            # set the sharding strategy for the weights
+            if self.q_lora_rank is not None:
+                self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
+                self.q_a_layernorm.weight.sharding_strategy = (
+                    ShardingStrategy.replicate(strategy.num_devices)
+                )
+                self.q_b_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    strategy.num_devices
+                )
+            else:
+                self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    strategy.num_devices
+                )
+
+            self.kv_a_proj_layernorm.sharding_strategy = (
+                ShardingStrategy.replicate(strategy.num_devices)
+            )
+            self.kv_a_proj_with_mqa.sharding_strategy = (
+                ShardingStrategy.replicate(strategy.num_devices)
+            )
+            self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.o_proj.weight.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(
+                "Only tensor parallel sharding strategy is supported for LatentAttentionWithRope"
+            )
+
+    def shard(
+        self, shard_idx: int, device: DeviceRef
+    ) -> LatentAttentionWithRope:
+        """Creates a sharded view of this Module for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded LatentAttentionWithRope instance.
+        """
+        if not self.sharding_strategy:
+            raise ValueError(
+                "LatentAttentionWithRope layer cannot be sharded because no sharding strategy was provided."
+            )
+
+        if self.sharding_strategy.is_tensor_parallel:
+            sharded = LatentAttentionWithRope(
+                rope=self.rope,
+                num_attention_heads=self.n_heads
+                // self.sharding_strategy.num_devices,
+                num_key_value_heads=self.num_key_value_heads,
+                hidden_size=self.hidden_size,
+                kv_params=self.kv_params,
+                dtype=self.dtype,
+                devices=[device],
+                linear_cls=self.linear_cls,
+                scale=self._scale,
+                q_lora_rank=self.q_lora_rank,
+                kv_lora_rank=self.kv_lora_rank,
+                qk_nope_head_dim=self.qk_nope_head_dim,
+                qk_rope_head_dim=self.qk_rope_head_dim,
+                v_head_dim=self.v_head_dim,
+                buffer_size=self.BUFFER_TOK_SIZE,
+            )
+
+            # Replace the weights with sharded versions.
+            if self.q_lora_rank is not None:
+                sharded.q_a_proj = self.q_a_proj.shard(shard_idx, device)
+                sharded.q_a_layernorm.weight = self.q_a_layernorm.weight.shard(
+                    shard_idx, device
+                )
+                sharded.q_b_proj = self.q_b_proj.shard(shard_idx, device)
+            else:
+                sharded.q_proj = self.q_proj.shard(shard_idx, device)
+
+            sharded.kv_a_proj_layernorm = self.kv_a_proj_layernorm.shard(
+                shard_idx, device
+            )
+            sharded.kv_a_proj_with_mqa = self.kv_a_proj_with_mqa.shard(
+                shard_idx, device
+            )
+            sharded.kv_b_proj = self.kv_b_proj.shard(shard_idx, device)
+            sharded.o_proj.weight = self.o_proj.weight.shard(shard_idx, device)
+
+            return sharded
+        else:
+            raise ValueError(
+                "Only tensor parallel sharding strategy is supported for LatentAttentionWithRope"
+            )
+
+    @property
     def w_uk_uv(self) -> list[TensorValue]:
         """The concatenation of q, k, and v weight vectors."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
@@ -201,6 +327,12 @@ class LatentAttentionWithRope(Module):
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        # These weights are going to be used in the decode path.
+        # Move the creation of these weights outside of the decode subgraph so the
+        # ConstantFold Pass can optimize them out, avoiding the need to re-calculate
+        # them each time we enter the decode subgraph.
+        w_uk, w_uv = self.w_uk_uv
+
         def _mla_prefill() -> TensorValue:
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
@@ -300,7 +432,6 @@ class LatentAttentionWithRope(Module):
             return loop_result[1]
 
         def _mla_decode() -> TensorValue:
-            w_uk, w_uv = self.w_uk_uv
             # from [B, H, D] to [H, B, D]
             xq_nope_t = xq_nope.transpose(0, 1)
 
@@ -356,13 +487,9 @@ class LatentAttentionWithRope(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            PagedKVCacheCollection, ContinuousBatchingKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
-        assert isinstance(kv_collection, PagedKVCacheCollection)
-
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -420,3 +547,57 @@ class LatentAttentionWithRope(Module):
         )
 
         return self.o_proj(attn_out)
+
+
+class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
+    """Distributed implementation of the Latent Attention with Rope. Note that
+    using tensor parallelism for MLA will cause KV-cache to be duplicated across
+    devices, which is not efficient.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        num_devices = len(self.devices)
+        if not self.devices or num_devices < 2:
+            raise ValueError(
+                f"Must provide at least 2 devices to `DistributedLatentAttentionWithRope`, got {self.devices}"
+            )
+
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.allreduce = Allreduce(num_devices)
+
+        self.list_of_attentions = []
+        for n, device in enumerate(self.devices):
+            layer = self.shard(n, device)
+            self.list_of_attentions.append(layer)
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedKVCacheCollection],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+        if len(input_row_offsets) != len(self.devices):
+            raise ValueError(
+                f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
+            )
+        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
+            raise TypeError(
+                "All elements in input_row_offsets must be TensorValue instances"
+            )
+        return self.allreduce(
+            inputs=[
+                self.list_of_attentions[i](
+                    layer_idx,
+                    xs[i],
+                    kv_collections[i],
+                    input_row_offsets[i],
+                )
+                for i in range(len(self.devices))
+            ],
+            signal_buffers=signal_buffers,
+        )

@@ -181,10 +181,12 @@ struct MatmulConfig[
         )
 
     fn shared_mem_usage(self) -> Int:
-        return _shared_memory_usage[a_type, b_type, c_type](
-            self.block_tile_shape,
-            self.num_pipeline_stages,
-            self.num_warp_k_partitions,
+        return Int(
+            _shared_memory_usage[a_type, b_type, c_type](
+                self.block_tile_shape,
+                Int(self.num_pipeline_stages),
+                Int(self.num_warp_k_partitions),
+            )
         )
 
     fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:

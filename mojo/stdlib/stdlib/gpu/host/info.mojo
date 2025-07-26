@@ -20,7 +20,7 @@ memory specifications, thread organization, and performance characteristics.
 
 from math import ceildiv, floor
 from os import abort
-from sys.info import _accelerator_arch, _get_arch
+from sys.info import _accelerator_arch, _get_arch, _TargetType
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = GPUInfo.from_name[DEFAULT_GPU_ARCH]()
@@ -135,7 +135,7 @@ struct Vendor(Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_empty_target() -> __mlir_type.`!kgen.target`:
+fn _get_empty_target() -> _TargetType:
     """
     Creates an empty target configuration for when no GPU is available.
 
@@ -193,7 +193,7 @@ alias NoGPU = GPUInfo(
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
 
-fn _get_a100_target() -> __mlir_type.`!kgen.target`:
+fn _get_a100_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA A100 GPU.
 
@@ -245,7 +245,7 @@ alias A100 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_a10_target() -> __mlir_type.`!kgen.target`:
+fn _get_a10_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA A10 GPU.
 
@@ -297,7 +297,7 @@ alias A10 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_orin_nano_target() -> __mlir_type.`!kgen.target`:
+fn _get_orin_nano_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
 
@@ -350,7 +350,7 @@ alias OrinNano = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_l4_target() -> __mlir_type.`!kgen.target`:
+fn _get_l4_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA L4 GPU.
 
@@ -402,7 +402,7 @@ alias L4 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090m_target() -> __mlir_type.`!kgen.target`:
+fn _get_rtx4090m_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
@@ -454,7 +454,7 @@ alias RTX4090m = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090_target() -> __mlir_type.`!kgen.target`:
+fn _get_rtx4090_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA RTX 4090.
 
@@ -507,7 +507,7 @@ alias RTX4090 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_h100_target() -> __mlir_type.`!kgen.target`:
+fn _get_h100_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA H100 GPU.
 
@@ -561,7 +561,7 @@ alias H100 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_b100_target() -> __mlir_type.`!kgen.target`:
+fn _get_b100_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA B100 GPU.
 
@@ -642,7 +642,7 @@ alias B200 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx5090_target() -> __mlir_type.`!kgen.target`:
+fn _get_rtx5090_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
 
@@ -692,11 +692,65 @@ alias RTX5090 = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# RTX3090
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_rtx3090_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA GeForce RTX 3090
+
+    Returns:
+        MLIR target configuration for NVIDIA GeForce RTX 3090.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_86", `,
+        `features = "+ptx63,+sm_86", `,
+        `tune_cpu = "sm_86", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+# https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/
+alias RTX3090 = GPUInfo(
+    name="NVIDIA GeForce RTX 3090",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="ampere",
+    compile_options="nvptx-short-ptr=true",
+    compute=8.6,
+    version="sm_86",
+    sm_count=82,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=1536,
+    thread_blocks_per_multiprocessor=16,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=16,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # RTX2060
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx2060_target() -> __mlir_type.`!kgen.target`:
+fn _get_rtx2060_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
 
@@ -749,7 +803,7 @@ alias RTX2060 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi300x_target() -> __mlir_type.`!kgen.target`:
+fn _get_mi300x_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD MI300X GPU.
 
@@ -801,7 +855,7 @@ alias MI300X = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_9070_target() -> __mlir_type.`!kgen.target`:
+fn _get_9070_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 9070 GPU.
 
@@ -820,7 +874,7 @@ fn _get_9070_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_9060_target() -> __mlir_type.`!kgen.target`:
+fn _get_9060_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 9060 GPU.
 
@@ -839,7 +893,7 @@ fn _get_9060_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_7900_target() -> __mlir_type.`!kgen.target`:
+fn _get_7900_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 7900 GPU.
 
@@ -858,7 +912,7 @@ fn _get_7900_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_7800_target() -> __mlir_type.`!kgen.target`:
+fn _get_7800_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
 
@@ -877,7 +931,7 @@ fn _get_7800_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_7600_target() -> __mlir_type.`!kgen.target`:
+fn _get_7600_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 7600 GPU.
 
@@ -896,7 +950,7 @@ fn _get_7600_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_780m_target() -> __mlir_type.`!kgen.target`:
+fn _get_780m_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 780m GPU.
 
@@ -1167,7 +1221,7 @@ struct GPUInfo(Stringable, Writable):
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
 
-    fn target(self) -> __mlir_type.`!kgen.target`:
+    fn target(self) -> _TargetType:
         """
         Gets the MLIR target configuration for this GPU.
 
@@ -1176,6 +1230,8 @@ struct GPUInfo(Stringable, Writable):
         """
         if self.name == "RTX2060":
             return _get_rtx2060_target()
+        if self.name == "NVIDIA GeForce RTX 3090":
+            return _get_rtx3090_target()
         if self.name == "A100":
             return _get_a100_target()
         if self.name == "A10":
@@ -1211,7 +1267,7 @@ struct GPUInfo(Stringable, Writable):
         return _get_a100_target()
 
     @staticmethod
-    fn from_target[target: __mlir_type.`!kgen.target`]() -> Self:
+    fn from_target[target: _TargetType]() -> Self:
         """
         Creates a `GPUInfo` instance from an MLIR target.
 

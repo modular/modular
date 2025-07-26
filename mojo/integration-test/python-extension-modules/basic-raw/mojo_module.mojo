@@ -87,7 +87,7 @@ fn mojo_count_args_with_kwargs(
 
     Return value: New reference.
     """
-    var cpy = Python().cpython()
+    ref cpy = Python().cpython()
     var count = cpy.PyObject_Length(args) + (
         cpy.PyObject_Length(kwargs) if kwargs else 0
     )

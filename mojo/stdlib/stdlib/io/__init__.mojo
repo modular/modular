@@ -16,3 +16,4 @@
 from .file_descriptor import FileDescriptor
 from .file import FileHandle
 from .io import print, input
+from .write import Writable, Writer

@@ -17,6 +17,13 @@ These are Mojo built-ins, so you don't need to import them.
 
 from memory import Pointer
 
+alias Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
+"""Represents a raw variadic sequence of values of the specified type."""
+
+alias VariadicOf[T: _AnyTypeMetaType] = __mlir_type[`!kgen.variadic<`, T, `>`]
+"""Represents a raw variadic sequence of types that satisfy the specified trait."""
+
+
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
 # ===-----------------------------------------------------------------------===#
@@ -85,7 +92,8 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         type: The type of the elements in the list.
     """
 
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
+    alias _mlir_type = Variadic[type]
+
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
@@ -216,8 +224,7 @@ struct VariadicListMem[
     """
 
     alias reference_type = Pointer[element_type, origin]
-    alias _mlir_ref_type = Self.reference_type._mlir_type
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
+    alias _mlir_type = Variadic[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
@@ -436,9 +443,7 @@ struct VariadicPack[
         """
 
         @parameter
-        fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, element_trait, `>`]
-        ) -> Int:
+        fn variadic_size(x: VariadicOf[element_trait]) -> Int:
             return __mlir_op.`pop.variadic.size`(x)
 
         alias result = variadic_size(element_types)
@@ -479,15 +484,16 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
-    alias _kgen_element_types = rebind[
-        __mlir_type.`!kgen.variadic<!kgen.type>`
-    ](Self.element_types)
+    alias _kgen_element_types = rebind[Variadic[AnyTrivialRegType]](
+        Self.element_types
+    )
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
     alias _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
-        `, 0: index>: !kgen.variadic<!kgen.type>`,
+        `, 0: index>: `,
+        Variadic[AnyTrivialRegType],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -508,7 +514,8 @@ struct VariadicPack[
     alias _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
-        `>: !kgen.variadic<!kgen.type>`,
+        `>: `,
+        Variadic[AnyTrivialRegType],
     ]
     alias _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`

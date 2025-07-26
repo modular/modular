@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 # This is only imported internally if gguf is available
 import gguf  # type: ignore
@@ -134,14 +134,6 @@ class GGUFWeights(Weights):
 
     def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
-
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        return self._raw_tensor().data
 
     def data(self) -> WeightData:
         tensor = self._raw_tensor()

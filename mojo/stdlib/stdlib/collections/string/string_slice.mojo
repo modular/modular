@@ -72,9 +72,9 @@ from sys.intrinsics import likely, unlikely
 from bit import count_trailing_zeros
 from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from python import Python, PythonConvertible, PythonObject
+from python import Python, ConvertibleToPython, PythonObject
 
-from utils.write import _WriteBufferStack, _TotalWritableBytes
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -453,6 +453,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Boolable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     EqualityComparable,
@@ -463,7 +464,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     KeyElement,
     Movable,
     PathLike,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,
@@ -886,7 +886,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Raises:
             An error if the conversion failed.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj._obj_ptr)
         if not self.unsafe_ptr():
             raise cpython.get_error()

@@ -258,10 +258,6 @@ EOF
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
     } | GPU_TEST_ENV
-    if "MODULAR_CRASH_REPORTING_ENABLED" not in env and \
-       "MODULAR_CRASH_REPORTING_HANDLER_PATH" not in (env | default_env):
-        default_env["MODULAR_CRASH_REPORTING_ENABLED"] = "false"
-
     extra_data = [
         "//bazel/internal:asan-suppressions.txt",
         "//bazel/internal:lsan-suppressions.txt",

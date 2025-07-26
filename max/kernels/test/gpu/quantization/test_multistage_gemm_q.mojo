@@ -477,10 +477,13 @@ fn test_repack_Q4_0_for_sm8x(
 
     zero(repacked_b_host.tensor)
     build_b_buffer(N, K, gguf_b_host.tensor.data)
+    var gguf_dequan_ref_host_tensor = gguf_dequan_ref_host.to_layout_tensor()
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host.tensor,
-        gguf_dequan_ref_host.tensor,
-        gguf_dequan_ref_host.tensor.get_shape(),
+        gguf_b_host.to_layout_tensor(),
+        gguf_dequan_ref_host_tensor,
+        rebind[IndexList[gguf_dequan_ref_host_tensor.rank]](
+            gguf_dequan_ref_host_tensor.runtime_layout.shape.value.canonicalize()
+        ),
     )
     zero(repacked_dequan_host.tensor)
 

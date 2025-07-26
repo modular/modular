@@ -169,7 +169,7 @@ fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     Args:
         py_self: Pointer to the Python object to be deallocated.
     """
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
@@ -200,7 +200,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         A new Python string object containing the string representation,
         or null pointer if an error occurs.
     """
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
@@ -633,7 +633,7 @@ struct PythonTypeBuilder(Copyable, Movable):
             further operations, use the parameterless `finalize()` method
             instead and manually add it to the module.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
@@ -1014,7 +1014,7 @@ struct PythonTypeBuilder(Copyable, Movable):
 fn _py_init_function_nonregistered(
     py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> c_int:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
         error_type,
@@ -1029,7 +1029,7 @@ fn _py_new_function_wrapper[
 ](
     subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> PyObjectPtr:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     try:
         return _unsafe_alloc[T](subtype)
@@ -1052,7 +1052,7 @@ fn _py_init_function_wrapper[
     var kwargs = PythonObject(from_borrowed=kwargs_ptr)
     var args = PythonObject(from_borrowed=args_ptr)
 
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     try:
         var value = init_func(args, kwargs)
@@ -1118,9 +1118,9 @@ fn _py_c_function_wrapper[
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
 
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
-    with GILAcquired(cpython):
+    with GILAcquired(Python(cpython)):
         if user_func.isa[PyFunction]():
             return user_func[PyFunction](py_self, args).steal_data()
         elif user_func.isa[PyFunctionWithKeywords]():
@@ -1366,7 +1366,7 @@ fn check_and_get_or_convert_arg[
 
 
 fn _get_type_name(obj: PythonObject) raises -> String:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj._obj_ptr)
     var actual_type_name = PythonObject(

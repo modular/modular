@@ -152,6 +152,10 @@ mutation.
     - registering initializers that take arguments. Types no longer need to be
       `Defaultable` to be exposed and created from Python.
 
+  - The `PythonConvertible` trait has been renamed to `ConvertibleToPython`.
+    This is now consistent with the `ConvertibleFromPython` trait, modeling
+    Mojo types that can be converted either to or from a `PythonObject`.
+
 - Added `Iterator` trait for modeling types that produce a sequence of values.
 
   A type can implement `Iterator` by providing `__next__()` and `__has_next__()`
@@ -179,6 +183,9 @@ mutation.
 - A new `io` module is available in the library. Some core input/output types
   previously in the `builtin` module have been moved and imports may need to be
   adjusted.
+  - `utils/write.mojo` got moved to `io/write.mojo` as well.
+
+- Added support for NVIDIA GeForce RTX 3090.
 
 ### Tooling changes
 
@@ -240,3 +247,6 @@ mutation.
 
 - [#5066](https://github.com/modular/modular/issues/5066) - Correctly fill
   64-bit values on AMD in `enqueue_fill`.
+
+- [#4982](https://github.com/modular/modular/issues/4982) - Add `toggle_all`
+  to `BitSet`.

@@ -134,14 +134,16 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M: UInt = UInt(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
+    var M: UInt = UInt(
+        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
+    )
     N = b.dim[1]()
     K = b.dim[2]()
 
-    a_start_row = a_offsets[block_idx.z]
+    a_start_row = a_offsets[Int(block_idx.z)]
     a_by_expert = a.data + a_start_row * K
 
-    expert = expert_ids[block_idx.z]
+    expert = expert_ids[Int(block_idx.z)]
     b_by_expert = b.data + expert * N * K
 
     # indices in current matmul
@@ -242,7 +244,7 @@ fn grouped_matmul_sm90[
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
@@ -313,8 +315,8 @@ fn grouped_matmul_sm90[
         c_swizzle=c_swizzle,
         cluster_shape=cluster_shape,
         transpose_b=True,
-        num_threads=num_threads,
-        pipeline_stages = config.num_pipeline_stages,
+        num_threads = Int(num_threads),
+        pipeline_stages = Int(config.num_pipeline_stages),
         use_tma_store=False,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
@@ -411,14 +413,14 @@ fn grouped_matmul_kernel[
 
     # The block may be OOB because we create blocks based the maximum
     # number of tokens per expert.
-    M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
     if UInt32(block_idx_swizzle[1] * BM) >= M:
         return
 
-    a_start_row = a_offsets[block_idx.z]
+    a_start_row = a_offsets[Int(block_idx.z)]
 
     alias N = c_layout.shape[1].value()
-    expert = expert_ids[block_idx.z]
+    expert = expert_ids[Int(block_idx.z)]
     b_start_row = expert * N
 
     wgmma_op = TensorCoreAsync[

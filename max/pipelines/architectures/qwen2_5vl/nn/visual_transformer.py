@@ -27,21 +27,42 @@ from max.graph import (
     dtype_promotion,
     ops,
 )
-from max.nn import MLPV1, Conv3DV1, LinearV1, RMSNormV1, Sequential
+from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
 from max.nn.layer import Module
 
 
-@dataclass
 class VisionPatchEmbed(Module):
-    proj: Conv3DV1
-    patch_size: int = 14
-    temporal_patch_size: int = 2
-    in_channels: int = 3
-    embed_dim: int = 1152
-    spatial_merge_unit: int = 4
+    """Generates patch embeddings from pixel_values of patches."""
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+        patch_size: int = 14,
+        temporal_patch_size: int = 2,
+        in_channels: int = 3,
+        embed_dim: int = 1152,
+        spatial_merge_unit: int = 4,
+    ):
         super().__init__()
+        self.patch_size = patch_size
+        self.temporal_patch_size = temporal_patch_size
+        self.in_channels = in_channels
+        self.embed_dim = embed_dim
+        self.spatial_merge_unit = spatial_merge_unit
+
+        # Create Conv3D layer using constructor pattern
+        self.proj = Conv3D(
+            depth=temporal_patch_size,
+            height=patch_size,
+            width=patch_size,
+            in_channels=in_channels,
+            out_channels=embed_dim,
+            dtype=dtype,
+            stride=(temporal_patch_size, patch_size, patch_size),
+            device=device,
+            has_bias=False,
+        )
 
     def __call__(
         self, x: TensorValueLike, window_index: TensorValueLike
@@ -174,12 +195,36 @@ class VisionRotaryEmbedding(Module):
         raise NotImplementedError
 
 
-@dataclass
 class VisionWindowSdpaAttention(Module):
-    dim: int
-    n_heads: int
-    qkv: LinearV1
-    proj: LinearV1
+    """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL."""
+
+    def __init__(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+        dim: int,
+        n_heads: int,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+
+        # Create Linear layers using constructor pattern
+        self.qkv = Linear(
+            in_dim=dim,
+            out_dim=dim * 3,  # Q, K, V projections
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        self.proj = Linear(
+            in_dim=dim,
+            out_dim=dim,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
 
     @staticmethod
     def apply_rotary_pos_emb_vision(
@@ -188,14 +233,10 @@ class VisionWindowSdpaAttention(Module):
         def _rotate_half(x: TensorValue) -> TensorValue:
             """Rotates half the hidden dims of the input."""
             head_dim = x.shape[-1]
-            head_dim_val = TensorValue(head_dim)
             half_dim = head_dim // 2
-            half_dim_val = TensorValue(half_dim)
-            slice_re = (slice(0, half_dim_val), half_dim)
-            slice_im = (slice(half_dim_val, head_dim_val), half_dim)
-            x_re = x[..., slice_re]
-            x_im = x[..., slice_im]
-            return ops.concat((x_re, x_im), -1)
+            x1 = x[..., :half_dim]
+            x2 = x[..., half_dim:]
+            return ops.concat((-x2, x1), -1)
 
         orig_q_dtype = q.dtype
         orig_k_dtype = k.dtype
@@ -221,7 +262,7 @@ class VisionWindowSdpaAttention(Module):
         """Computes scaled dot product attention on query, key and value tensors, using an attention mask.
         Shape of xq, xk, and xv = (n_heads, seq_len, head_dim) = (16, 14308, 80).
         """
-        head_dim = (dim // n_heads) // 2
+        head_dim = dim // n_heads
         scale = math.sqrt(1.0 / head_dim)
         scores = xq @ ops.transpose(xk, -2, -1)
         # Note, the graph compiler currently requires the order of operands
@@ -284,15 +325,52 @@ class VisionWindowSdpaAttention(Module):
         return attn_output
 
 
-@dataclass
 class VisionBlock(Module):
-    norm1: RMSNormV1
-    norm2: RMSNormV1
-    attn: VisionWindowSdpaAttention
-    mlp: MLPV1
+    """Vision transformer block with attention and MLP."""
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+        hidden_size: int,
+        num_heads: int,
+        intermediate_size: int,
+        rms_norm_eps: float = 1e-6,
+    ):
         super().__init__()
+
+        # Create RMSNorm layers
+        self.norm1 = RMSNorm(
+            dim=hidden_size,
+            dtype=dtype,
+            eps=rms_norm_eps,
+            multiply_before_cast=False,
+        )
+
+        self.norm2 = RMSNorm(
+            dim=hidden_size,
+            dtype=dtype,
+            eps=rms_norm_eps,
+            multiply_before_cast=False,
+        )
+
+        # Create attention layer
+        self.attn = VisionWindowSdpaAttention(
+            dtype=dtype,
+            device=device,
+            dim=hidden_size,
+            n_heads=num_heads,
+        )
+
+        # Create MLP layer
+        self.mlp = MLP(
+            dtype=dtype,
+            quantization_encoding=None,
+            hidden_dim=hidden_size,
+            feed_forward_length=intermediate_size,
+            devices=[device],
+            has_bias=True,
+        )
 
     def __call__(
         self,
@@ -309,22 +387,54 @@ class VisionBlock(Module):
         return h
 
 
-@dataclass
 class PatchMerger(Module):
     """Group spatially adjacent sets of four patch features then concatenate and
     pass through a two-layer multi-layer perceptron (MLP) to project them into a
     dimension that aligns with the text embeddings used in the LLM.
     """
 
-    norm: RMSNormV1
-    mlp: Sequential
-    dim: int
+    def __init__(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+        hidden_size: int,
+        out_hidden_size: int,
+        spatial_merge_size: int,
+    ):
+        super().__init__()
+        self.dim = out_hidden_size
+        input_dim = hidden_size * (spatial_merge_size**2)
+
+        # Create RMSNorm layer
+        self.norm = RMSNorm(
+            dim=hidden_size, dtype=dtype, eps=1e-6, multiply_before_cast=False
+        )
+
+        # Create MLP sequential layers
+        self.mlp = Sequential(
+            [
+                Linear(
+                    in_dim=input_dim,
+                    out_dim=input_dim,
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+                ops.gelu,  # type: ignore
+                Linear(
+                    in_dim=input_dim,
+                    out_dim=out_hidden_size,
+                    dtype=dtype,
+                    device=device,
+                    has_bias=True,
+                ),
+            ]
+        )
 
     def __call__(self, x: TensorValue) -> TensorValue:
         return self.mlp(self.norm(x).reshape((-1, self.dim)))
 
 
-@dataclass
 class VisionTransformer(Module):
     """The bare Qwen2.5VL Vision Transformer (a redesigned Vision Transformer (ViT))
     outputting raw hidden-states without any specific head on top.
@@ -358,15 +468,67 @@ class VisionTransformer(Module):
     and is controlled by the spatial_merge_size parameter.
     """
 
-    patch_embed: VisionPatchEmbed
-    rotary_pos_emb: VisionRotaryEmbedding
-    blocks: list[VisionBlock]
-    fullatt_block_indexes: list[int]
-    spatial_merge_unit: int
-    merger: PatchMerger
-
-    def __post_init__(self):
+    def __init__(
+        self,
+        dtype: DType,
+        device: DeviceRef,
+        patch_size: int,
+        temporal_patch_size: int,
+        in_channels: int,
+        embed_dim: int,
+        num_heads: int,
+        depth: int,
+        intermediate_size: int,
+        out_hidden_size: int,
+        spatial_merge_size: int,
+        fullatt_block_indexes: list[int],
+        rms_norm_eps: float = 1e-6,
+    ):
         super().__init__()
+
+        # Store parameters
+        self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
+        self.fullatt_block_indexes = fullatt_block_indexes
+
+        # Create patch embedding layer
+        self.patch_embed = VisionPatchEmbed(
+            dtype=dtype,
+            device=device,
+            patch_size=patch_size,
+            temporal_patch_size=temporal_patch_size,
+            in_channels=in_channels,
+            embed_dim=embed_dim,
+            spatial_merge_unit=self.spatial_merge_unit,
+        )
+
+        # Create rotary position embedding
+        self.rotary_pos_emb = VisionRotaryEmbedding(
+            dim=embed_dim,
+            n_heads=num_heads,
+            theta=10000.0,
+        )
+
+        # Create transformer blocks
+        self.blocks = [
+            VisionBlock(
+                dtype=dtype,
+                device=device,
+                hidden_size=embed_dim,
+                num_heads=num_heads,
+                intermediate_size=intermediate_size,
+                rms_norm_eps=rms_norm_eps,
+            )
+            for _ in range(depth)
+        ]
+
+        # Create patch merger
+        self.merger = PatchMerger(
+            dtype=dtype,
+            device=device,
+            hidden_size=embed_dim,
+            out_hidden_size=out_hidden_size,
+            spatial_merge_size=spatial_merge_size,
+        )
 
     def __call__(
         self,

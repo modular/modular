@@ -270,7 +270,7 @@ fn multistage_dual_mma[
         .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
         .local()
         .alloc()
-        .split[2 * k_group_size]()
+        .split[Int(2 * k_group_size)]()
     )
 
     var b0_reg_tiles = (
@@ -279,7 +279,7 @@ fn multistage_dual_mma[
         .local()
         .alloc()
         .vectorize[1, b_frag_size]()
-        .split[2 * k_group_size]()
+        .split[Int(2 * k_group_size)]()
     )
     var b1_reg_tiles = (
         tb[b_type]()
@@ -287,7 +287,7 @@ fn multistage_dual_mma[
         .local()
         .alloc()
         .vectorize[1, b_frag_size]()
-        .split[2 * k_group_size]()
+        .split[Int(2 * k_group_size)]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -604,7 +604,7 @@ fn multistage_dual_gemm_kernel[
         WM,
         WN,
         Int(num_threads),
-        num_pipeline_stages,
+        Int(num_pipeline_stages),
         transpose_b,
         k_group_size = config.k_group_size,
     ](
@@ -616,7 +616,7 @@ fn multistage_dual_gemm_kernel[
         a_smem_iter,
         b0_smem_iter,
         b1_smem_iter,
-        ceildiv(K, BK),
+        Int(ceildiv(K, BK)),
     )
 
     alias HWN = WN // 2
@@ -1200,10 +1200,10 @@ fn dual_gemv_kernel[
     var tile_b0 = tile_w
     var tile_b1 = tile_w.offset(tile_n_per_B * simd_width)
 
-    alias align_act = alignof[SIMD[a_type, simd_width]]()
-    alias align_weight = alignof[SIMD[b_type, simd_width]]()
+    alias align_act = alignof[SIMD[a_type, Int(simd_width)]]()
+    alias align_weight = alignof[SIMD[b_type, Int(simd_width)]]()
 
-    memset_zero[count = tile_m * tile_n](acc)
+    memset_zero[count = Int(tile_m * tile_n)](acc)
 
     var act_idx = tile_id_m * k
     var weight_idx = tile_id_n * k

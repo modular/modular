@@ -360,7 +360,6 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         #   Support a way to get the name of the function from its parameter
         #   type, similar to `get_linkage_name()`?
 
-        # FIXME: PyMethodDef is capturing the pointer without an origin.
         var with_kwargs = func.isa[PyCFunctionWithKeywords]()
         var func_ptr = rebind[OpaquePointer](
             func[PyCFunctionWithKeywords]
@@ -1229,35 +1228,35 @@ struct GILAcquired(Movable):
 
     Example:
         ```mojo
-        var cpython = CPython()
-        with GILAcquired(cpython):
+        var python = Python()
+        with GILAcquired(Python(python)):
             # Python objects can be safely accessed here
-            var py_obj = cpython.Py_None()
+            var py_obj = python.cpython().Py_None()
         # GIL is automatically released here
         ```
     """
 
-    var cpython: CPython
+    var python: Python
     """Reference to the CPython instance."""
     var gil_state: PyGILState_STATE
     """The GIL state returned by PyGILState_Ensure."""
 
-    fn __init__(out self, cpython: CPython):
+    fn __init__(out self, python: Python):
         """Acquire the GIL and initialize the context manager.
 
         Args:
-            cpython: The CPython instance to use for GIL operations.
+            python: The CPython instance to use for GIL operations.
         """
-        self.cpython = cpython
+        self.python = python
         self.gil_state = PyGILState_STATE(PyGILState_STATE.PyGILState_UNLOCKED)
 
     fn __enter__(mut self):
         """Acquire the GIL."""
-        self.gil_state = self.cpython.PyGILState_Ensure()
+        self.gil_state = self.python.cpython().PyGILState_Ensure()
 
     fn __exit__(mut self):
         """Release the GIL."""
-        self.cpython.PyGILState_Release(self.gil_state)
+        self.python.cpython().PyGILState_Release(self.gil_state)
 
 
 @fieldwise_init
@@ -1271,8 +1270,8 @@ struct GILReleased(Movable):
 
     Example:
         ```mojo
-        var cpython = CPython()
-        with GILReleased(cpython):
+        var python = Python()
+        with GILReleased(python):
             # GIL is released here, other threads can run
             # Perform CPU-intensive work without Python object access
             perform_heavy_computation()
@@ -1280,32 +1279,35 @@ struct GILReleased(Movable):
         ```
     """
 
-    var cpython: CPython
+    var python: Python
     """Reference to the CPython instance."""
     var thread_state: UnsafePointer[PyThreadState]
     """The thread state returned by PyEval_SaveThread."""
 
-    fn __init__(out self, cpython: CPython):
+    fn __init__(out self, python: Python):
         """Save the current thread state and release the GIL.
 
         Args:
-            cpython: The CPython instance to use for GIL operations.
+            python: The Python instance to use for GIL operations.
         """
-        self.cpython = cpython
+        self.python = python
         self.thread_state = {}
 
     fn __enter__(mut self):
         """Save the current thread state and release the GIL."""
-        self.thread_state = self.cpython.PyEval_SaveThread()
+        self.thread_state = self.python.cpython().PyEval_SaveThread()
 
     fn __exit__(mut self):
         """Restore the thread state and acquire the GIL."""
-        self.cpython.PyEval_RestoreThread(self.thread_state)
+        self.python.cpython().PyEval_RestoreThread(self.thread_state)
 
 
 @fieldwise_init
-struct CPython(Copyable, Defaultable, Movable):
-    """Handle to the CPython interpreter present in the current process."""
+struct CPython(Defaultable, Movable):
+    """Handle to the CPython interpreter present in the current process.
+
+    This type is non-copyable due to its large size. Please refer to it only
+    using either a reference, or the `Python` handle type."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -1345,7 +1347,7 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
-    # Import Modules
+    # Importing Modules
     var _PyImport_ImportModule: PyImport_ImportModule.type
     var _PyImport_AddModule: PyImport_AddModule.type
     # Abstract Objects Layer
@@ -1416,9 +1418,6 @@ struct CPython(Copyable, Defaultable, Movable):
     # Capsules
     var _PyCapsule_New: PyCapsule_New.type
     var _PyCapsule_GetPointer: PyCapsule_GetPointer.type
-
-    var PyList_SetItem_func: PyList_SetItem.type
-
     # Memory Management
     var _PyObject_Free: PyObject_Free.type
     # Object Implementation Support
@@ -1494,14 +1493,15 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self.version = PythonVersion(0, 0, 0)
 
+        # The Very High Level Layer
         self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
         self._PyRun_String = PyRun_String.load(self.lib)
         self._Py_CompileString = Py_CompileString.load(self.lib)
         self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
-
+        # Reference Counting
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
-
+        # Exception Handling
         self._PyErr_Clear = PyErr_Clear.load(self.lib)
         self._PyErr_SetString = PyErr_SetString.load(self.lib)
         self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
@@ -1513,15 +1513,16 @@ struct CPython(Copyable, Defaultable, Movable):
         else:
             self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
         self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
-
+        # Initialization, Finalization, and Threads
         self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
         self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
         self._PyGILState_Release = PyGILState_Release.load(self.lib)
-
+        # Importing Modules
         self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
         self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
-
+        # Abstract Objects Layer
+        # Object Protocol
         self._PyObject_HasAttrString = PyObject_HasAttrString.load(self.lib)
         self._PyObject_GetAttrString = PyObject_GetAttrString.load(self.lib)
         self._PyObject_SetAttrString = PyObject_SetAttrString.load(self.lib)
@@ -1533,23 +1534,24 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyObject_GetItem = PyObject_GetItem.load(self.lib)
         self._PyObject_SetItem = PyObject_SetItem.load(self.lib)
         self._PyObject_GetIter = PyObject_GetIter.load(self.lib)
-
+        # Call Protocol
         self._PyObject_Call = PyObject_Call.load(self.lib)
         self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
-
+        # Number Protocol
         self._PyNumber_Long = PyNumber_Long.load(self.lib)
         self._PyNumber_Float = PyNumber_Float.load(self.lib)
-
+        # Iterator Protocol
         self._PyIter_Check = PyIter_Check.load(self.lib)
         self._PyIter_Next = PyIter_Next.load(self.lib)
-
+        # Concrete Objects Layer
+        # Type Objects
         self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
         if self.version.minor >= 11:
             self._PyType_GetName = PyType_GetName.load(self.lib)
         else:
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
-
+        # The None Object
         if self.version.minor >= 13:
             # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
             # References:
@@ -1565,27 +1567,27 @@ struct CPython(Copyable, Defaultable, Movable):
             self._Py_None = PyObjectPtr(
                 self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
-
+        # Integer Objects
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
-
+        # Boolean Objects
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
-
+        # Floating-Point Objects
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
-
+        # Unicode Objects and Codecs
         self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
         self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
-
+        # Tuple Objects
         self._PyTuple_New = PyTuple_New.load(self.lib)
         self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib)
         self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib)
-
+        # List Objects
         self._PyList_New = PyList_New.load(self.lib)
         self._PyList_GetItem = PyList_GetItem.load(self.lib)
         self._PyList_SetItem = PyList_SetItem.load(self.lib)
-
+        # Dictionary Objects
         self._PyDict_Type = PyTypeObjectPtr(
             # PyTypeObject PyDict_Type
             self.lib.get_symbol[PyTypeObject]("PyDict_Type")
@@ -1594,10 +1596,10 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib)
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(self.lib)
         self._PyDict_Next = PyDict_Next.load(self.lib)
-
+        # Set Objects
         self._PySet_New = PySet_New.load(self.lib)
         self._PySet_Add = PySet_Add.load(self.lib)
-
+        # Module Objects
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
@@ -1605,16 +1607,15 @@ struct CPython(Copyable, Defaultable, Movable):
             self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
         else:
             self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
-
+        # Slice Objects
         self._PySlice_New = PySlice_New.load(self.lib)
-
+        # Capsules
         self._PyCapsule_New = PyCapsule_New.load(self.lib)
         self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(self.lib)
-
-        self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
-
+        # Memory Management
         self._PyObject_Free = PyObject_Free.load(self.lib)
-
+        # Object Implementation Support
+        # Common Object Structures
         if self.version.minor >= 10:
             self._Py_Is = Py_Is.load(self.lib)
         else:

@@ -34,12 +34,13 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import is_triple
+from sys.info import is_triple, _TargetType
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
+from builtin.variadics import VariadicOf
 from compile.compile import CompiledFunctionInfo
 from gpu.host.compile import (
     _compile_code,
@@ -1476,7 +1477,7 @@ struct DeviceStream:
         )
 
 
-fn _is_nvidia_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
+fn _is_nvidia_gpu[target: _TargetType]() -> Bool:
     return is_triple["nvptx64-nvidia-cuda", target]()
 
 
@@ -1498,9 +1499,9 @@ fn _is_path_like(ss: StringSlice) -> Bool:
 struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-    declared_arg_types: Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]],
+    declared_arg_types: Optional[VariadicOf[AnyType]],
     *,
-    target: __mlir_type.`!kgen.target` = get_gpu_target(),
+    target: _TargetType = get_gpu_target(),
     compile_options: StaticString = GPUInfo.from_target[
         target
     ]().compile_options,
@@ -2922,7 +2923,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -2932,7 +2933,7 @@ struct DeviceContext(Copyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
+            Optional[VariadicOf[AnyType]](None),
             target=target,
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -2982,7 +2983,7 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -2992,7 +2993,7 @@ struct DeviceContext(Copyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
+            Optional[VariadicOf[AnyType]](None),
             target=target,
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -3047,13 +3048,13 @@ struct DeviceContext(Copyable, Movable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3121,12 +3122,12 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: fn (* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3191,13 +3192,13 @@ struct DeviceContext(Copyable, Movable):
     @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3265,12 +3266,12 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn compile_function_experimental[
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3405,7 +3406,7 @@ struct DeviceContext(Copyable, Movable):
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+        target: _TargetType = Self.device_info.target(),
         compile_options: StaticString = Self.device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
@@ -3852,7 +3853,7 @@ struct DeviceContext(Copyable, Movable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
@@ -3958,7 +3959,7 @@ struct DeviceContext(Copyable, Movable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -4059,7 +4060,7 @@ struct DeviceContext(Copyable, Movable):
     @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: func_type,
         signature_func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
@@ -4166,7 +4167,7 @@ struct DeviceContext(Copyable, Movable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        declared_arg_types: VariadicOf[AnyType], //,
         func: fn (* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
@@ -4271,9 +4272,7 @@ struct DeviceContext(Copyable, Movable):
     fn enqueue_function_experimental[
         func_type: AnyTrivialRegType, //,
         func: func_type,
-        declared_arg_types: Optional[
-            __mlir_type[`!kgen.variadic<`, AnyType, `>`]
-        ],
+        declared_arg_types: Optional[VariadicOf[AnyType]],
         *Ts: DevicePassable,
     ](
         self,

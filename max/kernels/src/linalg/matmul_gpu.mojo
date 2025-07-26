@@ -172,11 +172,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
+            a_val = a[Int(row), Int(offset + localCol)] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < m else 0.0
+            a_val = a[Int(row), Int(offset + localCol)] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -184,11 +184,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
+            b_val = b[Int(offset + localRow), Int(col)] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < n else 0.0
+            b_val = b[Int(offset + localRow), Int(col)] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -233,8 +233,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = global_idx.x
-    var y = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
     if x >= m or y >= n:
         return
@@ -1249,7 +1249,7 @@ fn multistage_gemm[
             )
             alias work_space_type = config.split_k_reduction_type
             var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-                runtime_config.num_k_partitions * M * N
+                Int(runtime_config.num_k_partitions * M * N)
             )
             var work_space = NDBuffer[work_space_type, 3](
                 work_space_data._unsafe_ptr(),

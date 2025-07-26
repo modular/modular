@@ -13,7 +13,7 @@
 
 from collections import BitSet
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_not_equal, assert_false, assert_true
 
 
 def test_bitset_init():
@@ -80,6 +80,33 @@ def test_bitset_toggle():
     assert_true(bs.test(20), msg="Bit 20 should be set")
     assert_true(bs.test(30), msg="Bit 30 should be set")
     assert_equal(len(bs), 3, msg="BitSet length should be 31")
+
+
+def test_bitset_toggle_all():
+    var bs1 = BitSet[64]()
+    var bs2 = BitSet[64]()
+
+    # set random enough pattern in both BitSets
+    for idx in [0, 1, 10, 19, 22, 37, 56, 63]:
+        bs1.set(idx)
+        bs2.set(idx)
+
+    # toggle all in one BitSet
+    bs1.toggle_all()
+
+    # assert that they differ in all idx
+    for idx in range(64):
+        assert_not_equal(
+            bs1.test(idx),
+            bs2.test(idx),
+            msg="Bit "
+            + String(idx)
+            + " should be "
+            + String(not bs2.test(idx))
+            + " after toggle",
+        )
+
+    assert_equal(len(bs1), 56, msg="BitSet total popcount should be 56")
 
 
 def test_bitset_count():
@@ -666,6 +693,7 @@ def main():
     test_bitset_init()
     test_bitset_set_test_clear()
     test_bitset_toggle()
+    test_bitset_toggle_all()
     test_bitset_count()
     test_bitset_bounds()
     test_bitset_str_repr()
