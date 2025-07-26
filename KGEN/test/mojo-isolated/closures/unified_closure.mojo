@@ -264,8 +264,10 @@ fn nested[
 # CHECK: [[TRAIT:!Int.*]] = !lit.trait<@{{.*}}::@"fn(z: Int) -> Int">
 
 
-# CHECK: kgen.struct.generator @{{.*}}::bindIt({{.*}})::myclosure": [[TRAIT]] = !
-# CHECK-SAME: kgen.closure<@{{.*}}::@"bindIt({{.*}})", "myclosure" nonescaping>{
+# CHECK: module {
+# CHECK-NEXT: kgen.struct.generator @{{.*}}::bindIt({{.*}})::myclosure"
+# CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::@"bindIt(::Int,::Int)" "myclosure">>:
+# CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::@"bindIt({{.*}})", "myclosure" nonescaping>{
 # CHECK: kgen.conformance @"{{.*}}::fn(z: Int) -> Int" {
 # CHECK-NEXT: kgen.witness "__call__"
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
