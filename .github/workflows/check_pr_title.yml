@@ -15,10 +15,12 @@ name: Check PR title
 
 on:
   pull_request:
-    # By default, a workflow only runs when a pull_request's activity type is opened, synchronize, or reopened. We
-    # explicitly override here so that PR titles are re-linted when the PR text content is edited.
+    # By default, a workflow only runs when a pull_request's activity type is
+    # opened, synchronize, or reopened. We explicitly override here so that PR
+    # titles are re-linted when the PR text content is edited.
     #
-    # Possible values: https://help.github.com/en/actions/reference/events-that-trigger-workflows#pull-request-event-pull_request
+    # Possible values:
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request
     types: [opened, edited, reopened, synchronize]
 
 jobs:
@@ -32,7 +34,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: morrisoncole/pr-lint-action@51f3cfabaf5d46f94e54524214e45685f0401b2a
+      - uses: morrisoncole/pr-lint-action@v1.7.1
         if: github.actor != 'dependabot[bot]'
         with:
           title-regex: "^(Revert \")?(\\[\\S.*\\]\\s?)+\\s+[a-zA-Z`].*"
@@ -62,5 +64,4 @@ jobs:
             ```
             as the regex to test and ```${{ github.event.pull_request.title }}```
             as the test string.</small>"
-          on-succeeded-regex-dismiss-review-comment:
-            "All good now, thanks!🫸🫷"
+          on-succeeded-regex-dismiss-review-comment: "All good now, thanks!🫸🫷"
