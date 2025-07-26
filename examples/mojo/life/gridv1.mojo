@@ -16,7 +16,7 @@ from collections import Optional
 
 
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -29,7 +29,7 @@ struct Grid(Copyable, Movable, StringableRaising):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__(self, row: Int, col: Int) -> Int:
+    fn __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
     def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
@@ -39,7 +39,7 @@ struct Grid(Copyable, Movable, StringableRaising):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         # Create an empty String
         str = String()
 
@@ -60,7 +60,7 @@ struct Grid(Copyable, Movable, StringableRaising):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def glider() -> Self:
+    fn glider() -> Self:
         var glider = [
             [0, 1, 0, 0, 0, 0, 0, 0],
             [0, 0, 1, 0, 0, 0, 0, 0],
@@ -74,7 +74,7 @@ struct Grid(Copyable, Movable, StringableRaising):
         return Grid(8, 8, glider)
 
     @staticmethod
-    def random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
+    fn random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
         if seed:
             random.seed(seed.value())
         else:
@@ -96,7 +96,7 @@ struct Grid(Copyable, Movable, StringableRaising):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def evolve(self) -> Self:
+    fn evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):

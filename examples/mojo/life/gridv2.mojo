@@ -17,7 +17,7 @@ from collections import Optional
 from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
+struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -29,7 +29,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__(out self):
+    fn __init__(out self):
         self.data = UnsafePointer[Int8].alloc(self.num_cells)
         memset_zero(self.data, self.num_cells)
 
@@ -38,7 +38,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
         memcpy(dest=self.data, src=existing.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(owned self):
+    fn __del__(var self):
         for i in range(self.num_cells):
             (self.data + i).destroy_pointee()
         self.data.free()
@@ -48,7 +48,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def random(seed: Optional[Int] = None) -> Self:
+    fn random(seed: Optional[Int] = None) -> Self:
         if seed:
             random.seed(seed.value())
         else:
@@ -63,17 +63,17 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__(self, row: Int, col: Int) -> Int8:
+    fn __getitem__(self, row: Int, col: Int) -> Int8:
         return (self.data + row * cols + col)[]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
+    fn __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
         (self.data + row * cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         str = String()
         for row in range(rows):
             for col in range(cols):
@@ -89,7 +89,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def evolve(self) -> Self:
+    fn evolve(self) -> Self:
         next_generation = Self()
 
         for row in range(rows):
