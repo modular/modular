@@ -1315,8 +1315,6 @@ struct CPython(Defaultable, Movable):
 
     var lib: DLHandle
     """The handle to the CPython shared library."""
-    var logging_enabled: Bool
-    """Whether logging is enabled."""
     var version: PythonVersion
     """The version of the Python runtime."""
     var total_ref_count: UnsafePointer[Int]
@@ -1429,12 +1427,6 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        var logging_enabled = getenv("MODULAR_CPYTHON_LOGGING") == "ON"
-        if logging_enabled:
-            print("CPython init")
-            print("MOJO_PYTHON:", getenv("MOJO_PYTHON"))
-            print("MOJO_PYTHON_LIBRARY:", getenv("MOJO_PYTHON_LIBRARY"))
-
         # Add directory of target file to top of sys.path to find python modules
         var file_dir = dirname(argv()[0])
         if Path(file_dir).is_dir() or file_dir == "":
@@ -1460,10 +1452,6 @@ struct CPython(Defaultable, Movable):
 
         var python_lib = getenv("MOJO_PYTHON_LIBRARY")
 
-        if logging_enabled:
-            print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
-            print("libpython selected:", python_lib)
-
         # Note:
         #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
         #   is a dynamic library being loaded as a Python extension module,
@@ -1484,7 +1472,7 @@ struct CPython(Defaultable, Movable):
             )
 
         self.total_ref_count = UnsafePointer[Int].alloc(1)
-        self.logging_enabled = logging_enabled
+
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
@@ -1625,8 +1613,6 @@ struct CPython(Defaultable, Movable):
         pass
 
     fn destroy(mut self):
-        self.log("CPython destroy")
-        self.log("Number of remaining refs:", self.total_ref_count[])
         # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
         self.lib.call["Py_FinalizeEx"]()
         self.lib.close()
@@ -1734,32 +1720,6 @@ struct CPython(Defaultable, Movable):
         return ptr[]
 
     # ===-------------------------------------------------------------------===#
-    # Logging
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn log[*Ts: Writable](self, *args: *Ts):
-        """If logging is enabled, print the given arguments as a log message.
-
-        Parameters:
-            Ts: The argument types.
-
-        Arguments:
-            args: The arguments to log.
-        """
-        if not self.logging_enabled:
-            return
-
-        # TODO(MOCO-358):
-        #   Once Mojo argument splatting is supported, this should just
-        #   be: `print(*args)`
-        @parameter
-        for i in range(args.__len__()):
-            print(args[i], sep="", end="", flush=False)
-
-        print(flush=True)
-
-    # ===-------------------------------------------------------------------===#
     # Python/C API
     # ref: https://docs.python.org/3/c-api/index.html
     # ===-------------------------------------------------------------------===#
@@ -1795,15 +1755,6 @@ struct CPython(Defaultable, Movable):
         """
         var r = self._PyRun_String(
             str.unsafe_cstr_ptr(), start, globals, locals
-        )
-        self.log(
-            r,
-            " NEWREF PyRun_String, str:",
-            str,
-            ", ptr: ",
-            r,
-            ", refcnt:",
-            self._Py_REFCNT(r),
         )
         self._inc_total_rc()
         return r
@@ -1868,7 +1819,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_XINCREF
         """
-        self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_IncRef(ptr)
         self._inc_total_rc()
 
@@ -1881,7 +1831,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_XDECREF
         """
-        self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self._Py_DecRef(ptr)
         self._dec_total_rc()
 
@@ -1980,9 +1929,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
         """
         var r = self._PyErr_GetRaisedException()
-        self.log(
-            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
-        )
         self._inc_total_rc()
         return r
 
@@ -2007,7 +1953,6 @@ struct CPython(Defaultable, Movable):
         )
 
         var r = value
-        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
         self._inc_total_rc()
         return r
 
@@ -2068,13 +2013,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
         var r = self._PyImport_ImportModule(name.unsafe_cstr_ptr())
-        self.log(
-            r,
-            " NEWREF PyImport_ImportModule, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-        )
         self._inc_total_rc()
         return r
 
@@ -2119,15 +2057,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
         var r = self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
-        self.log(
-            r,
-            " NEWREF PyObject_GetAttrString, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj,
-        )
         self._inc_total_rc()
         return r
 
@@ -2140,18 +2069,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
         """
-        var r = self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
-        self.log(
-            "PyObject_SetAttrString str:",
-            name,
-            ", parent obj:",
-            obj,
-            ", new value:",
-            value,
-            " new value ref count: ",
-            self._Py_REFCNT(value),
-        )
-        return r
+        return self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
 
     fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Compute a string representation of object `obj`.
@@ -2215,15 +2133,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem
         """
         var r = self._PyObject_GetItem(obj, key)
-        self.log(
-            r,
-            " NEWREF PyObject_GetItem, key:",
-            key,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj,
-        )
         self._inc_total_rc()
         return r
 
@@ -2236,18 +2145,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_SetItem
         """
-        var r = self._PyObject_SetItem(obj, key, value)
-        self.log(
-            "PyObject_SetItem result:",
-            r,
-            ", key:",
-            key,
-            ", value:",
-            value,
-            ", parent obj:",
-            obj,
-        )
-        return r
+        return self._PyObject_SetItem(obj, key, value)
 
     fn PyObject_GetIter(self, obj: PyObjectPtr) -> PyObjectPtr:
         """This is equivalent to the Python expression `iter(obj)`. It returns
@@ -2260,15 +2158,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter
         """
         var r = self._PyObject_GetIter(obj)
-        self.log(
-            r,
-            " NEWREF PyObject_GetIter, refcnt:",
-            self._Py_REFCNT(r),
-            "referencing ",
-            obj,
-            "refcnt of traversable: ",
-            self._Py_REFCNT(obj),
-        )
         self._inc_total_rc()
         return r
 
@@ -2292,13 +2181,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/call.html#c.PyObject_Call
         """
         var r = self._PyObject_Call(callable, args, kwargs)
-        self.log(
-            r,
-            " NEWREF PyObject_Call, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable,
-        )
         self._inc_total_rc()
         return r
 
@@ -2316,13 +2198,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject
         """
         var r = self._PyObject_CallObject(callable, args)
-        self.log(
-            r,
-            " NEWREF PyObject_CallObject, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable,
-        )
         self._inc_total_rc()
         return r
 
@@ -2384,15 +2259,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/iter.html#c.PyIter_Next
         """
         var r = self._PyIter_Next(obj)
-        self.log(
-            r,
-            " NEWREF PyIter_Next from ",
-            obj,
-            ", refcnt(obj):",
-            self._Py_REFCNT(r),
-            "refcnt(iter)",
-            self._Py_REFCNT(obj),
-        )
         if r:
             self._inc_total_rc()
         return r
@@ -2480,13 +2346,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
         """
         var r = self._PyLong_FromSsize_t(value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSsize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
         self._inc_total_rc()
         return r
 
@@ -2500,13 +2359,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
         """
         var r = self._PyLong_FromSize_t(value)
-        self.log(
-            r,
-            " NEWREF PyLong_FromSize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
         self._inc_total_rc()
         return r
 
@@ -2538,13 +2390,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
         """
         var r = self._PyBool_FromLong(value)
-        self.log(
-            r,
-            " NEWREF PyBool_FromLong, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
         self._inc_total_rc()
         return r
 
@@ -2562,13 +2407,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble
         """
         var r = self._PyFloat_FromDouble(value)
-        self.log(
-            r,
-            " NEWREF PyFloat_FromDouble, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
         self._inc_total_rc()
         return r
 
@@ -2602,13 +2440,6 @@ struct CPython(Defaultable, Movable):
             s.unsafe_ptr().bitcast[c_char](),
             Py_ssize_t(s.byte_length()),
             "strict".unsafe_cstr_ptr(),
-        )
-        self.log(
-            r,
-            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
-            self._Py_REFCNT(r),
-            ", str:",
-            s,
         )
         self._inc_total_rc()
         return r
@@ -2644,13 +2475,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New
         """
         var r = self._PyTuple_New(length)
-        self.log(
-            r,
-            " NEWREF PyTuple_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", tuple size:",
-            length,
-        )
         self._inc_total_rc()
         return r
 
@@ -2701,13 +2525,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/list.html#c.PyList_New
         """
         var r = self._PyList_New(length)
-        self.log(
-            r,
-            " NEWREF PyList_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", list size:",
-            length,
-        )
         self._inc_total_rc()
         return r
 
@@ -2764,7 +2581,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_New
         """
         var r = self._PyDict_New()
-        self.log(r, " NEWREF PyDict_New, refcnt:", self._Py_REFCNT(r))
         self._inc_total_rc()
         return r
 
@@ -2781,9 +2597,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem
         """
-        var r = self._PyDict_SetItem(dict, key, value)
-        self.log("PyDict_SetItem, key: ", key, " value: ", value)
-        return r
+        return self._PyDict_SetItem(dict, key, value)
 
     fn PyDict_GetItemWithError(
         self,
@@ -2797,9 +2611,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError
         """
-        var r = self._PyDict_GetItemWithError(dict, key)
-        self.log("PyDict_GetItemWithError, key: ", key)
-        return r
+        return self._PyDict_GetItemWithError(dict, key)
 
     fn PyDict_Next(
         self,
@@ -2813,22 +2625,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
         """
-        var r = self._PyDict_Next(dict, pos, key, value)
-        self.log(
-            "PyDict_Next",
-            dict,
-            "refcnt:",
-            self._Py_REFCNT(dict),
-            " key: ",
-            key[],
-            ", refcnt(key):",
-            self._Py_REFCNT(key[]),
-            " value: ",
-            value[],
-            ", refcnt(value):",
-            self._Py_REFCNT(value[]),
-        )
-        return r
+        return self._PyDict_Next(dict, pos, key, value)
 
     # ===-------------------------------------------------------------------===#
     # Set Objects
@@ -2844,7 +2641,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/set.html#c.PySet_New
         """
         var r = self._PySet_New(iterable)
-        self.log(r, " NEWREF PySet_New, refcnt:", self._Py_REFCNT(r))
         self._inc_total_rc()
         return r
 
@@ -2854,9 +2650,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/set.html#c.PySet_Add
         """
-        var r = self._PySet_Add(set, key)
-        self.log(set, " PySet_Add, key: ", key)
-        return r
+        return self._PySet_Add(set, key)
 
     # ===-------------------------------------------------------------------===#
     # Module Objects
@@ -2945,17 +2739,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/slice.html#c.PySlice_New
         """
         var r = self._PySlice_New(start, stop, step)
-        self.log(
-            r,
-            " NEWREF PySlice_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", start:",
-            start,
-            ", stop:",
-            stop,
-            ", step:",
-            step,
-        )
         self._inc_total_rc()
         return r
 
