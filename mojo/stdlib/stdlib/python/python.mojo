@@ -78,8 +78,6 @@ struct Python(Copyable, Defaultable):
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        """Default constructor."""
-
         self._impl = _get_python_interface()
 
     fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
@@ -99,11 +97,7 @@ struct Python(Copyable, Defaultable):
         Returns:
             Handle to the CPython interpreter instance in the current process.
         """
-        return self._cpython_ptr()[]
-
-    @always_inline
-    fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
-        return self._impl
+        return self._impl[]
 
     fn eval(self, var code: String) -> Bool:
         """Executes the given Python code.
