@@ -107,17 +107,6 @@ class Weights(Protocol):
         """Iterate through all allocable weights that start with the prefix."""
         ...
 
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Args:
-            dtype: If specified, the returned array will be cast to the dtype
-                before returning.
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        ...
-
     def data(self) -> WeightData:
         """Returns data loaded from the weights at the current prefix.
 
