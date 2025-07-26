@@ -15,14 +15,12 @@ from pathlib import Path
 from typing import Any, Optional, Union, cast
 
 import numpy as np
-import numpy.typing as npt
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max._core_types.driver import DLPackArray
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Device, DLPackArray, Tensor
 from max.profiler import traced
 from max.support.paths import (
     _build_mojo_source_package,
@@ -33,7 +31,6 @@ from max.support.paths import (
 
 # implements the protocol
 
-DLPackCompatible = Union[DLPackArray, npt.NDArray]
 InputShape = Optional[list[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
@@ -41,9 +38,7 @@ CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
 ScalarType = (int, float, bool, np.generic)
-InputType = Union[
-    DLPackCompatible, Tensor, MojoValue, int, float, bool, np.generic
-]
+InputType = Union[DLPackArray, Tensor, MojoValue, int, float, bool, np.generic]
 
 
 class GPUProfilingMode(str, Enum):
@@ -323,7 +318,7 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
-        weights_registry: Mapping[str, DLPackCompatible] | None = None,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -348,7 +343,7 @@ class InferenceSession:
             RuntimeError: If the path provided is invalid.
         """
         options_dict: dict[str, Any] = {}
-        weights_registry_real: Mapping[str, DLPackCompatible] = (
+        weights_registry_real: Mapping[str, DLPackArray] = (
             weights_registry or {}
         )
 
