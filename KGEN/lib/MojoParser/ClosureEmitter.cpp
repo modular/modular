@@ -1569,7 +1569,13 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
       StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
                                .concat("::")
                                .concat(closureType.getName().getValue()));
-  ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, {});
+  ParamClosureType paramClosureType =
+      KGEN::ParamClosureType::get(ctx, parentSymbolRef, closureType.getName());
+  ClosureAttr packedParamCaptures =
+      KGEN::ClosureAttr::get(ctx, paramClosureType);
+  SmallVector<ParamDeclAttr> closureParams;
+  closureParams.push_back(ParamDeclAttr::get("CAPTURES", paramClosureType));
+  ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPoint(fileModuleOp);
   TraitType traitType = TraitType::get(getFullyResolvedSymbolRef(
@@ -1615,9 +1621,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
     });
     for (Type paramType : sig.getInputParamTypes())
       paramValues.push_back(UnboundAttr::get(replacer.replace(paramType)));
-    paramValues.push_back(KGEN::ClosureAttr::get(
-        ctx, KGEN::ParamClosureType::get(ctx, parentSymbolRef,
-                                         closureType.getName())));
+    paramValues.push_back(packedParamCaptures);
 
     TypedAttr symbol = ClosureSymbolAttr::get(
         ctx, parentSymbolRef, closureType.getName(),
@@ -1634,7 +1638,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
   // Type value contains the reference to the struct gen op with the witness
   // table.
   auto typeValue = KGEN::TypeValueType::get(
-      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef, {}, traitType));
+      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
+                                     {packedParamCaptures}, traitType));
   auto typeParamAttr = TypeParamAttr::get(typeValue, closureType, traitType);
   return typeParamAttr;
 }
