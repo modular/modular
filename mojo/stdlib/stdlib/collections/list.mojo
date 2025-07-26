@@ -31,28 +31,31 @@ from .optional import Optional
 
 @fieldwise_init
 struct _ListIter[
-    list_mutability: Bool, //,
+    mut: Bool, //,
     T: Copyable & Movable,
     hint_trivial_type: Bool,
-    list_origin: Origin[list_mutability],
+    origin: Origin[mut],
     forward: Bool = True,
 ](Copyable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:
-        list_mutability: Whether the reference to the list is mutable.
+        mut: Whether the reference to the list is mutable.
         T: The type of the elements in the list.
         hint_trivial_type: Set to `True` if the type `T` is trivial, this is not
             mandatory, but it helps performance. Will go away in the future.
-        list_origin: The origin of the List
+        origin: The origin of the List
         forward: The iteration direction. `False` is backwards.
     """
 
     alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
-    alias list_type = List[T, hint_trivial_type]
 
     var index: Int
-    var src: Pointer[Self.list_type, list_origin]
+    var src: Pointer[List[Self.Element, hint_trivial_type], origin]
+
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -62,7 +65,7 @@ struct _ListIter[
         else:
             return self.index > 0
 
-    fn __next_ref__(mut self) -> ref [list_origin] T:
+    fn __next_ref__(mut self) -> ref [origin] Self.Element:
         @parameter
         if forward:
             self.index += 1
@@ -72,12 +75,8 @@ struct _ListIter[
             return self.src[][self.index]
 
     @always_inline
-    fn __next__(mut self) -> T:
+    fn __next__(mut self) -> Self.Element:
         return self.__next_ref__()
-
-    @always_inline
-    fn __iter__(self) -> Self:
-        return self
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
