@@ -149,20 +149,6 @@ class PytorchWeights:
     def __getitem__(self, idx: int | str) -> PytorchWeights:
         return self.__getattr__(str(idx))
 
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        if self._prefix not in self._tensor_infos:
-            raise KeyError(
-                f"Could not find weight named {self._prefix}. Please check that"
-                " the name is correct."
-            )
-
-        return self._tensor_infos[self._prefix]
-
     def data(self) -> WeightData:
         tensor_info = self._tensor_infos[self._prefix]
         dtype = DType.from_torch(self._tensor_infos[self._prefix].dtype)

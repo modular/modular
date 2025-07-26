@@ -16,7 +16,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping, Sequence, Set
 from os import PathLike
-from typing import Any, Optional
+from typing import Optional
 
 import numpy.typing as npt
 from max._core.safetensors import SafeTensor, safe_open
@@ -146,21 +146,6 @@ class SafetensorWeights(Weights):
 
         self._st_weight_map[self._prefix] = tensor
         return tensor
-
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        tensor = self._load_tensor()
-        if tensor.dtype == DType.bfloat16:
-            np_array = tensor.view(DType.float16).to_numpy()
-        elif tensor.dtype in [DType.float8_e4m3fn, DType.float8_e5m2]:
-            np_array = tensor.view(DType.uint8).to_numpy()
-        else:
-            np_array = tensor.to_numpy()
-        return np_array
 
     def data(self) -> WeightData:
         tensor = self._load_tensor()
