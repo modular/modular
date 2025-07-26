@@ -17,10 +17,8 @@ import max._core.dtype
 from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
-from numpy import typing as npt
 
-DLPackCompatible = Union[DLPackArray, npt.NDArray]
-InputType = Union[DLPackCompatible, Tensor, MojoValue, int, float, bool]
+InputType = Union[DLPackArray, Tensor, MojoValue, int, float, bool]
 
 class TensorSpec:
     """
