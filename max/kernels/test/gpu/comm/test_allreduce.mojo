@@ -23,7 +23,7 @@ from gpu.comm.allreduce import (
     allreduce,
 )
 from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_true
 
 from utils import IndexList, StaticTuple
 
@@ -234,6 +234,10 @@ def main():
     # Test hyperparameters.
     alias test_dtypes = (DType.bfloat16, DType.float32)
     alias test_gpu_counts = (2, 4, 8)
+
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
 
     # Run tests for each configuration.
     @parameter
