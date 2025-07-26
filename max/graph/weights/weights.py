@@ -24,8 +24,8 @@ from typing import (
     runtime_checkable,
 )
 
-import numpy as np
 import numpy.typing as npt
+from max._core_types.driver import DLPackArray
 from max.driver import CPU, Tensor
 from max.dtype import DType
 
@@ -41,10 +41,12 @@ _CAST_MODEL = None
 
 
 def _cast_to_dtype(
-    tensor: np.ndarray, old_dtype: DType, new_dtype: DType
-) -> np.ndarray:
+    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType
+) -> Tensor:
     # FIXME: This is a circular dep
     from max.engine import InferenceSession  # type: ignore
+
+    tensor = Tensor.from_dlpack(raw_tensor)
 
     original_shape = tensor.shape
     global _INF_SESSION
@@ -67,11 +69,9 @@ def _cast_to_dtype(
 
         _CAST_MODEL = _INF_SESSION.load(graph)
 
-    result = _CAST_MODEL(tensor.reshape(-1))[0]
+    result = _CAST_MODEL(tensor.view(old_dtype, [tensor.num_elements]))[0]
     assert isinstance(result, Tensor)
-    if new_dtype == DType.bfloat16:
-        result = result.view(DType.float16)
-    return result.to_numpy().reshape(original_shape)
+    return result.view(new_dtype, original_shape)
 
 
 @runtime_checkable
@@ -146,7 +146,7 @@ class Weights(Protocol):
 class WeightData:
     """Data loaded from a checkpoint."""
 
-    data: npt.NDArray
+    data: DLPackArray
     name: str
     dtype: DType
     shape: Shape
@@ -165,10 +165,7 @@ class WeightData:
     def astype(self, dtype: DType) -> WeightData:
         if self.dtype == dtype:
             return self
-        if self.dtype == DType.bfloat16 or dtype == DType.bfloat16:
-            data = _cast_to_dtype(self.data, self.dtype, dtype)
-        else:
-            data = self.data.astype(dtype.to_numpy())
+        data = _cast_to_dtype(self.data, self.dtype, dtype)
         return WeightData(
             data=data,
             name=self.name,
