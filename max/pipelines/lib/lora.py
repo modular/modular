@@ -23,9 +23,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.engine import DLPackCompatible
 from max.graph import Weight
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
@@ -262,7 +261,7 @@ class LoRAManager:
         if lora_paths:
             self.load_adapters(lora_paths)
 
-        self._alias_buffers: dict[str, DLPackCompatible] = {}
+        self._alias_buffers: dict[str, DLPackArray] = {}
 
     def _name_to_slot(self, name: str):
         """

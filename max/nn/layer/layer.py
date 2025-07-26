@@ -21,11 +21,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Callable, Protocol, Union, get_args
+from typing import Any, Callable, Protocol
 
 import numpy as np
-from max._core_types.driver import DLPackArray
-from max.driver import Tensor
+from max.driver import DLPackArray, Tensor
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -42,8 +41,6 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
 from .._identity import IdentitySet
-
-DLPackCompatible = Union[DLPackArray, np.ndarray]
 
 
 class Shardable(Protocol):
@@ -159,7 +156,7 @@ class Module(Layer, ABC):
         if not hasattr(self, "_sublayers"):
             self._sublayers: dict[str, Module] = {}
             self._layer_weights: dict[str, Weight] = {}
-            self._weight_values: dict[str, DLPackCompatible] = {}
+            self._weight_values: dict[str, DLPackArray] = {}
             self._shared_weights: dict[str, Weight] = {}
 
     def __setattr__(self, name, value) -> None:  # noqa: ANN001
@@ -279,7 +276,7 @@ class Module(Layer, ABC):
 
     def load_state_dict(
         self,
-        state_dict: Mapping[str, DLPackCompatible | WeightData],
+        state_dict: Mapping[str, DLPackArray | WeightData],
         *,
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
@@ -355,7 +352,7 @@ class Module(Layer, ABC):
 
     def state_dict(
         self, auto_initialize: bool = True
-    ) -> dict[str, DLPackCompatible]:
+    ) -> dict[str, DLPackArray]:
         """Returns values of all weights in the model.
 
         The values returned are the same as the values set in :obj:`load_state_dict`.
@@ -477,7 +474,7 @@ def _array_from_weight_loader(
     return data
 
 
-def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
+def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
     if isinstance(value, Tensor):
         shape = value.shape
         dtype = value.dtype
@@ -493,7 +490,7 @@ def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
     return shape, dtype
 
 
-def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
+def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
     tensor = Tensor.from_dlpack(value)
     if not tensor._aligned(align):
         raise ValueError(
@@ -504,8 +501,10 @@ def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
         )
 
 
-def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
-    if not isinstance(value, get_args(DLPackCompatible)):
+def _validate_weight_value(
+    weight: Weight, value: DLPackArray, name: str
+) -> None:
+    if not isinstance(value, DLPackArray):
         raise ValueError(
             f"The class type of '{name}' value ({type(value)}) is not an array "
             "type that we understand. Please use a numpy array or max.driver.Tensor."

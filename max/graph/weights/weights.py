@@ -25,8 +25,7 @@ from typing import (
 )
 
 import numpy.typing as npt
-from max._core_types.driver import DLPackArray
-from max.driver import CPU, Tensor
+from max.driver import CPU, DLPackArray, Tensor
 from max.dtype import DType
 
 from .. import Graph, TensorType

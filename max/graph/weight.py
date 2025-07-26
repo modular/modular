@@ -15,20 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
-import numpy.typing as npt
 from max._core import Value as _Value
 from max._core.dialects import mo
-from max._core_types.driver import DLPackArray
 from max.dtype import DType
 
 from . import graph, ops
 from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
-
-DLPackCompatible = Union[DLPackArray, npt.NDArray]
 
 
 def _compute_shard_range(
