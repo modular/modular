@@ -116,7 +116,6 @@ def test_bitset_set_all():
     for idx in [0, 1, 10, 19, 22, 37, 56, 63]:
         bs.set(idx)
 
-    # toggle all in BitSet
     bs.set_all()
 
     # assert 1 in all idx
