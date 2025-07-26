@@ -4820,10 +4820,10 @@ struct RepeatInterleave:
         ]()
 
         repeat_interleave(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
+            input.to_layout_tensor(),
+            repeats.to_layout_tensor(),
             Int(normalize_neg_index(axis, input.rank)),
-            managed_tensor_slice_to_ndbuffer(output),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
@@ -4834,11 +4834,13 @@ struct RepeatInterleave:
             axis.dtype.is_integral(), "axis value must be integer type"
         ]()
 
-        return repeat_interleave_shape(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
+        var interleave_shape = repeat_interleave_shape(
+            input.to_layout_tensor(),
+            repeats.to_layout_tensor(),
             Int(normalize_neg_index(axis, input.rank)),
         )
+
+        return rebind[IndexList[input.rank]](interleave_shape)
 
 
 # ===-----------------------------------------------------------------------===#
