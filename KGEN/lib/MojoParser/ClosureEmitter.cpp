@@ -48,6 +48,32 @@ static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
   return {};
 }
 
+static void updateLocationScope(Location nestedLocation,
+                                Location callFuncLocation,
+                                Operation *replacementTarget) {
+  DebugInfo::DISubprogramAttr subprogramAttrOfCallFunc;
+  if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
+          callFuncLocation)) {
+    subprogramAttrOfCallFunc = fusedLoc.getMetadata();
+    DebugInfo::DISubprogramAttr subprogramAttrOfOriginalFunc;
+    if (auto fusedLocOriginal =
+            dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
+                nestedLocation))
+      subprogramAttrOfOriginalFunc = fusedLocOriginal.getMetadata();
+
+    // After cloning the DI attributes will be referencing the original
+    // function. We need it to reference the new function. Traverse each
+    // operation and attributes recursively to update all the DI attributes.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+      if (subprogramAttrOfOriginalFunc == sp)
+        return subprogramAttrOfCallFunc;
+      return sp;
+    });
+    replacer.recursivelyReplaceElementsIn(replacementTarget, true, true);
+  }
+}
+
 ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
     : FunctionEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
       node(moduleDecl.getLoc()),
@@ -1105,28 +1131,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callFunc.getBody()->erase();
   callFunc.getBodyRegion().takeBody(nestedFn.getBodyRegion());
   Location callFuncLocation = callFunc.getLoc();
-  DebugInfo::DISubprogramAttr subprogramAttrOfCallFunc;
-
-  if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
-          callFuncLocation)) {
-    subprogramAttrOfCallFunc = fusedLoc.getMetadata();
-    DebugInfo::DISubprogramAttr subprogramAttrOfOriginalFunc;
-    if (auto fusedLocOriginal =
-            dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
-                nestedFn.getLoc()))
-      subprogramAttrOfOriginalFunc = fusedLocOriginal.getMetadata();
-
-    // After cloning the DI attributes will be referencing the original
-    // function. We need it to reference the new function. Traverse each
-    // operation and attributes recursively to update all the DI attributes.
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
-      if (subprogramAttrOfOriginalFunc == sp)
-        return subprogramAttrOfCallFunc;
-      return sp;
-    });
-    replacer.recursivelyReplaceElementsIn(callFunc, true, true);
-  }
+  updateLocationScope(nestedFn->getLoc(), callFuncLocation, callFunc);
 
   builder =
       ImplicitLocOpBuilder::atBlockBegin(callFunc.getLoc(), callFunc.getBody());
@@ -1675,7 +1680,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       OriginSetAttr::get(ctx, origins), nestedFn.getInputParams(),
       nestedFn.getInlineLevel(), origin, witnessTable);
+
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
+  updateLocationScope(nestedFn->getLoc(), closure->getLoc(), closure);
 
   // (2) Create the wrapper instance and populate it with the closure init op
   // value.
