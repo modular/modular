@@ -174,6 +174,12 @@ mutation.
   use `InlineArray` in situations where the number of elements is generic and
   could also be 0.
 
+- `Set`'s `__copyinit__` method has been deprecated and will be removed in
+  the future.  Use the `my_set.copy()` method instead, which is explicit
+  or move the `Set` with `my_set^`. This change was done to avoid
+  potentially expensive implicit copies of `Set` objects,
+  because each element is copied.
+  
 - `List.append(Span)` has been renamed to `List.extend(Span)`. It is important
   for readability and consistency that `append()` always grows the length of
   the list by exactly 1. `extend()` in both Python and Rust is the variant of
