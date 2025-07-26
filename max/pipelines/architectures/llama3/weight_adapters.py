@@ -42,9 +42,10 @@ def convert_safetensor_state_dict(
     if pipeline_config.model_config._quant_config:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
+            np_array = np.from_dlpack(weight_data.data)  # type: ignore
             if key.endswith("perm_idx"):
                 new_state_dict[key] = WeightData.from_numpy(
-                    np.argsort(weight_data.data).astype(np.int32), key
+                    np.argsort(np_array).astype(np.int32), key
                 )
     if (
         pipeline_config.model_config.quantization_encoding

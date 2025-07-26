@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 from max.graph.shape import Shape
 from max.graph.weights import WeightData, Weights
 
@@ -102,6 +103,7 @@ def convert_idefics3_vision_model_state_dict(
             # Handle patch embedding weight shape conversion
             # PyTorch: [out_channels, in_channels, height, width] -> [height, width, in_channels, out_channels]
             if vision_model_name.endswith("embeddings.patch_embedding.weight"):
+                assert isinstance(weight_data.data, np.ndarray)
                 transposed_data = weight_data.data.transpose(2, 3, 1, 0)
                 # Ensure the array is contiguous in memory
                 transposed_data = transposed_data.copy()

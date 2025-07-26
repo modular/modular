@@ -216,7 +216,9 @@ class LoRAModel:
                 # A minor optimization so we don't have to multiply scale
                 # by LoRA B in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
-                data.data = data.data.copy() * scale
+                data.data = (
+                    Tensor.from_dlpack(data.data).copy().to_numpy() * scale
+                )
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
                 self._lora_bias[key] = data
