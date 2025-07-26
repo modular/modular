@@ -9,7 +9,6 @@ from max._core import __version__
 
 from .api import (
     CustomExtensionsType,
-    DLPackCompatible,
     GPUProfilingMode,
     InferenceSession,
     LogLevel,
