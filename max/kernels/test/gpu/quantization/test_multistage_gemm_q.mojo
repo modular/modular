@@ -727,25 +727,13 @@ fn test_quantized[
         fn run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
-            ](
-                c_device.to_layout_tensor(),
-                a_device.to_layout_tensor(),
-                b_device.to_layout_tensor(),
-                config,
-                ctx,
-            )
+            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
         # Warmup
         for _ in range(nwarmup):
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
-            ](
-                c_device.to_layout_tensor(),
-                a_device.to_layout_tensor(),
-                b_device.to_layout_tensor(),
-                config,
-                ctx,
-            )
+            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
         var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
@@ -762,13 +750,7 @@ fn test_quantized[
 
     multistage_gemm_q[
         group_size=group_size, pack_factor=pack_factor, config=config
-    ](
-        c_device.to_layout_tensor(),
-        a_device.to_layout_tensor(),
-        b_device.to_layout_tensor(),
-        config,
-        ctx,
-    )
+    ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
     alias dequan = create_ref_b[
         dtype,

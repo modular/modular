@@ -16,7 +16,6 @@ from sys.info import alignof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
 from quantization import Q4sym
 from testing import assert_true
 
@@ -148,10 +147,9 @@ fn _read_write_to_tensors[
     var data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var data_matrix = LayoutTensor[
-        DType.float32,
-        Layout.row_major(num_elements),
-    ](data_matrix_backing)
+    var data_matrix = NDBuffer[DType.float32, rank, _, DimList(num_elements)](
+        data_matrix_backing.unsafe_ptr()
+    )
     for i in range(num_elements):
         data_matrix[i] = i
 
@@ -162,47 +160,54 @@ fn _read_write_to_tensors[
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
         uninitialized=True
     )
-    var packed_blob = LayoutTensor[
-        DType.uint8,
-        Layout.row_major(num_blocks * block_size),
-    ](packed_blob_backing)
+    var packed_blob = NDBuffer[
+        DType.uint8, rank, _, DimList(num_blocks * block_size)
+    ](packed_blob_backing.unsafe_ptr())
 
     # Tensor to store the dequantized data
     var out_data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var out_data_matrix = LayoutTensor[
-        DType.float32,
-        Layout.row_major(num_elements),
-    ](out_data_matrix_backing)
+    var out_data_matrix = NDBuffer[DType.float32, 1, _, DimList(num_elements)](
+        out_data_matrix_backing.unsafe_ptr()
+    )
     for i in range(num_elements):
         out_data_matrix[i] = 0
 
-    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
-        data_matrix,
-        packed_blob,
-        IndexList[data_matrix.rank](num_elements),
+    var rebound_data_matrix = rebind[
+        NDBuffer[DType.float32, rank, data_matrix.origin]
+    ](data_matrix)
+    var rebound_packed_block = rebind[
+        NDBuffer[DType.uint8, rank, packed_blob.origin]
+    ](packed_blob)
+    var rebound_out_data_matrix = rebind[
+        NDBuffer[DType.float32, rank, out_data_matrix.origin]
+    ](out_data_matrix)
+
+    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
+        rebound_data_matrix,
+        rebound_packed_block,
+        IndexList[rank](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
-        packed_blob,
-        out_data_matrix,
-        IndexList[out_data_matrix.rank](num_elements),
+        rebound_packed_block,
+        rebound_out_data_matrix,
+        IndexList[rank](num_elements),
     )
 
     var allClose: Bool = True
     # See if it prints the correct results!
     for i in range(num_elements):
         var localRDiff = abs(
-            (data_matrix[i][0] - out_data_matrix[i][0])
-            / (data_matrix[i][0] + 1e-10)
+            (data_matrix[i] - out_data_matrix[i]) / (data_matrix[i] + 1e-10)
         )
-        var acceptableErr = abs(data_matrix[i][0] * rtol) + atol
+        var acceptableErr = abs(data_matrix[i] * rtol) + atol
         print(
             "fake-quantized:",
-            out_data_matrix[i][0],
+            out_data_matrix[i],
             " vs original:",
-            data_matrix[i][0],
+            data_matrix[i],
             " -- rel-diff: ",
             localRDiff,
         )
