@@ -30,7 +30,7 @@ from algorithm import vectorize
 from bit import log2_floor
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
@@ -6468,12 +6468,13 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = thread_idx.z * block_dim.y + thread_idx.y * block_dim.x + thread_idx.x
 
     # We know at compile time that only partial threads copy based on the size
     # of input tensors. Return if current thread doesn't have work.
     @parameter
     if num_threads > num_busy_threads:
-        if thread_idx.x >= num_busy_threads:
+        if worker_idx >= num_busy_threads:
             return
 
     alias row_size = dst.stride[0]()
@@ -6504,8 +6505,8 @@ fn copy_dram_to_sram_async[
         )
     )
 
-    var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
-    var dst_fragments = dst.distribute[dst_thread_layout](thread_idx.x)
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
 
