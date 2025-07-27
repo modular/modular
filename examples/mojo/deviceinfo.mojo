@@ -12,32 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from sys import (
-    CompilationTarget,
-    has_intel_amx,
-    is_apple_m1,
-    is_apple_m2,
-    is_apple_m3,
-    num_logical_cores,
-    num_physical_cores,
-    os_is_linux,
-    os_is_macos,
-)
+from sys import CompilationTarget, num_logical_cores, num_physical_cores
 
 # This sample prints the current host system information using APIs from the
 # sys module.
-from sys.info import _current_arch, _triple_attr
+from sys.info import _triple_attr
 
 
 def main():
     var os: StaticString
-    if os_is_linux():
+    if CompilationTarget.is_linux():
         os = "linux"
-    elif os_is_macos():
+    elif CompilationTarget.is_macos():
         os = "macOS"
     else:
         os = "windows"
-    var cpu = _current_arch()
+    var cpu = CompilationTarget._arch()
     var arch = StaticString(_triple_attr())
     var cpu_features = String()
     if CompilationTarget.has_sse4():
@@ -53,16 +43,12 @@ def main():
             cpu_features += " avx512_vnni"
         else:
             cpu_features += " avx_vnni"
-    if has_intel_amx():
+    if CompilationTarget.has_intel_amx():
         cpu_features += " intel_amx"
     if CompilationTarget.has_neon():
         cpu_features += " neon"
-    if is_apple_m1():
-        cpu_features += " Apple M1"
-    if is_apple_m2():
-        cpu_features += " Apple M2"
-    if is_apple_m3():
-        cpu_features += " Apple M3"
+    if CompilationTarget.is_apple_silicon():
+        cpu_features += String(" ", cpu)
 
     print("System information: ")
     print("    OS             : ", os)

@@ -21,7 +21,7 @@ from os import listdir
 """
 
 from collections import InlineArray, List
-from sys import external_call, is_gpu, os_is_linux, os_is_windows
+from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char
 
 
@@ -29,7 +29,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if os_is_windows() else "/"
+alias sep = "\\" if CompilationTarget.is_windows() else "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -99,7 +99,8 @@ struct _DirHandle:
           path: The path to open.
         """
         constrained[
-            not os_is_windows(), "operation is only available on unix systems"
+            not CompilationTarget.is_windows(),
+            "operation is only available on unix systems",
         ]()
 
         if not isdir(path):
@@ -124,7 +125,7 @@ struct _DirHandle:
         """
 
         @parameter
-        if os_is_linux():
+        if CompilationTarget.is_linux():
             return self._list_linux()
         else:
             return self._list_macos()
@@ -197,7 +198,8 @@ fn getuid() -> Int:
         This function is constrained to run on Linux or macOS operating systems only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
     return Int(external_call["getuid", UInt32]())
 

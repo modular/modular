@@ -20,7 +20,7 @@ memory specifications, thread organization, and performance characteristics.
 
 from math import ceildiv, floor
 from os import abort
-from sys.info import _accelerator_arch, _get_arch, _TargetType
+from sys.info import _accelerator_arch, _TargetType, CompilationTarget
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = GPUInfo.from_name[DEFAULT_GPU_ARCH]()
@@ -696,7 +696,7 @@ alias RTX5090 = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx3090_target() -> __mlir_type.`!kgen.target`:
+fn _get_rtx3090_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA GeForce RTX 3090
 
@@ -1277,7 +1277,7 @@ struct GPUInfo(Stringable, Writable):
         Returns:
             GPU info corresponding to the target.
         """
-        return _get_info_from_target[_get_arch[target]()]()
+        return _get_info_from_target[CompilationTarget[target]._arch()]()
 
     @staticmethod
     fn from_name[name: StaticString]() -> Self:

@@ -17,7 +17,7 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
-from sys import os_is_windows
+from sys import CompilationTarget
 from sys.ffi import c_char, c_int, c_size_t
 
 
@@ -45,7 +45,7 @@ alias FILE_ptr = OpaquePointer
 
 @always_inline
 fn fdopen(fd: c_int, mode: UnsafePointer[c_char, **_]) -> FILE_ptr:
-    alias name = "_fdopen" if os_is_windows() else "fdopen"
+    alias name = "_fdopen" if CompilationTarget.is_windows() else "fdopen"
 
     return external_call[name, FILE_ptr](fd, mode)
 
@@ -100,7 +100,7 @@ struct BufferMode:
 
 @always_inline
 fn dup(oldfd: c_int) -> c_int:
-    alias name = "_dup" if os_is_windows() else "dup"
+    alias name = "_dup" if CompilationTarget.is_windows() else "dup"
 
     return external_call[name, c_int](oldfd)
 

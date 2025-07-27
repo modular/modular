@@ -22,14 +22,12 @@ from time import perf_counter_ns
 from math import floor
 from os import abort
 from sys import (
+    CompilationTarget,
     external_call,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    os_is_linux,
-    os_is_windows,
-    CompilationTarget,
 )
 
 
@@ -39,9 +37,9 @@ from sys import (
 
 # Enums used in time.h 's glibc
 alias _CLOCK_REALTIME = 0
-alias _CLOCK_MONOTONIC = 1 if os_is_linux() else 6
-alias _CLOCK_PROCESS_CPUTIME_ID = 2 if os_is_linux() else 12
-alias _CLOCK_THREAD_CPUTIME_ID = 3 if os_is_linux() else 16
+alias _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
+alias _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
+alias _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
 alias _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
@@ -70,7 +68,7 @@ struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
 
     fn as_nanoseconds(self) -> UInt:
         @parameter
-        if os_is_linux():
+        if CompilationTarget.is_linux():
             return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec
         else:
             return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
@@ -120,7 +118,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
-    if os_is_linux():
+    if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
@@ -162,7 +160,7 @@ fn _monotonic_nanoseconds() -> UInt:
     @parameter
     if is_gpu():
         return _gpu_clock()
-    elif os_is_windows():
+    elif CompilationTarget.is_windows():
         var ft = _FILETIME()
         external_call["GetSystemTimePreciseAsFileTime", NoneType](
             Pointer(to=ft)
@@ -299,7 +297,7 @@ fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
     """
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return _time_function_windows[func]()
 
     var tic = perf_counter_ns()
@@ -388,7 +386,7 @@ fn sleep(sec: UInt):
         return sleep(Float64(sec))
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         # In Windows the argument is in milliseconds.
         external_call["Sleep", NoneType](sec * 1000)
     else:
