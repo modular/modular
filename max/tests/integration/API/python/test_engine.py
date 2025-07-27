@@ -430,6 +430,24 @@ class ExternalWeightsModel:
         return TensorValue(input) + weights_tensor
 
 
+@dataclass
+class ExternalWeightsModelWithAlias:
+    """Model that performs elementwise add with a weights tensor."""
+
+    num_elems: int
+    device: Device = field(default_factory=CPU)
+
+    def __call__(self, input: TensorValueLike) -> Value:
+        weights_tensor = Weight(
+            "foo",
+            DType.float32,
+            (self.num_elems,),
+            DeviceRef.CPU() if self.device.is_host else DeviceRef.GPU(),
+            _has_alias=True,
+        )
+        return TensorValue(input) + weights_tensor
+
+
 @pytest.fixture(scope="module")
 def external_weights_size() -> int:
     return 4096
@@ -566,6 +584,54 @@ def test_weight_device_mismatch(
 
         result = model.execute(input_tensor)[0]
         assert isinstance(result, Tensor)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
+def test_execute_external_weights_resident_with_alias(
+    session: InferenceSession,
+) -> None:
+    """Executes a model with external weights already resident on device."""
+
+    num_elems = 4096
+    weights_np = np.arange(num_elems, dtype=np.float32)
+    weights = Tensor.from_dlpack(weights_np).to(Accelerator())
+
+    graph = Graph(
+        "external_weights_resident_with_alias",
+        ExternalWeightsModelWithAlias(num_elems, device=Accelerator()),
+        input_types=(
+            TensorType(DType.float32, (num_elems,), device=DeviceRef.GPU()),
+        ),
+    )
+
+    # Check that this graph has a CUDA constant external op.
+    const_external_op = next(
+        op
+        for op in graph._mlir_op.regions[0].blocks[0].operations
+        if isinstance(op, mo.ConstantExternalOp)
+    )
+    assert "gpu" in str(const_external_op.attributes["device"])
+
+    # Compile and execute with the gpu-resident weights.
+    compiled = session.load(graph, weights_registry={"foo": weights})
+
+    input_np = (
+        np.random.default_rng(seed=42)
+        .standard_normal(num_elems)
+        .astype(np.float32)
+    )
+
+    output_tensor = compiled.execute(
+        Tensor.from_dlpack(input_np).to(Accelerator())
+    )[0]
+    assert isinstance(output_tensor, Tensor)
+    output = output_tensor.to(CPU()).to_numpy()
+
+    # Check that the result is as expected.
+    for idx, elt in enumerate(input_np + weights.to(CPU()).to_numpy()):
+        assert isclose(output[idx].item(), elt)
 
 
 @pytest.mark.skipif(
