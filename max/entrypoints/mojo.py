@@ -47,7 +47,6 @@ def _sdk_default_env() -> dict[str, str]:
             str(lib / "libKGENCompilerRTShared") + ext
         ),
         "MODULAR_MOJO_MAX_MGPRT_PATH": str(lib / "libMGPRT") + ext,
-        "MODULAR_MOJO_MAX_ATENRT_PATH": str(lib / "libATenRT") + ext,
         "MODULAR_MOJO_MAX_SHARED_LIBS": (
             str(lib / "libAsyncRTMojoBindings")
             + ext

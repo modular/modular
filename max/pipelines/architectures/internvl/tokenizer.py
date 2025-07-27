@@ -412,6 +412,7 @@ class InternVLProcessor:
         text: str,
         images: list[Image.Image] | None = None,
         add_special_tokens: bool = True,
+        return_tensors: str = "np",
     ) -> dict:
         """Process text and images for InternVL.
 
@@ -419,7 +420,11 @@ class InternVLProcessor:
         """
         if images is None or len(images) == 0:
             # Text-only case - just tokenize normally
-            return self.tokenizer(text, add_special_tokens=add_special_tokens)
+            return self.tokenizer(
+                text,
+                add_special_tokens=add_special_tokens,
+                return_tensors=return_tensors,
+            )
 
         # Process images and format prompt (without actual image preprocessing)
         processed_text = text

@@ -16,41 +16,22 @@ from math import align_down, ceildiv
 from sys import alignof, simdwidthof
 from nn.conv import (
     check_cudnn_error,
-    CuDNNConvMeta,
     _get_cudnn_meta,
 )
 from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
 from gpu._cudnn.cnn_infer import (
-    cudnnConvolutionForward,
     cudnnConvolutionMode_t,
-    cudnnConvolutionStruct,
-    cudnnCreateConvolutionDescriptor,
-    cudnnDestroyConvolutionDescriptor,
-    cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
-    # Back-prop data helpers
     cudnnConvolutionBackwardData,
-    cudnnGetConvolutionBackwardDataWorkspaceSize,
 )
 from gpu._cudnn.infer import (
-    cudnnContext,
-    cudnnConvolutionFwdAlgo_t,
     cudnnConvolutionBwdDataAlgo_t,
-    cudnnCreate,
-    cudnnCreateFilterDescriptor,
-    cudnnCreateTensorDescriptor,
     cudnnDataType_t,
-    cudnnDestroy,
-    cudnnDestroyTensorDescriptor,
-    cudnnFilterStruct,
     cudnnSetFilter4dDescriptor,
-    cudnnSetStream,
     cudnnSetTensor4dDescriptor,
-    cudnnStatus_t,
     cudnnTensorFormat_t,
-    cudnnTensorStruct,
 )
 
 from algorithm import (
@@ -60,7 +41,7 @@ from algorithm import (
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from buffer import Dim, DimList
+from buffer import Dim
 from layout import (
     LayoutTensor,
     Layout,

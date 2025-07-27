@@ -18,7 +18,6 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
@@ -35,11 +34,7 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import (
-    CausalMask,
-    ChunkedCausalMask,
     MHAMask,
-    NullMask,
-    SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod

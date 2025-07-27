@@ -16,11 +16,9 @@ from sys import alignof, simdwidthof
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     barrier,
     block_idx,
     lane_id,
-    thread_idx,
 )
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
@@ -447,11 +445,11 @@ fn gemm_kernel_amd[
 
         return Layout(
             IntTuple(
-                IntTuple(inner_block_rows, outer_block_count),
-                IntTuple(inner_block_cols, BK // k_tile_size),
+                IntTuple(inner_block_rows, Int(outer_block_count)),
+                IntTuple(inner_block_cols, Int(BK // k_tile_size)),
             ),
             IntTuple(
-                IntTuple(inner_block_cols, outer_block_size),
+                IntTuple(inner_block_cols, Int(outer_block_size)),
                 IntTuple(1, inner_block_size),
             ),
         )
@@ -460,7 +458,7 @@ fn gemm_kernel_amd[
     @parameter
     fn get_smem_layout[block_rows: Int]() -> Layout:
         return Layout(
-            IntTuple(block_rows, IntTuple(k_tile_size, BK // k_tile_size)),
+            IntTuple(block_rows, IntTuple(k_tile_size, Int(BK // k_tile_size))),
             IntTuple(k_tile_size, IntTuple(1, block_rows * k_tile_size)),
         )
 
@@ -476,7 +474,7 @@ fn gemm_kernel_amd[
         num_n_mmas=num_n_mmas,
         simd_width=simd_width,
         swizzle = Swizzle(3, 0, 1),
-        BK=BK,
+        BK = Int(BK),
         WK=WK,
     ]
 
@@ -489,7 +487,7 @@ fn gemm_kernel_amd[
         stride=stride,
         num_mmas=num_m_mmas,
         mma_type=amd_mma,
-    ](a, warp_m, warp_k, block_idx.y)
+    ](a, Int(warp_m), Int(warp_k), Int(block_idx.y))
 
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
@@ -500,7 +498,7 @@ fn gemm_kernel_amd[
         stride=stride,
         num_mmas=num_n_mmas,
         mma_type=amd_mma,
-    ](b, warp_n, warp_k, block_idx.x)
+    ](b, Int(warp_n), Int(warp_k), Int(block_idx.x))
 
     # Accumulation registers for result
     alias c_reg_tile_type = LayoutTensor[
@@ -575,12 +573,12 @@ fn gemm_kernel_amd[
         amd_scheduling_hints[
             BM=BM,
             BN=BN,
-            BK=BK,
+            BK = Int(BK),
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
             simd_width=simd_width,
-            num_threads = config.num_threads(),
+            num_threads = Int(config.num_threads()),
             scheduler_hint = config.scheduler_hint,
         ]()
 
@@ -616,23 +614,23 @@ fn gemm_kernel_amd[
     @parameter
     if num_warps_k > 1:
         var reduction_smem = stack_allocation[
-            BM * BN * (num_warps_k // 2),
+            Int(BM * BN * (num_warps_k // 2)),
             accum_type,
             address_space = AddressSpace.SHARED,
             alignment = alignof[SIMD[accum_type, 4]](),
         ]()
 
         warp_split_k_reduction[
-            BM, BN, config.num_threads() // num_warps_k, num_warps_k
-        ](warp_k, c_reg_tile, reduction_smem)
+            BM, BN, Int(config.num_threads() // num_warps_k), Int(num_warps_k)
+        ](Int(warp_k), c_reg_tile, reduction_smem)
 
         if warp_k != 0:
             return
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
-    var c_block_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    var c_warp_tile = c_block_tile.tile[WM, WN](warp_m, warp_n)
+    var c_block_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var c_warp_tile = c_block_tile.tile[WM, WN](Int(warp_m), Int(warp_n))
 
     alias static_N = b.shape[0]()
     constrained[
@@ -658,7 +656,7 @@ fn gemm_kernel_amd[
 
             @parameter
             if c_gmem_fragment.layout.all_dims_known():
-                dst_idx = dst_static_idx
+                dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_fragment.runtime_layout(i))
 
@@ -699,7 +697,7 @@ fn gemm_kernel_amd[
                     alias epilogue_fn = elementwise_lambda_fn.value()
 
                     epilogue_fn[alignment = alignof[SIMD[c_type, 4]]()](
-                        (m, n), result_vec
+                        (Int(m), Int(n)), result_vec
                     )
                 else:
                     c.ptr.offset(global_offset).store[alignment=alignment](

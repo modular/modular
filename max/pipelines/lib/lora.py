@@ -23,9 +23,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.engine import DLPackCompatible
 from max.graph import Weight
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
@@ -216,7 +215,9 @@ class LoRAModel:
                 # A minor optimization so we don't have to multiply scale
                 # by LoRA B in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
-                data.data = data.data.copy() * scale
+                data.data = (
+                    Tensor.from_dlpack(data.data).copy().to_numpy() * scale
+                )
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
                 self._lora_bias[key] = data
@@ -260,7 +261,7 @@ class LoRAManager:
         if lora_paths:
             self.load_adapters(lora_paths)
 
-        self._alias_buffers: dict[str, DLPackCompatible] = {}
+        self._alias_buffers: dict[str, DLPackArray] = {}
 
     def _name_to_slot(self, name: str):
         """

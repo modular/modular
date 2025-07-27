@@ -123,8 +123,6 @@ def load_scheduler(
                 "Dispatcher client is required for prefill scheduler"
             )
         return load_prefill_scheduler(
-            zmq_ctx,
-            settings,
             pipeline,
             pipeline_config,
             dispatcher_client=dispatcher_client,

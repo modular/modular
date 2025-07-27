@@ -1282,7 +1282,7 @@ struct Bencher:
         for _ in range(self.num_iters):
             iter_fn()
         var stop = time.perf_counter_ns()
-        self.elapsed = stop - start
+        self.elapsed = Int(stop - start)
 
     fn iter_preproc[
         iter_fn: fn () capturing [_] -> None,
@@ -1301,7 +1301,7 @@ struct Bencher:
             var start = time.perf_counter_ns()
             iter_fn()
             var stop = time.perf_counter_ns()
-            self.elapsed += stop - start
+            self.elapsed += Int(stop - start)
 
     fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](mut self):
         """Times a target function with custom number of iterations.
@@ -1380,7 +1380,7 @@ struct Bencher:
         for _ in range(self.num_iters):
             iter_fn()
         var stop = time.perf_counter_ns()
-        self.elapsed = stop - start
+        self.elapsed = Int(stop - start)
 
     # TODO (#31795):  overload should not be needed
     fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](mut self):

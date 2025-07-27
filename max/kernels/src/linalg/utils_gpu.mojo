@@ -14,19 +14,16 @@
 from hashlib.hasher import Hasher
 from math import ceildiv
 from sys import (
-    env_get_bool,
     env_get_int,
-    env_get_string,
-    has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     sizeof,
 )
-from sys.ffi import _get_global_or_null, external_call
+from sys.ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
+from gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
@@ -184,10 +181,12 @@ struct MatmulConfig[
         )
 
     fn shared_mem_usage(self) -> Int:
-        return _shared_memory_usage[a_type, b_type, c_type](
-            self.block_tile_shape,
-            self.num_pipeline_stages,
-            self.num_warp_k_partitions,
+        return Int(
+            _shared_memory_usage[a_type, b_type, c_type](
+                self.block_tile_shape,
+                Int(self.num_pipeline_stages),
+                Int(self.num_warp_k_partitions),
+            )
         )
 
     fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:

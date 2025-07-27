@@ -42,17 +42,11 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
-from collections.string.string import (
-    _calc_format_buffer_size,
-    _calc_initial_buffer_size,
-)
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
-from os import abort
 from sys import (
     CompilationTarget,
-    PrefetchOptions,
     _RegisterPackType,
     alignof,
     bitwidthof,
@@ -61,7 +55,6 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    prefetch,
     simdwidthof,
     sizeof,
 )
@@ -72,11 +65,10 @@ from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
-from builtin.io import _snprintf
 from builtin.math import Powable
 from documentation import doc_private
-from memory import Span, bitcast, memcpy
-from python import PythonConvertible, PythonObject, Python
+from memory import bitcast, memcpy
+from python import ConvertibleToPython, PythonObject, Python
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -90,9 +82,7 @@ from utils.numerics import min_or_neg_inf as _min_or_neg_inf
 from utils.numerics import nan as _nan
 
 from .dtype import (
-    _get_dtype_printf_format,
     _integral_type_of,
-    _scientific_notation_digits,
     _uint_type_of_width,
     _unsigned_integral_type_of,
 )
@@ -255,6 +245,7 @@ struct SIMD[dtype: DType, size: Int](
     Boolable,
     CeilDivable,
     Ceilable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     DevicePassable,
@@ -264,7 +255,6 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Movable,
     Powable,
-    PythonConvertible,
     Representable,
     Roundable,
     Sized,
@@ -510,7 +500,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_floating_point():
-            var cpy = Python().cpython()
+            ref cpy = Python().cpython()
             var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we

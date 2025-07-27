@@ -59,16 +59,6 @@ def _getCloudProvider() -> str:
     return ""
 
 
-def _getGPUInfo() -> str:
-    try:
-        import torch
-
-        device_properties = torch.cuda.get_device_properties(0)
-        return f"{torch.cuda.device_count()}:{device_properties.total_memory}:{device_properties.name}"
-    except Exception:
-        return ""
-
-
 def _getWebUserId() -> str:
     try:
         idFile = os.path.expanduser("~") + "/.modular/webUserId"
@@ -88,11 +78,6 @@ logs_resource = Resource.create(
         "os.version": platform.release(),
         "cpu.description": platform.processor(),
         "cpu.arch": platform.architecture()[0],
-        # MAGIC-55: disable gpu info for now
-        # Because it initializes the CUDA driver in the API process
-        # while we initialize models in the Model worker process
-        # CUDA doesn't like it and crashes.
-        # "system.gpu": _getGPUInfo(),
         "system.cloud": _getCloudProvider(),
         "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
     }

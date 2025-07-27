@@ -7,9 +7,9 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("gguf"),
-        requirement("torch"),
-        requirement("transformers"),
         requirement("msgspec"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
         "//SDK/lib/API/python/max/_core_mojo",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",

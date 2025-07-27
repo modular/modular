@@ -14,13 +14,10 @@ from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import (
     alignof,
-    bitwidthof,
     env_get_bool,
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    is_defined,
     llvm_intrinsic,
     simdwidthof,
 )
@@ -29,12 +26,9 @@ from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
-    WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
     global_idx,
-    lane_id,
     thread_idx,
 )
 from gpu.grid_controls import PDLLevel
@@ -43,20 +37,9 @@ from gpu.host import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
-    copy_from_nd_buffer,
-    distribute,
     from_ndbuffer_row_major,
-    vectorize,
 )
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-    _swizzle_signature,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_sram_to_local,
-)
-from linalg.matmul_tile_scheduler import MatmulSchedule
 from logger import Logger
 from memory import bitcast, stack_allocation
 
@@ -71,15 +54,10 @@ from ._multistage_gemm_gpu import (
 )
 from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
-from .matmul_sm90 import (
-    hopper_matmul_tma_wgmma,
-    warp_specialize_gemm_with_multicasting,
-)
 from .matmul_vendor import matmul as matmul_vendor
 from .matmul_dispatch_sm90 import matmul_dispatch_sm90
 from .utils import (
     GemmShape,
-    apply_epilogue,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
@@ -194,11 +172,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
+            a_val = a[Int(row), Int(offset + localCol)] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < m else 0.0
+            a_val = a[Int(row), Int(offset + localCol)] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -206,11 +184,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
+            b_val = b[Int(offset + localRow), Int(col)] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < n else 0.0
+            b_val = b[Int(offset + localRow), Int(col)] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -255,8 +233,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = global_idx.x
-    var y = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
     if x >= m or y >= n:
         return
@@ -1271,7 +1249,7 @@ fn multistage_gemm[
             )
             alias work_space_type = config.split_k_reduction_type
             var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-                runtime_config.num_k_partitions * M * N
+                Int(runtime_config.num_k_partitions * M * N)
             )
             var work_space = NDBuffer[work_space_type, 3](
                 work_space_data._unsafe_ptr(),

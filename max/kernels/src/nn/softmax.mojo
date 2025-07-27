@@ -210,18 +210,18 @@ fn softmax_2_pass[
     accelerators" (https://dl.acm.org/doi/abs/10.1145/3503222.3507767) and is
     defined as:
 
-    procedure SoftmaxUnbatched(InputInput)
-      runningMax = -∞
-      runningSum = 0
-      STAGE 1:
-      for i = 0 to N do
-        newMax = max(runningMax, Input[i])
-        runningSum = runningSum*exp(runningMax-newMax) + exp(Input[i]-newMax)
-        runningMax = newMax
-      end for
-      for i = 0 to N do
-        Output[i] = exp(Input[i] - runningMax) / runningSum
-      end for
+        procedure SoftmaxUnbatched(InputInput)
+          runningMax = -∞
+          runningSum = 0
+          STAGE 1:
+          for i = 0 to N do
+            newMax = max(runningMax, Input[i])
+            runningSum = runningSum*exp(runningMax-newMax) + exp(Input[i]-newMax)
+            runningMax = newMax
+          end for
+          for i = 0 to N do
+            Output[i] = exp(Input[i] - runningMax) / runningSum
+          end for
 
     Parameters:
         simd_width: The simd_width to use in vectorization.
@@ -447,22 +447,23 @@ fn softmax_3_pass[
     algorithm.
 
     The unbatched three-pass softmax is defined as:
-    procedure SoftmaxUnbatched(InputInput)
-      maxVal = -∞
-      denom = 0
-      STEP 1: find the max value in each batch
-      for i = 0 to N do
-        maxVal = max(maxVal, Input[b, i])
-      end for
-      STEP 2: compute the exponential for each batch
-      for i = 0 to N do
-        Output[b, i] = exp(Input[b, i] - maxVal)
-        denom += Output[b, i]
-      end for
-      STEP 3: normalize each batch
-      for i = 0 to N do
-        Output[b, i] /= denom
-      end for
+
+        procedure SoftmaxUnbatched(InputInput)
+          maxVal = -∞
+          denom = 0
+          STEP 1: find the max value in each batch
+          for i = 0 to N do
+            maxVal = max(maxVal, Input[b, i])
+          end for
+          STEP 2: compute the exponential for each batch
+          for i = 0 to N do
+            Output[b, i] = exp(Input[b, i] - maxVal)
+            denom += Output[b, i]
+          end for
+          STEP 3: normalize each batch
+          for i = 0 to N do
+            Output[b, i] /= denom
+          end for
 
     Parameters:
         simd_width: The simd_width to use in vectorization.
@@ -504,22 +505,23 @@ fn logsoftmax[
     algorithm.
 
     The unbatched three-pass softmax is defined as:
-    procedure SoftmaxUnbatched(InputInput)
-      maxVal = -∞
-      denom = 0
-      STEP 1: find the max value in each batch
-      for i = 0 to N do
-        maxVal = max(maxVal, Input[b, i])
-      end for
-      STEP 2: compute the sum of exponential of each batch
-      for i = 0 to N do
-        Output[b, i] = Input[b, i] - maxVal
-        accum += exp(Output[b, i])
-      end for
-      STEP 3: normalize each batch
-      for i = 0 to N do
-        Output[b, i] -= log(accum)
-      end for
+
+        procedure SoftmaxUnbatched(InputInput)
+          maxVal = -∞
+          denom = 0
+          STEP 1: find the max value in each batch
+          for i = 0 to N do
+            maxVal = max(maxVal, Input[b, i])
+          end for
+          STEP 2: compute the sum of exponential of each batch
+          for i = 0 to N do
+            Output[b, i] = Input[b, i] - maxVal
+            accum += exp(Output[b, i])
+          end for
+          STEP 3: normalize each batch
+          for i = 0 to N do
+            Output[b, i] -= log(accum)
+          end for
 
     Parameters:
         simd_width: The simd_width to use in vectorization.

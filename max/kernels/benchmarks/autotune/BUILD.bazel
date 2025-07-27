@@ -2,9 +2,7 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_t
 
 modular_py_library(
     name = "autotune",
-    testonly = True,
     srcs = [
-        "kbench.py",
         "kplot.py",
         "kprofile.py",
         "utils.py",
@@ -25,7 +23,6 @@ modular_py_binary(
     srcs = [
         "__init__.py",
         "kbench.py",
-        "utils.py",
     ],
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
@@ -43,8 +40,10 @@ modular_py_binary(
         "@mojo//:stdlib",
     ],
     deps = [
+        ":autotune",
         requirement("click"),
         requirement("numpy"),
+        requirement("scipy"),
         requirement("pandas"),
         requirement("pygments"),
         requirement("pyyaml"),
@@ -55,8 +54,30 @@ modular_py_binary(
 modular_py_test(
     name = "autotune_tests",
     srcs = glob(["tests/*.py"]),
+    data = glob(["tests/*.csv"]) + [
+        "sample.mojo",
+        "test.yaml",
+        "//KGEN:CompilerRT",
+        "//KGEN/tools/mojo",
+    ],
+    mojo_deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":autotune",
+        ":kbench",
     ],
 )
 

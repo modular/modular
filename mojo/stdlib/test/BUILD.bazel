@@ -180,6 +180,7 @@ _FILECHECK_TESTS = [
     "collections/test_index_normalization.mojo",
     "collections/test_list_getitem_invalid_index_int.mojo",
     "collections/test_list_getitem_invalid_index_uint.mojo",
+    "io/test_write_to_stdout.mojo",
     "logger/test_logger.mojo",
     "logger/test_logger_alias.mojo",
     "logger/test_logger_critical.mojo",
@@ -188,7 +189,6 @@ _FILECHECK_TESTS = [
     "runtime/test_asyncrt.mojo",
     "runtime/test_locks.mojo",
     "sys/test_exit_1.mojo",
-    "utils/test_write_to_stdout.mojo",
 ]
 
 [
@@ -200,7 +200,6 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
-        data = _DATA,
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         env = _ENV.get(src, {}),
         expect_crash = src in _EXPECT_CRASH,

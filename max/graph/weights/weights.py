@@ -25,18 +25,52 @@ from typing import (
 )
 
 import numpy.typing as npt
-
-try:
-    import torch  # type: ignore
-except ImportError:
-    torch = None
+from max.driver import CPU, DLPackArray, Tensor
 from max.dtype import DType
 
+from .. import Graph, TensorType
 from ..quantization import QuantizationEncoding
 from ..type import DeviceRef, Shape, ShapeLike
 from ..weight import Weight
 
 _Self = TypeVar("_Self", bound="Weights")
+
+_INF_SESSION = None
+_CAST_MODEL = None
+
+
+def _cast_to_dtype(
+    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType
+) -> Tensor:
+    # FIXME: This is a circular dep
+    from max.engine import InferenceSession  # type: ignore
+
+    tensor = Tensor.from_dlpack(raw_tensor)
+
+    original_shape = tensor.shape
+    global _INF_SESSION
+    if not _INF_SESSION:
+        _INF_SESSION = InferenceSession(devices=[CPU()])
+
+    global _CAST_MODEL
+    if not _CAST_MODEL:
+        with Graph(
+            "cast",
+            input_types=[
+                TensorType(
+                    dtype=old_dtype,
+                    shape=["dim"],
+                    device=DeviceRef.from_device(CPU()),
+                )
+            ],
+        ) as graph:
+            graph.output(graph.inputs[0].cast(new_dtype))  # type: ignore
+
+        _CAST_MODEL = _INF_SESSION.load(graph)
+
+    result = _CAST_MODEL(tensor.view(old_dtype, [tensor.num_elements]))[0]
+    assert isinstance(result, Tensor)
+    return result.view(new_dtype, original_shape)
 
 
 @runtime_checkable
@@ -72,17 +106,6 @@ class Weights(Protocol):
         """Iterate through all allocable weights that start with the prefix."""
         ...
 
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Args:
-            dtype: If specified, the returned array will be cast to the dtype
-                before returning.
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        ...
-
     def data(self) -> WeightData:
         """Returns data loaded from the weights at the current prefix.
 
@@ -111,7 +134,7 @@ class Weights(Protocol):
 class WeightData:
     """Data loaded from a checkpoint."""
 
-    data: npt.NDArray
+    data: DLPackArray
     name: str
     dtype: DType
     shape: Shape
@@ -130,31 +153,13 @@ class WeightData:
     def astype(self, dtype: DType) -> WeightData:
         if self.dtype == dtype:
             return self
-        if self.dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(torch.bfloat16)
-            data = data.to(dtype.to_torch()).numpy()
-        elif dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(self.dtype.to_torch())
-            data = data.to(torch.bfloat16).view(torch.float16).numpy()
-        else:
-            data = self.data.astype(dtype.to_numpy())
+        data = _cast_to_dtype(self.data, self.dtype, dtype)
         return WeightData(
-            data=data, name=self.name, dtype=dtype, shape=Shape(data.shape)
+            data=data,
+            name=self.name,
+            dtype=dtype,
+            shape=Shape(data.shape),
         )
-
-    def view(self, dtype: DType) -> WeightData:
-        if self.dtype == dtype:
-            return self
-
-        # Compute the new shape for the updated dtype.
-        if dtype == DType.bfloat16:
-            assert torch is not None
-            data = torch.from_numpy(self.data).view(dtype.to_torch())
-        else:
-            data = self.data.view(dtype.to_numpy())
-        return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
 
     def __repr__(self) -> str:
         return f"WeightData({self.dtype}, {self.shape})"

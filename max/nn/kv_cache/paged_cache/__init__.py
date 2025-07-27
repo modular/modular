@@ -23,6 +23,7 @@ from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     XferReqData,
+    available_port,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "PagedKVCacheManager",
     "PagedKVCacheType",
     "XferReqData",
+    "available_port",
 ]

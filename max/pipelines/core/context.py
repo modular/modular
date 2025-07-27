@@ -18,7 +18,6 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from collections.abc import Sequence
 from typing import Any, Optional
 
 import msgspec
@@ -37,7 +36,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     Configuration:
         request_id: A unique identifier for this sequence.
-        prompt: The input prompt as either a string or sequence of token IDs
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
         eos_token_ids: Set of token IDs that indicate end of sequence
@@ -64,7 +62,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """
 
     request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
-    prompt: str | Sequence[int]
     max_length: int
     tokens: np.ndarray
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
@@ -76,7 +73,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     sampling_params: SamplingParams = msgspec.field(
         default_factory=SamplingParams
     )
-    streaming: bool = msgspec.field(default=False)
     model_name: str = msgspec.field(default="")
     lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
@@ -606,11 +602,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.active_length > 1
 
     @property
-    def is_streaming(self) -> bool:
-        """Returns True if the context is a streaming context, False otherwise."""
-        return self.streaming
-
-    @property
     def is_initial_prompt(self) -> bool:
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
@@ -679,6 +670,7 @@ class TTSContext(TextContext):
 
     Configuration:
         audio_prompt_tokens: Array of input audio prompt tokens used for voice cloning
+        streaming: Whether the request is streaming the audio to client
         _speech_token_size: Size of the speech token buffer, defaults to SPEECH_TOKEN_audio_chunk_size
         _speech_token_end_idx: Index marking the end of valid speech tokens
         _speech_tokens: Buffer containing the generated speech tokens
@@ -695,6 +687,8 @@ class TTSContext(TextContext):
     # For silence detection.
     audio_buffer: np.ndarray | None = msgspec.field(default=None)
     prev_samples_beyond_offset: int = msgspec.field(default=0)
+
+    streaming: bool = msgspec.field(default=False)
 
     # Fields for tracking the state of speech token or audio generation.
     _speech_token_size: int = msgspec.field(
@@ -786,7 +780,9 @@ class TTSContext(TextContext):
     ) -> tuple[np.ndarray, int]:
         """Returns a chunk of the next unseen speech tokens.
 
-        Calling this function will update the index of the last seen token.
+        Calling this function will *not* update the index of the last seen
+        token. This must be done by calling `set_decoded_index` after the chunk
+        is processed.
 
         Args:
             audio_chunk_size: The number of speech tokens to return.

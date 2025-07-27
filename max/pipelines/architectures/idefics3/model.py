@@ -21,10 +21,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import cast
 
 import numpy as np
-import torch
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.engine import DLPackCompatible, InferenceSession, Model
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import (
     SafetensorWeights,
@@ -91,6 +90,46 @@ def _assert_image_embeddings_invariant(
         f"Vision embedding shape mismatch: {embed_count} embeddings "
         f"but {indices_count} indices."
     )
+
+
+_INF_SESSION = None
+_CAST_MODEL = None
+
+
+def _cast_to_dtype(
+    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
+) -> Tensor:
+    # FIXME: This is a circular dep
+    from max.engine import InferenceSession
+
+    tensor = Tensor.from_dlpack(raw_tensor)
+
+    original_shape = tensor.shape
+    global _INF_SESSION
+    if not _INF_SESSION:
+        _INF_SESSION = InferenceSession(devices=[device])
+
+    global _CAST_MODEL
+    if not _CAST_MODEL:
+        with Graph(
+            "cast",
+            input_types=[
+                TensorType(
+                    dtype=old_dtype,
+                    shape=["dim"],
+                    device=DeviceRef.from_device(device),
+                )
+            ],
+        ) as graph:
+            graph.output(graph.inputs[0].cast(new_dtype))  # type: ignore
+
+        _CAST_MODEL = _INF_SESSION.load(graph)
+
+    result = _CAST_MODEL(
+        tensor.view(old_dtype, [tensor.num_elements]).to(device)
+    )[0]
+    assert isinstance(result, Tensor)
+    return result.view(new_dtype, original_shape)
 
 
 class _VisionStacker:
@@ -376,7 +415,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
     def _build_vision_graph(
         self, config: Idefics3Config, state_dict: dict[str, WeightData]
-    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
         # Use static dimensions from the vision config
@@ -493,7 +532,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
     def _build_language_graph(
         self, config: Idefics3Config, state_dict: dict[str, WeightData]
-    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(
@@ -557,16 +596,9 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
         final_images = self._stacker.stack(images)
 
-        # Convert numpy array to torch tensor float32
-        torch_tensor = torch.tensor(final_images, dtype=torch.float32)
-
-        # Convert torch tensor to bfloat16
-        torch_tensor_bf16 = torch_tensor.to(dtype=torch.bfloat16)
-
-        # Convert to MAX Tensor
-        tensor = Tensor.from_dlpack(torch_tensor_bf16).to(self.devices[0])
-
-        return tensor
+        return _cast_to_dtype(
+            final_images, DType.float32, DType.bfloat16, self.devices[0]
+        )
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]

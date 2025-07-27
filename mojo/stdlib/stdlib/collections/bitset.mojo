@@ -107,7 +107,7 @@ struct BitSet[size: UInt](
     lookup speed are critical.
     """
 
-    alias _words_size: Int = max(1, ceildiv(size, _WORD_BITS))
+    alias _words_size: Int = Int(max(1, ceildiv(size, _WORD_BITS)))
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
@@ -157,30 +157,16 @@ struct BitSet[size: UInt](
         for i in range(self._words_size):
             total += UInt(pop_count(self._words.unsafe_get(i)))
 
-        return total
-
-    @always_inline
-    fn is_empty(self) -> Bool:
-        """Checks if the bitset contains any set bits.
-
-        Equivalent to `len(self) == 0`. Note that this checks the logical
-        size, not the allocated capacity.
-
-        Returns:
-            True if no bits are set (logical size is 0), False otherwise.
-        """
-        return len(self) == 0
+        return Int(total)
 
     @always_inline
     fn __bool__(self) -> Bool:
         """Checks if the bitset is non-empty (contains at least one set bit).
 
-        Equivalent to `len(self) != 0` or `not self.is_empty()`.
-
         Returns:
             True if at least one bit is set, False otherwise.
         """
-        return not self.is_empty()
+        return len(self) != 0
 
     # --------------------------------------------------------------------- #
     # Bit manipulation
@@ -197,7 +183,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        _check_index_bounds["set"](idx, size)
+        _check_index_bounds["set"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= _bit_mask(idx)
 
@@ -211,7 +197,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        _check_index_bounds["clearing"](idx, size)
+        _check_index_bounds["clearing"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= ~_bit_mask(idx)
 
@@ -226,7 +212,7 @@ struct BitSet[size: UInt](
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        _check_index_bounds["toggling"](idx, size)
+        _check_index_bounds["toggling"](idx, Int(size))
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= _bit_mask(idx)
 
@@ -243,7 +229,7 @@ struct BitSet[size: UInt](
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        _check_index_bounds["testing"](idx, size)
+        _check_index_bounds["testing"](idx, Int(size))
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
 
@@ -254,6 +240,14 @@ struct BitSet[size: UInt](
         re-initializing the set with `Self()`.
         """
         self = Self()
+
+    fn toggle_all(mut self):
+        """Toggles (inverts) all bits in the set up to the compile-time `size`.
+        """
+
+        @parameter
+        for i in range(self._words_size):
+            self._words.unsafe_get(i) ^= ~UInt64(0)
 
     # --------------------------------------------------------------------- #
     # Set operations
@@ -322,7 +316,7 @@ struct BitSet[size: UInt](
         if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
-            vectorize[_intersect, simd_width, size = Self._words_size]()
+            vectorize[_intersect, simd_width, size = Int(Self._words_size)]()
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter

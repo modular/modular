@@ -448,7 +448,7 @@ fn run[
             for _ in range(num_iters):
                 func()
 
-        return time_function[iter_fn]()
+        return Int(time_function[iter_fn]())
 
     return _run_impl(
         _RunOptions[benchmark_fn](
@@ -534,7 +534,7 @@ fn run[
             for _ in range(num_iters):
                 func()
 
-        return time_function[iter_fn]()
+        return Int(time_function[iter_fn]())
 
     return _run_impl(
         _RunOptions[benchmark_fn](

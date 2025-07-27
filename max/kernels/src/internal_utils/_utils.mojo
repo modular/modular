@@ -18,18 +18,16 @@ from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    BenchMetric,
     ThroughputMeasure,
     clobber_memory,
     keep,
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from stdlib.builtin.io import _snprintf
+from io.io import _snprintf
 from tensor_internal import DynamicTensor
 from testing import assert_equal, assert_true
 
@@ -762,13 +760,12 @@ fn init_vector_gpu[
     elif mode == InitializationType.uniform_distribution:
         var rng = Random(offset=tid)
         values = SIMD[dtype, 4](rng.step_uniform())
-
-        @parameter
-        if dtype.is_float8():
-            values = (values - 0.5) * 2.0
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
-            tid, tid + stride, tid + 2 * stride, tid + 3 * stride
+            UInt64(tid).cast[dtype](),
+            UInt64(tid + stride).cast[dtype](),
+            UInt64(tid + 2 * stride).cast[dtype](),
+            UInt64(tid + 3 * stride).cast[dtype](),
         )
     apply(values)
 

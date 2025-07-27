@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import byte_swap, rotate_bits_left
+from bit import rotate_bits_left
 from memory import bitcast
 
 from .hasher import Hasher

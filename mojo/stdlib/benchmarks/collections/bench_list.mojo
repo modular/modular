@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import *
-from random import seed
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -53,15 +52,15 @@ fn bench_list_copyinit[
     fn call_fn() raises:
         result = items
         res += len(result)
-        keep(result.data)
-        keep(items.data)
+        keep(result.unsafe_ptr())
+        keep(items.unsafe_ptr())
 
     b.iter[call_fn]()
     print(res)
     keep(Bool(items))
     keep(Bool(result))
-    keep(result.data)
-    keep(items.data)
+    keep(result.unsafe_ptr())
+    keep(items.unsafe_ptr())
 
 
 def main():

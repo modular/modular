@@ -21,8 +21,8 @@ from sys import is_amd_gpu, is_gpu, is_nvidia_gpu
 from sys._build import is_debug_build
 from sys.intrinsics import block_idx, thread_idx, assume
 from sys.param_env import env_get_string
-from utils.write import _WriteBufferHeap
-from builtin.io import _printf
+from io.write import _WriteBufferHeap
+from io.io import _printf
 from sys import is_compile_time
 
 from builtin._location import __call_location, _SourceLocation

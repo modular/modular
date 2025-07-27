@@ -28,7 +28,7 @@ from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
     AudioGeneratorOutput,
-    EngineResult,
+    SchedulerResult,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import AudioGenerator, TTSContext, msgpack_numpy_decoder
@@ -217,8 +217,9 @@ class AudioGenerationScheduler(Scheduler):
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[AudioGeneratorOutput]]
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
         ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
+
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -291,7 +292,9 @@ class AudioGenerationScheduler(Scheduler):
                 self.available_cache_indices.add(req_data.cache_seq_id)
                 del self.decode_reqs[req_id]
 
-                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
+                self.response_q.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
     @traced
     def _stream_responses_to_frontend(
@@ -301,7 +304,7 @@ class AudioGenerationScheduler(Scheduler):
         if not responses:
             return
 
-        audio_responses: dict[str, EngineResult[AudioGeneratorOutput]] = {}
+        audio_responses: dict[str, SchedulerResult[AudioGeneratorOutput]] = {}
         for req_id, response in responses.items():
             if response.has_audio_data:
                 audio_data = response.audio_data
@@ -309,7 +312,7 @@ class AudioGenerationScheduler(Scheduler):
                 audio_data = np.array([], dtype=np.float32)
 
             if response.is_done:
-                audio_responses[req_id] = EngineResult.complete(
+                audio_responses[req_id] = SchedulerResult.complete(
                     AudioGeneratorOutput(
                         audio_data=audio_data,
                         metadata=AudioGenerationMetadata(),
@@ -318,7 +321,7 @@ class AudioGenerationScheduler(Scheduler):
                     )
                 )
             else:
-                audio_responses[req_id] = EngineResult.active(
+                audio_responses[req_id] = SchedulerResult.active(
                     AudioGeneratorOutput(
                         audio_data=audio_data,
                         metadata=AudioGenerationMetadata(),

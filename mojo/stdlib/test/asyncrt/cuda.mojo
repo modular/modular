@@ -13,10 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import (
-    DeviceAttribute,
-    DeviceBuffer,
     DeviceContext,
-    DeviceStream,
     Dim,
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_get_current_context, CUcontext
@@ -180,7 +177,7 @@ $L__BB0_2:
             if i < 2:
                 print("out[", i, "]: ", out[i])
             if out[i] != 3.0:
-                raise String("Bad value out[", i, "] is ", out[i])
+                raise Error("Bad value out[", i, "] is ", out[i])
 
 
 fn main() raises:

@@ -26,7 +26,6 @@ from gpu.mma import (
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from memory import bitcast
 
 
 fn wgmma_f32_kernel[

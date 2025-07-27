@@ -715,12 +715,12 @@ fn eval_composed[
             alias s = shape_a[i].value()
             alias st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))
-            b_idx += coord_i * st
+            b_idx += Int(coord_i * st)
     # swizzle
     else:
         b_idx = composed_layout.layout_a(b_idx)
 
-    b_idx += offset
+    b_idx += Int(offset)
 
     # !!! The following check must be commented out because layout_b is limited
     # to be a swizzle, which doesn't have shape or stride.

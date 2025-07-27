@@ -18,10 +18,6 @@ from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import H100
-from gpu.id import grid_dim
-from gpu.memory import AddressSpace
-from gpu.mma import st_matrix
-from layout import Layout, LayoutTensor
 from linalg.matmul_tile_scheduler import MatmulSchedule, RasterOrder
 
 from utils.index import Index

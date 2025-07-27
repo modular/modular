@@ -17,7 +17,7 @@ from sys import sizeof
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
-from gpu.memory import ReduceOp, tma_store_fence
+from gpu.memory import ReduceOp, fence_async_view_proxy
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -227,7 +227,7 @@ fn test_tma_async_store_kernel[
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
-    tma_store_fence()
+    fence_async_view_proxy()
 
     if thread_idx.x == 0:
         tma_tile.async_store(tile, (block_idx.x * tileN, block_idx.y * tileM))
@@ -261,7 +261,7 @@ fn test_tma_async_multiple_store_kernel[
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             tma_tile.async_store(tile, (UInt(i) * tileN, block_idx.y * tileM))
@@ -358,7 +358,7 @@ fn test_tma_async_reduce_kernel[
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
-    tma_store_fence()
+    fence_async_view_proxy()
 
     if thread_idx.x == 0:
         tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
@@ -394,7 +394,7 @@ fn test_tma_async_multiple_reduce_kernel[
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
@@ -694,7 +694,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             a_tma_dst_tile.async_store(

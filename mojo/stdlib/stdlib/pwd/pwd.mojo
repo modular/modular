@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import os_is_linux, os_is_macos, os_is_windows
+from sys import os_is_macos, os_is_windows
 
 # ===----------------------------------------------------------------------=== #
 # Passwd

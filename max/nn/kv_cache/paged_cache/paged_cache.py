@@ -35,6 +35,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
+from max.interfaces.request import RequestID
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -483,10 +484,10 @@ class PagedKVCacheManager(KVCacheManager):
             params.head_dim,
         ]
 
-    def _get_num_req_slots(self, seq_id: int) -> int:
+    def _get_num_req_slots(self, request_id: RequestID) -> int:
         """Get the number of KV slots available for a request."""
         return (
-            len(self.block_manager.current_blocks_per_request[seq_id])
+            len(self.block_manager.current_blocks_per_request[request_id])
             * self.page_size
         )
 
@@ -494,7 +495,7 @@ class PagedKVCacheManager(KVCacheManager):
     def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:
         """Determines if a request needs additional blocks."""
         seq_len = ctx.current_length + num_steps - 1
-        return seq_len > self._get_num_req_slots(ctx.cache_seq_id)
+        return seq_len > self._get_num_req_slots(ctx.request_id)
 
     @traced
     def prefetch(self, data: T, num_steps: int = 1) -> bool:
@@ -531,8 +532,6 @@ class PagedKVCacheManager(KVCacheManager):
 
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):  # noqa: B007
-            seq_id = ctx.cache_seq_id
-
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(ctx, num_steps):
                 self.block_manager.reuse_blocks_from_prefix_cache(ctx)
@@ -560,10 +559,8 @@ class PagedKVCacheManager(KVCacheManager):
         max_prompt_len = 0
         max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
-            seq_id = ctx.cache_seq_id
-
             # Get the blocks for this request.
-            blocks = self.block_manager.get_req_blocks(seq_id)
+            blocks = self.block_manager.get_req_blocks(ctx.request_id)
 
             # Sanity check that we have enough blocks.
             seq_len = ctx.current_length + num_steps - 1
@@ -641,28 +638,21 @@ class PagedKVCacheManager(KVCacheManager):
             for i in range(len(self.devices))
         ]
 
-    def claim(self, n: int) -> list[int]:
-        """Claims `n` blocks of memory in the cache for incoming requests.
-
-        This returns a list of sequence ids, which identify a sequence's
-        location within the cache. This sequence id can then be passed
-        in the fetch function to return the ContinuousBatchingKVCacheCollection
-        for those sequences.
-        """
-        seq_ids = super().claim(n)
-        return seq_ids
-
-    def external_claim(self, seq_ids: list[int]) -> None:
-        """Variant of the above where sequence ids are reserved externally."""
-        super().external_claim(seq_ids)
-
-    def release(self, seq_id: int) -> None:
-        """Release `seq_id` provided, marking this sequence as complete.
-        This returns the seq_id back to the available pool of cache memory,
+    def release(self, request_id: RequestID) -> None:
+        """Release the sequence associated with :obj:`request_id`, marking this sequence as complete.
+        This returns the sequence ID back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
-        super().release(seq_id)
-        self.block_manager.release(seq_id)
+        # Get the sequence ID from the request ID for internal use
+        if request_id not in self.request_to_seq_id:
+            raise ValueError(
+                f"Attempted to release request ID {request_id} but it is not claimed"
+            )
+
+        # Call the base class release method with the request_id
+        super().release(request_id)
+        # Call the block manager release method with the request_id
+        self.block_manager.release(request_id)
 
     @traced
     def step(
@@ -717,9 +707,9 @@ class PagedKVCacheManager(KVCacheManager):
         assert 0 <= pct <= 1
         return pct
 
-    def get_req_blocks(self, seq_id: int) -> list[int]:
+    def get_req_blocks(self, request_id: RequestID) -> list[int]:
         """Get the block ids for a request."""
-        return self.block_manager.get_req_blocks(seq_id)
+        return self.block_manager.get_req_blocks(request_id)
 
     @property
     def num_blocks_copied(self) -> BlockCopyMetrics:

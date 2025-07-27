@@ -13,12 +13,9 @@
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
-    Unit,
     keep,
-    run,
     ThroughputMeasure,
     BenchMetric,
 )

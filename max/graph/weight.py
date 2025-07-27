@@ -15,20 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
-import numpy.typing as npt
 from max._core import Value as _Value
 from max._core.dialects import mo
-from max._core_types.driver import DLPackArray
 from max.dtype import DType
 
 from . import graph, ops
 from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
-
-DLPackCompatible = Union[DLPackArray, npt.NDArray]
 
 
 def _compute_shard_range(
@@ -193,6 +189,30 @@ def stacked_qkv_sharding_strategy(
     return ops.concat([q_shard, k_shard, v_shard], axis=0)
 
 
+def tensor_parallel_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Shards a :obj:`Module` across multiple devices using tensor parallel.
+    This strategy is designed for :obj:`Module` that has multiple weights,
+    for which a single weight sharding strategy is not sufficient.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion of the weight
+        for the i-th device.
+    """
+
+    raise NotImplementedError(
+        "tensor_parallel_sharding_strategy is a placeholder and should not be called directly. "
+        "Modules are expected to implement their own tensor parallel sharding strategy."
+    )
+    return weight
+
+
 @dataclass(frozen=True)
 class ShardingStrategy:
     """Specifies how a :obj:`Weight` should be sharded across multiple devices.
@@ -254,6 +274,11 @@ class ShardingStrategy:
         if isinstance(self.shard, partial):
             return self.shard.func is stacked_qkv_sharding_strategy
         return self.shard is stacked_qkv_sharding_strategy
+
+    @property
+    def is_tensor_parallel(self) -> bool:
+        """Whether the sharding strategy is tensor parallel."""
+        return self.shard is tensor_parallel_sharding_strategy
 
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
@@ -356,6 +381,25 @@ class ShardingStrategy:
             head_dim=head_dim,
         )
         return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
+
+    @staticmethod
+    def tensor_parallel(num_devices: int) -> ShardingStrategy:
+        """Creates a tensor parallel sharding strategy.
+
+        This strategy is designed for Module that has multiple weights, for
+        which a single weight sharding strategy is not sufficient. This strategy
+        is a placeholder and should not be called directly. Modules are expected
+        to implement their own tensor parallel sharding strategy.
+
+        Args:
+            num_devices: The number of devices to shard the Module across.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for tensor parallel sharding.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices, shard=tensor_parallel_sharding_strategy
+        )
 
 
 @dataclass

@@ -69,6 +69,8 @@ struct _DictEntryIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias Element = DictEntry[K, V, H]
+
     var index: Int
     var seen: Int
     var src: Pointer[Dict[K, V, H], dict_origin]
@@ -82,6 +84,10 @@ struct _DictEntryIter[
 
     fn __iter__(self) -> Self:
         return self
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.seen < len(self.src[])
 
     @always_inline
     fn __next__(
@@ -99,13 +105,6 @@ struct _DictEntryIter[
             if opt_entry_ref:
                 self.seen += 1
                 return opt_entry_ref.value()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        return len(self.src[]) - self.seen
 
 
 @fieldwise_init
@@ -137,20 +136,16 @@ struct _DictKeyIter[
     fn __iter__(self) -> Self:
         return self
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.iter.__has_next__()
+
     fn __next_ref__(mut self) -> ref [self.iter.__next__().key] K:
         return self.iter.__next__().key
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return self.iter.__len__()
 
 
 @fieldwise_init
@@ -188,6 +183,10 @@ struct _DictValueIter[
             )
         )
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.iter.__has_next__()
+
     fn __next_ref__(mut self) -> ref [dict_origin] V:
         ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
@@ -199,13 +198,6 @@ struct _DictValueIter[
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        return self.iter.__len__()
 
 
 @fieldwise_init
@@ -803,7 +795,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             # SAFETY: We just checked that `entry` is present.
             return entry.unsafe_value().value
 
-        raise "KeyError"
+        raise Error("KeyError")
 
     fn get(self, key: K) -> Optional[V]:
         """Get a value from the dictionary by key.
@@ -869,7 +861,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             entry = None
             self._len -= 1
             return entry_value^.reap_value()
-        raise "KeyError"
+        raise Error("KeyError")
 
     fn popitem(mut self) raises -> DictEntry[K, V, H]:
         """Remove and return a (key, value) pair from the dictionary.

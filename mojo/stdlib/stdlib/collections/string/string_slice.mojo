@@ -65,16 +65,16 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib.hasher import Hasher
 from math import align_down
 from os import PathLike, abort
-from sys import bitwidthof, is_compile_time, simdwidthof
+from sys import is_compile_time, simdwidthof
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
-from bit import count_leading_zeros, count_trailing_zeros
+from bit import count_trailing_zeros
 from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from python import Python, PythonConvertible, PythonObject
+from python import Python, ConvertibleToPython, PythonObject
 
-from utils.write import _WriteBufferStack, _TotalWritableBytes
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -84,7 +84,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable, Sized):
+](Copyable, Iterator, Movable, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -98,6 +98,8 @@ struct CodepointSliceIter[
     element from the front of the iterator, and calls to `next_back()` will
     always take an element from the end.
     """
+
+    alias Element = StringSlice[origin]
 
     var _slice: StringSlice[origin]
 
@@ -115,6 +117,19 @@ struct CodepointSliceIter[
     @doc_private
     fn __iter__(self) -> Self:
         return self
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Returns True if there are still elements in this iterator.
+
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        # NOTE:
+        #   This intentionally check if the length _in bytes_ is greater
+        #   than zero, because checking the codepoint length requires a linear
+        #   scan of the string, which is needlessly expensive for this purpose.
+        return len(self._slice) > 0
 
     fn __next__(mut self) -> StringSlice[origin]:
         """Get the next codepoint in the underlying string slice.
@@ -138,19 +153,6 @@ struct CodepointSliceIter[
             return self.next_back().value()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        """Returns True if there are still elements in this iterator.
-
-        Returns:
-            A boolean indicating if there are still elements in this iterator.
-        """
-        # NOTE:
-        #   This intentionally check if the length _in bytes_ is greater
-        #   than zero, because checking the codepoint length requires a linear
-        #   scan of the string, which is needlessly expensive for this purpose.
-        return len(self._slice) > 0
-
-    @always_inline
     fn __len__(self) -> Int:
         """Returns the remaining length of this iterator in `Codepoint`s.
 
@@ -160,7 +162,7 @@ struct CodepointSliceIter[
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return self._slice.char_length()
+        return Int(self._slice.char_length())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -316,6 +318,8 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias Element = Codepoint
+
     var _slice: StringSlice[origin]
     """String slice containing the bytes that have not been read yet.
 
@@ -339,6 +343,15 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     fn __iter__(self) -> Self:
         return self
 
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Returns True if there are still elements in this iterator.
+
+        Returns:
+            A boolean indicating if there are still elements in this iterator.
+        """
+        return Bool(self.peek_next())
+
     fn __next__(mut self) -> Codepoint:
         """Get the next codepoint in the underlying string slice.
 
@@ -354,15 +367,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         return self.next().value()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        """Returns True if there are still elements in this iterator.
-
-        Returns:
-            A boolean indicating if there are still elements in this iterator.
-        """
-        return Bool(self.peek_next())
-
-    @always_inline
     fn __len__(self) -> Int:
         """Returns the remaining length of this iterator in `Codepoint`s.
 
@@ -372,7 +376,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return self._slice.char_length()
+        return Int(self._slice.char_length())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -441,7 +445,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
             # Advance the pointer in _slice.
             self._slice._slice._data += char_len
             # Decrement the byte-length of _slice.
-            self._slice._slice._len -= char_len
+            self._slice._slice._len -= Int(char_len)
 
         return result
 
@@ -449,6 +453,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Boolable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     EqualityComparable,
@@ -459,7 +464,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     KeyElement,
     Movable,
     PathLike,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,
@@ -882,7 +886,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Raises:
             An error if the conversion failed.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj._obj_ptr)
         if not self.unsafe_ptr():
             raise cpython.get_error()

@@ -42,9 +42,10 @@ def convert_safetensor_state_dict(
     if pipeline_config.model_config._quant_config:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
+            np_array = np.from_dlpack(weight_data.data)  # type: ignore
             if key.endswith("perm_idx"):
                 new_state_dict[key] = WeightData.from_numpy(
-                    np.argsort(weight_data.data).astype(np.int32), key
+                    np.argsort(np_array).astype(np.int32), key
                 )
     if (
         pipeline_config.model_config.quantization_encoding
@@ -82,7 +83,7 @@ def convert_safetensor_state_dict(
     # a GPTQ Llama model.
     if hasattr(huggingface_config, "quantization_config"):
         UNUSED_KEYS = [".bias", ".qzeros"]
-        if huggingface_config.quantization_config["desc_act"] == True:
+        if huggingface_config.quantization_config.get("desc_act") is True:
             UNUSED_KEYS.append("v_proj.perm_idx")
             UNUSED_KEYS.append("k_proj.perm_idx")
         else:

@@ -33,15 +33,10 @@ from gpu._cublas.cublas import (
 )
 from gpu._cublas.cublaslt import (
     Context,
-    MatmulAlgorithm,
     Preference,
-    cublasLtCreate,
-    cublasLtDestroy,
-    cublasLtGetVersion,
     cublasLtLoggerSetLevel,
     cublasLtMatmul,
     cublasLtMatmulAlgoGetHeuristic,
-    cublasLtMatmulAlgoInit,
     cublasLtMatmulDesc_t,
     cublasLtMatmulDescAttributes_t,
     cublasLtMatmulDescCreate,
@@ -84,7 +79,6 @@ from gpu._rocblas.hipblaslt import (
 from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-from gpu.host.info import DEFAULT_GPU, H100
 
 from utils.variant import Variant
 
@@ -415,7 +409,7 @@ fn matmul[
             beta=beta,
         )
     else:
-        raise String(
+        raise Error(
             "the backend '",
             handle.backend,
             "' is not currently supported",

@@ -508,6 +508,9 @@ fn gather_guards(
         raise Error("gather: axis must be less than input rank")
 
 
+alias error_index_fn_type = fn (Int) capturing -> None
+
+
 @always_inline
 fn gather_elementwise_fn_wrapper[
     *,
@@ -528,6 +531,7 @@ fn gather_elementwise_fn_wrapper[
             input_rank: Int, indices_rank: Int
         ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
+    error_index_fn: OptionalReg[error_index_fn_type] = None,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -566,8 +570,29 @@ fn gather_elementwise_fn_wrapper[
         @parameter
         for i in range(input_shape.size):
             if i == Int(axis):
-                data_indices[i] = Int(
-                    _unsafe_normalize_neg_index(data_index, input_shape[axis])
+                var normalized_idx = _unsafe_normalize_neg_index(
+                    data_index, input_shape[axis]
+                )
+                data_indices[i] = Int(normalized_idx)
+
+                # Do a real bounds check and provide a nice message on CPU
+                # (where error_index_fn is provided). Use debug_assert to
+                # validate normalized index is within bounds on GPU and trap,
+                # as more detailed checking is costly on GPU.
+                @parameter
+                if error_index_fn:
+                    if not (0 <= Int(normalized_idx) < input_shape[axis]):
+                        alias error_index_func = error_index_fn.value()
+                        # Store the invalid index for debugging
+                        error_index_func(Int(data_index))
+                        return  # Early return on bounds error
+
+                debug_assert[assert_mode="safe"](
+                    0 <= Int(normalized_idx) < input_shape[axis],
+                    (
+                        "Gather index out of bounds. Run on CPU for more"
+                        " detailed error checking."
+                    ),
                 )
             elif i > Int(axis):
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
@@ -633,6 +658,18 @@ fn gather[
         ):
             return
 
+        # Create an error reporting location since we cannot raise from an elementwise lambda.
+        var error_index: Int = -1  # Initialize invalid index
+
+        @parameter
+        @always_inline
+        fn error_index_fn(val: Int):
+            error_index = val
+
+        alias error_fn = OptionalReg[error_index_fn_type](
+            error_index_fn
+        ) if is_cpu[target]() else None
+
         @parameter
         @always_inline
         fn gather_elementwise_fn[
@@ -646,6 +683,7 @@ fn gather[
                 output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
+                error_index_fn=error_fn,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -675,6 +713,18 @@ fn gather[
                 output_shape.canonicalize(),
                 context,
             )
+
+        # Check for bounds errors after elementwise operation completes (CPU only)
+        @parameter
+        if is_cpu[target]():
+            if error_index != -1:
+                var invalid_index = Int(error_index)
+                raise Error(
+                    String(
+                        "gather index {} is out of bounds for axis {} with"
+                        " size {}"
+                    ).format(invalid_index, Int(axis), input_shape[axis])
+                )
 
 
 @always_inline
@@ -723,6 +773,18 @@ fn gather[
         ):
             return
 
+        # Create an error reporting location since we cannot raise from an elementwise lambda.
+        var error_index: Int = -1  # Initialize invalid index
+
+        @parameter
+        @always_inline
+        fn error_index_fn(val: Int):
+            error_index = val
+
+        alias error_fn = OptionalReg[error_index_fn_type](
+            error_index_fn
+        ) if is_cpu[target]() else None
+
         @parameter
         @always_inline
         fn gather_elementwise_fn[
@@ -736,6 +798,7 @@ fn gather[
                 output_fn=output_fn,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
+                error_index_fn=error_fn,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -759,6 +822,18 @@ fn gather[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
+
+        # Check for bounds errors after elementwise operation completes (CPU only)
+        @parameter
+        if is_cpu[target]():
+            if error_index != -1:
+                var invalid_index = Int(error_index)
+                raise Error(
+                    String(
+                        "gather index {} is out of bounds for axis {} with"
+                        " size {}"
+                    ).format(invalid_index, Int(axis), input_shape[axis])
+                )
 
 
 # ===-----------------------------------------------------------------------===#

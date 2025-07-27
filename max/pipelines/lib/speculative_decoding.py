@@ -380,7 +380,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -399,8 +399,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):  # noqa: B007
-            if not model.kv_manager.contains(context.cache_seq_id):
-                model.kv_manager.external_claim([context.cache_seq_id])
+            if not model.kv_manager.contains(context.request_id):
+                model.kv_manager.external_claim(context.request_id)
 
             # Calculate num_steps.
             num_steps = self.calculate_num_steps(
@@ -836,8 +836,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         """Releases resources associated with this context.
 
         Args:
-            context (TokenGeneratorContext): Finished context.
+            context (InputContext): Finished context.
 
         """
-        self._draft_model.kv_manager.release(context.cache_seq_id)
-        self._target_model.kv_manager.release(context.cache_seq_id)
+        self._draft_model.kv_manager.release(context.request_id)
+        self._target_model.kv_manager.release(context.request_id)

@@ -52,25 +52,96 @@ struct MojoPair(Copyable, Defaultable, Movable, Representable):
         self = Self(0, 0)
 
     fn __init__(out self, args: PythonObject, kwargs: PythonObject) raises:
-        """Non-trivial constructor that takes Python arguments."""
-        var tuple_len = len(args)
+        """Non-trivial constructor that takes Python positional and keyword arguments.
+        """
+        # Check for null arguments before calling len()
+        var tuple_len = 0
+        var kwargs_len = 0
+
+        if args:
+            tuple_len = len(args)
+        if kwargs._obj_ptr:
+            kwargs_len = len(kwargs)
         print(
             "MojoPair.__init__ called with tuple of",
             tuple_len,
             "elements:",
             args,
+            "and kwargs of",
+            kwargs_len,
+            "elements:",
+            kwargs,
         )
 
-        if tuple_len != 2:
+        # Handle different argument patterns
+        if tuple_len + kwargs_len == 0:
+            raise String("MojoPair requires at least 1 argument")
+
+        var first_val: Int
+        var second_val: Int
+
+        # Extract positional arguments
+        if tuple_len >= 1:
+            try:
+                first_val = Int(args[0])
+            except e:
+                raise String("Failed to convert first argument to integer: ", e)
+        else:
+            first_val = 0  # Default if not provided positionally
+
+        if tuple_len >= 2:
+            try:
+                second_val = Int(args[1])
+            except e:
+                raise String(
+                    "Failed to convert second argument to integer: ", e
+                )
+        else:
+            second_val = 0  # Default if not provided positionally
+
+        if tuple_len > 2:
             raise String(
-                "MojoPair requires exactly 2 arguments, got ", tuple_len
+                "MojoPair accepts at most 2 positional arguments, got ",
+                tuple_len,
             )
 
-        try:
-            self.first = Int(args[0])
-            self.second = Int(args[1])
-        except e:
-            raise String("Failed to convert arguments to integers: ", e)
+        # Process keyword arguments - they override positional arguments
+        if kwargs_len > 0:
+            try:
+                # Check for 'first' keyword argument
+                if "first" in kwargs:
+                    first_val = Int(kwargs["first"])
+
+                # Check for 'second' keyword argument
+                if "second" in kwargs:
+                    second_val = Int(kwargs["second"])
+            except e:
+                raise String("Failed to process keyword arguments: ", e)
+
+        # Ensure we have valid values for both
+        if tuple_len == 0 and kwargs_len > 0:
+            # Pure keyword argument case - need both
+            if "first" not in kwargs or "second" not in kwargs:
+                raise String(
+                    "When using only keyword arguments, both 'first' and"
+                    " 'second' must be provided"
+                )
+        elif tuple_len == 1 and kwargs_len > 0:
+            # Mixed case with one positional - need 'second' in kwargs
+            if "second" not in kwargs:
+                raise String(
+                    "When providing 1 positional argument, 'second' must be"
+                    " provided as keyword argument"
+                )
+        elif tuple_len == 1 and kwargs_len == 0:
+            # Single positional argument case - need exactly 2
+            raise String(
+                "MojoPair requires exactly 2 arguments when using only"
+                " positional arguments"
+            )
+
+        self.first = first_val
+        self.second = second_val
 
     @staticmethod
     fn pyinit(out self: Self, args: PythonObject, kwargs: PythonObject) raises:

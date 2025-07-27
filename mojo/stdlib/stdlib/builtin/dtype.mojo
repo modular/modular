@@ -187,13 +187,6 @@ struct DType(
 
     alias float32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary32` floating point value."""
-    alias tensor_float32 = DType(
-        __mlir_attr.`#kgen.dtype.constant<tf32> : !kgen.dtype`
-    )
-    """Represents a special floating point format supported by NVIDIA Tensor
-    Cores, with the same range as float32 and reduced precision (>=10 bits).
-    Note that this dtype is only available on NVIDIA GPUs.
-    """
 
     alias float64 = DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary64` floating point value."""
@@ -274,8 +267,6 @@ struct DType(
 
         elif str == "float32":
             return DType.float32
-        elif str == "tensor_float32":
-            return DType.tensor_float32
 
         elif str == "float64":
             return DType.float64
@@ -353,8 +344,6 @@ struct DType(
 
         elif self is DType.float32:
             return writer.write("float32")
-        elif self is DType.tensor_float32:
-            return writer.write("tensor_float32")
 
         elif self is DType.float64:
             return writer.write("float64")
@@ -604,8 +593,6 @@ struct DType(
 
         elif self is DType.float32:
             return sizeof[DType.float32]()
-        elif self is DType.tensor_float32:
-            return sizeof[DType.tensor_float32]()
 
         elif self is DType.float64:
             return sizeof[DType.float64]()
@@ -771,8 +758,6 @@ struct DType(
         #     func[DType.bfloat16]()
         elif self is DType.float32:
             func[DType.float32]()
-        elif self is DType.tensor_float32:
-            func[DType.tensor_float32]()
         elif self is DType.float64:
             func[DType.float64]()
         else:
@@ -909,8 +894,6 @@ struct DType(
 
         if self is DType.float32:
             return __mlir_attr.f32
-        if self is DType.tensor_float32:
-            return __mlir_attr.tf32
 
         if self is DType.float64:
             return __mlir_attr.f64
@@ -982,8 +965,6 @@ struct DType(
 
         elif _type_is_eq[T, SIMD[DType.float32, size]]():
             return DType.float32
-        elif _type_is_eq[T, SIMD[DType.tensor_float32, size]]():
-            return DType.tensor_float32
 
         elif _type_is_eq[T, SIMD[DType.float64, size]]():
             return DType.float64
@@ -1021,7 +1002,7 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int8
     elif dtype.is_half_float():
         return DType.int16
-    elif dtype in (DType.float32, DType.tensor_float32):
+    elif dtype is DType.float32:
         return DType.int32
     elif dtype is DType.float64:
         return DType.int64
@@ -1049,7 +1030,7 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint8
     elif dtype.is_half_float():
         return DType.uint16
-    elif dtype in (DType.float32, DType.tensor_float32):
+    elif dtype is DType.float32:
         return DType.uint32
     elif dtype is DType.float64:
         return DType.uint64
@@ -1073,7 +1054,7 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
         return "2"
     elif dtype.is_half_float():
         return "4"
-    elif dtype is DType.float32 or dtype is DType.tensor_float32:
+    elif dtype is DType.float32:
         return "8"
     else:
         return "16"

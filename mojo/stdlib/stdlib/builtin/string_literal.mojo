@@ -22,10 +22,8 @@ from sys.ffi import c_char
 from collections.string.format import _FormatCurlyEntry
 from collections.string.string_slice import _to_string_list
 
-from memory import memcpy
-from python import PythonConvertible, PythonObject
+from python import ConvertibleToPython, PythonObject
 
-from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -36,6 +34,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 @nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
@@ -43,8 +42,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     IntableRaising,
     Movable,
     PathLike,
-    PythonConvertible,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,

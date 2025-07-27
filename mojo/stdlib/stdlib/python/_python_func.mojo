@@ -1759,3 +1759,259 @@ struct PyObjectFunction[
 
         constrained[False, "unsupported arity or signature"]()
         return PO()
+
+    @always_inline("nodebug")
+    fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
+        constrained[not Self._has_arity(0), "method arity must not be 0"]()
+        constrained[
+            has_kwargs, "should only be used for methods that accept kwargs"
+        ]()
+        var kwargs = Self._convert_kwargs(py_kwargs)
+
+        @parameter
+        if Self._has_arity(1):
+            check_arguments_arity(0, py_args)
+
+            @parameter
+            if self._has_type[Self._1er_kwargs]():
+                return rebind[Self._1er_kwargs](self._func)(py_self, kwargs)
+            elif self._has_type[Self._1r_kwargs]():
+                return rebind[Self._1r_kwargs](self._func)(py_self, kwargs)
+            elif self._has_type[Self._1e_kwargs]():
+                return rebind[Self._1e_kwargs](self._func)(py_self, kwargs)
+            elif self._has_type[Self._1_kwargs]():
+                return rebind[Self._1_kwargs](self._func)(py_self, kwargs)
+            elif self._has_type[Self._1er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1er_self_kwargs](self._func)(
+                    self_arg, kwargs
+                )
+            elif self._has_type[Self._1r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1r_self_kwargs](self._func)(
+                    self_arg, kwargs
+                )
+            elif self._has_type[Self._1e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1e_self_kwargs](self._func)(
+                    self_arg, kwargs
+                )
+            elif self._has_type[Self._1_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._1_self_kwargs](self._func)(self_arg, kwargs)
+        elif Self._has_arity(2):
+            check_arguments_arity(1, py_args)
+            var arg0 = py_args[0]
+
+            @parameter
+            if self._has_type[Self._2er_kwargs]():
+                return rebind[Self._2er_kwargs](self._func)(
+                    py_self, arg0, kwargs
+                )
+            elif self._has_type[Self._2r_kwargs]():
+                return rebind[Self._2r_kwargs](self._func)(
+                    py_self, arg0, kwargs
+                )
+            elif self._has_type[Self._2e_kwargs]():
+                return rebind[Self._2e_kwargs](self._func)(
+                    py_self, arg0, kwargs
+                )
+            elif self._has_type[Self._2_kwargs]():
+                return rebind[Self._2_kwargs](self._func)(py_self, arg0, kwargs)
+            elif self._has_type[Self._2er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2er_self_kwargs](self._func)(
+                    self_arg, arg0, kwargs
+                )
+            elif self._has_type[Self._2r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2r_self_kwargs](self._func)(
+                    self_arg, arg0, kwargs
+                )
+            elif self._has_type[Self._2e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2e_self_kwargs](self._func)(
+                    self_arg, arg0, kwargs
+                )
+            elif self._has_type[Self._2_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._2_self_kwargs](self._func)(
+                    self_arg, arg0, kwargs
+                )
+        elif Self._has_arity(3):
+            check_arguments_arity(2, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+
+            @parameter
+            if self._has_type[Self._3er_kwargs]():
+                return rebind[Self._3er_kwargs](self._func)(
+                    py_self, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3r_kwargs]():
+                return rebind[Self._3r_kwargs](self._func)(
+                    py_self, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3e_kwargs]():
+                return rebind[Self._3e_kwargs](self._func)(
+                    py_self, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3_kwargs]():
+                return rebind[Self._3_kwargs](self._func)(
+                    py_self, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3er_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3r_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3e_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, kwargs
+                )
+            elif self._has_type[Self._3_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._3_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, kwargs
+                )
+        elif Self._has_arity(4):
+            check_arguments_arity(3, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+
+            @parameter
+            if self._has_type[Self._4er_kwargs]():
+                return rebind[Self._4er_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4r_kwargs]():
+                return rebind[Self._4r_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4e_kwargs]():
+                return rebind[Self._4e_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4_kwargs]():
+                return rebind[Self._4_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4er_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4r_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4e_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, kwargs
+                )
+            elif self._has_type[Self._4_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._4_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, kwargs
+                )
+        elif Self._has_arity(5):
+            check_arguments_arity(4, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+
+            @parameter
+            if self._has_type[Self._5er_kwargs]():
+                return rebind[Self._5er_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5r_kwargs]():
+                return rebind[Self._5r_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5e_kwargs]():
+                return rebind[Self._5e_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5_kwargs]():
+                return rebind[Self._5_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5er_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5r_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5e_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                )
+            elif self._has_type[Self._5_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._5_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, kwargs
+                )
+        elif Self._has_arity(6):
+            check_arguments_arity(5, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+
+            @parameter
+            if self._has_type[Self._6er_kwargs]():
+                return rebind[Self._6er_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6r_kwargs]():
+                return rebind[Self._6r_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6e_kwargs]():
+                return rebind[Self._6e_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6_kwargs]():
+                return rebind[Self._6_kwargs](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6er_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6er_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6r_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6r_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6e_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6e_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+            elif self._has_type[Self._6_self_kwargs]():
+                var self_arg = Self._get_self_arg(py_self)
+                return rebind[Self._6_self_kwargs](self._func)(
+                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
+                )
+
+        constrained[False, "unsupported arity or signature"]()
+        return PO()

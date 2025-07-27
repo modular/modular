@@ -25,17 +25,12 @@ f.close()
 """
 from os import abort
 from sys import (
-    is_amd_gpu,
-    is_compile_time,
     is_gpu,
-    is_nvidia_gpu,
     os_is_linux,
     os_is_macos,
 )
-from sys._amdgpu import printf_append_string_n, printf_begin
 from sys.ffi import c_ssize_t, external_call
 
-from builtin.io import _printf
 from memory import Span
 
 

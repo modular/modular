@@ -13,8 +13,8 @@
 """Establishes the contract between `Writer` and `Writable` types."""
 
 from bit import byte_swap
-from builtin.io import _printf
-from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
+from io.io import _printf
+from sys.info import is_gpu
 from memory import memcpy, bitcast
 from os import abort
 from sys import alignof
@@ -228,13 +228,15 @@ struct _WriteBufferStack[
     W: Writer, //,
     stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
 ](Writer):
-    var data: InlineArray[UInt8, stack_buffer_bytes]
+    var data: InlineArray[UInt8, Int(stack_buffer_bytes)]
     var pos: Int
     var writer: Pointer[W, origin]
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, stack_buffer_bytes](uninitialized=True)
+        self.data = InlineArray[UInt8, Int(stack_buffer_bytes)](
+            uninitialized=True
+        )
         self.pos = 0
         self.writer = Pointer(to=writer)
 
@@ -258,12 +260,12 @@ struct _WriteBufferStack[
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > stack_buffer_bytes:
+        if len_bytes > Int(stack_buffer_bytes):
             self.flush()
             self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > stack_buffer_bytes:
+        elif self.pos + len_bytes > Int(stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
         memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
@@ -327,7 +329,7 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     %# from memory import memset_zero
     %# from testing import assert_equal
     %# from utils import StringSlice
-    %# from utils.write import _hex_digits_to_hex_chars
+    %# from io.write import _hex_digits_to_hex_chars
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
     alias S = StringSlice[__origin_of(items)]
     ptr = items.unsafe_ptr()
@@ -359,7 +361,7 @@ fn _write_hex[amnt_hex_bytes: Int](p: UnsafePointer[Byte], decimal: Int):
     %# from memory import memset_zero
     %# from testing import assert_equal
     %# from utils import StringSlice
-    %# from utils.write import _write_hex
+    %# from io.write import _write_hex
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
     alias S = StringSlice[__origin_of(items)]
     ptr = items.unsafe_ptr()

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from sys.info import _current_target
 from sys.intrinsics import _type_is_eq
 
 from buffer import Dim, DimList, NDBuffer
@@ -19,12 +18,10 @@ from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
-    PagedKVCache,
     PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul

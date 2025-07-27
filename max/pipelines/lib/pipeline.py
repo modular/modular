@@ -658,7 +658,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -711,11 +711,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     context.jump_ahead(token)
 
             # Claim cache rows for context.
-            if not self._pipeline_model.kv_manager.contains(
-                context.cache_seq_id
-            ):
+            if not self._pipeline_model.kv_manager.contains(context.request_id):
                 self._pipeline_model.kv_manager.external_claim(
-                    [context.cache_seq_id]
+                    context.request_id
                 )
 
             # Update num_steps.
@@ -1231,4 +1229,4 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
     def release(self, context: T) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(context.cache_seq_id)
+        self._pipeline_model.kv_manager.release(context.request_id)

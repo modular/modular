@@ -19,8 +19,6 @@ from memory import OwnedPointer
 ```
 """
 
-from memory import memcpy
-
 
 @register_passable
 struct OwnedPointer[T: AnyType]:

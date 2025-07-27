@@ -54,6 +54,6 @@ process is inspired by successful practices in other open source communities.
 ## Submitting pull requests
 
 For details about how to submit a pull request, see the repo's
-[primary contributing guide](../CONTRIBUTING.md).
+[primary contributing guide](../../CONTRIBUTING.md).
 
 Thank you for your contributions! ❤️

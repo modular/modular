@@ -64,9 +64,7 @@ from buffer.dimlist import DimList
 from utils import IndexList
 
 from .int_tuple import (
-    INT_TUPLE_VALIDATION,
     UNKNOWN_VALUE,
-    IntArray,
     IntTuple,
     abs,
     compact_order,
@@ -81,7 +79,6 @@ from .int_tuple import (
     prefix_product,
     product,
     product_each,
-    propagate_unknown,
     reverse,
     shape_div,
     sorted,

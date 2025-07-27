@@ -21,11 +21,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Callable, Protocol, Union, get_args
+from typing import Any, Callable, Protocol
 
 import numpy as np
-from max._core_types.driver import DLPackArray
-from max.driver import Tensor
+from max.driver import DLPackArray, Tensor
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -33,6 +32,7 @@ from max.graph import (
     Shape,
     ShapeLike,
     ShardingStrategy,
+    StaticDim,
     Type,
     Value,
     Weight,
@@ -41,8 +41,6 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
 from .._identity import IdentitySet
-
-DLPackCompatible = Union[DLPackArray, np.ndarray]
 
 
 class Shardable(Protocol):
@@ -158,7 +156,7 @@ class Module(Layer, ABC):
         if not hasattr(self, "_sublayers"):
             self._sublayers: dict[str, Module] = {}
             self._layer_weights: dict[str, Weight] = {}
-            self._weight_values: dict[str, DLPackCompatible] = {}
+            self._weight_values: dict[str, DLPackArray] = {}
             self._shared_weights: dict[str, Weight] = {}
 
     def __setattr__(self, name, value) -> None:  # noqa: ANN001
@@ -278,7 +276,7 @@ class Module(Layer, ABC):
 
     def load_state_dict(
         self,
-        state_dict: Mapping[str, DLPackCompatible | WeightData],
+        state_dict: Mapping[str, DLPackArray | WeightData],
         *,
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
@@ -354,7 +352,7 @@ class Module(Layer, ABC):
 
     def state_dict(
         self, auto_initialize: bool = True
-    ) -> dict[str, DLPackCompatible]:
+    ) -> dict[str, DLPackArray]:
         """Returns values of all weights in the model.
 
         The values returned are the same as the values set in :obj:`load_state_dict`.
@@ -435,7 +433,7 @@ def _array_from_weight_loader(
         # Store the original shape and dtype of the weight (used in layers like
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
-        data = data.view(DType.uint8)
+        data.data = Tensor.from_dlpack(data.data).view(DType.uint8)
 
     if weight.quantization_encoding:
         # TODO: Set the quantized weight shape correctly when initializing the
@@ -476,7 +474,7 @@ def _array_from_weight_loader(
     return data
 
 
-def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
+def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
     if isinstance(value, Tensor):
         shape = value.shape
         dtype = value.dtype
@@ -492,7 +490,7 @@ def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
     return shape, dtype
 
 
-def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
+def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
     tensor = Tensor.from_dlpack(value)
     if not tensor._aligned(align):
         raise ValueError(
@@ -503,8 +501,10 @@ def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
         )
 
 
-def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
-    if not isinstance(value, get_args(DLPackCompatible)):
+def _validate_weight_value(
+    weight: Weight, value: DLPackArray, name: str
+) -> None:
+    if not isinstance(value, DLPackArray):
         raise ValueError(
             f"The class type of '{name}' value ({type(value)}) is not an array "
             "type that we understand. Please use a numpy array or max.driver.Tensor."
@@ -513,9 +513,49 @@ def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
     shape, dtype = _get_value_shape_dtype(value)
 
     diffs = []
-    weight_shape = tuple(weight.shape.static_dims)
-    if shape != weight_shape:
-        diffs.append(f"shape (expected={weight_shape}, actual={shape})")
+
+    # Check if weight has symbolic dimensions
+    # Convert weight.shape to list to ensure it's sized
+    weight_shape_dims = list(weight.shape)
+    weight_has_symbolic_dims = len(weight_shape_dims) != len(
+        weight.shape.static_dims
+    )
+
+    # Convert shape to tuple to ensure it's sized
+    shape_tuple = tuple(shape)
+
+    if weight_has_symbolic_dims:
+        # For weights with symbolic dimensions, validate by comparing static dimensions
+        # at their correct positions, allowing symbolic dimensions to vary
+        if len(shape_tuple) != len(weight_shape_dims):
+            # Shape rank must match
+            diffs.append(
+                f"shape rank (expected={len(weight_shape_dims)}, actual={len(shape_tuple)})"
+            )
+        else:
+            # Check each dimension: static dims must match, symbolic dims can vary
+            mismatches = []
+            for i, (weight_dim, value_dim) in enumerate(
+                zip(weight_shape_dims, shape_tuple)
+            ):
+                if isinstance(weight_dim, StaticDim):
+                    # This is a static dimension - must match exactly
+                    if int(weight_dim) != value_dim:
+                        mismatches.append(
+                            f"dim[{i}]: expected {int(weight_dim)}, got {value_dim}"
+                        )
+                # Symbolic dimensions are allowed to vary, so no check needed
+
+            if mismatches:
+                diffs.append(f"shape ({', '.join(mismatches)})")
+    else:
+        # For fully static weights, use the original validation
+        weight_shape = tuple(weight.shape.static_dims)
+        if shape_tuple != weight_shape:
+            diffs.append(
+                f"shape (expected={weight_shape}, actual={shape_tuple})"
+            )
+
     if dtype != weight.dtype:
         diffs.append(f"dtype (expected={weight.dtype}, actual={dtype})")
     if diffs:

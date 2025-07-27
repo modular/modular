@@ -43,7 +43,6 @@ struct Status(Writable):
     alias HANDLE_IS_NULLPTR = Self(9)
     alias INVALID_ENUM = Self(10)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -98,7 +97,6 @@ struct hipDataType_t:
     alias R_8I = Self(3)
     alias R_16BF = Self(14)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -118,7 +116,6 @@ struct hipblasComputeType_t:
     alias COMPUTE_32F = Self(2)
     alias COMPUTE_32F_PEDANTIC = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -137,7 +134,6 @@ struct hipblasOperation_t:
     alias OP_T = Self(112)
     alias OP_C = Self(113)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -159,7 +155,6 @@ struct hipblasLtOrder_t:
     alias COL16_4R4 = Self(102)
     alias COL16_4R2 = Self(103)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -177,7 +172,6 @@ struct hipblasLtMatmulDescAttributes_t:
     alias TRANSA = Self(0)
     alias TRANSB = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -200,7 +194,6 @@ struct hipblasLtMatmulLayoutAttribute_t:
     alias COLS = Self(5)
     alias LD = Self(6)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

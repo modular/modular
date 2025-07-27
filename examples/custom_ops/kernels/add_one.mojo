@@ -17,7 +17,6 @@ import compiler
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import (
     InputTensor,
-    ManagedTensorSlice,
     OutputTensor,
     foreach,
 )
@@ -52,4 +51,4 @@ struct AddOne:
     fn shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+        raise Error("NotImplemented")

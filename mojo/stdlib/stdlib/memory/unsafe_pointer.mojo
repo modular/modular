@@ -17,8 +17,6 @@ These APIs are imported automatically, just like builtins.
 
 from sys import alignof, is_gpu, is_nvidia_gpu, sizeof
 from sys.intrinsics import (
-    _mlirtype_is_eq,
-    _type_is_eq,
     gather,
     scatter,
     strided_load,

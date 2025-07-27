@@ -17,7 +17,6 @@ from math import align_up, ceildiv, exp
 from math.math import _Expable
 from sys import (
     alignof,
-    bitwidthof,
     is_amd_gpu,
     is_nvidia_gpu,
     prefetch,
@@ -52,7 +51,7 @@ from .int_tuple import (
     depth,
     fill_like,
     flatten,
-    idx2crd,
+    propagate_unknown,
     product,
     to_nest,
 )
@@ -3953,7 +3952,7 @@ struct LayoutTensor[
                 alias shape_i: UInt = Int(thread_projected_shape[i])
                 alias stride_i: UInt = Int(thread_projected_stride[i])
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset_coords[i] = thread_coord_i
+                offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4024,7 +4023,7 @@ struct LayoutTensor[
                 alias shape_i: UInt = Int(thread_projected_shape[i]).value
                 alias stride_i: UInt = Int(thread_projected_stride[i]).value
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset_coords[i] = thread_coord_i
+                offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -6238,7 +6237,9 @@ fn cp_async_mn_major[
     for tile_id_per_warp in range(num_tiles_per_warp):
         tile_id = warp_id + UInt(tile_id_per_warp) * num_warps
         tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
-        src_tile = src.tile[desc_shape0, desc_shape1](tile_coord0, tile_coord1)
+        src_tile = src.tile[desc_shape0, desc_shape1](
+            Int(tile_coord0), Int(tile_coord1)
+        )
         dst_tile = LayoutTensor[
             dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)

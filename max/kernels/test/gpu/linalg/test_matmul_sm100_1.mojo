@@ -21,7 +21,7 @@ from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
-from gpu.memory import AddressSpace, external_memory, tma_store_fence
+from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from gpu.mma import st_matrix
@@ -38,7 +38,6 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     st_matrix_n_layout,
-    tile_to_descriptor,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster
@@ -64,6 +63,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 fn blackwell_matmul_tma_umma_kernel[
     a_type: DType,
     b_type: DType,
@@ -351,7 +351,7 @@ fn blackwell_matmul_tma_umma_kernel[
     #           c_frag                   c_smem_tile      c_tma_op
 
     if elect_one_warp and thread_idx.x < BN // TMA_BN:
-        tma_store_fence()
+        fence_async_view_proxy()
 
         var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
 

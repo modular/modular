@@ -995,16 +995,7 @@ class InternVisionEncoderLayer(Module):
         # Create per-device MLP instances.
         self.mlp_per_device = []
         for n, device in enumerate(self.devices):
-            mlp_copy = InternVLVisionMLP(
-                hidden_size=self.embed_dim,
-                intermediate_size=self.intermediary_size,
-                dtype=config.llm_config.dtype,
-                device=device,
-                has_bias=True,
-            )
-            # Shard the linear layers
-            mlp_copy.fc1 = self.mlp.fc1.shard(n, device)
-            mlp_copy.fc2 = self.mlp.fc2.shard(n, device)
+            mlp_copy = self.mlp.shard(n, device)
             self.mlp_per_device.append(mlp_copy)
 
         # Create allreduce for tensor parallel attention and MLP

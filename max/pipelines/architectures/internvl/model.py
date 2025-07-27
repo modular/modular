@@ -21,9 +21,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import cast
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.engine import DLPackCompatible, InferenceSession, Model
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -469,7 +469,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
     def _build_vision_graph(
         self, config: InternVLConfig, state_dict: dict[str, WeightData]
-    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
         # Use static dimensions from the vision config
@@ -624,7 +624,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
 
     def _build_language_graph(
         self, config: InternVLConfig, state_dict: dict[str, WeightData]
-    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(

@@ -15,28 +15,22 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import alignof, simdwidthof, sizeof
-from sys.intrinsics import _type_is_eq, readfirstlane
+from sys.intrinsics import readfirstlane
 
 from algorithm.functional import unswitch
 from gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
     block_idx,
-    global_idx,
-    grid_dim,
     lane_id,
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
 from gpu.intrinsics import buffer_store
 from gpu.memory import AddressSpace
-from gpu.mma import mma as mma_simd
 from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
-    schedule_group_barrier,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
@@ -46,9 +40,7 @@ from layout.layout_tensor import (
     ThreadScope,
     copy_local_to_shared,
     copy_dram_to_local,
-    copy_dram_to_sram,
     copy_local_to_dram,
-    copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
@@ -65,8 +57,6 @@ from nn.mha_utils import (
 )
 from nn.softmax import (
     _online_softmax_iter_for_mma_output,
-    _online_softmax_iter_for_mma_output_split_warp_reduce,
-    _softmax_gpu,
     softmax,
 )
 
@@ -276,9 +266,9 @@ fn mma[
         alias b_wtile_dim1 = BK if transpose_b else WN
         var b_wtile_coord0 = Int(warp_col) if transpose_b else 0
         var b_wtile_coord1 = 0 if transpose_b else Int(warp_col)
-        var b_warp_tile = b_smem_iter.next_unsafe(0)[].tile[
-            b_wtile_dim0, b_wtile_dim1
-        ](b_wtile_coord0, b_wtile_coord1)
+        var b_warp_tile = b_smem_tile.tile[b_wtile_dim0, b_wtile_dim1](
+            b_wtile_coord0, b_wtile_coord1
+        )
 
         @parameter
         for k_mma in range(num_k_mmas2):
@@ -524,7 +514,13 @@ struct SharedMemoryManager[
         self,
         out result: LayoutTensorIter[
             dtype,
-            Layout.row_major(BK, BN),
+            Layout.row_major(BK, BN) if token_gen else Layout(
+                IntTuple(Int(depth + depth // 8), IntTuple(8, 4)),
+                IntTuple(
+                    8,
+                    IntTuple(1, Int(depth + depth // 8) * 8),
+                ),
+            ),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
             circular=True,
@@ -1071,19 +1067,7 @@ fn mha_single_batch_amd[
 
             alias padding = depth // 8
             alias padding_tile = depth_tile_size // 8
-            var v_smem_iter_tensor = LayoutTensor[
-                q_type,
-                Layout(
-                    IntTuple(Int(depth + padding), IntTuple(8, 4)),
-                    IntTuple(
-                        8,
-                        IntTuple(1, Int(depth + padding) * 8),
-                    ),
-                ),
-                # Layout.row_major(depth, BK),
-                MutableAnyOrigin,
-                address_space = AddressSpace.SHARED,
-            ](smem_manager.get_v_iter().ptr)
+            var v_smem_iter_tensor = smem_manager.get_v_iter().next_unsafe(0)[]
 
             # if thread_idx.x == 0:
             #     _ = v_smem_iter_tensor.fill(-1)

@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import Any, Optional, Union, cast
 
 import huggingface_hub
-import torch
 from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.graph.weights import WeightsFormat
@@ -515,6 +514,9 @@ class HuggingFaceRepo:
             )
 
             if torch_dtype := getattr(cfg, "torch_dtype", None):
+                # It's a torch tensor, so this import is guaranteed to work
+                import torch  # type: ignore
+
                 if torch_dtype == torch.float32:
                     supported_encodings.add(SupportedEncoding.float32)
                 elif torch_dtype == torch.bfloat16:

@@ -56,6 +56,14 @@ struct _SpanIter[
         return self
 
     @always_inline
+    fn __has_next__(self) -> Bool:
+        @parameter
+        if forward:
+            return self.index < len(self.src)
+        else:
+            return self.index > 0
+
+    @always_inline
     fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
@@ -64,18 +72,6 @@ struct _SpanIter[
         else:
             self.index -= 1
             return self.src[self.index]
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src) - self.index
-        else:
-            return self.index
 
 
 @fieldwise_init
@@ -157,7 +153,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = length
+        self._len = Int(length)
 
     @always_inline
     fn copy(self) -> Self:
@@ -177,7 +173,8 @@ struct Span[
             list: The list to which the span refers.
         """
         self._data = (
-            list.data.address_space_cast[address_space]()
+            list.unsafe_ptr()
+            .address_space_cast[address_space]()
             .static_alignment_cast[alignment]()
             .origin_cast[mut, origin]()
         )

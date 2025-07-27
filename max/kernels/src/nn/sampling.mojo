@@ -16,7 +16,7 @@ from sys.info import simdwidthof
 
 import gpu.block as block
 from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx, WARP_SIZE
+from gpu import block_idx, thread_idx
 from gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor
 from nn._ragged_utils import get_batch_from_row_offsets

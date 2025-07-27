@@ -15,10 +15,9 @@ from collections.string.string_slice import _memchr, _memmem
 from math import align_down
 from sys import simdwidthof
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
-from builtin.dtype import _uint_type_of_width
-from memory import bitcast, memcmp, pack_bits
+from memory import memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

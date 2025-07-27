@@ -13,10 +13,10 @@ common --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
-try-import %workspace%/bazel/internal/common.bazelrc
+import %workspace%/bazel/internal/common.bazelrc
 
 # Load config generated from tools/bazel
-try-import %workspace%/build/wrapper.bazelrc
+import %workspace%/build/wrapper.bazelrc
 
 build --remote_instance_name=modular-public
 

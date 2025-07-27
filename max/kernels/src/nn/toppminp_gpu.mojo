@@ -16,23 +16,19 @@ from math import ceildiv
 from sys import alignof, bitwidthof
 
 from buffer import NDBuffer, DimList
-import builtin
 from builtin.dtype import _uint_type_of_width
-from builtin.io import _printf
 from gpu import (
-    WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
     grid_dim,
-    lane_id,
     thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like, UNKNOWN_VALUE
 from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu

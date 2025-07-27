@@ -19,7 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, sizeof
+from sys import llvm_intrinsic
 from sys.info import bitwidthof
 
 from utils._select import _select_register_value as select
@@ -456,7 +456,9 @@ fn next_power_of_two(val: UInt) -> UInt:
         This operation is called `bit_ceil()` in C++.
     """
     return select(
-        val == 0, 1, 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+        val == 0,
+        1,
+        1 << (bitwidthof[UInt]() - count_leading_zeros(Int(val - 1))),
     )
 
 

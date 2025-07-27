@@ -76,7 +76,7 @@ fn _mojo_block_hasher[
     var num_elts: Int = py_array_object_ptr[].num_elts()
     var num_hashes: Int = num_elts // block_size
 
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     # Create a list of NULL elements with the size needed to store the hash
     # results.
@@ -104,7 +104,7 @@ fn _mojo_block_hasher[
 
         prev_hash = curr_hash
 
-    return PythonObject(from_owned_ptr=result_py_list)
+    return PythonObject(from_owned=result_py_list)
 
 
 @export

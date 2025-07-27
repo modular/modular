@@ -19,12 +19,6 @@ from .core import (
     PipelinesFactory,
     TextAndVisionContext,
     TextContext,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
     TTSContext,
 )
 from .lib.config import (
@@ -34,7 +28,6 @@ from .lib.config import (
     PrometheusMetricsMode,
 )
 from .lib.config_enums import (
-    PipelineEngine,
     PipelineRole,
     RepoType,
     RopeType,
@@ -61,7 +54,6 @@ from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
-    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
@@ -82,10 +74,8 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
-    "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
-    "PipelineTokenizer",
     "PipelinesFactory",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
@@ -105,11 +95,6 @@ __all__ = [
     "TextGenerationPipeline",
     "TextTokenizer",
     "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
     "download_weight_files",
     "upper_bounded_default",
 ]

@@ -22,12 +22,11 @@ from sys import (
     num_physical_cores,
     os_is_linux,
     os_is_macos,
-    os_is_windows,
 )
 
 # This sample prints the current host system information using APIs from the
 # sys module.
-from sys.info import _current_arch, _current_target, _triple_attr
+from sys.info import _current_arch, _triple_attr
 
 
 def main():

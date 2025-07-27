@@ -18,11 +18,9 @@ from python.bindings import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PyMojoObject,
     PythonModuleBuilder,
-    lookup_py_type_object,
 )
-from python._cpython import PyObjectPtr, PyTypeObject
+from python._cpython import PyObjectPtr
 
 
 @export
@@ -44,10 +42,7 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_function[case_downcast_unbound_type]("case_downcast_unbound_type")
         b.def_py_function[incr_int__wrapper]("incr_int")
         b.def_py_function[add_to_int__wrapper]("add_to_int")
-        b.def_py_function[sum_kwargs_ints_py]("sum_kwargs_ints_py")
         b.def_function[create_string]("create_string")
-        b.def_function[sum_kwargs_ints]("sum_kwargs_ints")
-        b.def_function[sum_pos_arg_and_kwargs]("sum_pos_arg_and_kwargs")
 
         _ = (
             b.add_type[Person]("Person")
@@ -79,23 +74,23 @@ fn case_return_arg_tuple(
 
 
 fn case_raise_empty_error() -> PythonObject:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
     cpython.PyErr_SetNone(error_type)
 
-    return PythonObject(from_owned_ptr=PyObjectPtr())
+    return PythonObject(from_owned=PyObjectPtr())
 
 
 fn case_raise_string_error() -> PythonObject:
-    var cpython = Python().cpython()
+    ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
     cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
 
-    return PythonObject(from_owned_ptr=PyObjectPtr())
+    return PythonObject(from_owned=PyObjectPtr())
 
 
 # Returning New Mojo Values
@@ -106,7 +101,7 @@ fn create_string() raises -> PythonObject:
 
 
 fn case_mojo_raise() raises -> PythonObject:
-    raise String("Mojo error")
+    raise Error("Mojo error")
 
 
 fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
@@ -163,7 +158,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
         ).origin_cast[mut=True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
-            raise String("cannot make name longer than current name")
+            raise Error("cannot make name longer than current name")
 
         self0[].name = String(new_name)
 
@@ -242,42 +237,3 @@ fn add_to_int__wrapper(
     add_to_int(arg_0[], arg_1[])
 
     return PythonObject(None)
-
-
-# ===----------------------------------------------------------------------=== #
-# Kwargs Test Functions
-# ===----------------------------------------------------------------------=== #
-
-
-fn sum_kwargs_ints_py(
-    py_self: PythonObject, py_args: PythonObject, py_kwargs: PythonObject
-) raises -> PythonObject:
-    var total = 0
-    if not py_kwargs._obj_ptr:
-        return PythonObject(0)
-
-    for entry in py_kwargs.values():
-        total += Int(entry)
-    return PythonObject(total)
-
-
-from collections import OwnedKwargsDict
-
-
-fn sum_kwargs_ints(
-    kwargs: OwnedKwargsDict[PythonObject],
-) raises -> PythonObject:
-    """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
-    """
-    var total = 0
-    for entry in kwargs.items():
-        var value = entry.value
-        total += Int(value)
-
-    return PythonObject(total)
-
-
-fn sum_pos_arg_and_kwargs(
-    arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
-) raises -> PythonObject:
-    return PythonObject(Int(arg1) + Int(sum_kwargs_ints(kwargs)))

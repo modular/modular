@@ -18,17 +18,9 @@ from max.interfaces import TokenGenerator
 
 from .context import TextAndVisionContext, TextContext, TTSContext
 from .interfaces import (
-    AudioGenerationRequest,
     AudioGenerator,
     AudioGeneratorContext,
     EmbeddingsGenerator,
-    PipelineTokenizer,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
 )
 from .serialization import msgpack_numpy_decoder, msgpack_numpy_encoder
 
@@ -37,21 +29,16 @@ PipelinesFactory = _Callable[
 ]
 
 __all__ = [
-    "AudioGenerationRequest",
     "AudioGenerator",
     "AudioGeneratorContext",
     "EmbeddingsGenerator",
-    "PipelineTokenizer",
     "PipelinesFactory",
+    "TTSContext",
+    "TTSContext",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
     "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
 ]

@@ -77,17 +77,10 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string._unicode import (
-    is_lowercase,
-    is_uppercase,
-    to_lowercase,
-    to_uppercase,
-)
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
-    _utf8_byte_type,
 )
 from hashlib.hasher import Hasher
 from os import PathLike, abort
@@ -98,16 +91,14 @@ from sys.ffi import c_char
 
 from bit import count_leading_zeros
 from memory import memcpy, memset, memcmp
-from python import PythonConvertible, PythonObject, ConvertibleFromPython
+from python import PythonObject, ConvertibleFromPython, ConvertibleToPython
 
-from utils import IndexList, Variant
-from utils._select import _select_register_value as select
-from utils.write import (
+from io.write import (
     _TotalWritableBytes,
     _WriteBufferStack,
     STACK_BUFFER_BYTES,
 )
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 
 # ===----------------------------------------------------------------------=== #
@@ -119,13 +110,13 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     ExplicitlyCopyable,
     FloatableRaising,
     IntableRaising,
     KeyElement,
     PathLike,
-    PythonConvertible,
     Representable,
     Sized,
     Stringable,
@@ -542,8 +533,8 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self = Self(capacity=unsafe_uninit_length)
-        self.set_byte_length(unsafe_uninit_length)
+        self = Self(capacity=Int(unsafe_uninit_length))
+        self.set_byte_length(Int(unsafe_uninit_length))
 
     fn __init__(
         out self,
@@ -680,9 +671,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: UInt) -> UnsafePointer[Byte]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
+        var ptr = UnsafePointer[Byte].alloc(Int(capacity) + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -892,7 +883,7 @@ struct String(
         var len = self.byte_length()
         self.reserve(len + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(len + 1)
+        self.set_byte_length(Int(len + 1))
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -1293,9 +1284,10 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return (
-                self._capacity_or_data & Self.INLINE_LENGTH_MASK
-            ) >> Self.INLINE_LENGTH_START
+            return Int(
+                (self._capacity_or_data & Self.INLINE_LENGTH_MASK)
+                >> Self.INLINE_LENGTH_START
+            )
         else:
             return self._len_or_data
 
@@ -1801,7 +1793,7 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
-        if unsafe_uninit_length > self.capacity():
+        if UInt(unsafe_uninit_length) > self.capacity():
             self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
 

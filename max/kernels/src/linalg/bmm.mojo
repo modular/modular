@@ -23,7 +23,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import is_cpu, is_valid_target, A100, H100
+from gpu.host.info import is_cpu, is_valid_target, A100
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -295,9 +295,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, *_],
+    a_buf: NDBuffer[a_type, rank, *_],
+    b_buf: NDBuffer[b_type, rank, *_],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -546,14 +546,14 @@ fn naive_batched_matmul_kernel[
     var n: UInt = c_buff.dim(2)
     var k: UInt = a_buff.dim(2)
 
-    var x = global_idx.x
-    var y = global_idx.y
-    var z = block_idx.z
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
+    var z = Int(block_idx.z)
 
-    if z >= batch_size or x >= n or y >= m:
+    if UInt(z) >= batch_size or UInt(x) >= n or UInt(y) >= m:
         return
     var val = Scalar[accum_type](0)
-    for ki in range(k):
+    for ki in range(Int(k)):
         val += (
             a_buff[z, y, ki].cast[accum_type]()
             * b_buff[z, ki, x].cast[accum_type]()
@@ -569,7 +569,7 @@ fn naive_batched_matmul_kernel[
         nd_corrds[rank - 2] = y
         elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[Index(Int(z), Int(y), Int(x))] = val.cast[c_type]()
+        c_buff[Index(z, y, x)] = val.cast[c_type]()
 
 
 fn batched_matmul_kernel_gpu[
@@ -626,7 +626,7 @@ fn batched_matmul_kernel_gpu[
         @parameter
         if elementwise_lambda_fn:
             alias elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](block_idx.z)
+            var batch_coords = IndexList[3](Int(block_idx.z))
             batch_coords[2] = out_coords[1]
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
@@ -811,9 +811,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, *_],
+    a_buf: NDBuffer[a_type, rank, *_],
+    b_buf: NDBuffer[b_type, rank, *_],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:

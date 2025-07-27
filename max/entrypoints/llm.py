@@ -25,14 +25,13 @@ from threading import Thread
 from typing import Callable, NewType, TypeVar, Union, cast
 
 import tqdm
-from max.interfaces import SamplingParams
+from max.interfaces import SamplingParams, TextGenerationRequest
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
-    TokenGeneratorRequest,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
@@ -227,8 +226,8 @@ async def _async_worker(
                 sampling_params = SamplingParams(
                     max_new_tokens=request.max_new_tokens  # noqa: B023
                 )
-                gen_request = TokenGeneratorRequest(
-                    id=str(uuid.uuid4()),
+                gen_request = TextGenerationRequest(
+                    request_id=str(uuid.uuid4()),
                     index=0,
                     model_name=model_name,
                     prompt=prompt,

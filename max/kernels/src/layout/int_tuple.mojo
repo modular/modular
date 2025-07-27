@@ -56,7 +56,6 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-import sys
 from os import abort
 
 from buffer import DimList
@@ -287,8 +286,12 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
+struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
+    Iterator
+):
     """Iterator for traversing elements of an IntTuple."""
+
+    alias Element = IntTuple[origin]
 
     var src: Pointer[IntTuple[tuple_origin], origin]
     """Pointer to the source IntTuple being iterated."""
@@ -305,21 +308,15 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
         self.idx = idx
 
     @always_inline("nodebug")
+    fn __has_next__(self) -> Bool:
+        return self.idx < len(self.src[])
+
+    @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
         """Get the next element and advance the iterator."""
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
-
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate."""
-        return self.__len__() > 0
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the number of remaining elements in the iteration."""
-        return len(self.src[]) - self.idx
 
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
@@ -1478,6 +1475,8 @@ fn is_tuple(t: IntTuple) -> Bool:
 struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
     """Iterator for zipped `IntTuple` collections."""
 
+    alias Element = IntTuple[origin]
+
     var index: Int
     var ts: InlineArray[Pointer[IntTuple, origin], n]
     var len: Int
@@ -1496,6 +1495,10 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
         for i in range(1, n):
             min_len = min(min_len, len(self.ts[i][]))
         self.len = min_len
+
+    @always_inline("nodebug")
+    fn __has_next__(self) -> Bool:
+        return self.index < self.len
 
     @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
@@ -1522,16 +1525,6 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
             for i in range(1, n):
                 result.append(self.ts[i][][idx])
             return result
-
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate over."""
-        return self.__len__() > 0
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the number of remaining elements."""
-        return self.len - self.index
 
 
 @fieldwise_init

@@ -24,7 +24,6 @@ from hashlib.hasher import Hasher
 from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
-from builtin.io import _get_dtype_printf_format, _snprintf
 
 from .static_tuple import StaticTuple
 

@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-import queue
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from typing import Union
 
-import zmq
 from max._core import nixl
 from max.interfaces import TokenGenerator
 from max.nn.kv_cache import (
@@ -30,7 +29,6 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
-from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
@@ -62,7 +60,6 @@ class PrefillScheduler(Scheduler):
         scheduler_config: PrefillSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
-        zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
     ):
         self.pipeline = pipeline
@@ -77,10 +74,6 @@ class PrefillScheduler(Scheduler):
         self.active_transfers: dict[
             str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
         ] = {}
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_ce)
-        )
-        self.preempted_prefill: queue.Queue[PrefillRequest] = queue.Queue()
 
         self.dispatcher_client = dispatcher_client
         self.dispatcher_client.register_request_handler(
@@ -92,7 +85,7 @@ class PrefillScheduler(Scheduler):
         )
 
         self.request_id_to_reply_context: dict[str, ReplyContext] = {}
-        self.prefill_requests: queue.Queue[PrefillRequest] = queue.Queue()
+        self.prefill_requests: deque[PrefillRequest] = deque()
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -120,7 +113,7 @@ class PrefillScheduler(Scheduler):
         self, message: PrefillRequest, reply_context: ReplyContext
     ) -> None:
         """Handles a prefill request from the dispatcher."""
-        self.prefill_requests.put(message)
+        self.prefill_requests.append(message)
         self.request_id_to_reply_context[message.id] = reply_context
 
     @traced
@@ -145,42 +138,22 @@ class PrefillScheduler(Scheduler):
             reply_context,
         )
 
-    def get_prefill_request(self) -> PrefillRequest:
-        """Gets a request from the prefill request queue, checking preempted requests first.
-
-        Returns:
-            PrefillRequest: A prefill request.
-
-        Raises:
-            queue.Empty: If no requests are available.
-            zmq.ZMQError: If there is an error receiving from the socket.
-        """
-        # First try and return from pre-empted requests queue.
-        if not self.preempted_prefill.empty():
-            return self.preempted_prefill.get()
-
-        return self.prefill_requests.get_nowait()
-
     def return_to_prefill_queue(
         self,
         prefill_request: PrefillRequest,
     ) -> None:
-        """Releases the cache index back to the available pool and cleans up pipeline
-        resources before returning the request to the preempted queue.
+        """Releases pipeline resources and cleans up the request before returning
+        it to the preempted queue.
 
-        Args:
-            req_id: The ID of the request to return
-            data: The Union[TextAndVisionContext, TextContext] containing the request data
         """
         self.pipeline.release(prefill_request.context)
         prefill_request.context.reset()
-        self.preempted_prefill.put(prefill_request)
+        self.prefill_requests.appendleft(prefill_request)
 
     def cleanup_active_transfers(self) -> None:
         """Cleans up completed transfers from the active transfers dictionary.
 
         Checks the status of all active transfers. For any transfer that is no longer in progress:
-        - Returns the cache index back to the available pool
         - Releases pipeline resources
         - Removes the transfer from active_transfers
         """
@@ -189,7 +162,6 @@ class PrefillScheduler(Scheduler):
             status = self.transfer_engine.get_transfer_status(transfer)
 
             if status != nixl.Status.IN_PROG:
-                self.available_cache_indices.add(context.cache_seq_id)
                 self.pipeline.release(context)
                 to_be_deleted.append(req_id)
 
@@ -199,30 +171,23 @@ class PrefillScheduler(Scheduler):
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
 
-        Processes requests up to max_batch_size_ce, handling cache assignment and chunking.
+        Processes requests up to max_batch_size_ce, handling chunking.
         For each request:
-        - Assigns cache if needed
         - Attempts to schedule via paged manager
         - Chunks inputs if enabled and batch token length exceeds target
         - Tracks total batch token length
         """
         batch_token_length = 0
-        while self.available_cache_indices:
-            try:
-                prefill_request = self.get_prefill_request()
-                prefill_request.context.reset()
-                logger.info("received from decode node!")
+        while (
+            len(self.active_batch) < self.scheduler_config.max_batch_size_ce
+            and self.prefill_requests
+        ):
+            prefill_request = self.prefill_requests.popleft()
+            prefill_request.context.reset()
+            logger.info("received from decode node!")
 
-                if not prefill_request.context.is_assigned_to_cache:
-                    prefill_request.context.assign_to_cache(
-                        self.available_cache_indices.pop()
-                    )
-                    self.paged_manager.external_claim(
-                        [prefill_request.context.cache_seq_id]
-                    )
-
-            except queue.Empty:
-                break
+            if not self.paged_manager.contains(prefill_request.id):
+                self.paged_manager.external_claim(prefill_request.id)
 
             scheduled = self.paged_manager.prefetch(prefill_request.context, 1)
 
@@ -272,7 +237,7 @@ class PrefillScheduler(Scheduler):
 
             # Retrieve source block ids.
             src_idx = self.paged_manager.block_manager.get_req_blocks(
-                prefill_request.context.cache_seq_id,
+                prefill_request.context.request_id,
             )
 
             # Bump this back, so the token is returned.
@@ -314,8 +279,6 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    zmq_ctx: zmq.Context,
-    settings: Settings,
     pipeline: TokenGenerator,
     pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
@@ -351,6 +314,5 @@ def load_prefill_scheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,
-        zmq_ctx=zmq_ctx,
         dispatcher_client=dispatcher_client,
     )

@@ -163,7 +163,7 @@ changes to code that calls the function.
 The rules for arguments described in this section apply to both `def`
 and `fn` functions.
 
-:::note Functions with \`/\` and \`*\` in the argument list
+:::note Functions with / and * in the argument list
 
 You might see the following characters in
 place of arguments: slash (`/`) and/or star (`*`). For example:
@@ -270,7 +270,8 @@ see [variadic parameters](/mojo/manual/parameters/#variadic-parameters).
 
 #### Homogeneous variadic arguments
 
-When defining a homogeneous variadic argument, use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
+When defining a homogeneous variadic argument (all arguments must be the same
+type), use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
 
 ```mojo
 def greet(*names: String):
@@ -312,7 +313,6 @@ want to mutate the elements of the list:
 def make_worldly(mut *strs: String):
     for ref i in strs:
         i += " world"
-
 ```
 
 You can also directly index the list with integers as well:
@@ -325,12 +325,16 @@ fn make_worldly(mut *strs: String):
 
 #### Heterogeneous variadic arguments
 
-Implementing heterogeneous variadic arguments is somewhat more complicated than
-homogeneous variadic arguments. Writing generic code to handle multiple argument
-types requires [traits](/mojo/manual/traits) and
-[parameters](/mojo/manual/parameters/). So the syntax may look a little
-unfamiliar if you haven't worked with those features. The signature for a
-function with a heterogeneous variadic argument looks like this:
+Implementing heterogeneous variadic arguments (each argument type may be
+different) is somewhat more complicated than homogeneous variadic arguments. To
+handle multiple argument types, the function must be
+[generic](/mojo/manual/functions/#variadic-arguments), which requires using
+[traits](/mojo/manual/traits) and [parameters](/mojo/manual/parameters/). So
+the syntax may look a little unfamiliar if you haven't worked with those
+features.
+
+The signature for a function with a heterogeneous variadic argument looks like
+this:
 
 ```mojo
 def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
@@ -339,17 +343,25 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
 
 The parameter list, `[*ArgTypes: Intable]` specifies that the function takes an
 `ArgTypes` parameter, which is a list of types, all of which conform to the
-[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The argument list,
-`(*args: *ArgTypes)` has the familiar `*args` for the variadic argument, but
-instead of a single type, its type is defined as *list* of types, `*ArgTypes`.
+[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
+indicates that `ArgTypes` is a **variadic type parameter** (a list of types).
+
+The argument list, `(*args: *ArgTypes)` has the familiar `*args` for the
+variadic argument, but instead of a single type, its type is defined as the
+variadic type list `*ArgTypes`. The asterisk in `*args` indicates a
+**variadic argument**, and the asterisk in `*ArgTypes` refers to the
+variadic type parameter.
 
 This means that each argument in `args` has a corresponding type in `ArgTypes`,
 so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code>.
 
-Inside the function, `args` is available as a
-[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack). The easiest
-way to work with the arguments is to use the `@parameter for` language to iterate through
-the `VariadicPack`:
+Inside the function, `args` becomes a
+[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) because the
+syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
+each element in `args` can be a different type that requires a different amount
+of memory. To iterate through the `VariadicPack`, the compiler must know each
+element's type (its memory size), so you must use a [parametric `for`
+loop](/mojo/manual/decorators/parameter/#parametric-for-statement):
 
 ```mojo
 fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
@@ -361,51 +373,18 @@ fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
 
     return total
 
-print(count_many_things(5, 11.7, 12))
+def main():
+    print(count_many_things(5, 11.7, 12))
 ```
 
 ```output
 28
 ```
 
-In the example above, the `add()` function is called for each argument in turn,
-with the appropriate `value` and `Type` values. For instance, `add()` is first
-called with `value=5` and `Type=Int`, then with `value=11.7` and `Type=Float64`.
-
-Also, note that when calling `count_many_things()`, you don't actually pass in
+Notice that when calling `count_many_things()`, you don't actually pass in
 a list of argument types. You only need to pass in the arguments, and Mojo
 generates the `ArgTypes` list itself.
 
-As a small optimization, if your function is likely to be called with a single
-argument frequently, you can define your function with a single argument
-followed by a variadic argument. This lets the simple case bypass populating and
-iterating through the `VariadicPack`.
-
-For example, given a `print_string()` function that prints a single string, you
-could re-implement the variadic `print()` function with code like this:
-
-```mojo
-fn print_string(s: String):
-    print(s, end="")
-
-fn print_many[T: Stringable, *Ts: Stringable](first: T, *rest: *Ts):
-    print_string(String(first))
-
-    @parameter
-    for i in range(rest.__len__()):
-        print_string(" ")
-        print_string(String(rest[i]))
-
-print_many("Bob")
-```
-
-```output
-Bob
-```
-
-If you call `print_many()` with a single argument, it calls `print_string()`
-directly. The `VariadicPack` is empty, so `each()` returns immediately without
-calling the `print_elt()` function.
 
 #### Variadic keyword arguments
 

@@ -15,7 +15,6 @@
 
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import (
-    PipelineEngine,
     PipelineRole,
     RepoType,
     RopeType,
@@ -58,7 +57,6 @@ from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
-    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
@@ -81,10 +79,8 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
-    "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
-    "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
     "RepoType",

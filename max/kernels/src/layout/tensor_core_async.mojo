@@ -48,7 +48,6 @@ from gpu.mma import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import (
     MakeLayoutList,
-    coalesce,
     composition,
     downcast,
     logical_divide,

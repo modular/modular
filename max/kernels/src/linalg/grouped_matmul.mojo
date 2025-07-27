@@ -22,7 +22,7 @@ from gpu.cluster import (
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
@@ -134,14 +134,16 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M: UInt = UInt(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
+    var M: UInt = UInt(
+        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
+    )
     N = b.dim[1]()
     K = b.dim[2]()
 
-    a_start_row = a_offsets[block_idx.z]
+    a_start_row = a_offsets[Int(block_idx.z)]
     a_by_expert = a.data + a_start_row * K
 
-    expert = expert_ids[block_idx.z]
+    expert = expert_ids[Int(block_idx.z)]
     b_by_expert = b.data + expert * N * K
 
     # indices in current matmul
@@ -242,7 +244,7 @@ fn grouped_matmul_sm90[
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
@@ -313,8 +315,8 @@ fn grouped_matmul_sm90[
         c_swizzle=c_swizzle,
         cluster_shape=cluster_shape,
         transpose_b=True,
-        num_threads=num_threads,
-        pipeline_stages = config.num_pipeline_stages,
+        num_threads = Int(num_threads),
+        pipeline_stages = Int(config.num_pipeline_stages),
         use_tma_store=False,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
@@ -411,14 +413,14 @@ fn grouped_matmul_kernel[
 
     # The block may be OOB because we create blocks based the maximum
     # number of tokens per expert.
-    M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
     if UInt32(block_idx_swizzle[1] * BM) >= M:
         return
 
-    a_start_row = a_offsets[block_idx.z]
+    a_start_row = a_offsets[Int(block_idx.z)]
 
     alias N = c_layout.shape[1].value()
-    expert = expert_ids[block_idx.z]
+    expert = expert_ids[Int(block_idx.z)]
     b_start_row = expert * N
 
     wgmma_op = TensorCoreAsync[
@@ -621,13 +623,26 @@ fn grouped_matmul_kernel[
             c.ptr + a_start_row * N, c_gmem_runtime_layout
         )
 
+        @always_inline
+        @parameter
+        fn elementwise_epilogue_fn_wrapper[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            @parameter
+            if elementwise_lambda_fn:
+                alias elementwise_epilogue = elementwise_lambda_fn.value()
+                var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
+                elementwise_epilogue(batch_idx, val)
+
         warp_specialized_gemm_output[
             c_tile_shape = Index(BM, BN),
             c_swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
             use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
         ](
             c_tma_op,
             c_by_expert,

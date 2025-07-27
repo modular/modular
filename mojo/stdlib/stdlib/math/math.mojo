@@ -35,12 +35,11 @@ from sys.ffi import _external_call_const
 from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize
-from bit import count_leading_zeros, count_trailing_zeros
+from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span
 
-from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
 from utils.static_tuple import StaticTuple
 
@@ -1208,7 +1207,7 @@ fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    iota(v.data, len(v), offset)
+    iota(v.unsafe_ptr(), len(v), offset)
 
 
 fn iota(mut v: List[Int, *_], offset: Int = 0):
@@ -1218,7 +1217,7 @@ fn iota(mut v: List[Int, *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = v.data.bitcast[Scalar[DType.index]]()
+    var buff = v.unsafe_ptr().bitcast[Scalar[DType.index]]()
     iota(buff, len(v), offset=offset)
 
 
@@ -2585,22 +2584,14 @@ fn clamp[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _type_is_libm_supported(dtype: DType) -> Bool:
-    return dtype in (DType.float32, DType.float64) or dtype.is_integral()
-
-
+@always_inline("nodebug")
 fn _call_libm[
+    dtype: DType,
+    width: Int, //,
     func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     constrained[
-        arg_type.is_floating_point(), "argument type must be floating point"
-    ]()
-    constrained[
-        arg_type == result_type, "the argument type must match the result type"
+        dtype.is_floating_point(), "argument type must be floating point"
     ]()
     constrained[
         not is_nvidia_gpu(),
@@ -2608,32 +2599,17 @@ fn _call_libm[
     ]()
 
     @parameter
-    if not _type_is_libm_supported(arg_type):
+    if dtype not in [DType.float32, DType.float64]:
         # Coerce to f32 if the value is not representable by libm.
-        return _call_libm_impl[func_name, result_type = DType.float32](
-            arg.cast[DType.float32]()
-        ).cast[result_type]()
+        var arg_f32 = arg.cast[DType.float32]()
+        return _call_libm[func_name](arg_f32).cast[dtype]()
 
-    return _call_libm_impl[func_name, result_type=result_type](arg)
-
-
-fn _call_libm_impl[
-    func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
-    alias libm_name = String(
-        func_name
-    ) if arg_type is DType.float64 else func_name + "f"
-
-    var res = SIMD[result_type, width]()
+    alias libm_name = func_name + ("f" if dtype is DType.float32 else "")
+    var res = SIMD[dtype, width]()
 
     @parameter
     for i in range(width):
-        res[i] = _external_call_const[libm_name, Scalar[result_type]](arg[i])
-
+        res[i] = _external_call_const[libm_name, Scalar[dtype]](arg[i])
     return res
 
 

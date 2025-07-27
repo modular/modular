@@ -1658,9 +1658,9 @@ fn _elementwise_impl_gpu[
                             ).canonicalize()
                         )
                 else:
-                    func[simd_width, rank](start_indices.canonicalize())
+                    func[Int(simd_width), rank](start_indices.canonicalize())
             else:
-                func[simd_width, rank](start_indices.canonicalize())
+                func[Int(simd_width), rank](start_indices.canonicalize())
 
         # process the tail region
         if tid < unpacked_tail_length:
@@ -1994,7 +1994,7 @@ fn _stencil_impl_gpu[
 
         # Create output point indices with computed batch and channel
         var indices = IndexList[rank, element_type=shape_element_type](
-            batch_idx, y, x, channel
+            Int(batch_idx), Int(y), Int(x), Int(channel)
         )
 
         # Process stencil for this point

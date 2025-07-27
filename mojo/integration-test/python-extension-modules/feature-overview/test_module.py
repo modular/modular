@@ -196,27 +196,3 @@ def test_case_mojo_value_convert_from_python() -> None:
             " literal for int() with base 10: 'foo')"
         ),
     )
-
-
-def test_kwargs_functionality() -> None:
-    # Test the def_py_function_with_kwargs function
-    result = feature_overview.sum_kwargs_ints_py()
-    assert result == 0
-
-    result = feature_overview.sum_kwargs_ints_py(a=1, b=2, c=3)
-    assert result == 6
-
-    # Test def_function with kwargs
-    # Function that only takes kwargs:
-    result = feature_overview.sum_kwargs_ints()
-    assert result == 0
-
-    result = feature_overview.sum_kwargs_ints(a=5, b=10, c=15)
-    assert result == 30
-
-    # Function that takes both positional and keyword arguments:
-    result = feature_overview.sum_pos_arg_and_kwargs(10, a=5, b=15)
-    assert result == 30  # 10 + 5 + 15
-
-    result = feature_overview.sum_pos_arg_and_kwargs(100)
-    assert result == 100

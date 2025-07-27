@@ -106,7 +106,6 @@ struct cudnnBackendKnobType_t(Writable):
     alias CUDNN_KNOB_TYPE_LOAD_SIZE = Self(36)
     alias CUDNN_KNOB_TYPE_COUNTS = Self(37)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -269,7 +268,6 @@ struct cudnnPointwiseMode_t(Writable):
     alias CUDNN_POINTWISE_GEN_INDEX = Self(48)
     alias CUDNN_POINTWISE_BINARY_SELECT = Self(49)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -444,7 +442,6 @@ struct cudnnBackendDescriptorType_t(Writable):
     alias CUDNN_BACKEND_RNG_DESCRIPTOR = Self(32)
     alias CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR = Self(33)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -605,7 +602,6 @@ struct cudnnBackendBehaviorNote_t(Writable):
     alias CUDNN_BEHAVIOR_NOTE_REQUIRES_BIAS_INT8x32_REORDER = Self(2)
     alias CUDNN_BEHAVIOR_NOTE_TYPE_COUNT = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -659,7 +655,6 @@ struct cudnnBackendLayoutType_t(Writable):
     alias CUDNN_LAYOUT_TYPE_PREFERRED_PAD8CK = Self(3)
     alias CUDNN_LAYOUT_TYPE_COUNT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -708,7 +703,6 @@ struct cudnnBackendNormFwdPhase_t(Writable):
     alias CUDNN_NORM_FWD_INFERENCE = Self(0)
     alias CUDNN_NORM_FWD_TRAINING = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -754,7 +748,6 @@ struct cudnnBackendHeurMode_t(Writable):
     alias CUDNN_HEUR_MODE_A = Self(3)
     alias CUDNN_HEUR_MODES_COUNT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -817,7 +810,6 @@ struct cudnnBackendNumericalNote_t(Writable):
     alias CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_13x13 = Self(8)
     alias CUDNN_NUMERICAL_NOTE_TYPE_COUNT = Self(9)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -918,7 +910,6 @@ struct cudnnBackendAttributeType_t(Writable):
     alias CUDNN_TYPE_NORM_FWD_PHASE = Self(28)
     alias CUDNN_TYPE_RNG_DISTRIBUTION = Self(29)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1018,7 +1009,6 @@ struct cudnnRngDistribution_t(Writable):
     alias CUDNN_RNG_DISTRIBUTION_UNIFORM = Self(1)
     alias CUDNN_RNG_DISTRIBUTION_NORMAL = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1070,7 +1060,6 @@ struct cudnnBackendTensorReordering_t(Writable):
     alias CUDNN_TENSOR_REORDERING_INT8x32 = Self(1)
     alias CUDNN_TENSOR_REORDERING_F16x16 = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1327,7 +1316,6 @@ struct cudnnBackendAttributeName_t(Writable):
     alias CUDNN_ATTR_OPERATION_RNG_DESC = Self(210)
     alias CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC = Self(211)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1887,7 +1875,6 @@ struct cudnnBackendNormMode_t(Writable):
     alias CUDNN_GROUP_NORM = Self(3)
     alias CUDNN_RMS_NORM = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1936,7 +1923,6 @@ struct cudnnSignalMode_t(Writable):
     alias CUDNN_SIGNAL_SET = Self(0)
     alias CUDNN_SIGNAL_WAIT = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1982,7 +1968,6 @@ struct cudnnBnFinalizeStatsMode_t(Writable):
     alias CUDNN_BN_FINALIZE_STATISTICS_TRAINING = Self(0)
     alias CUDNN_BN_FINALIZE_STATISTICS_INFERENCE = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2024,7 +2009,6 @@ struct cudnnGenStatsMode_t(Writable):
     var _value: Int8
     alias CUDNN_GENSTATS_SUM_SQSUM = Self(0)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2093,7 +2077,6 @@ struct cudnnResampleMode_t(Writable):
     alias CUDNN_RESAMPLE_AVGPOOL_EXCLUDE_PADDING = Self(4)
     alias CUDNN_RESAMPLE_MAXPOOL = Self(5)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2176,7 +2159,6 @@ struct cudnnPaddingMode_t(Writable):
     alias CUDNN_NEG_INF_PAD = Self(1)
     alias CUDNN_EDGE_VAL_PAD = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

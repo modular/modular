@@ -16,7 +16,7 @@ from sys import num_physical_cores, simdwidthof
 
 import benchmark
 from algorithm import parallelize, vectorize
-from complex import ComplexFloat64, ComplexSIMD
+from complex import ComplexSIMD
 
 alias float_type = DType.float32
 alias int_type = DType.int32

@@ -14,7 +14,7 @@
 
 from .python import Python
 from .python_object import (
-    PythonConvertible,
     ConvertibleFromPython,
+    ConvertibleToPython,
     PythonObject,
 )

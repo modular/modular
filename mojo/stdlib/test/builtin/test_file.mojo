@@ -71,7 +71,7 @@ def test_file_read_bytes_all():
         "r",
     ) as f:
         var bytes_all = f.read_bytes(-1)
-        assert_equal(len(bytes_all), DUMMY_FILE_SIZE)
+        assert_equal(len(bytes_all), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_all():
@@ -80,7 +80,7 @@ def test_file_read_all():
         "r",
     ) as f:
         var all = f.read(-1)
-        assert_equal(len(all), DUMMY_FILE_SIZE)
+        assert_equal(len(all), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_path():

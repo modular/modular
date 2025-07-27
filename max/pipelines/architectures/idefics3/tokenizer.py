@@ -19,16 +19,16 @@ import functools
 import io
 import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
-import torch
+from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
 from max.pipelines.core import (
     TextAndVisionContext,
-    TokenGeneratorRequest,
 )
 from max.pipelines.lib import TextAndVisionTokenizer
 from PIL import Image
+from PIL.Image import Image as ImageType
 from transformers import (
     AutoConfig,
     AutoProcessor,
@@ -97,11 +97,73 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])
 
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
+        """Decode token array back into readable text, filtering out special tokens."""
+        # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
+        kwargs_with_special_filter = kwargs.copy()
+        kwargs_with_special_filter["skip_special_tokens"] = True
+        return self.delegate.decode(encoded, **kwargs_with_special_filter)
+
+    def apply_chat_template(
+        self, messages: list[TextGenerationRequestMessage]
+    ) -> str:
+        """Apply the chat template to the messages.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys.
+                     Content can be a string or list of multimodal content parts.
+
+        Returns:
+            The formatted prompt string with chat template applied.
+
+        Raises:
+            ValueError: If template application fails.
+        """
+
+        # Convert to text-only messages first
+        text_messages: list[dict[str, Any]] = []
+        for message in messages:
+            text_message: dict[str, Any] = {"role": message.get("role")}
+            content = message.get("content")
+
+            if isinstance(content, str):
+                text_message["content"] = content
+            elif isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        # Handle both "content" and "text" keys
+                        text_content = item.get("content") or item.get(
+                            "text", ""
+                        )
+                        if text_content:
+                            text_parts.append(text_content)
+                    elif isinstance(item, dict) and item.get("type") == "image":
+                        # Add image placeholder
+                        text_parts.append("<image>")
+                text_message["content"] = " ".join(text_parts)
+            else:
+                text_message["content"] = ""
+
+            text_messages.append(text_message)
+
+        try:
+            templated_prompt = self.delegate.apply_chat_template(
+                text_messages, tokenize=False, add_generation_prompt=True
+            )
+
+            return templated_prompt
+
+        except Exception as e:
+            raise ValueError(
+                f"Failed to apply chat template for idefics3: {e}"
+            ) from e
+
     async def new_context(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+        cache_seq_id and prompt from TextGenerationRequest."""
 
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True
@@ -116,15 +178,29 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         # Convert image bytes to PIL Image objects.
         if request.images is not None and len(request.images) > 0:
-            images = [
-                Image.open(io.BytesIO(image_bytes))
-                for image_bytes in request.images
-            ]
+            images = []
+            for image_bytes in request.images:
+                try:
+                    img: ImageType = Image.open(io.BytesIO(image_bytes))
+                    # Ensure image is in RGB format to avoid channel format issues
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    # Validate image has reasonable dimensions
+                    if img.size[0] == 0 or img.size[1] == 0:
+                        raise ValueError(
+                            f"Invalid image dimensions: {img.size}"
+                        )
+                    images.append(img)
+                except Exception as e:
+                    raise ValueError(f"Failed to process image: {e}") from e
         else:
             images = None
 
         processed_inputs = self.processor(
-            text=prompt, images=images, add_special_tokens=add_special_tokens
+            text=prompt,
+            images=images,
+            add_special_tokens=add_special_tokens,
+            return_tensors="np",
         )
 
         if "input_ids" not in processed_inputs:
@@ -155,15 +231,19 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                 msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
                 raise ValueError(msg)
             pixel_values = processed_inputs["pixel_values"]
+
             if isinstance(pixel_values, list):
-                pixel_values = tuple(
-                    tensor.numpy() if torch.is_tensor(tensor) else tensor
-                    for tensor in pixel_values
-                )
-            elif torch.is_tensor(pixel_values):
-                pixel_values = (pixel_values.numpy(),)
+                pixel_values = tuple(pixel_values)
             elif isinstance(pixel_values, np.ndarray):
+                # Handle the extra batch dimension that return_tensors="np" adds
+                if pixel_values.ndim == 5:
+                    # Remove the extra batch dimension (1, N, C, H, W) -> (N, C, H, W)
+                    pixel_values = pixel_values.squeeze(0)
                 pixel_values = (pixel_values,)
+            else:
+                raise ValueError(
+                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
+                )
         else:
             pixel_values = tuple()
 
@@ -185,8 +265,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             eos_token_ids = self._default_eos_token_ids
 
         context = TextAndVisionContext(
-            request_id=request.id,
-            prompt=prompt,
+            request_id=request.request_id,
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
             extra_model_args=extra_model_args,

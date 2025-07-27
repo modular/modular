@@ -3,7 +3,7 @@
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
-bazel_dep(name = "aspect_rules_js", version = "2.3.8")
+bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
@@ -11,7 +11,7 @@ bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
-bazel_dep(name = "rules_mojo", version = "0.4.1")
+bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
@@ -58,29 +58,10 @@ single_version_override(
 )
 
 single_version_override(
-    module_name = "aspect_rules_js",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/aspect-build/rules_js/pull/2277
-        "//bazel/public-patches:rules_js_env_inherit.patch",
-    ],
-)
-
-single_version_override(
     module_name = "with_cfg.bzl",
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:with_cfg_visibility.patch",
-    ],
-)
-
-# TODO: Remove when >0.4.1 is released
-archive_override(
-    module_name = "rules_mojo",
-    integrity = "sha256-CjiuX8ekwcfWW1ZBTd5c2zALL8Ijf8+NJhL3F9wFsHM=",
-    strip_prefix = "rules_mojo-67ddb44ffc94a23e91fc1e8da7f05b725fa86b97",
-    urls = [
-        "https://github.com/modular/rules_mojo/archive/67ddb44ffc94a23e91fc1e8da7f05b725fa86b97.tar.gz",
     ],
 )
 
@@ -205,7 +186,7 @@ mojo.gpu_toolchains(
         "RTX 4070 Ti": "",
         "RTX 4080 SUPER": "",
         "RTX 4090": "rtx4090",
-        "NVIDIA GeForce RTX 3090": "",
+        "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1050 Ti with Max-Q Design": "gtx1050",
         "MI300X": "mi300x",
         "MI325": "mi325",
@@ -231,6 +212,7 @@ mojo.gpu_toolchains(
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
+        "rtx3090": "nvidia:86",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
         "gtx1050": "nvidia:61",

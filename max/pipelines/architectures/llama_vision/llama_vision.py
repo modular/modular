@@ -35,6 +35,7 @@ from max.graph import (
 )
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import InputContext
+from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -319,8 +320,20 @@ class MultimodalKVCacheManager(KVCacheManager):
         # This is batch_size x max_num_pages.
         # Note that each page is enough to fit up to vision_max_seq_len so there
         # is at most one page per sequence.
+
         lookup_table_tensor_vision = Tensor.from_numpy(
-            np.array([[ctx.cache_seq_id, 1] for ctx in batch], np.uint32)
+            np.array(
+                [
+                    [
+                        self.vision_kv_manager.request_to_seq_id[
+                            ctx.request_id
+                        ],
+                        1,
+                    ]
+                    for ctx in batch
+                ],
+                np.uint32,
+            )
         )
 
         vision_fetch_results = RaggedKVCacheInputs(
@@ -381,35 +394,35 @@ class MultimodalKVCacheManager(KVCacheManager):
         # Keep the base class's state in sync with the text KV manager's.
         super().step(batch)
 
-    def external_claim(self, seq_ids: list[int]) -> None:
-        """Reserves the same sequence ids for both modalities' KV caches."""
-        self.text_kv_manager.external_claim(seq_ids)
-        self.vision_kv_manager.external_claim(seq_ids)
+    def external_claim(self, request_id: RequestID) -> None:
+        """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
+        self.text_kv_manager.external_claim(request_id)
+        self.vision_kv_manager.external_claim(request_id)
 
         # Keep the base class's state in sync with the text KV manager's.
-        super().external_claim(seq_ids)
+        super().external_claim(request_id)
 
-    def release(self, seq_id: int) -> None:
+    def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches."""
-        self.text_kv_manager.release(seq_id)
-        self.vision_kv_manager.release(seq_id)
-        super().release(seq_id)
+        self.text_kv_manager.release(request_id)
+        self.vision_kv_manager.release(request_id)
+        super().release(request_id)
 
-    def contains(self, seq_id: int) -> bool:
-        """Returns whether `seq_id` is in the KV cache."""
-        text_kv_contains = self.text_kv_manager.contains(seq_id)
+    def contains(self, request_id: RequestID) -> bool:
+        """Returns whether `request_id` is in the KV cache."""
+        text_kv_contains = self.text_kv_manager.contains(request_id)
 
-        # Assume that the modalities' KV caches have consistent sequence ids.
-        assert text_kv_contains == self.vision_kv_manager.contains(seq_id)
+        # Assume that the modalities' KV caches have consistent request ids.
+        assert text_kv_contains == self.vision_kv_manager.contains(request_id)
 
         return text_kv_contains
 
     def num_kv_inputs(self) -> int:
-        """Returns the sum of the KV input lengths for both modalities."""
-        return (
-            self.text_kv_manager.num_kv_inputs()
-            + self.vision_kv_manager.num_kv_inputs()
-        )
+        """Returns the sum of the KV input lengths for both modalities.
+
+        Each KV manager (text and vision) returns 4 inputs, so the total is 8.
+        """
+        return 8
 
     def increment_cache_lengths(
         self,

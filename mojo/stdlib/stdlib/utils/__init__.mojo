@@ -16,4 +16,3 @@ from .index import Index, IndexList, product
 from .lock import BlockingScopedLock, BlockingSpinLock, SpinWaiter
 from .static_tuple import StaticTuple
 from .variant import Variant
-from .write import Writable, Writer

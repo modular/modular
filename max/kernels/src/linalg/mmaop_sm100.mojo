@@ -20,8 +20,6 @@ from layout.layout import coalesce
 from layout.tensor_core_async import tile_to_descriptor
 
 from utils.index import Index, IndexList, product
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 from sys import sizeof
 
