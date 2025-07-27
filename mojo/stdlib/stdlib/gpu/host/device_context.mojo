@@ -34,7 +34,7 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import is_triple, _TargetType
+from sys.info import is_triple, _TargetType, _accelerator_arch
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
@@ -55,7 +55,7 @@ from memory.unsafe import bitcast
 from utils import Variant
 from utils._serialize import _serialize_elements
 
-from .info import DEFAULT_GPU, GPUInfo
+from .info import GPUInfo
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -2607,7 +2607,7 @@ struct DeviceContext(Copyable, Movable):
     ```
     """
 
-    alias device_info = DEFAULT_GPU
+    alias device_info = GPUInfo.from_name[_accelerator_arch()]()
     """`GPUInfo` object for the default accelerator."""
 
     alias device_api = Self.device_info.api

@@ -22,10 +22,6 @@ from math import ceildiv, floor
 from os import abort
 from sys.info import _accelerator_arch, _TargetType, CompilationTarget
 
-alias DEFAULT_GPU_ARCH = _accelerator_arch()
-alias DEFAULT_GPU = GPUInfo.from_name[DEFAULT_GPU_ARCH]()
-alias DEFAULT_GPU_TARGET = DEFAULT_GPU.target()
-
 alias _KB = 1024
 
 # ===-----------------------------------------------------------------------===#
@@ -1873,10 +1869,10 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return Radeon9060
     elif target_arch == "gfx1201":
         return Radeon9070
-    elif DEFAULT_GPU_ARCH == "":
+    elif _accelerator_arch() == "":
         return NoGPU
-
-    return _get_info_from_target[DEFAULT_GPU_ARCH]()
+    else:
+        return _get_info_from_target[_accelerator_arch()]()
 
 
 # ===-----------------------------------------------------------------------===#

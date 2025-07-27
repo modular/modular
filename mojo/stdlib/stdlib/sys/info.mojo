@@ -360,6 +360,15 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
 @always_inline("nodebug")
 fn _accelerator_arch() -> StaticString:
+    """Returns the accelerator architecture string for the current target
+    accelerator.
+
+    If there is no accelerator on the system, this function returns an empty
+    string.
+
+    Returns:
+        The accelerator architecture string for the current target accelerator.
+    """
     return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
 
 
