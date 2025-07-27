@@ -582,4 +582,10 @@ def _add_weight_to_graph(weight: Weight):
     # If the weight doesn't exist on the graph, `Graph.add_weight` will
     # return a new `TensorValue`. Otherwise, this will return the existing
     # `TensorValue`.
-    return current_graph.add_weight(weight)
+    return current_graph.add_weight(
+        weight,
+        # Don't force the weight to be on host if it has an alias.
+        # We expect these external constants to already be resident on the
+        # device.
+        force_initial_weight_on_host=not weight._has_alias,
+    )
