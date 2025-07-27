@@ -15,7 +15,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from sys.info import _get_arch, _TargetType
+from sys.info import _TargetType, CompilationTarget
 
 from compile import CompiledFunctionInfo, compile_info
 
@@ -114,7 +114,7 @@ fn _ptxas_compile[
             String(
                 ptxas_path,
                 " --gpu-name ",
-                _get_arch[target](),
+                CompilationTarget[target]._arch(),
                 " -O4 ",
                 ptx_file,
                 " ",

@@ -15,8 +15,6 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    is_neoverse_n1,
-    os_is_macos,
     simdwidthof,
     sizeof,
 )
@@ -515,7 +513,7 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
         return 4 * KB // sizeof[dtype]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return 64 * KB // sizeof[dtype]()
 
     @parameter
@@ -690,7 +688,7 @@ fn get_direct_conv_micro_kernel_height() -> Int:
     @parameter
     if CompilationTarget.has_avx512f():
         return 6
-    elif is_neoverse_n1():
+    elif CompilationTarget.is_neoverse_n1():
         return 8
     elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 6
@@ -701,7 +699,7 @@ fn get_direct_conv_micro_kernel_width() -> Int:
     @parameter
     if CompilationTarget.has_avx512f():
         return 4
-    elif is_neoverse_n1():
+    elif CompilationTarget.is_neoverse_n1():
         return 2
     elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 4
@@ -781,7 +779,7 @@ fn get_micro_kernel_shape[
             return Index(4, 3)
 
         @parameter
-        if is_neoverse_n1():
+        if CompilationTarget.is_neoverse_n1():
             return Index(8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
@@ -793,7 +791,7 @@ fn get_micro_kernel_shape[
         @parameter
         if CompilationTarget.has_avx512f():
             return Index(6, 4)
-        elif is_neoverse_n1():
+        elif CompilationTarget.is_neoverse_n1():
             return Index(8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
