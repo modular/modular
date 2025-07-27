@@ -15,11 +15,11 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from sys.info import _TargetType, CompilationTarget
+from sys.info import _accelerator_arch, _TargetType, CompilationTarget
 
 from compile import CompiledFunctionInfo, compile_info
 
-from .info import A100, DEFAULT_GPU_ARCH, GPUInfo
+from .info import A100, GPUInfo
 
 # ===-----------------------------------------------------------------------===#
 # Targets
@@ -29,7 +29,7 @@ from .info import A100, DEFAULT_GPU_ARCH, GPUInfo
 @always_inline
 fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
-    target_arch: StaticString = DEFAULT_GPU_ARCH,
+    target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
     alias info = GPUInfo.from_name[target_arch]() if target_arch else A100
     return info.target()
