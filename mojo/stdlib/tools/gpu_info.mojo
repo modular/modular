@@ -65,7 +65,7 @@ fn main() raises:
     var minor = compute_capability % 10
 
     if ctx.api() == "cuda":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.NVIDIA_GPU,")
         print('api="' + String(ctx.api()) + '", ')
@@ -165,7 +165,7 @@ fn main() raises:
         print("max_thread_block_size=1024, ")
         print(")")
     elif ctx.api() == "hip":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
