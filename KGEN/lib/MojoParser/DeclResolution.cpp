@@ -28,6 +28,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Filesystem/Paths.h"
 
+#include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -1959,6 +1960,54 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   // Process the doc string of the alias.
   p.parseDocString(decl);
 
+  if (auto parentTraitRef = dyn_cast_if_present<SymbolRefAttr>(
+          aliasDeclOp->getAttr("parentTraitRef"))) {
+    // Cleanup after ourselves.
+    aliasDeclOp->removeAttr("parentTraitRef");
+
+    // This can happen since since the signature resolution branch of the
+    // overall 'resolve' function in DeclResolver doesn't guard against the
+    // input decl being erroneous. Rather than add that check there for this
+    // singular exceptional case catch it now.
+    if (decl.isErroneous())
+      return failure();
+
+    ASTDecl &traitDecl = *decl.getParentDecl();
+    auto name = demangleParameterName(*decl.getNameIfOperation());
+
+    ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
+
+    auto decls = parentTraitDecl.lookupInCurrentScope(name);
+    assert(decls.size() == 1 && "Expected to find exactly one decl");
+    auto parentAliasDeclOp =
+        cast<AliasDeclOp>(*decls.front()->getIfOperation());
+
+    if (failed(resolveSignature(*decls.front(), decls.front()->getLoc())))
+      return failure();
+
+    SyntheticNode synthNode(traitDecl.getLoc());
+    auto overrideAliasType = aliasDeclOp.getType();
+    // Conjure a fake value here that we can hand to
+    // canImplicitlyConvertToType.
+    // TODO: Make a version of canImplicitlyConvertToType that can take
+    // two types directly.
+    // TODO: Be able to do this with canZeroCostConvert since we don't
+    // want to call implicit constructors here.
+    auto overrideAliasParamValue =
+        PValue(ParamDeclRefAttr::get(aliasDeclOp.getParamDecl()));
+    if (!IREmitter::canImplicitlyConvertToType(
+            {overrideAliasParamValue, synthNode},
+            parentAliasDeclOp.getParamDecl().getType(), traitDecl)) {
+      auto diag = emitError(aliasDeclOp->getLoc(), "invalid redefinition of '")
+                  << name << "': cannot convert " << overrideAliasType
+                  << " to parent trait's alias's type "
+                  << parentAliasDeclOp.getParamDecl().getType();
+      diag.attachNote(parentAliasDeclOp->getLoc())
+          << "parent trait's alias defined here";
+      return failure();
+    }
+  }
+
   shared.notifyListenerOnAliasDecl(decl, identifierLoc);
   return success();
 }
@@ -2952,6 +3001,22 @@ void DeclResolver::addParentDeclsToTrait(
   // trait.
   ASTType traitSelfType = traitDecl.getTypeDeclSelf();
 
+  // Since we lazily resolve nested decls the inheritedFrom attribute may or may
+  // not already be set. In cases where that attribute isn't set the decl will
+  // have a different parent trait decl op than the passed in op.
+  auto isInherited = [&](ASTDecl &nestedDecl, ASTDecl &parentDecl) {
+    if (auto aliasOp =
+            dyn_cast_if_present<AliasDeclOp>(nestedDecl.getIfOperation())) {
+      if (aliasOp.getInheritedFrom())
+        return true;
+
+      auto parentTraitOp = cast<TraitDeclOp>(aliasOp->getParentOp());
+      return getFullyResolvedSymbolRef(parentTraitOp) !=
+             parentDecl.getSymbolRef();
+    }
+    assert(false && "Dealing with unexpected decl type in isInherited lambda");
+  };
+
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
   for (SymbolRefAttr parentOrSelf : traitOp.getCanonicalTrait().getSymbols()) {
@@ -3006,33 +3071,17 @@ void DeclResolver::addParentDeclsToTrait(
                "Can't have two aliases with same name.");
         auto &declInParent = *declsInParent.front();
 
-        if (failed(resolveSignature(declInParent, traitDecl.getLoc())))
-          continue;
-        if (parentAliasDecl.getInheritedFrom())
+        if (isInherited(declInParent, parentDecl))
           continue;
 
         ArrayRef<ASTDecl *> overrides = traitDecl.lookupInCurrentScope(name);
         // If there's no overrides, then we need to copy the alias decl from the
         // parent trait into this one.
         if (overrides.size() == 0) {
-          auto newAliasDecl = parentAliasDecl.clone();
-
-          // We copied down the alias from a base trait to a derived trait,
-          // and its type will refer to the T parameter from the base trait.
-          // That will have a metatype from the base trait which we need to
-          // update to our correct Self type.
-          replaceTraitAliasSelfTypes(newAliasDecl, PValue(parentSelfType).get(),
-                                     PValue(traitSelfType).get());
-
-          // Mark the alias as inherited so that conformance checking won't give
-          // duplicate errors if it is not provided.
-          newAliasDecl.setInheritedFromAttr(parent);
-          body.push_back(newAliasDecl);
-          addFullyResolvedDecl(&*newAliasDecl, name, declInParent.getLoc(),
-                               &traitDecl);
-          // We don't need to call something like finalizeFuncSignature for
-          // aliases because we can't have multiple aliases with the same name
-          // (there's no such thing as alias overloading).
+          // Add a synthetic decl that points to the parent trait's alias decl
+          // op
+          addDecl(declInParent.getIfOperation(), declInParent.getLoc(), name,
+                  &traitDecl, LexerCursor(), LexerCursor(), -1);
         } else {
 
           // Theoretically there should be at most one override, since
@@ -3051,29 +3100,14 @@ void DeclResolver::addParentDeclsToTrait(
             continue;
           }
 
-          SyntheticNode synthNode(traitDecl.getLoc());
-          auto overrideAliasType = overrideAliasDecl.getType();
-          // Conjure a fake value here that we can hand to
-          // canImplicitlyConvertToType.
-          // TODO: Make a version of canImplicitlyConvertToType that can take
-          // two types directly.
-          // TODO: Be able to do this with canZeroCostConvert since we don't
-          // want to call implicit constructors here.
-          auto overrideAliasParamValue =
-              PValue(ParamDeclRefAttr::get(overrideAliasDecl.getParamDecl()));
-          if (!IREmitter::canImplicitlyConvertToType(
-                  {overrideAliasParamValue, synthNode},
-                  parentAliasDecl.getParamDecl().getType(), traitDecl)) {
-            auto diag =
-                emitError(override->getLoc(), "invalid redefinition of ")
-                << name << ": cannot convert " << overrideAliasType
-                << " to parent trait's alias's type "
-                << parentAliasDecl.getParamDecl().getType();
-            diag.attachNote(parentAliasDecl->getLoc())
-                << "parent trait's alias defined here";
-          }
-
-          // Dont add anything
+          // Store a SymbolRefAttr pointing to the parent trait of the alias
+          // we're currently overriding.
+          //
+          // This allows us to lookup the parent trait and its alias whenever
+          // the override alias gets signature resolved and ensures that it's
+          // valid (the types of the aliases implicitly convert).
+          override->getIfOperation()->setAttr("parentTraitRef",
+                                              parentDecl.getSymbolRef());
         }
       }
     }
@@ -3114,14 +3148,79 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
 
         existingFns.insert({name, func.getSymNameAttr()});
       }
-    } else if (auto alias = dyn_cast_or_null<AliasDeclOp>(
-                   decls.front()->getIfOperation())) {
-      if (failed(resolveBody(*decls.front(), decls.front()->getLoc())))
-        return failure();
     }
   }
 
   addParentDeclsToTrait(traitOp, traitDecl, existingFns);
+
+  return success();
+}
+
+/// Handles signature resolving inherited alias decls in traits. In such cases
+/// the passed in ASTDecl will be a child of the actual trait we're working on,
+/// while the alias.decl op it contains is actually from the parent trait we're
+/// inherting from.
+///
+/// This logic was originally invoked during trait body resolution -- in an
+/// effort to make the resolution of child declarations of traits lazier we've
+/// moved it here.
+///
+/// The majority of the logic is largely the same as the less lazy version
+/// except for some of the initial op and decl lookups.
+LogicalResult
+DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
+                                        ASTDecl &childTraitAliasDecl) {
+  assert(isa<TraitDeclOp>(inheritedAliasOp->getParentOp()) &&
+         "Expected synthetic alias decl's parent to be a trait");
+
+  // This is the actual child trait of the decl.
+  TraitDeclOp childTraitDeclOp =
+      cast<TraitDeclOp>(childTraitAliasDecl.getParentDecl()->getIfOperation());
+
+  // And this is the parent trait of the alias decl we're inheriting from.
+  TraitDeclOp parentTraitDeclOp =
+      cast<TraitDeclOp>(inheritedAliasOp->getParentOp());
+
+  Block &childTraitBody = *childTraitDeclOp.getBody();
+  SymbolRefAttr parentTraitRef = getFullyResolvedSymbolRef(parentTraitDeclOp);
+  ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
+
+  // Since alias decls don't implement SymbolOpInterface we need to do a
+  // lookup by source name.
+  auto aliasName =
+      demangleParameterName(inheritedAliasOp.getDeclName().getValue());
+
+  auto parentAliasDecls = parentTraitDecl.lookupInCurrentScope(aliasName);
+  auto &inheritedAliasDecl = *parentAliasDecls.front();
+
+  assert(parentAliasDecls.size() == 1 &&
+         isa_and_present<AliasDeclOp>(inheritedAliasDecl.getIfOperation()) &&
+         "Expected to find exactly one alias decl op");
+
+  // Make sure to resolve the actual decl that holds inheritedAliasOp before we
+  // proceed.
+  if (failed(resolveBody(inheritedAliasDecl, inheritedAliasDecl.getLoc())))
+    return failure();
+
+  auto childTraitSelfType =
+      childTraitAliasDecl.getParentDecl()->getTypeDeclSelf();
+  auto parentTraitSelfType = parentTraitDecl.getTypeDeclSelf();
+
+  auto clonedAliasDecl = inheritedAliasOp.clone();
+
+  replaceTraitAliasSelfTypes(clonedAliasDecl, PValue(parentTraitSelfType).get(),
+                             PValue(childTraitSelfType).get());
+
+  // Mark the alias as inherited so that conformance checking won't
+  // give duplicate errors if it is not provided.
+  clonedAliasDecl.setInheritedFromAttr(parentTraitRef);
+  childTraitBody.push_back(clonedAliasDecl);
+
+  childTraitAliasDecl.setIRValue(clonedAliasDecl);
+  childTraitAliasDecl.resolvedness = DeclResolvedness::body;
+  // We don't need to call something like finalizeFuncSignature for
+  // aliases because we can't have multiple aliases with the same name
+  // (there's no such thing as alias overloading).
 
   return success();
 }

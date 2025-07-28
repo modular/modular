@@ -495,6 +495,15 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       TypeSwitch<Operation &>(*declOp)
           .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
               [&](auto op) {
+                // If this is a synthetic decl, resolve it specially.
+                if (decl.getCursor().isInvalid()) {
+                  if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
+                    if (failed(resolveSyntheticSignature(op, decl)))
+                      decl.setErroneous();
+                    return;
+                  }
+                }
+
                 Lexer lexer(shared.diags, decl.getCursor());
 
                 // Generate pretty stack traces if a crash happens in this
