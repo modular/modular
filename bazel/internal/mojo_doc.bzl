@@ -25,12 +25,13 @@ def _mojo_doc_implementation(ctx):
         outputs = [mojodoc_output],
         mnemonic = "MojoDoc",
         arguments = [
-            "doc",
-            "--validate-doc-strings",
-            "-o",
-            mojodoc_output.path,
-            file_args,
-        ] + (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []),
+                        "doc",
+                        "--validate-doc-strings",
+                        "-o",
+                        mojodoc_output.path,
+                        file_args,
+                    ] + (["--docs-base-path", ctx.attr.docs_base_path] if ctx.attr.docs_base_path else []) +
+                    (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []),
         progress_message = "%{label} generating mojodoc.json",
         env = {
             "TEST_TMPDIR": ".",  # Make sure any cache files are written to somewhere bazel will cleanup
@@ -69,6 +70,10 @@ mojo_doc = rule(
         "validate_missing_docs": attr.bool(
             default = False,
             doc = "Fail for missing docstrings",
+        ),
+        "docs_base_path": attr.string(
+            default = "",
+            doc = "Base path prefix for generated documentation links",
         ),
         "_mojodoc_json_to_markdown": attr.label(
             default = Label("//bazel/internal:mojodoc_json_to_markdown"),

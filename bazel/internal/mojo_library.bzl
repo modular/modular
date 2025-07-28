@@ -11,6 +11,7 @@ def mojo_library(
         data = [],
         deps = [],
         validate_missing_docs = False,
+        docs_base_path = "",
         testonly = False,
         visibility = ["//visibility:public"],
         tags = []):
@@ -29,6 +30,7 @@ def mojo_library(
         srcs = srcs,
         deps = deps,
         validate_missing_docs = validate_missing_docs,
+        docs_base_path = docs_base_path,
         visibility = visibility,
         tags = [ALLOW_UNUSED_TAG] + tags,
         testonly = testonly,
