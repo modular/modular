@@ -487,7 +487,7 @@ fn _matmul_gpu[
 
     @parameter
     if (
-        ctx.device_info is B200
+        ctx.default_device_info is B200
         and use_experimental_kernels
         and transpose_b
         and (
