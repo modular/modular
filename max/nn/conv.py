@@ -858,7 +858,7 @@ class Conv3D(Module):
             self.num_groups,
             self.bias,
         )
-        # permute output from (batch_size, depth, height, width, out_channels) (batch_size, out_channels, depth, height, width).
+        # permute output from (batch_size, depth, height, width, out_channels) to (batch_size, out_channels, depth, height, width).
         if self.permute:
             res = ops.permute(res, [0, 4, 1, 2, 3])
         return res

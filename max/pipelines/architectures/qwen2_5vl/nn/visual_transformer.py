@@ -62,6 +62,7 @@ class VisionPatchEmbed(Module):
             stride=(temporal_patch_size, patch_size, patch_size),
             device=device,
             has_bias=False,
+            permute=True,
         )
 
     def __call__(
@@ -80,7 +81,6 @@ class VisionPatchEmbed(Module):
             a tensor of size (seq_len, hidden_size = embed_dim)
         """
         x, filter = dtype_promotion._promote_weak_dtypes(x, self.proj.filter)
-        x = x.cast(filter.dtype)
         x = x.reshape(
             (
                 -1,
@@ -90,16 +90,15 @@ class VisionPatchEmbed(Module):
                 self.patch_size,
             )
         )
-        # Permute (batch_size, in_channels, depth, height, width) inputs to (batch_size, depth, height, width, in_channels) for our Graph API.
-        x = x.permute([0, 2, 3, 4, 1])
-        x = self.proj(x)
-        # Permute max output from (batch_size, depth, height, width, out_channels) to (batch_size, out_channels, depth, height, width)
-        x = x.permute([0, 2, 3, 4, 1])
-        x = x.reshape((-1, self.embed_dim))
+        x = x.cast(filter.dtype)
+        # Input is torch conv3d order: (batch_size, in_channels, depth, height, width)
+        h = self.proj(x)
+        # Output is in torch conv3d order: (batch_size, out_channels, depth, height, width)
+        h = h.reshape((-1, self.embed_dim))
 
-        seq_len = x.shape[0]
+        seq_len = h.shape[0]
         # Reshape into a 3D tensor of blocks.
-        h = x.reshape(
+        h = h.reshape(
             [seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1]
         )
         # Reorders patch_embeddings according to window_index indices.
