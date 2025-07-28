@@ -27,6 +27,7 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     Weight,
+    _OpaqueValue,
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -401,7 +402,13 @@ class AttentionWithRope(Module):
         total_seq_len = x.shape[0]
 
         if self.float8_config:
-            assert isinstance(kv_collection, PagedKVCacheCollection)
+            # TODO(GEX-2452): Find a cleaner way to write assertions like this
+            # or improve the subgraph code so that it can preserve the Python
+            # classes which wrap our opaque types.
+            assert isinstance(kv_collection, PagedKVCacheCollection) or (
+                isinstance(kv_collection, _OpaqueValue)
+                and kv_collection.type.name == "PagedKVCacheCollection"
+            )
 
             x_scales: TensorValue
             weight_scale = self.qkv_weight_scale
@@ -422,7 +429,7 @@ class AttentionWithRope(Module):
                 wqkv=self.wqkv,
                 bias=self.wqkv_bias,
                 input_row_offsets=input_row_offsets,
-                kv_collection=kv_collection,
+                kv_collection=kv_collection,  # type: ignore
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 input_scale=x_scales.to(x.device),
