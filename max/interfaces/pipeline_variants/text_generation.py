@@ -22,7 +22,7 @@ from typing import (
 import msgspec
 from max.interfaces.context import SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
-from max.interfaces.request import Request
+from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 
 
@@ -242,10 +242,10 @@ class TokenGenerator(Generic[T], Protocol):
         """
         ...
 
-    def release(self, context: T) -> None:
-        """Releases resources associated with this context.
+    def release(self, request_id: RequestID) -> None:
+        """Releases resources associated with this request ID.
 
         Args:
-            context: Finished context.
+            request_id: Unique identifier for the finished request.
         """
         ...
