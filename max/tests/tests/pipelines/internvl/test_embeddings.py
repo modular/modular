@@ -184,10 +184,9 @@ def test_intern_vision_embeddings_shard(n_devices) -> None:  # noqa: ANN001
         )
 
         # Test sharding for each device
-        for shard_idx in range(n_devices):
-            device = DeviceRef.GPU(shard_idx)
-            sharded_embeddings = embeddings.shard(shard_idx, device)
-
+        devices = [DeviceRef.GPU(i) for i in range(n_devices)]
+        shards = embeddings.shard(devices)
+        for sharded_embeddings in shards:
             # Verify the shard method returns a valid InternVisionEmbeddings instance
             assert isinstance(sharded_embeddings, InternVisionEmbeddings)
 

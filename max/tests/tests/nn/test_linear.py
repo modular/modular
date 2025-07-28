@@ -44,8 +44,9 @@ def test_linear_shard_basic() -> None:
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=4)
 
         # Test sharding for each device.
-        for i in range(4):
-            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+        devices = [DeviceRef.GPU(i) for i in range(4)]
+        shards = linear.shard(devices)
+        for i, sharded in enumerate(shards):
             assert tuple(int(d) for d in sharded.weight.shape) == (
                 256,
                 4096,
@@ -70,12 +71,13 @@ def test_linear_shard_with_bias() -> None:
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
-        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
-        assert sharded.bias is not None
-        assert tuple(int(d) for d in sharded.bias.shape) == (
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = linear.shard(devices)
+        assert shards[0].bias is not None
+        assert tuple(int(d) for d in shards[0].bias.shape) == (
             512,
         )  # 1024/2 = 512
-        assert sharded.device == DeviceRef.GPU(0)
+        assert shards[0].device == DeviceRef.GPU(0)
 
 
 def test_linear_shard_no_strategy_error() -> None:
@@ -85,7 +87,7 @@ def test_linear_shard_no_strategy_error() -> None:
     )
 
     with pytest.raises(ValueError, match="no sharding strategy"):
-        linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+        linear.shard([DeviceRef.GPU(0)])
 
 
 def test_linear_shard_with_float8_tensor_scale() -> None:
@@ -118,7 +120,9 @@ def test_linear_shard_with_float8_tensor_scale() -> None:
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
-        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = linear.shard(devices)
+        sharded = shards[0]
 
         # Assert non-null for MyPy.
         assert sharded.input_scale is not None
@@ -165,7 +169,9 @@ def test_linear_shard_with_float8_rowwise_scale() -> None:
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
-        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = linear.shard(devices)
+        sharded = shards[0]
 
         # Weight scale should be sharded for rowwise.
         if sharded.weight_scale is not None:
@@ -221,7 +227,9 @@ def test_linear_sharding_preserves_config() -> None:
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
-        sharded = linear.shard(shard_idx=1, device=DeviceRef.GPU(1))
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = linear.shard(devices)
+        sharded = shards[1]
 
         # Check core config is preserved.
         assert tuple(int(d) for d in sharded.weight.shape) == (
@@ -264,8 +272,9 @@ def test_linear_shard_non_divisible_output_dim() -> None:
         expected_rows = [37919, 37919, 37918, 37918]
 
         total_rows = 0
-        for i in range(4):
-            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+        devices = [DeviceRef.GPU(i) for i in range(4)]
+        shards = linear.shard(devices)
+        for i, sharded in enumerate(shards):
             actual_rows = int(sharded.weight.shape[0])
 
             assert actual_rows == expected_rows[i], (
@@ -320,9 +329,9 @@ def test_linear_columnwise_bias_only_on_device_0(
         linear.sharding_strategy = strategy_factory()
 
         # Check that only device 0 has bias
-        for i in range(4):
-            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
-
+        devices = [DeviceRef.GPU(i) for i in range(4)]
+        shards = linear.shard(devices)
+        for i, sharded in enumerate(shards):
             if i == 0:
                 assert sharded.bias is not None, (
                     f"Device 0 should have bias for {strategy_name} sharding"
@@ -356,9 +365,9 @@ def test_linear_rowwise_bias_sharding_preserved() -> None:
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=4)
 
         # Check that all devices have sharded bias for rowwise
-        for i in range(4):
-            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
-
+        devices = [DeviceRef.GPU(i) for i in range(4)]
+        shards = linear.shard(devices)
+        for i, sharded in enumerate(shards):
             assert sharded.bias is not None, (
                 f"Device {i} should have bias for rowwise sharding"
             )

@@ -37,8 +37,9 @@ def test_conv2d_shard_replicate() -> None:
         conv.sharding_strategy = ShardingStrategy.replicate(num_devices=4)
 
         # Test sharding for each device.
-        for i in range(4):
-            sharded = conv.shard(shard_idx=i, device=DeviceRef.GPU(i))
+        devices = [DeviceRef.GPU(i) for i in range(4)]
+        shards = conv.shard(devices)
+        for i, sharded in enumerate(shards):
             # With replicate strategy, shapes remain the same
             assert sharded.filter is not None
             assert sharded.bias is not None
@@ -63,7 +64,7 @@ def test_conv2d_shard_no_strategy_error() -> None:
     )
 
     with pytest.raises(ValueError, match="no sharding strategy"):
-        conv.shard(shard_idx=0, device=DeviceRef.GPU(0))
+        conv.shard([DeviceRef.GPU(0)])
 
 
 def test_conv2d_non_replicate_strategy_error() -> None:
