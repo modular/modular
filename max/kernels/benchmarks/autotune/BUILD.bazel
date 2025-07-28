@@ -1,28 +1,11 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
-
-modular_py_library(
-    name = "autotune",
-    srcs = [
-        "kplot.py",
-        "kprofile.py",
-        "utils.py",
-    ],
-    deps = [
-        requirement("numpy"),
-        requirement("click"),
-        requirement("pandas"),
-        requirement("rich"),
-        requirement("plotly"),
-        requirement("kaleido"),
-        requirement("pyyaml"),
-    ],
-)
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "pkg_files", "requirement")
 
 modular_py_binary(
     name = "kbench",
     srcs = [
         "__init__.py",
         "kbench.py",
+        "utils.py",
     ],
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
@@ -40,14 +23,62 @@ modular_py_binary(
         "@mojo//:stdlib",
     ],
     deps = [
-        ":autotune",
         requirement("click"),
         requirement("numpy"),
-        requirement("scipy"),
         requirement("pandas"),
         requirement("pygments"),
         requirement("pyyaml"),
         requirement("rich"),
+        requirement("scipy"),
+        requirement("plotly"),
+    ],
+)
+
+modular_py_binary(
+    name = "kprofile",
+    srcs = [
+        "kprofile.py",
+    ],
+    imports = ["."],
+    main = "kprofile.py",
+    mojo_deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    deps = [
+        ":kbench",
+        requirement("rich"),
+    ],
+)
+
+modular_py_binary(
+    name = "kplot",
+    srcs = [
+        "kplot.py",
+    ],
+    imports = ["."],
+    main = "kplot.py",
+    mojo_deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    deps = [
+        ":kbench",
+        ":kprofile",
+        requirement("plotly"),
+        requirement("kaleido"),
     ],
 )
 
@@ -76,8 +107,9 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        ":autotune",
         ":kbench",
+        ":kplot",
+        ":kprofile",
     ],
 )
 
