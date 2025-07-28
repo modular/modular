@@ -134,11 +134,9 @@ SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   if (!conformance)
     return failure();
 
-  ParameterEvaluator evaluator;
+  ParameterEvaluator evaluator(structDecl.getInputParams(),
+                               genRef.getParamValues());
   evaluator.setEvaluationContext(this);
-  for (auto [param, value] :
-       llvm::zip(structDecl.getInputParams(), genRef.getParamValues()))
-    evaluator.setDeclBinding(param, value);
 
   FailureOr<TypedAttr> simplified =
       getWitness.simplify(conformance, &evaluator);
