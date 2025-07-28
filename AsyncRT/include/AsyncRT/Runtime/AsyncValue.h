@@ -407,10 +407,10 @@ private:
 
   /// Increase the reference count.
   void addRef();
-  void addRef(uint16_t count);
+  void addRef(uint32_t count);
 
   /// Decrease the reference count of this object, potentially deallocating it.
-  void dropRef(uint16_t count = 1);
+  void dropRef(uint32_t count = 1);
 
   /// Slow path for isUnique for IndirectAsyncValues.
   bool isUniqueSlow() const;
@@ -421,7 +421,7 @@ private:
 
   /// This is the number of individual users of the AsyncValue, when it drops
   /// to zero, the AsyncValue is deallocated.
-  std::atomic<int32_t> refcount{1};
+  std::atomic<uint32_t> refcount{1};
 
   /// This is a compact (8-bit) pointer to the enclosing Runtime instance.
   const CompactRuntimePtr runtime;
@@ -735,7 +735,7 @@ inline void AsyncValue::addRef() {
   ++refcount;
 }
 
-inline void AsyncValue::addRef(uint16_t count) {
+inline void AsyncValue::addRef(uint32_t count) {
   if (count > 0) {
     assert(refcount.load() > 0);
     // Increasing the reference counter can always be done with
@@ -746,7 +746,7 @@ inline void AsyncValue::addRef(uint16_t count) {
   }
 }
 
-inline void AsyncValue::dropRef(uint16_t count) {
+inline void AsyncValue::dropRef(uint32_t count) {
   assert(refcount.load() > 0);
   // We expect that `count` argument will often equal the actual reference count
   // here; optimize for that.  If `count` == reference count, only an acquire

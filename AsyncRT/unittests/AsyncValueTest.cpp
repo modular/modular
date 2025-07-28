@@ -665,4 +665,29 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
   await(extraFinished);
 }
 
+//===----------------------------------------------------------------------===//
+// Large refcount add
+//===----------------------------------------------------------------------===//
+
+TEST_P(AsyncValueTest, LargeAsyncRefCount) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::createReady(*runtime, 0);
+
+  // Refcount is initialized to 1.
+  AsyncValue *value = finished.getPointer();
+  EXPECT_EQ(value->getRefCountForDebugging(), 1);
+
+  // Increase it.
+  M::RCRef<AsyncValue>::lowLevelAddRef(value, 33);
+  EXPECT_EQ(value->getRefCountForDebugging(), 34);
+
+  // Increase it with a large number to ensure there is no overflow.
+  M::RCRef<AsyncValue>::lowLevelAddRef(value, 123457);
+  EXPECT_EQ(value->getRefCountForDebugging(), 123491);
+
+  // Decrease it back to 1
+  M::RCRef<AsyncValue>::lowLevelDropRef(value, 123490);
+  EXPECT_EQ(value->getRefCountForDebugging(), 1);
+}
+
 } // namespace
