@@ -463,7 +463,7 @@ fn layer_norm_gpu[
         output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
     alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -944,7 +944,7 @@ fn rms_norm_gpu[
         return input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -1508,7 +1508,7 @@ fn group_norm_gpu[
             + String(simd_width)
         )
 
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = num_rows
     var block_dim = min(

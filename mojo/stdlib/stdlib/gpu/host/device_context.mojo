@@ -2607,12 +2607,8 @@ struct DeviceContext(Copyable, Movable):
     ```
     """
 
-    alias device_info = GPUInfo.from_name[_accelerator_arch()]()
+    alias default_device_info = GPUInfo.from_name[_accelerator_arch()]()
     """`GPUInfo` object for the default accelerator."""
-
-    alias device_api = Self.device_info.api
-    """Device API for the default accelerator (for example, "cuda" or
-    "hip")."""
 
     var _handle: _DeviceContextPtr
 
@@ -2621,7 +2617,7 @@ struct DeviceContext(Copyable, Movable):
         out self,
         device_id: Int = 0,
         *,
-        owned api: String = String(Self.device_api),
+        owned api: String = String(Self.default_device_info.api),
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -2632,8 +2628,8 @@ struct DeviceContext(Copyable, Movable):
         Args:
             device_id: ID of the accelerator device. If not specified, uses
                 the default accelerator (device 0).
-            api: Requested device API (for example, "cuda" or "hip"). Defaults to the
-                device API specified by the DeviceContext class.
+            api: Requested device API (for example, "cuda" or "hip"). Defaults
+                to the device API specified by current target accelerator.
 
         Raises:
             If device initialization fails or the specified device is not available.
@@ -2923,8 +2919,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -2983,8 +2979,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3030,7 +3026,7 @@ struct DeviceContext(Copyable, Movable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.device_info.shared_memory_per_multiprocessor,
+            <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
@@ -3054,8 +3050,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3105,7 +3101,7 @@ struct DeviceContext(Copyable, Movable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.device_info.shared_memory_per_multiprocessor,
+            <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
@@ -3127,8 +3123,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3174,7 +3170,7 @@ struct DeviceContext(Copyable, Movable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.device_info.shared_memory_per_multiprocessor,
+            <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
@@ -3198,8 +3194,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3249,7 +3245,7 @@ struct DeviceContext(Copyable, Movable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.device_info.shared_memory_per_multiprocessor,
+            <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
@@ -3271,8 +3267,8 @@ struct DeviceContext(Copyable, Movable):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3318,7 +3314,7 @@ struct DeviceContext(Copyable, Movable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.device_info.shared_memory_per_multiprocessor,
+            <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
         alias result_type = __type_of(result)
@@ -3406,8 +3402,8 @@ struct DeviceContext(Copyable, Movable):
         *Ts: AnyType,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
-        target: _TargetType = Self.device_info.target(),
-        compile_options: StaticString = Self.device_info.compile_options,
+        target: _TargetType = Self.default_device_info.target(),
+        compile_options: StaticString = Self.default_device_info.compile_options,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -5592,7 +5588,9 @@ struct DeviceContext(Copyable, Movable):
 
     @staticmethod
     @always_inline
-    fn number_of_devices(*, api: String = String(Self.device_api)) -> Int:
+    fn number_of_devices(
+        *, api: String = String(Self.default_device_info.api)
+    ) -> Int:
         """Returns the number of devices available that support the specified API.
 
         This function queries the system for available devices that support the
@@ -5600,8 +5598,8 @@ struct DeviceContext(Copyable, Movable):
         accelerators are available before allocating resources or distributing work.
 
         Args:
-            api: Requested device API (for example, "cuda" or "hip"). Defaults to the
-                device API specified by the DeviceContext class.
+            api: Requested device API (for example, "cuda" or "hip"). Defaults
+                to the device API specified by current target accelerator.
 
         Returns:
             The number of available devices supporting the specified API.

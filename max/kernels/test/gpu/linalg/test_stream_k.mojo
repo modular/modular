@@ -465,7 +465,7 @@ fn run_matmul_stream_k[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias sm_count = ctx.device_info.sm_count
+    alias sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
         rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),

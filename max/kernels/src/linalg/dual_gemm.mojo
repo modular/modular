@@ -794,12 +794,12 @@ fn multistage_dual_gemm[
 
     alias smem_usage = config.shared_mem_usage()
     constrained[
-        smem_usage <= ctx.device_info.shared_memory_per_multiprocessor,
+        smem_usage <= ctx.default_device_info.shared_memory_per_multiprocessor,
         String(
             "using ",
             smem_usage,
             "B shared memory but max is ",
-            ctx.device_info.shared_memory_per_multiprocessor,
+            ctx.default_device_info.shared_memory_per_multiprocessor,
             "B",
         ),
     ]()
@@ -958,7 +958,7 @@ fn dual_gemm[
         and b_type in (DType.float32, DType.bfloat16, DType.float16)
         and c_type in (DType.float32, DType.bfloat16, DType.float16)
     )
-    alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
+    alias max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
     constrained[
         matmul_supported_format,
@@ -1006,7 +1006,7 @@ fn dual_gemm[
         if (
             a_type == b_type
             and a_type.is_half_float()
-            and ctx.device_info is A100
+            and ctx.default_device_info is A100
             and transpose_b
         ):
             alias static_K = a_shape.get[1]()

@@ -184,7 +184,7 @@ fn test_dual_matmul[
         num_pipeline_stages=4,
         num_k_partitions=1,
     )
-    alias M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.device_info.shared_memory_per_multiprocessor else config
+    alias M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.default_device_info.shared_memory_per_multiprocessor else config
     alias M512_N28672_K4096_config = MatmulConfig[
         src_type, src_type, dst_type, transpose_b
     ](

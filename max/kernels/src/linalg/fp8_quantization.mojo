@@ -131,7 +131,7 @@ fn quantize_dynamic_scaled_fp8[
     ]() if group_size_or_per_token == -1 else group_size_or_per_token
     alias n_groups = input.shape.get[1]() // group_size
     alias simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
