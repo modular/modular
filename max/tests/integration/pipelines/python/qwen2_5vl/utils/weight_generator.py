@@ -14,7 +14,7 @@ from .config_loader import ConfigNames, get_config_loader
 # QWEN2.5VL VISION MODEL WEIGHT STANDARD DEVIATIONS (default to 0.02 for now)
 # ==================================================
 # Patch Embedding
-PATCH_CONV_STD = 0.02
+PATCH_CONV_STD = 0.0144
 
 # Attention
 QKV_PROJ_STD = 0.02

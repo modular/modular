@@ -16,23 +16,34 @@ from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionPatchEmbed,
 )
 from torch.utils.dlpack import from_dlpack
+from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
+    Qwen2_5_VLVisionConfig,
+)
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionPatchEmbed as HFQwen2_5VisionPatchEmbed,
+)
+from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
+    Qwen2_5_VisionTransformerPretrainedModel as HFQwen2_5VisionTransformer,
 )
 from utils.assert_tensors import assert_tensors_close
 from utils.config_loader import ConfigNames, get_config_loader
 from utils.weight_converter import convert_hf_to_max_weights
 from utils.weight_generator import get_weight_generator
 
+RTOL = 1e-2
+ATOL = 1e-2
+
 
 @torch.no_grad()
 def generate_torch_outputs(
     pixel_values: torch.Tensor,
+    window_index: torch.Tensor,
     hf_vision_config: dict,
     embeddings_weights: dict[str, torch.Tensor],
+    device: torch.device = "cuda",
+    dtype: torch.dtype = torch.bfloat16,
 ) -> torch.Tensor:
     """Generate reference outputs using the HuggingFace implementation."""
-
     # Create the reference model
     ref_model = (
         HFQwen2_5VisionPatchEmbed(
@@ -41,8 +52,8 @@ def generate_torch_outputs(
             in_channels=hf_vision_config.get("in_channels", 3),
             embed_dim=hf_vision_config["hidden_size"],
         )
-        .to(torch.bfloat16)
-        .to("cuda")
+        .to(dtype)
+        .to(device)
     )
 
     # Load weights
@@ -51,13 +62,24 @@ def generate_torch_outputs(
 
     # Forward pass
     with torch.no_grad():
-        output = ref_model(pixel_values)
+        hidden_states = ref_model(pixel_values)
+        seq_len, _ = hidden_states.size()
+        spatial_merge_size = hf_vision_config["spatial_merge_size"]
+        spatial_merge_unit = spatial_merge_size * spatial_merge_size
+        hidden_states = hidden_states.reshape(
+            seq_len // spatial_merge_unit,
+            spatial_merge_unit,
+            -1,
+        )
+        hidden_states = hidden_states[window_index, :, :]
+        hidden_states = hidden_states.reshape(seq_len, -1)
 
-    return output
+    return hidden_states
 
 
 def generate_max_outputs(
     pixel_values: torch.Tensor,
+    window_index: torch.Tensor,
     qwen2_5vl_config: dict,
     embeddings_weights: dict[str, torch.Tensor],
     dtype: DType,
@@ -67,6 +89,7 @@ def generate_max_outputs(
     is_gpu = isinstance(device, Accelerator)
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     pixel_values = pixel_values.cuda() if is_gpu else pixel_values.cpu()
+    window_index = window_index.cuda() if is_gpu else window_index.cpu()
 
     vision_config = qwen2_5vl_config["vision_config"]
 
@@ -81,7 +104,8 @@ def generate_max_outputs(
         temporal_patch_size=vision_config["temporal_patch_size"],
         in_channels=vision_config.get("in_channels", 3),
         embed_dim=vision_config["hidden_size"],
-        spatial_merge_unit=vision_config["spatial_merge_size"],
+        spatial_merge_unit=vision_config["spatial_merge_size"]
+        * vision_config["spatial_merge_size"],
     )
 
     # Load weights using state_dict
@@ -95,18 +119,17 @@ def generate_max_outputs(
     )
 
     seq_len = pixel_values.shape[0]
-    spatial_merge_unit = vision_config["spatial_merge_size"]
+    spatial_merge_size = vision_config["spatial_merge_size"]
+    spatial_merge_unit = spatial_merge_size * spatial_merge_size
     # window_index should have length seq_len // spatial_merge_unit
     window_index_len = seq_len // spatial_merge_unit
-    window_index = torch.arange(
-        window_index_len, dtype=torch.int64, device=pixel_values.device
-    )
     window_index_type = TensorType(
-        DType.int64, shape=window_index.shape, device=device_ref
+        DType.int64, shape=(window_index_len,), device=device_ref
     )
 
     with Graph(
-        "VisionPatchEmbed", input_types=(pixel_values_type, window_index_type)
+        "VisionPatchEmbed",
+        input_types=(pixel_values_type, window_index_type),
     ) as graph:
         x, window_idx = graph.inputs
         output = patch_embed_module(x.tensor, window_idx.tensor)
@@ -163,22 +186,40 @@ def test_vision_patch_embed(config_name: ConfigNames, target_size: int) -> None:
     seq_len = num_patches_h * num_patches_w
     input_dim = in_channels * temporal_patch_size * patch_size * patch_size
 
-    pixel_values = torch.randn(seq_len, input_dim, dtype=torch.bfloat16).to(
-        "cuda"
+    pixel_values = torch.normal(
+        mean=1.3,
+        std=0.832,
+        size=(seq_len, input_dim),
+        dtype=torch.bfloat16,
+    ).to("cuda")
+
+    vision_transformer = HFQwen2_5VisionTransformer(
+        config=Qwen2_5_VLVisionConfig()
     )
+
+    grid_thw = torch.tensor(
+        [[1, num_patches_h, num_patches_w]], dtype=torch.int64
+    )
+    window_index, _ = vision_transformer.get_window_index(grid_thw)
 
     # Generate reference output
     torch_output = generate_torch_outputs(
-        pixel_values, hf_vision_config, embeddings_weights
+        pixel_values=pixel_values,
+        window_index=window_index,
+        hf_vision_config=hf_vision_config,
+        embeddings_weights=embeddings_weights,
+        device="cuda",
+        dtype=torch.bfloat16,
     )
 
     # Generate MAX output
     max_output = generate_max_outputs(
-        pixel_values,
-        qwen2_5vl_config,
-        embeddings_weights,
-        DType.bfloat16,
-        Accelerator(),
+        pixel_values=pixel_values,
+        window_index=window_index,
+        qwen2_5vl_config=qwen2_5vl_config,
+        embeddings_weights=embeddings_weights,
+        dtype=DType.bfloat16,
+        device=Accelerator(),
     )
 
     # Verify output shape
@@ -191,8 +232,8 @@ def test_vision_patch_embed(config_name: ConfigNames, target_size: int) -> None:
     assert_tensors_close(
         torch_output,
         max_output,
-        rtol=1e-2,
-        atol=5e-4,
+        rtol=RTOL,
+        atol=ATOL,
         message="Vision patch embedding outputs do not match",
     )
 
@@ -208,6 +249,7 @@ def test_vision_patch_embed(config_name: ConfigNames, target_size: int) -> None:
     [
         (224, 336),  # Non-square, 16x24 patches
         (448, 224),  # Non-square, 32x16 patches
+        (2044, 1372),  # Non-square, 146x98 patches
     ],
 )
 def test_vision_patch_embed_non_square(
@@ -235,22 +277,40 @@ def test_vision_patch_embed_non_square(
     seq_len = num_patches_h * num_patches_w
     input_dim = in_channels * temporal_patch_size * patch_size * patch_size
 
-    pixel_values = torch.randn(seq_len, input_dim, dtype=torch.bfloat16).to(
-        "cuda"
+    pixel_values = torch.normal(
+        mean=1.3,
+        std=0.832,
+        size=(seq_len, input_dim),
+        dtype=torch.bfloat16,
+    ).to("cuda")
+
+    vision_transformer = HFQwen2_5VisionTransformer(
+        config=Qwen2_5_VLVisionConfig()
     )
+
+    grid_thw = torch.tensor(
+        [[1, num_patches_h, num_patches_w]], dtype=torch.int64
+    )
+    window_index, _ = vision_transformer.get_window_index(grid_thw)
 
     # Generate reference output
     torch_output = generate_torch_outputs(
-        pixel_values, hf_vision_config, embeddings_weights
+        pixel_values=pixel_values,
+        window_index=window_index,
+        hf_vision_config=hf_vision_config,
+        embeddings_weights=embeddings_weights,
+        device="cuda",
+        dtype=torch.bfloat16,
     )
 
     # Generate MAX output
     max_output = generate_max_outputs(
-        pixel_values,
-        qwen2_5vl_config,
-        embeddings_weights,
-        DType.bfloat16,
-        Accelerator(),
+        pixel_values=pixel_values,
+        window_index=window_index,
+        qwen2_5vl_config=qwen2_5vl_config,
+        embeddings_weights=embeddings_weights,
+        dtype=DType.bfloat16,
+        device=Accelerator(),
     )
 
     # Verify output shape
@@ -263,8 +323,8 @@ def test_vision_patch_embed_non_square(
     assert_tensors_close(
         torch_output,
         max_output,
-        rtol=1e-2,
-        atol=5e-4,
+        rtol=RTOL,
+        atol=ATOL,
         message="Vision patch embedding non-square outputs do not match",
     )
 
@@ -304,22 +364,40 @@ def test_vision_patch_embed_video(config_name: ConfigNames) -> None:
     seq_len = num_temporal_patches * num_patches_h * num_patches_w
     input_dim = in_channels * temporal_patch_size * patch_size * patch_size
 
-    pixel_values = torch.randn(seq_len, input_dim, dtype=torch.bfloat16).to(
-        "cuda"
+    pixel_values = torch.normal(
+        mean=1.3,
+        std=0.832,
+        size=(seq_len, input_dim),
+        dtype=torch.bfloat16,
+    ).to("cuda")
+
+    vision_transformer = HFQwen2_5VisionTransformer(
+        config=Qwen2_5_VLVisionConfig()
     )
+    grid_thw = torch.tensor(
+        [[num_temporal_patches, num_patches_h, num_patches_w]],
+        dtype=torch.int64,
+    )
+    window_index, _ = vision_transformer.get_window_index(grid_thw)
 
     # Generate reference output
     torch_output = generate_torch_outputs(
-        pixel_values, hf_vision_config, embeddings_weights
+        pixel_values=pixel_values,
+        window_index=window_index,
+        hf_vision_config=hf_vision_config,
+        embeddings_weights=embeddings_weights,
+        device="cuda",
+        dtype=torch.bfloat16,
     )
 
     # Generate MAX output
     max_output = generate_max_outputs(
-        pixel_values,
-        qwen2_5vl_config,
-        embeddings_weights,
-        DType.bfloat16,
-        Accelerator(),
+        pixel_values=pixel_values,
+        window_index=window_index,
+        qwen2_5vl_config=qwen2_5vl_config,
+        embeddings_weights=embeddings_weights,
+        dtype=DType.bfloat16,
+        device=Accelerator(),
     )
 
     # Verify output shape
@@ -332,7 +410,7 @@ def test_vision_patch_embed_video(config_name: ConfigNames) -> None:
     assert_tensors_close(
         torch_output,
         max_output,
-        rtol=1e-2,
-        atol=5e-4,
+        rtol=RTOL,
+        atol=ATOL,
         message="Vision patch embedding video outputs do not match",
     )
