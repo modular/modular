@@ -74,7 +74,6 @@ fn main() raises:
             + compute_capability_to_arch_name(major, minor)
             + '", '
         )
-        print('compile_options="nvptx-short-ptr=true", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )
@@ -170,7 +169,6 @@ fn main() raises:
         print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
         print('arch_name="' + arch_name + '", ')
-        print('compile_options="", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )

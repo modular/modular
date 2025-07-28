@@ -155,6 +155,22 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             `> : !kgen.string`,
         ]
 
+    @always_inline("nodebug")
+    @staticmethod
+    fn default_compile_options() -> StaticString:
+        """Returns the default compile options for the compilation target.
+
+        Returns:
+            The string of default compile options for the compilation target.
+        """
+
+        @parameter
+        if is_triple["nvptx64-nvidia-cuda", Self.value]():
+            # TODO: use `is_nvidia_gpu` when moved to into this struct.
+            return "nvptx-short-ptr=true"
+        else:
+            return ""
+
     # Features
 
     @staticmethod

@@ -2676,8 +2676,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[type, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         launch_shape, context

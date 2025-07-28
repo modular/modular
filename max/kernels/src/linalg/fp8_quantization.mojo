@@ -91,8 +91,7 @@ fn quantize_static_scaled_fp8[
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()
         out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
 
-    alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[in_dtype, target=compile_target]()
+    alias target_simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
         IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context
