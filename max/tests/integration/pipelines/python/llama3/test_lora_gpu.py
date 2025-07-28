@@ -92,7 +92,7 @@ async def test_pipeline_lora(
         stored_logits,
     )
 
-    pipeline.release(context_a)
+    pipeline.release(context_a.request_id)
 
 
 @pytest.mark.skip("Default Prompts produce the same output for LoRA and Base.")
@@ -150,8 +150,8 @@ async def test_lora_vs_base_model_logits(
         if not contexts:
             break
 
-    pipeline.release(base_context)
-    pipeline.release(lora_context)
+    pipeline.release(base_context.request_id)
+    pipeline.release(lora_context.request_id)
 
     # Compare tokens between LoRA and base model
     base_tokens = tokens["base"]

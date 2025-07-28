@@ -123,7 +123,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     # We should be resetting the cache
     for context in context_batch.values():
-        pipeline.release(context)
+        pipeline.release(context.request_id)
 
 
 @pytest.mark.skip("flaky")
@@ -181,7 +181,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     assert not last
 
     for context in context_batch.values():
-        pipeline.release(context)
+        pipeline.release(context.request_id)
 
 
 @pytest.fixture(scope="session")
@@ -245,7 +245,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         assert not last
 
         for context in context_batch.values():
-            pipeline.release(context)
+            pipeline.release(context.request_id)
 
 
 @pytest.mark.asyncio
@@ -310,6 +310,6 @@ async def test_pipeline_heterogeneous_batch_logits(
         stored_logits,
     )
 
-    pipeline.release(context_a)
-    pipeline.release(context_b)
-    pipeline.release(context_c)
+    pipeline.release(context_a.request_id)
+    pipeline.release(context_b.request_id)
+    pipeline.release(context_c.request_id)

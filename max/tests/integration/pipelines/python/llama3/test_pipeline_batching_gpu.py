@@ -145,6 +145,6 @@ async def test_pipeline_heterogeneous_batch_logits(
         stored_logits,
     )
 
-    pipeline.release(context_a)
-    pipeline.release(context_b)
-    pipeline.release(context_c)
+    pipeline.release(context_a.request_id)
+    pipeline.release(context_b.request_id)
+    pipeline.release(context_c.request_id)
