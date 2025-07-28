@@ -103,7 +103,7 @@ class MAXModelConfig(MAXModelConfigBase):
     rope_type: Optional[RopeType] = None
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
-    use_subgraphs: bool = False
+    use_subgraphs: bool = True
     """Whether to use subgraphs for the model."""
 
     tensor_parallel_degree: int = 1
