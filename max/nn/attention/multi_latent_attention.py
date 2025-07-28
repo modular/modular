@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max.dtype import DType
@@ -235,16 +235,15 @@ class LatentAttentionWithRope(Module, Shardable):
             )
 
     def shard(
-        self, shard_idx: int, device: DeviceRef
-    ) -> LatentAttentionWithRope:
-        """Creates a sharded view of this Module for a specific device.
+        self, devices: Iterable[DeviceRef]
+    ) -> list[LatentAttentionWithRope]:
+        """Creates sharded views of this Module across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded LatentAttentionWithRope instance.
+            List of sharded LatentAttentionWithRope instances, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
@@ -252,45 +251,64 @@ class LatentAttentionWithRope(Module, Shardable):
             )
 
         if self.sharding_strategy.is_tensor_parallel:
-            sharded = LatentAttentionWithRope(
-                rope=self.rope,
-                num_attention_heads=self.n_heads
-                // self.sharding_strategy.num_devices,
-                num_key_value_heads=self.num_key_value_heads,
-                hidden_size=self.hidden_size,
-                kv_params=self.kv_params,
-                dtype=self.dtype,
-                devices=[device],
-                linear_cls=self.linear_cls,
-                scale=self._scale,
-                q_lora_rank=self.q_lora_rank,
-                kv_lora_rank=self.kv_lora_rank,
-                qk_nope_head_dim=self.qk_nope_head_dim,
-                qk_rope_head_dim=self.qk_rope_head_dim,
-                v_head_dim=self.v_head_dim,
-                buffer_size=self.BUFFER_TOK_SIZE,
-            )
-
-            # Replace the weights with sharded versions.
+            # Shard weights once for all devices
             if self.q_lora_rank is not None:
-                sharded.q_a_proj = self.q_a_proj.shard(shard_idx, device)
-                sharded.q_a_layernorm.weight = self.q_a_layernorm.weight.shard(
-                    shard_idx, device
+                q_a_proj_shards = self.q_a_proj.shard(devices)
+                q_a_layernorm_weight_shards = self.q_a_layernorm.weight.shard(
+                    devices
                 )
-                sharded.q_b_proj = self.q_b_proj.shard(shard_idx, device)
+                q_b_proj_shards = self.q_b_proj.shard(devices)
             else:
-                sharded.q_proj = self.q_proj.shard(shard_idx, device)
+                q_proj_shards = self.q_proj.shard(devices)
 
-            sharded.kv_a_proj_layernorm = self.kv_a_proj_layernorm.shard(
-                shard_idx, device
-            )
-            sharded.kv_a_proj_with_mqa = self.kv_a_proj_with_mqa.shard(
-                shard_idx, device
-            )
-            sharded.kv_b_proj = self.kv_b_proj.shard(shard_idx, device)
-            sharded.o_proj.weight = self.o_proj.weight.shard(shard_idx, device)
+            kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
+            kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
+            kv_b_proj_shards = self.kv_b_proj.shard(devices)
+            o_proj_weight_shards = self.o_proj.weight.shard(devices)
 
-            return sharded
+            shards = []
+            for shard_idx, device in enumerate(devices):
+                sharded = LatentAttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=self.n_heads
+                    // self.sharding_strategy.num_devices,
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    dtype=self.dtype,
+                    devices=[device],
+                    linear_cls=self.linear_cls,
+                    scale=self._scale,
+                    q_lora_rank=self.q_lora_rank,
+                    kv_lora_rank=self.kv_lora_rank,
+                    qk_nope_head_dim=self.qk_nope_head_dim,
+                    qk_rope_head_dim=self.qk_rope_head_dim,
+                    v_head_dim=self.v_head_dim,
+                    buffer_size=self.BUFFER_TOK_SIZE,
+                )
+
+                # Replace the weights with sharded versions.
+                if self.q_lora_rank is not None:
+                    sharded.q_a_proj = q_a_proj_shards[shard_idx]
+                    sharded.q_a_layernorm.weight = q_a_layernorm_weight_shards[
+                        shard_idx
+                    ]
+                    sharded.q_b_proj = q_b_proj_shards[shard_idx]
+                else:
+                    sharded.q_proj = q_proj_shards[shard_idx]
+
+                sharded.kv_a_proj_layernorm = kv_a_proj_layernorm_shards[
+                    shard_idx
+                ]
+                sharded.kv_a_proj_with_mqa = kv_a_proj_with_mqa_shards[
+                    shard_idx
+                ]
+                sharded.kv_b_proj = kv_b_proj_shards[shard_idx]
+                sharded.o_proj.weight = o_proj_weight_shards[shard_idx]
+
+                shards.append(sharded)
+
+            return shards
         else:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for LatentAttentionWithRope"
@@ -566,10 +584,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
         self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
         self.allreduce = Allreduce(num_devices)
 
-        self.list_of_attentions = []
-        for n, device in enumerate(self.devices):
-            layer = self.shard(n, device)
-            self.list_of_attentions.append(layer)
+        self.list_of_attentions = self.shard(self.devices)
 
     def __call__(  # type: ignore[override]
         self,

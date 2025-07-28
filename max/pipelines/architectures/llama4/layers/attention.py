@@ -324,13 +324,20 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         self.list_of_attentions = []
         kwargs = kwargs.copy()
         kwargs["num_attention_heads"] //= len(self.devices)
+
+        # Shard weights once for all devices
+        q_proj_shards = self.q_proj.shard(self.devices)
+        k_proj_shards = self.k_proj.shard(self.devices)
+        v_proj_shards = self.v_proj.shard(self.devices)
+        o_proj_weight_shards = self.o_proj.weight.shard(self.devices)
+
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
             layer = _Llama4TextAttention(**kwargs)
-            layer.q_proj = self.q_proj.shard(n, device)
-            layer.k_proj = self.k_proj.shard(n, device)
-            layer.v_proj = self.v_proj.shard(n, device)
-            layer.o_proj.weight = self.o_proj.weight.shard(n, device)
+            layer.q_proj = q_proj_shards[n]
+            layer.k_proj = k_proj_shards[n]
+            layer.v_proj = v_proj_shards[n]
+            layer.o_proj.weight = o_proj_weight_shards[n]
             self.list_of_attentions.append(layer)
 
     def __call__(

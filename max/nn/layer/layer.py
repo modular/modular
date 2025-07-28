@@ -39,6 +39,7 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from typing_extensions import Self
 
 from .._identity import IdentitySet
 
@@ -65,15 +66,14 @@ class Shardable(Protocol):
         """
         ...
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Shardable:
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Self]:
         """Creates a sharded view of this object for a specific device.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            device: The devices where this shard should reside.
 
         Returns:
-            A sharded instance of this object.
+            A sequence of sharded instances of this object.
         """
         ...
 

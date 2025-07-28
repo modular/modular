@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max.dtype import DType
@@ -204,51 +204,95 @@ class MoE(Module, Shardable):
                 "Only tensor parallel sharding strategy is supported for MoE"
             )
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> MoE:
-        """Create a sharded view of this MoE module for a specific device.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[MoE]:
+        """Create sharded views of this MoE module across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded MoE instance."""
+            List of sharded MoE instances, one for each device."""
         if not self._sharding_strategy:
             raise ValueError(
                 "MoE module cannot be sharded because no sharding strategy was provided."
             )
-        sharded = MoE(
-            devices=[device],
-            hidden_dim=self.hidden_dim,
-            num_experts=self.num_experts,
-            num_experts_per_token=self.num_experts_per_token,
-            moe_dim=self.moe_dim // self._sharding_strategy.num_devices,
-            gate_cls=self.gate_cls,
-            has_shared_experts=self.has_shared_experts,
-            shared_experts_dim=self.shared_experts_dim
-            // self._sharding_strategy.num_devices,
-            ep_size=self.ep_size,
-            dtype=self.dtype,
-            apply_router_weight_first=self.apply_router_weight_first,
-        )
 
-        # Replace the weights with sharded versions.
-        sharded.gate.gate_score = self.gate.gate_score.shard(shard_idx, device)
+        # Get sharded weights
+        gate_score_shards = self.gate.gate_score.shard(devices)
+
+        shared_gate_proj_shards = []
+        shared_up_proj_shards = []
+        shared_down_proj_shards = []
         if self.has_shared_experts:
-            sharded.shared_experts.gate_proj = (
-                self.shared_experts.gate_proj.shard(shard_idx, device)
+            shared_gate_proj_shards = self.shared_experts.gate_proj.shard(
+                devices
             )
-            sharded.shared_experts.up_proj = self.shared_experts.up_proj.shard(
-                shard_idx, device
+            shared_up_proj_shards = self.shared_experts.up_proj.shard(devices)
+            shared_down_proj_shards = self.shared_experts.down_proj.shard(
+                devices
             )
-            sharded.shared_experts.down_proj = (
-                self.shared_experts.down_proj.shard(shard_idx, device)
+
+        # Shard each expert's weights
+        expert_gate_proj_shards = [
+            expert.gate_proj.shard(devices) for expert in self.experts
+        ]
+        expert_up_proj_shards = [
+            expert.up_proj.shard(devices) for expert in self.experts
+        ]
+        expert_down_proj_shards = [
+            expert.down_proj.shard(devices) for expert in self.experts
+        ]
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            sharded = MoE(
+                devices=[device],
+                hidden_dim=self.hidden_dim,
+                num_experts=self.num_experts,
+                num_experts_per_token=self.num_experts_per_token,
+                moe_dim=self.moe_dim // self._sharding_strategy.num_devices,
+                gate_cls=self.gate_cls,
+                has_shared_experts=self.has_shared_experts,
+                shared_experts_dim=self.shared_experts_dim
+                // self._sharding_strategy.num_devices,
+                ep_size=self.ep_size,
+                dtype=self.dtype,
+                apply_router_weight_first=self.apply_router_weight_first,
             )
-        for expert, expert_ in zip(sharded.experts, self.experts):
-            expert.gate_proj = expert_.gate_proj.shard(shard_idx, device)
-            expert.up_proj = expert_.up_proj.shard(shard_idx, device)
-            expert.down_proj = expert_.down_proj.shard(shard_idx, device)
-        return sharded
+
+            # Replace the weights with sharded versions.
+            sharded.gate.gate_score = gate_score_shards[shard_idx]
+            if self.has_shared_experts:
+                sharded.shared_experts.gate_proj = shared_gate_proj_shards[
+                    shard_idx
+                ]
+                sharded.shared_experts.up_proj = shared_up_proj_shards[
+                    shard_idx
+                ]
+                sharded.shared_experts.down_proj = shared_down_proj_shards[
+                    shard_idx
+                ]
+
+            for _expert_idx, (
+                expert,
+                gate_shards,
+                up_shards,
+                down_shards,
+            ) in enumerate(
+                zip(
+                    sharded.experts,
+                    expert_gate_proj_shards,
+                    expert_up_proj_shards,
+                    expert_down_proj_shards,
+                )
+            ):
+                expert.gate_proj = gate_shards[shard_idx]
+                expert.up_proj = up_shards[shard_idx]
+                expert.down_proj = down_shards[shard_idx]
+
+            shards.append(sharded)
+
+        return shards
 
     @property
     def gate_up_proj(self) -> TensorValue:
@@ -367,10 +411,7 @@ class DistributedTPMoE(MoE):
         )
         self.allreduce = Allreduce(self.num_devices)
 
-        self.list_of_moes = []
-        for n, device in enumerate(self.devices):
-            moe = self.shard(n, device)
-            self.list_of_moes.append(moe)
+        self.list_of_moes = self.shard(self.devices)
 
     def __call__(  # type: ignore[override]
         self,

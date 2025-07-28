@@ -348,15 +348,14 @@ class Linear(Module, Shardable):
                 else ShardingStrategy.replicate(strategy.num_devices)
             )
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Linear:
-        """Creates a sharded view of this Linear layer for a specific device.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Linear]:
+        """Creates sharded views of this Linear layer across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded Linear instance.
+            List of sharded Linear instances, one for each device.
         """
         if not self.weight.sharding_strategy:
             raise ValueError(
@@ -371,52 +370,73 @@ class Linear(Module, Shardable):
             else int(self.weight.shape[0])
         )
 
-        # Create new Linear with same configuration.
-        sharded = Linear(
-            in_dim=int(self.weight.shape[1]),
-            out_dim=out_dim,
-            dtype=self.weight.dtype,
-            device=device,
-            has_bias=self.bias is not None,
-            float8_config=self.float8_config,
-            clip_weight=self.clip_weight,
-        )
+        # Get sharded weights
+        sharded_weights = self.weight.shard(devices)
+        sharded_biases = []
+        sharded_weight_scales = []
 
-        # Replace the weights with sharded versions.
-        sharded.weight = self.weight.shard(shard_idx, device)
-
-        # Handle bias sharding
         if self.bias is not None:
-            # For columnwise sharding with allreduce.sum, only add bias on device 0
-            # to avoid adding it multiple times.
-            is_colwise = (
-                self.weight.sharding_strategy.is_colwise
-                or self.weight.sharding_strategy.is_head_aware_colwise
+            sharded_biases = self.bias.shard(devices)
+
+        if (
+            self.float8_config
+            and self.weight_scale is not None
+            and len(self.weight_scale.shape) > 0
+        ):
+            sharded_weight_scales = self.weight_scale.shard(devices)
+
+        shards = []
+        for shard_idx, (device, weight_shard) in enumerate(
+            zip(devices, sharded_weights)
+        ):
+            # Create new Linear with same configuration.
+            sharded = Linear(
+                in_dim=int(self.weight.shape[1]),
+                out_dim=out_dim,
+                dtype=self.weight.dtype,
+                device=device,
+                has_bias=self.bias is not None,
+                float8_config=self.float8_config,
+                clip_weight=self.clip_weight,
             )
-            if is_colwise and (shard_idx > 0):
-                sharded.bias = None
-            else:
-                sharded.bias = self.bias.shard(shard_idx, device)
 
-        # Handle float8 scales.
-        if self.float8_config:
-            if self.input_scale is not None:
-                # Input scale is always shared (scalar), which should be
-                # checked upstream.
-                assert len(self.input_scale.shape) == 0
-                sharded.input_scale = self.input_scale
+            # Replace the weights with sharded versions.
+            sharded.weight = weight_shard
 
-            if self.weight_scale is not None:
-                # Share a reference to the original weight scale if scalar, and
-                # shard if on device.
-                # This is because scalars are always on CPU by convention.
-                sharded.weight_scale = (
-                    self.weight_scale
-                    if len(self.weight_scale.shape) == 0
-                    else self.weight_scale.shard(shard_idx, device)
+            # Handle bias sharding
+            if self.bias is not None:
+                # For columnwise sharding with allreduce.sum, only add bias on device 0
+                # to avoid adding it multiple times.
+                is_colwise = (
+                    self.weight.sharding_strategy.is_colwise
+                    or self.weight.sharding_strategy.is_head_aware_colwise
                 )
+                if is_colwise and (shard_idx > 0):
+                    sharded.bias = None
+                else:
+                    sharded.bias = sharded_biases[shard_idx]
 
-        return sharded
+            # Handle float8 scales.
+            if self.float8_config:
+                if self.input_scale is not None:
+                    # Input scale is always shared (scalar), which should be
+                    # checked upstream.
+                    assert len(self.input_scale.shape) == 0
+                    sharded.input_scale = self.input_scale
+
+                if self.weight_scale is not None:
+                    # Share a reference to the original weight scale if scalar, and
+                    # shard if on device.
+                    # This is because scalars are always on CPU by convention.
+                    sharded.weight_scale = (
+                        self.weight_scale
+                        if len(self.weight_scale.shape) == 0
+                        else sharded_weight_scales[shard_idx]
+                    )
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
@@ -569,13 +589,18 @@ class ColumnParallelLinear(Linear):
 
         # Create normal Linear layers for each device. These layers and weights
         # are not recorded by the nn.Module and do not appear in the state dict.
+        weight_shards = self.weight.shard(self.devices)
+        bias_shards = (
+            self.bias.shard(self.devices) if self.bias is not None else None
+        )
+
         self.distributed_linear_layers = []
         for n, device in enumerate(self.devices):
             layer = Linear(in_dim, out_dim, dtype, device, **kwargs)
             layer.device = device
-            layer.weight = self.weight.shard(n, device)
-            if self.bias is not None:
-                layer.bias = self.bias.shard(n, device)
+            layer.weight = weight_shards[n]
+            if bias_shards is not None:
+                layer.bias = bias_shards[n]
             self.distributed_linear_layers.append(layer)
 
     def __call__(  # type: ignore[override]
@@ -1145,13 +1170,17 @@ class DistributedMLP(MLP):
 
         # Create normal MLP layers for each device. These layers and weights are
         # not recorded by the nn.Module and do not appear in the state dict.
+        gate_proj_shards = self.gate_proj.shard(self.devices)
+        down_proj_shards = self.down_proj.shard(self.devices)
+        up_proj_shards = self.up_proj.shard(self.devices)
+
         self.list_of_mlps = []
-        for n, device in enumerate(self.devices):
+        for n, _device in enumerate(self.devices):
             layer = MLP(*args, **kwargs)
 
-            layer.gate_proj = self.gate_proj.shard(n, device)
-            layer.down_proj = self.down_proj.shard(n, device)
-            layer.up_proj = self.up_proj.shard(n, device)
+            layer.gate_proj = gate_proj_shards[n]
+            layer.down_proj = down_proj_shards[n]
+            layer.up_proj = up_proj_shards[n]
 
             self.list_of_mlps.append(layer)
 

@@ -428,31 +428,42 @@ class InternVisionEmbeddings(Module, Shardable):
         self.position_embedding.sharding_strategy = strategy
 
     def shard(
-        self, shard_idx: int, device: DeviceRef
-    ) -> InternVisionEmbeddings:
-        """Creates a sharded view of this Linear layer for a specific device.
+        self, devices: Iterable[DeviceRef]
+    ) -> list[InternVisionEmbeddings]:
+        """Creates sharded views of this vision embeddings across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded Linear instance.
+            List of sharded InternVisionEmbeddings instances, one for each device.
         """
         # This should be set unconditionally in the constructor.
         assert self.sharding_strategy
 
-        # Create the new sharded embedding.
-        sharded = InternVisionEmbeddings(self.config, device)
+        # Get sharded weights
+        patch_embedding_shards = self.patch_embedding.shard(devices)
+        class_embedding_shards = self.class_embedding.shard(devices)
+        position_embedding_shards = self.position_embedding.shard(devices)
 
-        # Shard the embedding fields.
-        sharded.patch_embedding = self.patch_embedding.shard(shard_idx, device)
-        sharded.class_embedding = self.class_embedding.shard(shard_idx, device)
-        sharded.position_embedding = self.position_embedding.shard(
-            shard_idx, device
-        )
+        shards = []
+        for device, patch_shard, class_shard, pos_shard in zip(
+            devices,
+            patch_embedding_shards,
+            class_embedding_shards,
+            position_embedding_shards,
+        ):
+            # Create the new sharded embedding.
+            sharded = InternVisionEmbeddings(self.config, device)
 
-        return sharded
+            # Assign the sharded weights.
+            sharded.patch_embedding = patch_shard
+            sharded.class_embedding = class_shard
+            sharded.position_embedding = pos_shard
+
+            shards.append(sharded)
+
+        return shards
 
     def _get_position_embedding(self, H: Dim, W: Dim) -> TensorValue:
         """Gets position embeddings, interpolating if needed for different resolutions.
@@ -627,30 +638,39 @@ class InternVLVisionMLP(Module, Shardable):
                 strategy.num_devices
             )
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> InternVLVisionMLP:
-        """Creates a sharded view of this MLP for a specific device.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[InternVLVisionMLP]:
+        """Creates sharded views of this MLP across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded InternVLVisionMLP instance.
+            List of sharded InternVLVisionMLP instances, one for each device.
         """
-        # Create new MLP instance with the same configuration
-        sharded = InternVLVisionMLP(
-            hidden_size=int(self.fc1.weight.shape[1]),  # in_dim
-            intermediate_size=int(self.fc1.weight.shape[0]),  # out_dim
-            dtype=self.fc1.weight.dtype,
-            device=device,
-            has_bias=self.fc1.bias is not None,
-        )
+        # Get sharded layers
+        fc1_shards = self.fc1.shard(devices)
+        fc2_shards = self.fc2.shard(devices)
 
-        # Shard the linear layers
-        sharded.fc1 = self.fc1.shard(shard_idx, device)
-        sharded.fc2 = self.fc2.shard(shard_idx, device)
+        shards = []
+        for device, fc1_shard, fc2_shard in zip(
+            devices, fc1_shards, fc2_shards
+        ):
+            # Create new MLP instance with the same configuration
+            sharded = InternVLVisionMLP(
+                hidden_size=int(self.fc1.weight.shape[1]),  # in_dim
+                intermediate_size=int(self.fc1.weight.shape[0]),  # out_dim
+                dtype=self.fc1.weight.dtype,
+                device=device,
+                has_bias=self.fc1.bias is not None,
+            )
 
-        return sharded
+            # Assign the sharded layers
+            sharded.fc1 = fc1_shard
+            sharded.fc2 = fc2_shard
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Simple forward: fc1 -> GELU -> fc2"""
@@ -751,35 +771,43 @@ class InternVLMLP1(Module, Shardable):
             strategy.num_devices
         )
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> InternVLMLP1:
-        """Creates a sharded view of this MLP for a specific device.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[InternVLMLP1]:
+        """Creates sharded views of this MLP across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded InternVLMLP1 instance.
+            List of sharded InternVLMLP1 instances, one for each device.
         """
         # This should be set unconditionally in the constructor.
         assert self.sharding_strategy
 
-        # Create the new sharded MLP.
-        sharded = InternVLMLP1(self.config, device)
-
-        # Shard the weights.
-        sharded.layer_norm.weight = self.layer_norm.weight.shard(
-            shard_idx, device
-        )
+        # Get sharded weights
+        layer_norm_weight_shards = self.layer_norm.weight.shard(devices)
+        layer_norm_bias_shards = []
         if self.layer_norm.bias is not None:
-            sharded.layer_norm.bias = self.layer_norm.bias.shard(
-                shard_idx, device
-            )
+            layer_norm_bias_shards = self.layer_norm.bias.shard(devices)
 
-        sharded.fc1 = self.fc1.shard(shard_idx, device)
-        sharded.fc2 = self.fc2.shard(shard_idx, device)
+        fc1_shards = self.fc1.shard(devices)
+        fc2_shards = self.fc2.shard(devices)
 
-        return sharded
+        shards = []
+        for idx, device in enumerate(devices):
+            # Create the new sharded MLP.
+            sharded = InternVLMLP1(self.config, device)
+
+            # Assign the sharded weights.
+            sharded.layer_norm.weight = layer_norm_weight_shards[idx]
+            if layer_norm_bias_shards:
+                sharded.layer_norm.bias = layer_norm_bias_shards[idx]
+
+            sharded.fc1 = fc1_shards[idx]
+            sharded.fc2 = fc2_shards[idx]
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies the multimodal projection to input embeddings.
@@ -910,9 +938,7 @@ class InternVisionEncoderLayer(Module):
         )
 
         # Create per-device attention instances using the shard method
-        self.attn_per_device = [
-            self.attn.shard(n, device) for n, device in enumerate(self.devices)
-        ]
+        self.attn_per_device = self.attn.shard(self.devices)
 
         # Set sharding strategies for weights
         self.norm1.weight.sharding_strategy = ShardingStrategy.replicate(
@@ -937,6 +963,16 @@ class InternVisionEncoderLayer(Module):
         self.mlp.fc2.sharding_strategy = ShardingStrategy.columnwise(
             len(self.devices)
         )
+
+        # Shard norm weights
+        norm1_weight_shards = self.norm1.weight.shard(self.devices)
+        norm2_weight_shards = self.norm2.weight.shard(self.devices)
+        norm1_bias_shards = []
+        norm2_bias_shards = []
+        if isinstance(self.norm1, LayerNorm) and self.norm1.bias is not None:
+            norm1_bias_shards = self.norm1.bias.shard(self.devices)
+        if isinstance(self.norm2, LayerNorm) and self.norm2.bias is not None:
+            norm2_bias_shards = self.norm2.bias.shard(self.devices)
 
         # Create per-device norm instances.
         self.norm1_per_device: list[RMSNorm | LayerNorm] = []
@@ -973,30 +1009,21 @@ class InternVisionEncoderLayer(Module):
                     use_bias=True,
                 )
 
-            # Shard weights to device.
-            norm1_copy.weight = self.norm1.weight.shard(n, device)
-            norm2_copy.weight = self.norm2.weight.shard(n, device)
-            if (
-                isinstance(norm1_copy, LayerNorm)
-                and isinstance(self.norm1, LayerNorm)
-                and self.norm1.bias is not None
-            ):
-                norm1_copy.bias = self.norm1.bias.shard(n, device)
-            if (
-                isinstance(norm2_copy, LayerNorm)
-                and isinstance(self.norm2, LayerNorm)
-                and self.norm2.bias is not None
-            ):
-                norm2_copy.bias = self.norm2.bias.shard(n, device)
+            # Weights will be assigned later after sharding
+
+            # Assign sharded weights.
+            norm1_copy.weight = norm1_weight_shards[n]
+            norm2_copy.weight = norm2_weight_shards[n]
+            if norm1_bias_shards and isinstance(norm1_copy, LayerNorm):
+                norm1_copy.bias = norm1_bias_shards[n]
+            if norm2_bias_shards and isinstance(norm2_copy, LayerNorm):
+                norm2_copy.bias = norm2_bias_shards[n]
 
             self.norm1_per_device.append(norm1_copy)
             self.norm2_per_device.append(norm2_copy)
 
         # Create per-device MLP instances.
-        self.mlp_per_device = []
-        for n, device in enumerate(self.devices):
-            mlp_copy = self.mlp.shard(n, device)
-            self.mlp_per_device.append(mlp_copy)
+        self.mlp_per_device = self.mlp.shard(self.devices)
 
         # Create allreduce for tensor parallel attention and MLP
         self.allreduce = Allreduce(num_accelerators=len(self.devices))
@@ -1288,10 +1315,7 @@ class InternVLVisionModel(Module):
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )
-        self.embeddings_list = [
-            self.embeddings.shard(n, dev)
-            for n, dev in enumerate(config.devices)
-        ]
+        self.embeddings_list = self.embeddings.shard(config.devices)
 
         # Store downsample_ratio and ps_version for pixel_shuffle
         self.downsample_ratio = config.downsample_ratio
@@ -1322,9 +1346,7 @@ class InternVLVisionModel(Module):
         )
 
         # Create sharded mlp1 instances for each device.
-        self.mlp1_list = [
-            self.mlp1.shard(n, dev) for n, dev in enumerate(config.devices)
-        ]
+        self.mlp1_list = self.mlp1.shard(config.devices)
 
         # Create allreduce for tensor parallel MLP1.
         self.allreduce = Allreduce(num_accelerators=len(self.devices))

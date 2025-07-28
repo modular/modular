@@ -129,9 +129,10 @@ class DistributedRMSNorm(RMSNorm):
         )
         # Create a separate RMS layer for each device.
         self.rms_norms = []
-        for n, device in enumerate(devices):
+        weight_shards = self.weight.shard(devices)
+        for n in range(len(devices)):
             layer = RMSNorm(*args, **kwargs)
-            layer.weight = self.weight.shard(n, device)
+            layer.weight = weight_shards[n]
             self.rms_norms.append(layer)
 
     def __call__(self, xs: Sequence[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
