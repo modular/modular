@@ -327,8 +327,8 @@ void ParameterEvaluator::dump() const {
 std::optional<PartiallySpecializedInputParams>
 PartiallySpecializedInputParams::from(
     ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
-    function_ref<InFlightDiagnostic()> emitErrorFn,
-    ParameterEvaluationContext *evaluationContext) {
+    ParameterEvaluationContext *evaluationContext,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
   // Verify the number of input parameters.
   if (paramBindings.size() != paramTypes.size()) {
     assert(emitErrorFn && "unexpected invalid bindings");

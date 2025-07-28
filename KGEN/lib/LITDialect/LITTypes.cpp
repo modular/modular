@@ -1513,11 +1513,9 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
     unboundBindings.push_back(value);
   }
   type = type.getSpecializedGenerator(
-      unboundBindings,
-      [&]() -> InFlightDiagnostic {
+      unboundBindings, evalContext, [&]() -> InFlightDiagnostic {
         return mlir::emitError(UnknownLoc::get(type.getContext()));
-      },
-      evalContext);
+      });
   assert(type && "bad bindings specified");
   return {type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};

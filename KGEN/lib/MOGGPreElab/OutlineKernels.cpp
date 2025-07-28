@@ -298,7 +298,8 @@ private:
 
     auto specializedSig =
         outlinedFunction.getFuncTypeGenerator().getSpecializedGenerator(
-            paramArgs, outlinedFunction.getLoc());
+            paramArgs, /*evaluationContext=*/nullptr,
+            outlinedFunction.getLoc());
     auto symbol =
         KGEN::SymbolConstantAttr::get(flatSym, specializedSig, paramArgs);
 

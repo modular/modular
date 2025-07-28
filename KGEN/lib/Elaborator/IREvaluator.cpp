@@ -387,8 +387,8 @@ IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
   // Easy case: if all parameters are available, bind them immediately.
   if (bindParams.getParamValues().size() ==
       genAttr.getInputParamTypes().size()) {
-    GeneratorAttr specializedGenerator = genAttr.getSpecializedGenerator(
-        bindParams.getParamValues(), /*emitErrorFn=*/{}, this);
+    GeneratorAttr specializedGenerator =
+        genAttr.getSpecializedGenerator(bindParams.getParamValues(), this);
     // If the user expected an instantiated value, return the instantiated body.
     // If this was a real mismatch, the replacer will catch it.
     if (specializedGenerator.getType() != bindParams.getType())
@@ -405,7 +405,7 @@ IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
     paramValues.push_back(UnboundAttr::get(paramType));
   }
   GeneratorAttr specializedGenerator =
-      genAttr.getSpecializedGenerator(paramValues, /*emitErrorFn=*/{}, this);
+      genAttr.getSpecializedGenerator(paramValues, this);
   return cast<TypedAttr>(specializedGenerator);
 }
 

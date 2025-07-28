@@ -53,13 +53,14 @@ public:
       Attribute fnMetadata = {}, Attribute genMetadata = {});
 
   /// Get this GeneratorType with some parameters bound.
-  FuncTypeGeneratorType getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
-      function_ref<InFlightDiagnostic()> emitErrorFn = {},
-      ParameterEvaluationContext *evaluationContext = nullptr);
-  FuncTypeGeneratorType getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings, Location location,
-      ParameterEvaluationContext *evaluationContext = nullptr);
+  FuncTypeGeneratorType
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+                          ParameterEvaluationContext *evaluationContext,
+                          function_ref<InFlightDiagnostic()> emitErrorFn = {});
+  FuncTypeGeneratorType
+  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+                          ParameterEvaluationContext *evaluationContext,
+                          Location location);
 
   /// Construct a signature from named parameter declarations, a function
   /// type, and metadata. This helper is used to convert between a named
