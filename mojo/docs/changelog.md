@@ -250,3 +250,18 @@ mutation.
 
 - [#4982](https://github.com/modular/modular/issues/4982) - Add `toggle_all`
   to `BitSet`.
+
+- [#5086](https://github.com/modular/modular/issues/5086) - Add `set_all`
+  to `BitSet`.
+
+- [#5057](https://github.com/modular/modular/issues/5057) - Span
+  Performance Regression.
+
+- [#5051](https://github.com/modular/modular/issues/5051) - Incorrect
+  `.modular` Directory Location on Linux.
+
+- [#5021](https://github.com/modular/modular/issues/5021) - LSP Crashes
+  in VSCode when a local package exists.
+
+- [#5016](https://github.com/modular/modular/issues/5016) - Conditional
+  Conformance Trait Alias Bug.
