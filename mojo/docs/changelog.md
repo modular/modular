@@ -214,7 +214,7 @@ mutation.
   - `has_neon_int8_matmul()`
 
 - `UnsafePointer.address_of()` has been removed.  Use `UnsafePointer(to=...)`
-  constructor instead.
+  constructor instead.  Similarly, `Pointer.address_of()` has been removed.
 
 - `DType.tensor_float32` has been removed due to lack of support for it in the
   library and the compiler.
