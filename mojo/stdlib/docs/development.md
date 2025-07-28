@@ -45,7 +45,7 @@ be sure it is installed correctly:
     pixi shell
     ```
 
-    ```
+    ```bash
     mojo --version
     ```
 
