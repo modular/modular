@@ -1,4 +1,33 @@
-load("//bazel:api.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+modular_py_library(
+    name = "benchmark_datasets",
+    srcs = ["benchmark_datasets.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sample_workload_utils",
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("msgspec"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+# TODO: Move / refactor this to interfaces/
+modular_py_library(
+    name = "sample_workload_utils",
+    srcs = ["sample_workload_utils.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("msgspec"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
 
 pkg_files(
     name = "python_files",
