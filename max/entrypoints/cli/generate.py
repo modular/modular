@@ -100,7 +100,7 @@ async def stream_text_to_console(
         if metrics:
             metrics.signpost("end_generation")
 
-        pipeline.release(context)
+        pipeline.release(context.request_id)
 
     if print_tokens:
         print()

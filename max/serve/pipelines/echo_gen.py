@@ -19,6 +19,7 @@ import numpy as np
 from max.interfaces import (
     GenerationStatus,
     PipelineTokenizer,
+    RequestID,
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -189,10 +190,8 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
 
         return responses
 
-    def release(self, context: TextContext) -> None:
-        """Clean up any state associated with the context."""
-        # Note: We can't easily map context back to request_id here,
-        # so we'll rely on the scheduler to clean up properly.
-        # In practice, this is fine since the echo indices will be cleaned
-        # up when contexts complete normally.
-        pass
+    def release(self, request_id: RequestID) -> None:
+        """Clean up any state associated with the request."""
+        # Clean up the echo index for this request if it exists
+        if request_id in self._echo_indices:
+            del self._echo_indices[request_id]

@@ -146,7 +146,7 @@ class PrefillScheduler(Scheduler):
         it to the preempted queue.
 
         """
-        self.pipeline.release(prefill_request.context)
+        self.pipeline.release(prefill_request.context.request_id)
         prefill_request.context.reset()
         self.prefill_requests.appendleft(prefill_request)
 
@@ -162,7 +162,7 @@ class PrefillScheduler(Scheduler):
             status = self.transfer_engine.get_transfer_status(transfer)
 
             if status != nixl.Status.IN_PROG:
-                self.pipeline.release(context)
+                self.pipeline.release(context.request_id)
                 to_be_deleted.append(req_id)
 
         for id in to_be_deleted:

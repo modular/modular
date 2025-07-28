@@ -349,7 +349,7 @@ class TokenGenerationScheduler(Scheduler):
         self, req_id: str, data: Union[TextContext, TextAndVisionContext]
     ) -> None:
         """Resets a request and returns it to the request queue"""
-        self.pipeline.release(data)
+        self.pipeline.release(data.request_id)
         data.reset()
         self.pending_reqs.appendleft((req_id, data))
 
@@ -688,7 +688,7 @@ class TokenGenerationScheduler(Scheduler):
         for request_id, response in batch_responses.items():
             if response.is_done:
                 # Release from cache
-                self.pipeline.release(batch_executed[request_id])
+                self.pipeline.release(request_id)
                 del batch_executed[request_id]
 
                 # Remove from active batch
@@ -721,7 +721,7 @@ class TokenGenerationScheduler(Scheduler):
             for req_id in req_ids:
                 if req_id not in self.active_batch:
                     continue
-                self.pipeline.release(self.active_batch[req_id])
+                self.pipeline.release(req_id)
                 del self.active_batch[req_id]
 
                 self.response_q.put_nowait(
