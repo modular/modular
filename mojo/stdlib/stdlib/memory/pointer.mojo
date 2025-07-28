@@ -366,20 +366,6 @@ struct Pointer[
         """
         self = Self(_mlir_value=__get_mvalue_as_litref(to))
 
-    @staticmethod
-    @always_inline("nodebug")
-    @deprecated("Use Pointer(to=...) constructor instead.")
-    fn address_of(ref [origin, address_space]value: type) -> Self:
-        """Constructs a Pointer from a reference to a value.
-
-        Args:
-            value: The value to get the address of.
-
-        Returns:
-            The result Pointer.
-        """
-        return Pointer(_mlir_value=__get_mvalue_as_litref(value))
-
     fn copy(self) -> Self:
         """Constructs a copy from another Pointer.
 
