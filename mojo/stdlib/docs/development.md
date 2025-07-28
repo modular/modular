@@ -38,6 +38,17 @@ latest nightly version of `mojo` (the CLI compiler) by default:
     pixi add modular
     ```
 
+    Lastly enter the environment shell for `mojo` to be available and
+be sure it is installed correctly:
+
+    ```bash
+    pixi shell
+    ```
+
+    ```bash
+    mojo --version
+    ```
+
 Now you're ready to start developing.
 
 ### Dev container
