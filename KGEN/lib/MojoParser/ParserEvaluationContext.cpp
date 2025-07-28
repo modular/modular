@@ -73,7 +73,7 @@ ParserEvaluationContext::evaluateBindParams(TypedAttr generator,
     return failure();
 
   GeneratorAttr specializedGenerator =
-      genAttr.getSpecializedGenerator(paramValues, /*emitErrorFn=*/{}, this);
+      genAttr.getSpecializedGenerator(paramValues, this);
   return specializedGenerator.getInstantiatedBody();
 }
 

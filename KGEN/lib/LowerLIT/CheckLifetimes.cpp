@@ -272,7 +272,8 @@ static SymbolConstantAttr getSpecialMemberForType(
     return attr;
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedGenerator(paramValues);
+  auto newSig = attr.getType().getSpecializedGenerator(
+      paramValues, /*evaluationContext=*/nullptr);
   return SymbolConstantAttr::get(attr.getSymbol(), newSig, paramValues);
 }
 
@@ -296,7 +297,8 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
             selfParam = UpcastAttr::get(expectedSelfType, selfParam,
                                         VTableAttr::get(type.getContext(), {}));
           }
-          auto specSig = dtorSig.getSpecializedGenerator({selfParam});
+          auto specSig = dtorSig.getSpecializedGenerator(
+              {selfParam}, /*evaluationContext=*/nullptr);
           auto delStr =
               StringAttr::get("__del__", StringType::get(type.getContext()));
           auto traitName = StringAttr::get(type.getContext(),

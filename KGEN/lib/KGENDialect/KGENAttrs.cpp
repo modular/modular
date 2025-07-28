@@ -509,8 +509,8 @@ TypedAttr BindParamsAttr::get(TypedAttr generator,
     return generator;
   auto genType = ::cast<GeneratorType>(generator.getType());
   GeneratorType specializedType =
-      genType.getSpecializedGenerator(paramValues,
-                                      /*emitErrorFn=*/{}, evaluationContext);
+      genType.getSpecializedGenerator(paramValues, evaluationContext,
+                                      /*emitErrorFn=*/{});
   assert(specializedType && "Failed to specialize generator");
   // By back-compat, we never eliminate the empty generator type wrapper on func
   // types. This should eventually be made consistent with other types.
@@ -735,7 +735,7 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   FuncTypeGeneratorType declSignature;
   if (symbolOps.size() == 1) {
     declSignature = func.getFuncTypeGenerator().getSpecializedGenerator(
-        getParamValues(), [&] { return emitError(loc); }, &evaluationContext);
+        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
   } else {
     // Collect the contextual parameter values.
     SmallVector<ParamDeclAttr> paramDecls;
@@ -767,7 +767,7 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
         baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
         genMetadata);
     declSignature = remappedGenerator.getSpecializedGenerator(
-        getParamValues(), [&] { return emitError(loc); }, &evaluationContext);
+        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
   }
   if (!declSignature)
     return failure();
@@ -827,8 +827,8 @@ ArrayRef<Type> GeneratorAttr::getInputParamTypes() const {
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
     ArrayRef<TypedAttr> paramBindings,
-    function_ref<InFlightDiagnostic()> emitErrorFn,
-    ParameterEvaluationContext *evaluationContext) {
+    ParameterEvaluationContext *evaluationContext,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
   VerboseCompilerTimeTraceScope traceScope(
       "GeneratorAttr::getSpecializedGenerator");
 
@@ -837,7 +837,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 
   std::optional<PartiallySpecializedInputParams> specializationOpt =
       PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
-                                            emitErrorFn, evaluationContext);
+                                            evaluationContext, emitErrorFn);
   if (!specializationOpt)
     return {};
   PartiallySpecializedInputParams &specialization = *specializationOpt;
@@ -857,12 +857,11 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings, Location location,
-    ParameterEvaluationContext *evaluationContext) {
+    ArrayRef<TypedAttr> paramBindings,
+    ParameterEvaluationContext *evaluationContext, Location location) {
   return getSpecializedGenerator(
-      paramBindings,
-      [&]() -> InFlightDiagnostic { return emitError(location); },
-      evaluationContext);
+      paramBindings, evaluationContext,
+      [&]() -> InFlightDiagnostic { return emitError(location); });
 }
 
 //===----------------------------------------------------------------------===//

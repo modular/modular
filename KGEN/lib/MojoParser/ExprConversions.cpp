@@ -357,8 +357,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   // Rebind the argument and result types into the scope of the body.
   FunctionType functionType =
       thunkSignature
-          .getSpecializedGenerator(paramValues, /*emitErrorFn=*/{},
-                                   &shared.getEvaluationContext())
+          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext())
           .getBody()
           .getValues();
 
@@ -847,10 +846,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       if (fromSig && toSig) {
         // Compare the specialized signatures.
         fromSig = fromSig.getSpecializedGenerator(
-            fromType.getParamBindings(),
-            /*emitErrorFn=*/{}, &shared.getEvaluationContext());
+            fromType.getParamBindings(), &shared.getEvaluationContext());
         toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
-                                              /*emitErrorFn=*/{},
                                               &shared.getEvaluationContext());
         return canZeroCostConvert(fromSig, toSig, shared);
       }

@@ -815,8 +815,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                                 structDecl, b, getDeclResolver());
 
   dependentSignatureType = dependentSignatureType.getSpecializedGenerator(
-      paramValues, translateLocation(nestedFunctionOrTypeLocation),
-      &shared.getEvaluationContext());
+      paramValues, &shared.getEvaluationContext(),
+      translateLocation(nestedFunctionOrTypeLocation));
   auto sigMetadata =
       FnMetadataAttr::get(dependentSignatureType.getArgListAttrs(),
                           dependentSignatureType.getNumImplicitOriginDecls());
@@ -1492,7 +1492,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   assert(closureSignature.getResults().size() == 1);
   closureSignature = closureSignature.getSpecializedGenerator(
       ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),
-      translateLocation(loc), &shared.getEvaluationContext());
+      &shared.getEvaluationContext(), translateLocation(loc));
 
   Type resultType = closureSignature.getResults().front();
 
@@ -1718,7 +1718,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
       LIT::getFullSignature(wrapper, init.getFuncTypeGenerator());
   SmallVector<TypedAttr> paramArgs;
   paramArgs.push_back(closure.getTypeValue());
-  auto boundSig = fullSig.getSpecializedGenerator(paramArgs, location);
+  auto boundSig = fullSig.getSpecializedGenerator(
+      paramArgs, /*evaluationContext=*/nullptr, location);
   TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
   builder.create<LIT::CallOp>(location, boundSig.getBody().getResults(), symbol,
                               implicitOrigins, operands);

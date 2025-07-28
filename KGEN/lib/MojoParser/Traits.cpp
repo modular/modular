@@ -95,8 +95,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
   }
 
   FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
-      params, /*emitErrorFn=*/{},
-      &emitter.getDeclScope().getShared().getEvaluationContext());
+      params, &emitter.getDeclScope().getShared().getEvaluationContext());
 
   auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
@@ -617,7 +616,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
         UnboundAttr::get(evaluator.getReboundType(type)));
   signature = signature.getSpecializedGenerator(
       evaluator.getIndexBindings(),
-      /*emitErrorFn=*/{}, &declResolver.shared.getEvaluationContext());
+      &declResolver.shared.getEvaluationContext());
 
   return signature;
 }

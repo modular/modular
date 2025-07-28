@@ -922,12 +922,10 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
       *shared.declResolver, &traitDecl, funcOp, signature, selfExpr);
 
   signature = signature.getSpecializedGenerator(
-      paramValues,
-      [&]() {
+      paramValues, &shared.getEvaluationContext(), [&]() {
         return mlir::emitError(shared.translateLocation(expr->getLoc()))
                << "internal error: ";
-      },
-      &shared.getEvaluationContext());
+      });
   assert(signature && "Error binding trait Self type");
 
   auto traitName =

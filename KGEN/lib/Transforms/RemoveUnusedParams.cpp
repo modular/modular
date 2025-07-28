@@ -233,7 +233,7 @@ private:
     auto symbol = SymbolConstantAttr::get(
         flatSym,
         newFunc.getFuncTypeGenerator().getSpecializedGenerator(
-            newParams, oldCall.getLoc(), &*evaluationContext),
+            newParams, &*evaluationContext, oldCall.getLoc()),
         newParams);
 
     auto newCall =

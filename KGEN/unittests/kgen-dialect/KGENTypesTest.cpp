@@ -43,8 +43,8 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
   {
     FuncTypeGeneratorType sigGen =
         FuncTypeGeneratorType::get(inputParamTypes, funcType);
-    FuncTypeGeneratorType concreteSigGen =
-        sigGen.getSpecializedGenerator({indexTypeAttr});
+    FuncTypeGeneratorType concreteSigGen = sigGen.getSpecializedGenerator(
+        {indexTypeAttr}, /*evaluationContext=*/nullptr);
 
     EXPECT_EQ(concreteSigGen,
               FuncTypeGeneratorType::get(
@@ -69,8 +69,8 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
     FuncTypeGeneratorType sigGen =
         FuncTypeGeneratorType::get(inputParamTypes, funcType, /*argConvs=*/{},
                                    /*effects=*/{}, fnMetadata, pogs);
-    FuncTypeGeneratorType concreteSigGen =
-        sigGen.getSpecializedGenerator({indexTypeAttr});
+    FuncTypeGeneratorType concreteSigGen = sigGen.getSpecializedGenerator(
+        {indexTypeAttr}, /*evaluationContext=*/nullptr);
 
     EXPECT_EQ(concreteSigGen,
               FuncTypeGeneratorType::get(

@@ -648,8 +648,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // argument types are updated.
     if (!newBindings.empty()) {
       candidateType = candidateType.getSpecializedGenerator(
-          newBindings, /*emitErrorFn=*/{},
-          &declScope.getShared().getEvaluationContext());
+          newBindings, &declScope.getShared().getEvaluationContext());
     }
 
     if (!candidateType)

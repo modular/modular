@@ -896,11 +896,11 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
     /// Get this GeneratorAttr with some parameters bound.
     GeneratorAttr getSpecializedGenerator(
       ArrayRef<TypedAttr> paramBindings,
-      function_ref<InFlightDiagnostic()> emitErrorFn = {},
-      ParameterEvaluationContext *evaluationContext = nullptr);
+      ParameterEvaluationContext *evaluationContext,
+      function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings, Location location,
-      ParameterEvaluationContext *evaluationContext = nullptr);
+      ArrayRef<TypedAttr> paramBindings,
+      ParameterEvaluationContext *evaluationContext, Location location);
 
     /// Returns true if the signature has no input params.
     bool isFullyBound() { return getInputParamTypes().empty(); };

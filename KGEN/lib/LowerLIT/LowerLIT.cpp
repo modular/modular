@@ -736,7 +736,8 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
 
   // Update the signature type if we dropped anything.
   if (numRemoved) {
-    signature = signature.getSpecializedGenerator(paramsToBind);
+    signature = signature.getSpecializedGenerator(
+        paramsToBind, /*evaluationContext=*/nullptr);
     assert(signature && "didn't replace lifetimes correctly");
   }
   return signature;
