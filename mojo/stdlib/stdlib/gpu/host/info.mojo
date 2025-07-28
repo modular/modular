@@ -154,7 +154,6 @@ alias NoGPU = GPUInfo(
     vendor=Vendor.NO_GPU,
     api="none",
     arch_name="no_gpu",
-    compile_options="",
     compute=0,
     version="",
     sm_count=0,
@@ -214,7 +213,6 @@ alias A100 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
-    compile_options="nvptx-short-ptr=true",
     compute=8.0,
     version="sm_80",
     sm_count=108,
@@ -266,7 +264,6 @@ alias A10 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
-    compile_options="nvptx-short-ptr=true",
     compute=8.6,
     version="sm_86",
     sm_count=72,
@@ -318,7 +315,6 @@ alias OrinNano = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
-    compile_options="nvptx-short-ptr=true",
     compute=8.7,
     version="sm_87",
     sm_count=8,
@@ -371,7 +367,6 @@ alias L4 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada",
-    compile_options="nvptx-short-ptr=true",
     compute=8.9,
     version="sm_89",
     sm_count=58,
@@ -423,7 +418,6 @@ alias RTX4090m = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada lovelace",
-    compile_options="nvptx-short-ptr=true",
     compute=8.9,
     version="sm_89",
     sm_count=76,
@@ -475,7 +469,6 @@ alias RTX4090 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada lovelace",
-    compile_options="nvptx-short-ptr=true",
     compute=8.9,
     version="sm_89",
     sm_count=128,
@@ -529,7 +522,6 @@ alias H100 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="hopper",
-    compile_options="nvptx-short-ptr=true",
     compute=9.0,
     version="sm_90a",
     sm_count=132,
@@ -584,7 +576,6 @@ alias B100 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
-    compile_options="nvptx-short-ptr=true",
     compute=10.0,
     version="sm_100a",
     sm_count=132,
@@ -611,7 +602,6 @@ alias B200 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
-    compile_options="nvptx-short-ptr=true",
     compute=10.0,
     version="sm_100a",
     sm_count=148,
@@ -664,7 +654,6 @@ alias RTX5090 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
-    compile_options="nvptx-short-ptr=true",
     compute=12.0,
     version="sm_120a",
     sm_count=170,
@@ -718,7 +707,6 @@ alias RTX3090 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
-    compile_options="nvptx-short-ptr=true",
     compute=8.6,
     version="sm_86",
     sm_count=82,
@@ -771,7 +759,6 @@ alias RTX2060 = GPUInfo(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="turing",
-    compile_options="nvptx-short-ptr=true",
     compute=7.5,
     version="sm_75",
     sm_count=30,
@@ -823,7 +810,6 @@ alias MI300X = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx942",
-    compile_options="",
     compute=9.4,
     version="CDNA3",
     sm_count=304,
@@ -970,7 +956,6 @@ alias Radeon9070 = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1201",
-    compile_options="",
     compute=12.0,
     version="RDNA4",
     sm_count=64,
@@ -997,7 +982,6 @@ alias Radeon9060 = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1200",
-    compile_options="",
     compute=12.0,
     version="RDNA4",
     sm_count=32,
@@ -1024,7 +1008,6 @@ alias Radeon7900 = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1100",
-    compile_options="",
     compute=11.0,
     version="RDNA3",
     sm_count=96,
@@ -1051,7 +1034,6 @@ alias Radeon7800 = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1101",
-    compile_options="",
     compute=11.0,
     version="RDNA3",
     sm_count=60,
@@ -1078,7 +1060,6 @@ alias Radeon7600 = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1102",
-    compile_options="",
     compute=11.0,
     version="RDNA3",
     sm_count=32,
@@ -1106,7 +1087,6 @@ alias Radeon780m = GPUInfo(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1103",
-    compile_options="",
     compute=11.0,
     version="RDNA3",
     sm_count=12,
@@ -1156,9 +1136,6 @@ struct GPUInfo(Stringable, Writable):
 
     var arch_name: StaticString
     """The architecture name of the GPU (e.g., sm_80, gfx942)."""
-
-    var compile_options: StaticString
-    """Compiler options specific to this GPU architecture."""
 
     var compute: Float32
     """Compute capability version number for NVIDIA GPUs."""
@@ -1622,7 +1599,6 @@ struct GPUInfo(Stringable, Writable):
         writer.write("vendor: ", self.vendor, "\n")
         writer.write("api: ", self.api, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
-        writer.write("compile_options: ", self.compile_options, "\n")
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
         writer.write("sm_count: ", self.sm_count, "\n")

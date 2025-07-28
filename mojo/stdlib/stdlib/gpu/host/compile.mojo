@@ -53,9 +53,9 @@ fn _compile_code[
     *,
     emission_kind: StaticString = "asm",
     target: _TargetType = get_gpu_target(),
-    compile_options: StaticString = GPUInfo.from_target[
+    compile_options: StaticString = CompilationTarget[
         target
-    ]().compile_options,
+    ].default_compile_options(),
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,

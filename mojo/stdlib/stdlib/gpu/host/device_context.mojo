@@ -34,7 +34,12 @@ from sys import (
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char
-from sys.info import is_triple, _TargetType, _accelerator_arch
+from sys.info import (
+    is_triple,
+    _TargetType,
+    _accelerator_arch,
+    CompilationTarget,
+)
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
@@ -1502,9 +1507,9 @@ struct DeviceFunction[
     declared_arg_types: Optional[VariadicOf[AnyType]],
     *,
     target: _TargetType = get_gpu_target(),
-    compile_options: StaticString = GPUInfo.from_target[
+    compile_options: StaticString = CompilationTarget[
         target
-    ]().compile_options,
+    ].default_compile_options(),
     _ptxas_info_verbose: Bool = False,
 ]:
     """Represents a compiled device function for GPU execution.
@@ -2920,7 +2925,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -2980,7 +2987,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3051,7 +3060,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3124,7 +3135,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3195,7 +3208,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3268,7 +3283,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -3403,7 +3420,9 @@ struct DeviceContext(Copyable, Movable):
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         target: _TargetType = Self.default_device_info.target(),
-        compile_options: StaticString = Self.default_device_info.compile_options,
+        compile_options: StaticString = CompilationTarget[
+            target
+        ].default_compile_options(),
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
