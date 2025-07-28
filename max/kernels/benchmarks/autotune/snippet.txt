@@ -1,0 +1,6 @@
+
+Config(dtype = [@dtype],
+    num_stages = [@stages],
+    shape = "[@shape]",
+    #x = [@x]
+    )

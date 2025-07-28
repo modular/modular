@@ -13,7 +13,10 @@
 
 
 import ast
+import os
 import pickle
+import string
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +27,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import yaml
+from kbench import Spec
 from pandas.api.types import is_numeric_dtype
 from rich.console import Console
 from rich.table import Table
@@ -47,7 +51,7 @@ HEADER = """
 """
 
 
-def spec_to_dict(spec):  # noqa: ANN001
+def spec_to_dict(spec: str) -> dict:
     """Convert kbench spec to dictionary"""
     # TODO: move this method to `kbench`
     spec_split = spec.split("/")
@@ -60,14 +64,36 @@ def spec_to_dict(spec):  # noqa: ANN001
     return d
 
 
-def specs_to_df(specs):  # noqa: ANN001
+def specs_to_df(specs: list[str]) -> pd.DataFrame:
     ds = [spec_to_dict(x) for x in specs]
     df = pd.DataFrame(ds)
     return df
 
 
-def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):  # noqa: ANN001, B006
+def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):
+    if not exclude:
+        exclude = ["name", "AUTOTUNING_MODE"]
+
     df = specs_to_df(x_labels)
+    valid_columns = []
+    for c in list(df.columns):
+        if c not in exclude:
+            valid_columns.append(c)
+
+    pivot_columns = []
+    for c in valid_columns:
+        if len(set(df[c])) > 1:
+            pivot_columns.append(c)
+
+    # set(df.columns)-set(pivot_columns)
+    non_pivot_columns = [c for c in valid_columns if c not in pivot_columns]
+    return pivot_columns, non_pivot_columns
+
+
+def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):
+    if not exclude:
+        exclude = ["name", "AUTOTUNING_MODE"]
+    # df = specs_to_df(x_labels)
     valid_columns = []
     for c in list(df.columns):
         if c not in exclude:
@@ -157,6 +183,7 @@ def df_to_console_table(
 
 
 # TODO: could this be refactored into a kbench class?
+# TODO: refactor spec-to-df for entire kbench suite
 @dataclass(frozen=True)
 class TuningSpec:
     name: str = ""
@@ -320,6 +347,21 @@ def identical_pivot_values(x, y, pivots) -> bool:  # noqa: ANN001
     return True
 
 
+def yaml_to_tuning_spec(yaml_path: Path) -> list[TuningSpec]:
+    spec = Spec.load_yaml(yaml_path)
+    tuning_specs = []
+    for s in spec:
+        ts = TuningSpec(
+            name=s.name,
+            file=s.file,
+            params=[spec_to_dict(str(s))],
+            pkl_path=yaml_path,
+            git_sha="",
+        )
+        tuning_specs.append(ts)
+    return tuning_specs
+
+
 def diff_baseline(
     files,  # noqa: ANN001
     metric: str,
@@ -394,35 +436,58 @@ def codegen(
         config_str = replace_vals_snippet(s.params[0], snippet_path)
         print(LINE)
         details += [f"# Automatically generated from [{s.pkl_path}]"]
-        details += [f"# date: [{s.datetime}]"]
-        details += [f"# git-sha: [{s.git_sha}]"]
+        if s.datetime:
+            details += [f"# date: [{s.datetime}]"]
+        if s.git_sha:
+            details += [f"# git-sha: [{s.git_sha}]"]
         details += [config_str + sep]
         details += [""]
     details += [suffix]
 
-    with open(output_path, "w") as f:
+    abs_output_path = Path(
+        string.Template(str(output_path)).substitute(os.environ)
+    ).absolute()
+    with open(abs_output_path, "w") as f:
         f.write("\n".join(details))
-    import os
+    output = subprocess.run(
+        f"mojo format {abs_output_path}".split(" "),
+        check=False,
+        capture_output=True,
+    )
+    if output.returncode != os.EX_OK:
+        print("ERROR: 'mojo format' failed")
+        print(output.stdout.decode("utf-8"))
+        print(output.stderr.decode("utf-8"))
+        print(LINE)
 
-    os.system(f"mojo format {output_path}")
-    print(f"wrote results to [{output_path}]")
+    print(f"wrote results to [{abs_output_path}]")
 
 
-def check_specs(specs: list[TuningSpec]) -> None:
+# TODO: add more checks for inconsistency between various input files.
+def check_specs(
+    specs: list[TuningSpec], key_cols: Optional[list[str]] = None
+) -> bool:
     # TODO: check specs have the same tuning hash
     spec_list = [pd.DataFrame([s.params[0]]) for s in specs]
     merged_specs = pd.concat(spec_list, axis=0, ignore_index=True)
+    print("merged_specs")
     print(merged_specs.to_string())
+    if not key_cols:
+        pivot_cols, _ = extract_pivots_df(merged_specs)
+        key_cols = pivot_cols
 
-    key_cols = ["M", "N", "K"]
+    print(f"Checking keys: {key_cols}")
     key_cols_values = merged_specs[key_cols]
     key_cols_values_uniq = key_cols_values.drop_duplicates()
     if len(key_cols_values) == len(key_cols_values_uniq):
         print("PASS: UNIQUE KEY COLUMNS")
+        print(LINE)
+        return True
     else:
         # TODO: add check for finding the mismatched rows
         raise ValueError(
-            "Found duplicates in specs! Make sure you pass each pkl once."
+            "Found duplicates in specs! "
+            "Make sure you pass each pkl once, or have specified valid pivots."
         )
 
 
@@ -503,7 +568,7 @@ def correlation_analysis(
 
     # Note: it is crucial to ignore index for later merging the two sets.
     merged_df = pd.concat([p.merged_df for p in pkl_list], ignore_index=True)
-    specs_df = specs_to_df(merged_df["spec"])
+    specs_df = specs_to_df(list(merged_df["spec"]))
     agg_df = pd.merge(merged_df, specs_df, left_index=True, right_index=True)
 
     rm_list = ["mesh_idx", "spec", "name"]
@@ -628,7 +693,10 @@ def cli(
     correlation,  # noqa: ANN001
     verbose,  # noqa: ANN001
 ) -> bool:
-    assert files
+    if not verbose:
+        sys.tracebacklimit = 1
+
+    assert files, "No files provided"
 
     if diff:
         assert len(files) > 1, "Provide at least two pkl's for --diff option."
@@ -639,6 +707,7 @@ def cli(
         print(LINE)
 
     top_percentage = float(top) if top else 0
+
     if diff:
         if head == -1:
             head = 1
@@ -648,24 +717,36 @@ def cli(
     else:
         specs = []
         invalid_pkls = []
-        for pkl_path in files:
-            top_spec = profile_results(
-                pickle_path=pkl_path,
-                top_percentage=top_percentage,
-                ratio=ratio,
-                head=head,
-                tail=tail,
-                metric=metric,
-                pivots=pivots,
-                verbose=verbose,
-            )
-            if top_spec:
-                specs += [top_spec]
+        # for pkl_path in files:
+        for path in files:
+            suffix = Path(path).suffix
+            if suffix == ".yaml":
+                tuning_specs = yaml_to_tuning_spec(Path(path))
+                specs.extend(tuning_specs)
+                df = pd.DataFrame([ts.params[0] for ts in tuning_specs])
+                print(f"[{path}]")
+                print(df.to_string())
+                print(LINE)
+            elif suffix == ".pkl":
+                top_spec = profile_results(
+                    pickle_path=path,
+                    top_percentage=top_percentage,
+                    ratio=ratio,
+                    head=head,
+                    tail=tail,
+                    metric=metric,
+                    pivots=pivots,
+                    verbose=verbose,
+                )
+                if top_spec:
+                    specs += [top_spec]
+                else:
+                    invalid_pkls += [path]
             else:
-                invalid_pkls += [pkl_path]
+                print(f"unsupported input: [{path}]")
 
         if snippet_path:
-            check_specs(specs=specs)
+            check_specs(specs=specs, key_cols=pivots)
             codegen(
                 specs=specs, snippet_path=snippet_path, output_path=output_path
             )
