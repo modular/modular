@@ -765,7 +765,7 @@ traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. But we also need to indicate
-wwhich trait `Grid` conforms to. In our case, it must be `Stringable` instead of
+which trait `Grid` conforms to. In our case, it must be `Stringable` instead of
 `StringableRaising` because we used a `fn` to define the method. If you define
 a function or method with `def`, the compiler *always* assumes that the
 function *can* raise an error. In contrast, an `fn` function is a [non-raising
