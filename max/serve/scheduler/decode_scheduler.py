@@ -390,8 +390,7 @@ class DecodeScheduler(Scheduler):
         """
         for request_id, response in responses.items():
             if response.is_done:
-                # Release from pipeline and active batch.
-                self.pipeline.release(self.active_batch[request_id])
+                self.pipeline.release(request_id)
                 del self.active_batch[request_id]
 
     @traced

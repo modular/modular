@@ -32,6 +32,7 @@ from max.graph.weights import (
 from max.interfaces import (
     GenerationStatus,
     InputContext,
+    RequestID,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -832,12 +833,12 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         return res
 
     @traced
-    def release(self, context: T) -> None:
-        """Releases resources associated with this context.
+    def release(self, request_id: RequestID) -> None:
+        """Releases resources associated with this request ID.
 
         Args:
-            context (InputContext): Finished context.
+            request_id: Unique identifier for the finished request.
 
         """
-        self._draft_model.kv_manager.release(context.request_id)
-        self._target_model.kv_manager.release(context.request_id)
+        self._draft_model.kv_manager.release(request_id)
+        self._target_model.kv_manager.release(request_id)

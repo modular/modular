@@ -52,6 +52,7 @@ from max.graph.weights import (
 from max.interfaces import (
     InputContext,
     LogProbabilities,
+    RequestID,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -1227,6 +1228,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         return res
 
-    def release(self, context: T) -> None:
+    def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(context.request_id)
+        self._pipeline_model.kv_manager.release(request_id)
