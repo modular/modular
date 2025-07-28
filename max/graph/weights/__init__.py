@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""APIs for loading weights into a graph."""
 
 from ._loader_wrappers import GGUFWeights, PytorchWeights
 from .format import WeightsFormat, weights_format
