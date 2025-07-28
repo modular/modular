@@ -9,7 +9,10 @@ kgen_kernel(
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
-    deps = [":test_kernels"],
+    deps = [
+        ":test_kernels",
+        "//KGEN:MojoTooling",
+    ],
 )
 
 modular_cc_test(

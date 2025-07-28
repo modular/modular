@@ -20,11 +20,14 @@ spills over to the next line."""
 
 from layout.int_tuple import *
 from sys.info import is_nvidia_gpu
+from buffer.dimlist import Dim
+from buffer import NDBuffer
 
 
 # CHECK:  "aliases": [
 # CHECK:   "kind": "alias",
 # CHECK:   "name": "alias_Type",
+# CHECK:   "path": "/mojo_doc/#alias_type",
 # CHECK:   "summary": "An example alias of a Type",
 # CHECK:   "value": "Int"
 alias alias_Type = Int
@@ -32,6 +35,7 @@ alias alias_Type = Int
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Value",
+# CHECK:  "path": "/mojo_doc/#alias_value",
 # CHECK:  "summary": "An example alias of a Value",
 # CHECK:  "value": "10"
 alias alias_Value = 10
@@ -40,23 +44,27 @@ alias alias_Value = 10
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
+# CHECK:  "path": "/mojo_doc/#alias_construct",
 # CHECK:  "value": "IntTuple(0, 1, 2, 3, 4)"
 alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
+# CHECK:  "path": "/mojo_doc/#alias_cond",
 # CHECK:  "value": "2 if is_nvidia_gpu() else 1"
 alias alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_fn",
+# CHECK:  "path": "/mojo_doc/#alias_fn",
 # CHECK:  "value": "fn(Int, Int) -> None"
 alias alias_fn = fn (Int, Int) -> None
 
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_str",
+# CHECK:  "path": "/mojo_doc/#alias_str",
 # CHECK:  "value": "\"\""
 alias alias_str = ""
 
@@ -64,6 +72,7 @@ alias alias_str = ""
 # CHECK:  "deprecated": "deprecated alias",
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "deprecated_alias",
+# CHECK:  "path": "/mojo_doc/#deprecated_alias",
 @deprecated("deprecated alias")
 alias deprecated_alias = 1
 
@@ -104,7 +113,11 @@ fn fn_hidden() -> Int:
 # CHECK-LABEL:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECK:      "async": true
-# CHECK:      "returnsDoc": "An Int."
+# CHECK:      "returns": {
+# CHECK:        "doc": "An Int.",
+# CHECK:        "path": "/stdlib/builtin/int/Int",
+# CHECK:        "type": "Int"
+# CHECK:      },
 # CHECK:      "signature": "fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -125,7 +138,11 @@ async fn fn_that_async() -> Int:
 # CHECK:  "overloads":
 # CHECK:      "raises": true
 # CHECK:      "raisesDoc": "Raises an exception when it wants to.\n"
-# CHECK:      "returnsDoc": "An Int."
+# CHECK:      "returns": {
+# CHECK:        "doc": "An Int.",
+# CHECK:        "path": "/stdlib/builtin/int/Int",
+# CHECK:        "type": "Int"
+# CHECK:      },
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -150,18 +167,22 @@ def fn_that_raises() -> Int:
 # CHECK:      "args":
 # CHECK:          "description": "This is an argument."
 # CHECK:          "name": "arg"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "mut"
 # CHECK:          "description": "This is an mut arg."
 # CHECK:          "name": "inoutArg"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "var"
 # CHECK:          "description": "This is an owned arg."
 # CHECK:          "name": "ownedArg"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "read"
 # CHECK:          "description": "This is a borrowedArg."
 # CHECK:          "name": "borrowedArg"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:          "type": "Int"
 # CHECK:      "signature": "fn_with_args(arg: Int, mut inoutArg: Int, var ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
@@ -263,8 +284,13 @@ fn fn_with_params[
 # CHECK:     "args":
 # CHECK:         "description": "This is an argument."
 # CHECK:         "name": "arg"
+# CHECK:         "path": "/stdlib/builtin/int/Int"
 # CHECK:         "type": "Int"
-# CHECK:     "returnsDoc": "This is a return value."
+# CHECK:     "returns": {
+# CHECK:       "doc": "This is a return value.",
+# CHECK:       "path": "/stdlib/builtin/int/Int",
+# CHECK:       "type": "Int"
+# CHECK:     },
 # CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int"
 
 
@@ -290,12 +316,17 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:         "type": "fn(S, S) capturing -> Bool"
 # CHECK:     "parameters":
 # CHECK:         "name": "T"
+# CHECK:         "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:         "type": "AnyType"
 # CHECK:         "name": "param_fn"
 # CHECK:         "type": "fn(T, T) capturing -> Bool"
 # CHECK:         "default": "T"
 # CHECK:         "name": "S"
+# CHECK:         "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:         "type": "AnyType"
+# CHECK:     "returns": {
+# CHECK:       "type": "S"
+# CHECK:     },
 # CHECK:     "signature": "fn_with_fn_param_and_arg[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T](arg_fn: fn(S, S) capturing -> Bool) -> S"
 
 
@@ -304,6 +335,30 @@ fn fn_with_fn_param_and_arg[
     param_fn: fn (T, T) capturing [_] -> Bool,
     S: AnyType = T,
 ](arg_fn: fn (S, S) capturing [_] -> Bool) -> S:
+    pass
+
+
+# CHECK: "kind": "function",
+# CHECK: "name": "logsoftmax",
+# CHECK:     "args":
+# CHECK:         "name": "output"
+# CHECK:         "type": "NDBuffer"
+# CHECK:     "parameters":
+# CHECK:         "name": "origins"
+# CHECK:         "type": "origin.set"
+# CHECK:         "name": "input_fn_1d"
+# CHECK:         "type": "fn[Int](Int) capturing -> SIMD[dtype, $0]"
+
+
+fn logsoftmax[
+    simd_width: Int,
+    buffer_size: Dim,
+    dtype: DType,
+    origins: OriginSet,
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
+        dtype, _simd_width
+    ],
+](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     pass
 
 
@@ -316,13 +371,15 @@ struct MyStruct[x: Int]:
 # CHECK: "args":
 # CHECK: {
 # CHECK:     "name": "arg",
-# CHECK:     "type": "MyStruct[x]"
+# CHECK:     "path": "/mojo_doc/MyStruct",
+# CHECK:     "type": "MyStruct"
 # CHECK: }
 # CHECK: "parameters":
 # CHECK: {
 # CHECK:     "description": "Explicitly declared function parameter.",
 # CHECK:     "kind": "parameter",
 # CHECK:     "name": "p",
+# CHECK:     "path": "/stdlib/builtin/int/Int",
 # CHECK:     "type": "Int"
 # CHECK: }
 # CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct[x])"
@@ -346,10 +403,12 @@ fn fn_with_implicit_params[p: Int](arg: MyStruct):
 # CHECK:      "args":
 # CHECK:          "name": "x"
 # CHECK:          "passingKind": "pos",
+# CHECK:          "path": "/stdlib/collections/string/string/String"
 # CHECK:          "type": "String"
 
 # CHECK:          "name": "sep"
 # CHECK:          "passingKind": "pos_or_kw",
+# CHECK:          "path": "/stdlib/collections/string/string/String"
 # CHECK:          "type": "String"
 # CHECK:      "signature": "pos_only_print(x: String, /, sep: String)",
 
@@ -369,12 +428,15 @@ fn pos_only_print(x: String, /, sep: String):
 # CHECK:      "args":
 # CHECK:          "name": "a"
 # CHECK:          "passingKind": "pos",
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 
 # CHECK:          "name": "b"
 # CHECK:          "passingKind": "pos",
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 
 # CHECK:          "name": "offset"
 # CHECK:          "passingKind": "kw",
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:      "signature": "keyword_only_prod(a: Int, b: Int, /, *, offset: Int)",
 
 
@@ -394,13 +456,16 @@ fn keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
 # CHECK:      "args":
 # CHECK:          "default": "2",
 # CHECK:          "name": "b"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 
 # CHECK:          "default": "3",
 # CHECK:          "name": "c"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 
 # CHECK:      "parameters":
 # CHECK:          "default": "1",
 # CHECK:          "name": "a"
+# CHECK:          "path": "/stdlib/builtin/int/Int"
 # CHECK:      "signature": "default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3)",
 
 
@@ -427,6 +492,7 @@ fn default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK:     "parameters":
 # CHECK:         "name": "*Ts",
 # CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "path": "/stdlib/builtin/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
 # CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: *Ts)",
@@ -449,7 +515,12 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "args":
 # CHECK:         "name": "vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "Variadic[ref [ImmutableAnyOrigin] element_type]"
+# CHECK:         "type": "Variadic"
+
+# CHECK:     "parameters":
+# CHECK:         "name": "element_type",
+# CHECK:         "path": "/stdlib/builtin/anytype/AnyType",
+# CHECK:         "type": "AnyType"
 
 # CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [ImmutableAnyOrigin] element_type])",
 
@@ -476,15 +547,18 @@ fn variadic_arg_hack[
 # CHECK:     "args":
 # CHECK:         "name": "*vals",
 # CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "path": "/stdlib/builtin/int/Int",
 # CHECK:         "type": "Int"
 
 # CHECK:         "name": "**kwargs",
 # CHECK:         "passingKind": "kw",
+# CHECK:         "path": "/stdlib/collections/string/string/String",
 # CHECK:         "type": "String"
 
 # CHECK:     "parameters":
 # CHECK:         "name": "*nums",
 # CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "path": "/stdlib/builtin/int/Int",
 # CHECK:         "type": "Int"
 
 # CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
@@ -512,6 +586,7 @@ fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
 # CHECK:     "parameters":
 # CHECK:         "kind": "parameter",
 # CHECK:         "name": "type",
+# CHECK:         "path": "/stdlib/builtin/anytype/AnyType",
 
 # CHECK:     "signature": "parameter_with_escaped_mlir_name[type: AnyType](value: type)",
 
@@ -584,7 +659,17 @@ fn deprecated_function():
 
 # MOTO-418: Improve AST type printing of `reversed` in API docs
 # CHECK-LABEL: "name": "dep_type"
-# CHECK: "returnType": "ref [value] UsesParameter[K]",
+# CHECK: "args":
+# CHECK:   "name": "value",
+# CHECK:   "path": "/mojo_doc/UsesParameter",
+# CHECK:   "type": "UsesParameter"
+# CHECK: "parameters":
+# CHECK:   "name": "K",
+# CHECK:   "path": "/stdlib/builtin/anytype/AnyType",
+# CHECK:   "type": "AnyType"
+# CHECK: "returns": {
+# CHECK:   "type": "ref"
+# CHECK: },
 # CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref [value] UsesParameter[K]",
 struct UsesParameter[A: AnyType]:
     pass
@@ -674,26 +759,35 @@ struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
 # CHECK:  "name": "fn_with_by_conventions",
 # CHECK:  "overloads"
 # CHECK:      "args"
-# CHECK:        {
 # CHECK:          "description": "This is a by-ref argument."
 # CHECK:          "name": "arg"
 # CHECK:          "type": "Self"
-# CHECK:        },
-# CHECK:        {
 # CHECK:          "description": "This is a variadic argument."
 # CHECK:          "name": "*args",
 # CHECK:          "type": "Self"
-# CHECK:        }
 # CHECK:      "constraints": "This describes the method's constraints.\n",
 # CHECK:      "description": ""
-# CHECK:      "returnsDoc": "This is a by-ref return value.",
+# CHECK:      "returns": {
+# CHECK:        "doc": "This is a by-ref return value.",
+# CHECK:        "type": "Self"
+# CHECK:      },
 # CHECK:      "signature": "fn_with_by_conventions(mut self, mut arg: Self, mut *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
 # CHECK:  "parentTraits": [
-# CHECK-NEXT:   "AnyType"
-# CHECK-NEXT:   "Sized"
+# CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "AnyType",
+# CHECK-NEXT:     "path": "/stdlib/builtin/anytype/AnyType"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "Sized",
+# CHECK-NEXT:     "path": "/stdlib/builtin/len/Sized"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "UnknownDestructibility",
+# CHECK-NEXT:     "path": "/stdlib/builtin/anytype/UnknownDestructibility"
+# CHECK-NEXT:   }
 # CHECK:  "signature": "struct InMemoryStruct"
 
 
@@ -778,7 +872,8 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
 # CHECK:  "name": "StructWithDefault",
 # CHECK:  "parameters":
 # CHECK:      "default": "1",
-# CHECK:      "name": "a"
+# CHECK:      "name": "a",
+# CHECK:      "path": "/stdlib/builtin/int/Int"
 
 
 struct StructWithDefault[a: Int = 1]:
@@ -789,11 +884,13 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:  "name": "StructWithFnParam",
 # CHECK:  "parameters":
 # CHECK:      "name": "T"
+# CHECK:      "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK:      "name": "param_fn"
 # CHECK:      "type": "fn(T, T) capturing -> Bool"
 # CHECK:      "default": "T",
 # CHECK:      "name": "S"
+# CHECK:      "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK: "signature": "struct StructWithFnParam[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
 

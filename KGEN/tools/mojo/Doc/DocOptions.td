@@ -54,6 +54,10 @@ def validate_doc_strings : Flag<["--", "-"],
   "validate-doc-strings">, Group<ValidationOptionGroup>, Index<1>,
   HelpText<"Emits errors for invalid doc strings instead of warnings.">;
 
+defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
+  ValidationOptionGroup, Index<2>, MetaVarName<"PATH">,
+  HelpText<"Sets the path prefix for generated documentation links.">>;
+
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//

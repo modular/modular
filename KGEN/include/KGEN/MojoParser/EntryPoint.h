@@ -91,6 +91,9 @@ struct ParserConfig {
 
   /// Maximum number of notes to print per compiler error or warning.
   int maxNotesPerDiagnostic = 10;
+
+  /// Base library path prefix for generated documentation links.
+  std::string docsBasePath;
 };
 
 //===----------------------------------------------------------------------===//
