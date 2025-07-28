@@ -445,7 +445,9 @@ fn _matmul_gpu[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
-        ctx.device_info is H100 and n % 8 == 0 and a_type is DType.bfloat16
+        ctx.default_device_info is H100
+        and n % 8 == 0
+        and a_type is DType.bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
@@ -475,7 +477,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     @parameter
-    if ctx.device_info > H100:
+    if ctx.default_device_info > H100:
         return _matmul_sm100[
             c_type,
             a_type,
@@ -493,7 +495,7 @@ fn _matmul_gpu[
     ]()
 
     @parameter
-    if ctx.device_info is H100 and not use_A100_kernels_on_H100:
+    if ctx.default_device_info is H100 and not use_A100_kernels_on_H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -873,8 +875,9 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            alias use_A100_kernels = ctx.device_info is A100 or (
-                ctx.device_info is H100 and use_A100_kernels_on_H100 != 0
+            alias use_A100_kernels = ctx.default_device_info is A100 or (
+                ctx.default_device_info is H100
+                and use_A100_kernels_on_H100 != 0
             )
 
             @parameter

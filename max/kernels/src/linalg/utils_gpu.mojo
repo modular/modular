@@ -426,7 +426,7 @@ fn select_config[
     # * num_waves is the maximum thread blocks that are dispatched to a SM.
     #   E.g. 128 blocks to A100's 108 SMs, one SM at most computes two blocks.
 
-    alias gpu_info = ctx.device_info
+    alias gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
     alias max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1

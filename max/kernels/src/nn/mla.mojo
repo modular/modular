@@ -159,11 +159,11 @@ fn flare_mla_decoding[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_decoding",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -301,7 +301,7 @@ fn flare_mla_decoding_dispatch[
     constrained[num_heads == q.shape.get[rank - 2]()]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
-    alias has_enough_smem = ctx.device_info is A100 or ctx.device_info is H100
+    alias has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
     constrained[
         depth == q.shape.get[rank - 1]() == 576,
@@ -405,7 +405,7 @@ fn flare_mla_decoding_dispatch[
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            ctx.device_info.shared_memory_per_multiprocessor - 4096
+            ctx.default_device_info.shared_memory_per_multiprocessor - 4096
         ),
     )
 
@@ -1186,11 +1186,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int
 
@@ -1294,11 +1294,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int = q.dim[0]()
 

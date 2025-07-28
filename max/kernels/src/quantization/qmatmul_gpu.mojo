@@ -1419,7 +1419,7 @@ fn multistage_gemm_q[
     var tensor_b = from_ndbuffer_row_major(b)
 
     alias smem_usage = q_smem_usage[config, group_size]()
-    alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
+    alias max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
     @parameter
     if smem_usage > max_smem:

@@ -85,7 +85,9 @@ fn run_layer_norm_block[
             IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
         )
 
-    var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    var max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    )
 
     @always_inline
     @parameter
@@ -278,7 +280,9 @@ fn run_layer_norm_warp_tiling[
             IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
         )
 
-    var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    var max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    )
 
     @always_inline
     @parameter

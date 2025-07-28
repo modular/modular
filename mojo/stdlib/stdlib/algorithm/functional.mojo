@@ -1588,7 +1588,7 @@ fn _elementwise_impl_gpu[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    alias hw_info = ctx.device_info
+    alias hw_info = ctx.default_device_info
 
     alias registers_per_thread = 255
     alias num_waves = 32
