@@ -480,7 +480,6 @@ fn _matmul_gpu[
     alias use_experimental_kernels = Bool(
         env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
     )
-    alias use_A100_kernels_on_H100 = use_experimental_kernels
 
     alias bf16_or_fp16 = (DType.bfloat16, DType.float16)
     alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
@@ -524,7 +523,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     @parameter
-    if ctx.default_device_info is H100 and not use_A100_kernels_on_H100:
+    if ctx.default_device_info is H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -904,10 +903,7 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            alias use_A100_kernels = ctx.default_device_info is A100 or (
-                ctx.default_device_info is H100
-                and use_A100_kernels_on_H100 != 0
-            )
+            alias use_A100_kernels = ctx.default_device_info is A100
 
             @parameter
             if (
