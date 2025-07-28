@@ -90,14 +90,6 @@ fn matmul_sm100_fallback_kernel[
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
-    alias sub_a_smem_layout = tile_layout_k_major[
-        a_type, BM, 64, swizzle_mode=a_swizzle
-    ]()
-    alias sub_b_smem_layout = tile_layout_k_major[
-        b_type, BN, 64, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, 64, swizzle_mode=b_swizzle
-    ]()
 
     a_smem = rebind[
         UnsafePointer[
@@ -127,20 +119,7 @@ fn matmul_sm100_fallback_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
-    alias sub_a_smem_tile_t = LayoutTensor[
-        a_type,
-        sub_a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    alias sub_b_smem_tile_t = LayoutTensor[
-        b_type,
-        sub_b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
+
     alias a_size = a_smem_layout.size()
     alias b_size = b_smem_layout.size()
 
@@ -214,41 +193,25 @@ fn matmul_sm100_fallback_kernel[
         transpose_b=transpose_b,
     ]()
 
-    for i in range(
-        num_iters
-    ):  # K // BK, which is K // 64 or K // 128 depending on BK
+    for i in range(num_iters):
         # so only one thread per CTA does the copy
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-            @parameter
-            for j in range(
-                BK // 64
-            ):  # so we do the copy in 64 chunks or 64 elements at a time (BK // 64). but hmm, we said that the K atom can only be 32 bytes (16 elements)
-                alias k = 64 * j
-                alias a_offset = a_smem_layout(IntTuple(0, k))
-                alias b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * sizeof[a_type]()) % 128) == 0]()
-                constrained[((b_offset * sizeof[b_type]()) % 128) == 0]()
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
-                # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
-                # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-                # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
-                # so the async_copy takes care of that. TMA engine will copy the data from global tensor into smem tile A
-                a_tma_op.async_copy(
-                    sub_a_smem_tile,
-                    tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.y * BM),
-                )
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
-                b_tma_op.async_copy(
-                    sub_b_smem_tile,
-                    tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.x * BN) if transpose_b else (
-                        block_idx.x * BN,
-                        UInt(i) * BK + k,
-                    ),
-                )
+            a_tma_op.async_copy(
+                a_smem_tile,
+                tma_mbar[0],
+                (UInt(i) * BK, block_idx.y * BM),
+            )
+            b_tma_op.async_copy(
+                b_smem_tile,
+                tma_mbar[0],
+                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
+                    block_idx.x * BN,
+                    UInt(i) * BK,
+                ),
+            )
+
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1
@@ -380,20 +343,23 @@ fn matmul_sm100_fallback[
         "Only support transposed B",
     ]()
 
+    constrained[
+        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
+        "Only support bfloat16 and float8_e4m3fn",
+    ]()
+
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    # hard coded 64 for BK
-
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, 64), swizzle_mode=a_swizzle
+        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
     ](ctx, a)
     b_tma_op = create_tma_tile[
         b_type,
         2,
-        Index(BN, 64) if transpose_b else Index(64, BN),
+        Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)

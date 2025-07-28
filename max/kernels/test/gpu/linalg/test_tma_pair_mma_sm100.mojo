@@ -476,37 +476,23 @@ def test_tma_umma_pair_cta[
     )
 
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type == DType.float8_e4m3fn and (not transpose_b):
+        # NOTE: Matrix B should always be in col-major layout for cublasLt to work
+        var b_host_col_major = b_col_major.tensor()
+        var b_tensor = b.tensor()
+        for i in range(N):
+            for j in range(K):
+                b_host_col_major[i, j] = b_tensor[j, i]
 
-        @parameter
-        if transpose_b:
-            vendor_blas.matmul(
-                ctx,
-                handle,
-                c_ref.device_buffer(),
-                a.device_buffer[update=False](),
-                b.device_buffer[update=False](),
-                c_row_major=True,
-                transpose_b=True,
-            )
-
-        else:
-            # NOTE: Matrix B should always be in col-major layout for cublasLt to work
-            var b_host_col_major = b_col_major.tensor()
-            var b_tensor = b.tensor()
-            for i in range(N):
-                for j in range(K):
-                    b_host_col_major[i, j] = b_tensor[j, i]
-
-            vendor_blas.matmul(
-                ctx,
-                handle,
-                c_ref.device_buffer(),
-                a.device_buffer[update=False](),
-                b_col_major.device_buffer[update=True](),
-                c_row_major=True,
-                transpose_b=True,
-            )
+        vendor_blas.matmul(
+            ctx,
+            handle,
+            c_ref.device_buffer(),
+            a.device_buffer[update=False](),
+            b_col_major.device_buffer[update=True](),
+            c_row_major=True,
+            transpose_b=True,
+        )
     else:
         vendor_blas.matmul(
             ctx,
