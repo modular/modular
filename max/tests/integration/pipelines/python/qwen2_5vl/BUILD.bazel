@@ -47,3 +47,13 @@ modular_py_test(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_vision_functions",
+    srcs = ["test_vision_functions.py"],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
