@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property, partial
 from typing import Callable, Optional
@@ -532,18 +533,17 @@ class Weight(TensorValue):
         self._device = DeviceRef.CPU()
         self._sharding_strategy = _ShardingStrategyContainer(self, strategy)
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Weight:
-        """Gets a specific shard from the Weight.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Weight]:
+        """Creates sharded views of this Weight across multiple devices.
 
-        This `Weight` must have `sharding_strategy` defined. The shard object
-        returned is also a `Weight` object, but cannot be sharded further.
+        This `Weight` must have `sharding_strategy` defined. The shard objects
+        returned are also `Weight` objects, but cannot be sharded further.
 
         Args:
-            shard_idx: int value of the shard.
-            device: device to place the shard.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            The sharded weight.
+            List of sharded weights, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
@@ -553,22 +553,27 @@ class Weight(TensorValue):
             raise ValueError(
                 f"Weight {self.name} was already sharded. Use __getitem__ instead."
             )
-        weight = Weight(
-            name=f"{self.name}[{shard_idx}]",
-            dtype=self._dtype,
-            shape=self._shape,
-            device=device,
-            quantization_encoding=self.quantization_encoding,
-            align=self.align,
-        )
 
-        # Copy the sharding strategy container directly to preserve the original host_weight
-        # reference. Using the property setter would create a new container with this shard
-        # as the host_weight, causing infinite recursion when the shard tries to compute
-        # its shape by calling the sharding function on itself.
-        weight._sharding_strategy = self._sharding_strategy
-        weight.shard_idx = shard_idx
-        return weight
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            weight = Weight(
+                name=f"{self.name}[{shard_idx}]",
+                dtype=self._dtype,
+                shape=self._shape,
+                device=device,
+                quantization_encoding=self.quantization_encoding,
+                align=self.align,
+            )
+
+            # Copy the sharding strategy container directly to preserve the original host_weight
+            # reference. Using the property setter would create a new container with this shard
+            # as the host_weight, causing infinite recursion when the shard tries to compute
+            # its shape by calling the sharding function on itself.
+            weight._sharding_strategy = self._sharding_strategy
+            weight.shard_idx = shard_idx
+            shards.append(weight)
+
+        return shards
 
 
 def _add_weight_to_graph(weight: Weight):
