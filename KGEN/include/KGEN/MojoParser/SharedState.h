@@ -120,6 +120,9 @@ public:
   /// Returns if we should emit errors for invalid doc strings.
   bool shouldErrorOnInvalidDocStrings() const;
 
+  /// Get the library base path for documentation generation.
+  StringRef getDocsBasePath() const { return docsBasePath; }
+
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
 
@@ -554,6 +557,9 @@ private:
   /// If true, resolve all dependencies because the output is a self contained
   /// module.
   bool exportKgenModule = false;
+
+  /// Base library path prefix for generated documentation links.
+  std::string docsBasePath;
 
   std::unique_ptr<Impl> impl;
 };

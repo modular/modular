@@ -385,6 +385,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   }
   impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
   impl->errorOnInvalidDocStrings = config.errorOnInvalidDocStrings;
+  docsBasePath = config.docsBasePath;
 
   preloadAllKGENDialects(config.context);
 

@@ -6,20 +6,60 @@
 
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/TypeExtractionUtils.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
+#include <algorithm>
+#include <cctype>
+#include <map>
+#include <optional>
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+namespace M {
+
+/// Parses compound trait types like "Representable & Copyable & Movable" into
+/// individual components. Returns a vector of individual trait names, or a
+/// single-element vector for non-compound types.
+static SmallVector<std::string> parseCompoundTraitType(StringRef typeStr) {
+  SmallVector<std::string> traits;
+
+  // Check if this is a compound type (contains &)
+  if (!typeStr.contains(" & ")) {
+    // Not a compound type, return as-is
+    traits.push_back(typeStr.str());
+    return traits;
+  }
+
+  // Split by " & " and trim each component
+  SmallVector<StringRef> components;
+  typeStr.split(components, " & ");
+
+  for (StringRef component : components) {
+    StringRef trimmed = component.trim();
+    if (!trimmed.empty()) {
+      traits.push_back(trimmed.str());
+    }
+  }
+
+  return traits;
+}
+
+} // namespace M
 
 /// Two spaces that are forcefully added to markdown lines that can be used for
 /// indentation.
@@ -219,10 +259,10 @@ static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
 
 /// Parse the given docstring lines and augment the provided decls with the
 /// appropriate documentation using the description.
-template <typename PublicDeclT>
+template <typename PublicDeclT, unsigned N>
 static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
                                           size_t &line, size_t lineEnd,
-                                          SmallVector<PublicDeclT> &decls) {
+                                          SmallVector<PublicDeclT, N> &decls) {
   std::string fullArgDesc;
   llvm::raw_string_ostream fullArgDescOS(fullArgDesc);
   DenseMap<StringRef, PublicDeclT *> declMap;
@@ -506,10 +546,10 @@ static void printArgOrParameterSignature(
 
 /// Populate a list of PublicParameterDecls from a list of parameter types and
 /// metadata.
-static ParameterEvaluator
-populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
-                             PogListAttr paramListAttr,
-                             SmallVectorImpl<PublicParameterDecl> &parameters) {
+static ParameterEvaluator populatePublicParameterDecls(
+    SharedState &shared, ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
+    SmallVectorImpl<PublicParameterDecl> &parameters,
+    const MojoASTDeclRef *parentDeclContext = nullptr) {
   // Update param / arg types with decl refs instead of index refs.
   ParameterEvaluator evaluator;
   // Grab the types of the parameters to the struct.
@@ -524,12 +564,16 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
     VariadicKind variadicKind = paramListAttr.getVariadicKind(idx);
     StringRef paramName = demangleParameterName(paramListAttr.getName(idx));
     Type reboundType = evaluator.getReboundType(paramType);
-    parameters.push_back(PublicParameterDecl(
-        paramName, generateTypeString(shared, reboundType, variadicKind),
-        paramListAttr.getPassingKind(idx), variadicKind,
-        std::move(defaultValue)));
-    evaluator.appendIndexBinding(
-        KGEN::ParamDeclRefAttr::get(paramName, reboundType));
+    MojoASTTypeRef astType(reboundType);
+    std::string typeString =
+        generateTypeString(shared, reboundType, variadicKind);
+
+    // Use AST-based library source extraction for parameters
+    parameters.push_back(
+        PublicParameterDecl(paramName, typeString, astType, shared,
+                            paramListAttr.getPassingKind(idx), variadicKind,
+                            std::move(defaultValue), parentDeclContext));
+    evaluator.appendIndexBinding(ParamDeclRefAttr::get(paramName, reboundType));
   }
   return evaluator;
 }
@@ -609,12 +653,36 @@ PublicVariableDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
 }
 
 llvm::json::Object PublicVariableDecl::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{
+  llvm::json::Object result{
       {"deprecated", deprecated},
       {"kind", getKindAsString()},
       {"name", getName()},
-      {"type", type},
   };
+
+  // Extract type metadata and handle compound types
+  SmallVector<std::string> traitNames = parseCompoundTraitType(type);
+  if (traitNames.size() == 1) {
+    // Single type - extract metadata and add all properties directly
+    TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+        type, nullptr, &ctx.getSharedState());
+    llvm::json::Object metadataJson = metadata.toJSON();
+
+    for (auto &pair : metadataJson) {
+      result[pair.first] = std::move(pair.second);
+    }
+  } else {
+    // Compound type - use the original type string and create a traits array
+    result["type"] = type;
+    llvm::json::Array traitsArray;
+    for (const std::string &traitName : traitNames) {
+      TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          traitName, nullptr, &ctx.getSharedState());
+      traitsArray.push_back(metadata.toJSON());
+    }
+    result["traits"] = std::move(traitsArray);
+  }
+
+  return result;
 }
 
 PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
@@ -625,7 +693,10 @@ PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
   auto &shared = *declRef.getShared();
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarDeclOp op) {
-        type = declRef.getType().getReferenceElementType().getAsString(shared);
+        MojoASTTypeRef astType = declRef.getType().getReferenceElementType();
+        type = astType.getAsString(shared);
+        typeMetadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+            type, &declRef, &shared);
       });
 }
 
@@ -650,14 +721,57 @@ std::string PublicParameterDecl::getMarkdownDocString() const {
   return markdown;
 }
 
+PublicParameterDecl::PublicParameterDecl(
+    StringRef name, StringRef type, const MojoASTTypeRef &astType,
+    KGEN::LIT::SharedState &sharedState, KGEN::LIT::PassingKind passingKind,
+    KGEN::LIT::VariadicKind variadicKind,
+    std::optional<std::string> defaultValue,
+    const MojoASTDeclRef *currentDeclContext)
+    : PublicDecl(PublicDeclKind::DK_PublicParameterDecl, name), type(type),
+      typeMetadata(::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          type, currentDeclContext, &sharedState)),
+      passingKind(passingKind), variadicKind(variadicKind),
+      defaultValue(std::move(defaultValue)) {
+
+  // Pre-calculate individual trait metadata for compound types
+  SmallVector<std::string> traitNames = parseCompoundTraitType(type);
+  if (traitNames.size() > 1) {
+    for (const std::string &traitName : traitNames) {
+      TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          traitName, currentDeclContext, &sharedState);
+      traitMetadata.push_back(std::move(metadata));
+    }
+  }
+}
+
 llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
   llvm::json::Object object{
       {"kind", getKindAsString()},
       {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
-      {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
       {"description", description},
   };
+
+  // Extract type metadata and handle compound types
+  SmallVector<std::string> traitNames = parseCompoundTraitType(type);
+  if (traitNames.size() == 1) {
+    // Single type - use pre-calculated metadata from constructor
+    llvm::json::Object metadataJson = typeMetadata.toJSON();
+
+    // Add all metadata properties directly to the object
+    for (auto &pair : metadataJson) {
+      object[pair.first] = std::move(pair.second);
+    }
+  } else {
+    // Compound type - use the original type string and pre-calculated traits
+    object["type"] = type;
+    llvm::json::Array traitsArray;
+    for (const TypeMetadata &metadata : traitMetadata) {
+      traitsArray.push_back(metadata.toJSON());
+    }
+    object["traits"] = std::move(traitsArray);
+  }
+
   if (defaultValue)
     object["default"] = *defaultValue;
   return object;
@@ -666,6 +780,31 @@ llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
 //===----------------------------------------------------------------------===//
 // PublicArgumentDecl
 //===----------------------------------------------------------------------===//
+
+PublicArgumentDecl::PublicArgumentDecl(
+    StringRef name, std::string prefix, std::string type,
+    const MojoASTTypeRef &astType, KGEN::LIT::SharedState &sharedState,
+    KGEN::LIT::PassingKind passingKind, KGEN::LIT::VariadicKind variadicKind,
+    std::optional<std::string> defaultValue, Convention convention, bool isSelf,
+    const MojoASTDeclRef *currentDeclContext)
+    : PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, name),
+      prefix(std::move(prefix)), type(type),
+      typeMetadata(::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          type, currentDeclContext, &sharedState)),
+      passingKind(passingKind), variadicKind(variadicKind),
+      defaultValue(std::move(defaultValue)), convention(convention),
+      isSelf(isSelf) {
+
+  // Pre-calculate individual trait metadata for compound types
+  SmallVector<std::string> traitNames = parseCompoundTraitType(type);
+  if (traitNames.size() > 1) {
+    for (const std::string &traitName : traitNames) {
+      TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          traitName, currentDeclContext, &sharedState);
+      traitMetadata.push_back(std::move(metadata));
+    }
+  }
+}
 
 static StringRef getConventionString(PublicArgumentDecl::Convention conv) {
   StringRef conventions[] = {"read", "mut", "var", "ref", "out"};
@@ -713,9 +852,29 @@ llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
       {"convention", getConventionString(convention)},
       {"kind", getKindAsString()},
       {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
-      {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
   };
+
+  // Extract type metadata and handle compound types
+  SmallVector<std::string> traitNames = parseCompoundTraitType(type);
+  if (traitNames.size() == 1) {
+    // Single type - use pre-calculated metadata from constructor
+    llvm::json::Object metadataJson = typeMetadata.toJSON();
+
+    // Add all metadata properties directly to the object
+    for (auto &pair : metadataJson) {
+      object[pair.first] = std::move(pair.second);
+    }
+  } else {
+    // Compound type - use the original type string and pre-calculated traits
+    object["type"] = type;
+    llvm::json::Array traitsArray;
+    for (const TypeMetadata &metadata : traitMetadata) {
+      traitsArray.push_back(metadata.toJSON());
+    }
+    object["traits"] = std::move(traitsArray);
+  }
+
   if (defaultValue)
     object["default"] = *defaultValue;
   return object;
@@ -767,6 +926,11 @@ llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
     obj["type"] = type;
   }
 
+  // Include path if it's not empty
+  if (!docPath.empty()) {
+    obj["path"] = docPath;
+  }
+
   return obj;
 }
 
@@ -795,7 +959,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
               dyn_cast<LITGeneratorType>(generator.getType())) {
         ParameterEvaluator evaluator = populatePublicParameterDecls(
             shared, generatorType.getInputParamTypes(),
-            generatorType.getParamListAttrs(), parameters);
+            generatorType.getParamListAttrs(), parameters, nullptr);
         maybeValue = evaluator.getReboundAttribute(generator.getBody());
       }
 
@@ -806,6 +970,15 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
     }
 
     value = generatePValueString(shared, maybeValue.value());
+  }
+
+  // Generate documentation path for the alias
+  std::string modulePath =
+      ::KGEN::TypeExtractionUtils::extractModulePathFromDecl(declRef);
+  if (!modulePath.empty()) {
+    docPath = ::KGEN::TypeExtractionUtils::generateDocPath(
+        modulePath, getName(), shared.getDocsBasePath(),
+        /*isAlias=*/true);
   }
 
   if (auto docStr = declRef->getParsedDocString()) {
@@ -930,7 +1103,7 @@ std::string PublicFunctionDecl::getSignature(
   // If this is an initializer with an out argument, we permute the out argument
   // to the start of the argument list to look more conventional.
   ArrayRef<PublicArgumentDecl> args = getArguments();
-  SmallVector<PublicArgumentDecl> argTmp;
+  SmallVector<PublicArgumentDecl, kTypicalArgumentCount> argTmp;
 
   bool hasOutArgument =
       !args.empty() &&
@@ -965,7 +1138,7 @@ std::string PublicFunctionDecl::getSignature(
 }
 
 llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{
+  llvm::json::Object result{
       {"args", toJSONArray(ctx, args)},
       {"async", isAsync()},
       {"constraints", constraints},
@@ -979,11 +1152,29 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
       {"parameters", toJSONArray(ctx, parameters)},
       {"raises", raises()},
       {"raisesDoc", raisesDoc},
-      {"returnsDoc", returnsDoc},
-      {"returnType", returnType},
       {"signature", getSignature(ctx)},
       {"summary", summary},
   };
+
+  // Create unified "returns" object with type, path, and doc
+  if (returnType && !returnType->empty()) {
+    TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+        *returnType, nullptr, &ctx.getSharedState());
+
+    llvm::json::Object returnObj;
+    returnObj["type"] =
+        ::KGEN::TypeExtractionUtils::extractBaseTypeName(*returnType);
+    if (!metadata.getRelativeDocPath().empty()) {
+      returnObj["path"] = metadata.getRelativeDocPath().str();
+    }
+    if (!returnsDoc.empty()) {
+      returnObj["doc"] = returnsDoc;
+    }
+
+    result["returns"] = std::move(returnObj);
+  }
+
+  return result;
 }
 
 PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
@@ -1044,11 +1235,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     Type reboundType = evaluator.getReboundType(paramTypes[parIdx]);
     StringAttr paramName = signature.getParamName(parIdx);
     if (paramName.getValue().empty()) {
-      evaluator.appendIndexBinding(
-          KGEN::ParamIndexRefAttr::get(parIdx, reboundType));
+      evaluator.appendIndexBinding(ParamIndexRefAttr::get(parIdx, reboundType));
     } else {
       evaluator.appendIndexBinding(
-          KGEN::ParamDeclRefAttr::get(paramName, reboundType));
+          ParamDeclRefAttr::get(paramName, reboundType));
     }
     // Ignore implicitly passed parameters.
     PassingKind passingKind = paramListAttr.getPassingKind(parIdx);
@@ -1065,7 +1255,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     parameters.push_back(PublicParameterDecl(
         paramName,
         generateTypeString(shared, reboundType, variadicKind, selfType),
-        passingKind, variadicKind, std::move(defaultValue)));
+        MojoASTTypeRef(reboundType), shared, passingKind, variadicKind,
+        std::move(defaultValue), &declRef));
   }
 
   // Grab the types of the arguments to the function.
@@ -1138,12 +1329,15 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     }
 
     Type reboundUserType = evaluator.getReboundType(userType);
-    args.push_back(PublicArgumentDecl(
-        pogAttr.getName(), std::move(prefix),
-        generateTypeString(shared, reboundUserType, variadicKind, selfType,
-                           convention),
-        passingKind, variadicKind, std::move(defaultValue), declConvention,
-        isSelf));
+    MojoASTTypeRef astType(reboundUserType);
+    std::string typeString = generateTypeString(
+        shared, reboundUserType, variadicKind, selfType, convention);
+
+    // Use AST-based library source extraction for function arguments
+    args.push_back(PublicArgumentDecl(pogAttr.getName(), std::move(prefix),
+                                      typeString, astType, shared, passingKind,
+                                      variadicKind, std::move(defaultValue),
+                                      declConvention, isSelf, &declRef));
   }
 
   // Grab the result type, if it's non-none.
@@ -1268,6 +1462,71 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
   llvm::sort(parentTraits);
 }
 
+/// Collect parent traits with metadata for JSON serialization, avoiding
+/// self-references
+static llvm::json::Array
+collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
+                                TraitType canonicalTrait) {
+  llvm::json::Array result;
+  DenseSet<SymbolRefAttr> seenDecls;
+
+  SmallVector<std::pair<StringRef, TypeMetadata>> traitData;
+
+  for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
+    if (!seenDecls.insert(symbol).second)
+      continue;
+
+    // Try to resolve the trait through AST
+    MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
+    if (decl && decl != self) {
+      std::optional<StringRef> name = decl.getName();
+      if (name && isa_and_nonnull<TraitDeclOp>(decl.getIfOperation())) {
+        TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+            *name, &self, &ctx.getSharedState());
+        traitData.emplace_back(*name, metadata);
+        continue;
+      }
+    }
+
+    // Fallback: extract trait name from symbol
+    StringRef traitName =
+        symbol.getNestedReferences().empty()
+            ? symbol.getRootReference().getValue()
+            : symbol.getNestedReferences().back().getAttr().getValue();
+
+    if (!traitName.empty()) {
+      // Check if this trait name matches the current trait (avoid
+      // self-reference)
+      std::optional<StringRef> selfName = self.getName();
+      if (selfName && traitName == *selfName) {
+        continue; // Skip self-reference
+      }
+
+      TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          traitName, &self, &ctx.getSharedState());
+      traitData.emplace_back(traitName, metadata);
+    }
+  }
+
+  // Sort by trait name for consistency
+  llvm::sort(traitData,
+             [](const auto &a, const auto &b) { return a.first < b.first; });
+
+  // Create JSON objects with flattened metadata structure
+  for (const auto &[name, metadata] : traitData) {
+    llvm::json::Object traitObj;
+    traitObj["name"] = name.str();
+
+    if (!metadata.getRelativeDocPath().empty()) {
+      traitObj["path"] = metadata.getRelativeDocPath().str();
+    }
+
+    result.push_back(std::move(traitObj));
+  }
+
+  return result;
+}
+
 std::string
 PublicTraitDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   return "trait " + getName().str();
@@ -1290,10 +1549,9 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
 
-  SmallVector<StringRef> parentTraits;
-  collectParentTraits(
-      ctx, decl, parentTraits,
-      cast<TraitDeclOp>(decl.getIfOperation()).getCanonicalTrait());
+  // Collect parent traits with type metadata
+  llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
+      ctx, decl, cast<TraitDeclOp>(decl.getIfOperation()).getCanonicalTrait());
 
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
@@ -1303,7 +1561,7 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
       {"functions", toJSONArray(ctx, functionOverloads)},
       {"kind", getKindAsString()},
       {"name", getName().str()},
-      {"parentTraits", llvm::json::Array(parentTraits)},
+      {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"summary", summary},
   };
 }
@@ -1415,10 +1673,12 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
   auto fields = extractChildDecls<PublicStructFieldDecl, StructFieldOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl));
-  SmallVector<StringRef> parentTraits;
-  collectParentTraits(
-      ctx, decl, parentTraits,
+
+  // Collect parent traits with type metadata
+  llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
+      ctx, decl,
       cast<StructDeclOp>(decl->getIfOperation()).getCanonicalTrait());
+
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
       {"constraints", constraints},
@@ -1429,7 +1689,7 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
       {"kind", getKindAsString()},
       {"name", getName().str()},
       {"parameters", toJSONArray(ctx, parameters)},
-      {"parentTraits", llvm::json::Array(parentTraits)},
+      {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"signature", getSignature(ctx)},
       {"summary", summary},
       {"convention", toString(convention)},
@@ -1447,7 +1707,8 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
 
   auto &shared = *declRef.getShared();
   populatePublicParameterDecls(shared, signature.getInputParamTypes(),
-                               signature.getParamListAttrs(), parameters);
+                               signature.getParamListAttrs(), parameters,
+                               &declRef);
 
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();

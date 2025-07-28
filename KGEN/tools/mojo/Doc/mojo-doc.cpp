@@ -121,6 +121,7 @@ static int doc(const State &subcommandState) {
     parserConfig.maxNotesPerDiagnostic = maxNotes;
   parserConfig.stripFilePrefix =
       args.getLastArgValue(options::OPT_strip_file_prefix);
+  parserConfig.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;

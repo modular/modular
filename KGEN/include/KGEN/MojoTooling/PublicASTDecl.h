@@ -8,13 +8,14 @@
 #define KGEN_MOJOTOOLING_PublicASTDecl_H
 
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoTooling/TypeMetadata.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/JSON.h"
 #include <string>
-
 namespace llvm {
 namespace json {
 class Object;
@@ -22,6 +23,8 @@ class Object;
 } // namespace llvm
 
 namespace M {
+
+using KGEN::TypeMetadata;
 
 namespace KGEN::LIT {
 class ASTDecl;
@@ -33,6 +36,20 @@ enum class VariadicKind : uint32_t;
 
 class MojoASTDeclRef;
 class MojoParserContext;
+
+namespace {
+/// Typical max trait composition size in Mojo APIs.
+/// Currently only 1 case exceeds this: builtin.Comparable with 5 traits.
+static constexpr size_t kTypicalTraitCompositionSize = 4;
+
+/// Typical max parameter count for Mojo functions, structs, and aliases.
+/// Currently about 98% of declarations use ≤2 parameters.
+static constexpr size_t kTypicalParameterCount = 2;
+
+/// Typical max argument count for Mojo functions.
+/// Currently about 95% of functions use ≤2 arguments.
+static constexpr size_t kTypicalArgumentCount = 2;
+} // namespace
 class PublicDecl;
 class MojoASTTypeRef;
 enum class PublicDeclKind;
@@ -272,11 +289,11 @@ private:
 /// Decl for `var`.
 class PublicVariableDecl : public PublicDecl {
 public:
+  /// Get the type string of this variable
+  StringRef getType() const { return type; }
+
   /// Return if this variable is global.
   bool isGlobal() const { return isGlobalVariable; }
-
-  /// Return the type of this variable.
-  StringRef getType() const { return type; }
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
@@ -285,7 +302,8 @@ public:
   ///  {
   ///    "kind": "variable",
   ///    "name": string,
-  ///    "type": string
+  ///    "type": string,
+  ///    "path": string
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
@@ -307,6 +325,7 @@ private:
   PublicVariableDecl(MojoASTDeclRef declRef);
 
   std::string type;
+  TypeMetadata typeMetadata;
   bool isGlobalVariable;
   StringRef deprecated;
 };
@@ -314,13 +333,14 @@ private:
 /// Decl for parameters of structs or functions.
 class PublicParameterDecl : public PublicDecl {
 public:
+  // AST-based constructor to resolve the type metadata used for doc links
   PublicParameterDecl(StringRef name, StringRef type,
+                      const MojoASTTypeRef &astType,
+                      KGEN::LIT::SharedState &sharedState,
                       KGEN::LIT::PassingKind passingKind,
                       KGEN::LIT::VariadicKind variadicKind,
-                      std::optional<std::string> defaultValue)
-      : PublicDecl(PublicDeclKind::DK_PublicParameterDecl, name), type(type),
-        passingKind(passingKind), variadicKind(variadicKind),
-        defaultValue(std::move(defaultValue)) {}
+                      std::optional<std::string> defaultValue,
+                      const MojoASTDeclRef *currentDeclContext = nullptr);
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 
@@ -342,6 +362,7 @@ public:
   ///    "description": string,
   ///    "name": string,
   ///    "type": string,
+  ///    "path": string,
   ///    "passingKind": string,
   ///    "defaultValue": string?
   ///  }
@@ -361,6 +382,8 @@ public:
 
 private:
   std::string type;
+  TypeMetadata typeMetadata;
+  SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
   KGEN::LIT::PassingKind passingKind;
   KGEN::LIT::VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
@@ -383,16 +406,16 @@ public:
     kRef,
     kOut,
   };
+
+  // AST-based constructor to resolve the type metadata used for doc links
   PublicArgumentDecl(StringRef name, std::string prefix, std::string type,
+                     const MojoASTTypeRef &astType,
+                     KGEN::LIT::SharedState &sharedState,
                      KGEN::LIT::PassingKind passingKind,
                      KGEN::LIT::VariadicKind variadicKind,
                      std::optional<std::string> defaultValue,
-                     Convention convention, bool isSelf)
-      : PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, name),
-        prefix(std::move(prefix)), type(std::move(type)),
-        passingKind(passingKind), variadicKind(variadicKind),
-        defaultValue(std::move(defaultValue)), convention(convention),
-        isSelf(isSelf) {}
+                     Convention convention, bool isSelf,
+                     const MojoASTDeclRef *currentDeclContext = nullptr);
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
@@ -417,7 +440,8 @@ public:
   ///    "name": string,
   ///    "description": string,
   ///    "convention": string, // "read", "mut", "var"
-  ///    "type": string
+  ///    "type": string,
+  ///    "path": string,
   ///    "passingKind": string,
   ///    "defaultValue": string?
   ///  }
@@ -440,6 +464,8 @@ private:
   /// The prefix is the ref origin + addr space marker.
   std::string prefix;
   std::string type;
+  TypeMetadata typeMetadata;
+  SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
   KGEN::LIT::PassingKind passingKind;
   KGEN::LIT::VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
@@ -509,9 +535,10 @@ private:
 
   PublicAliasDecl(MojoASTDeclRef declRef);
 
-  SmallVector<PublicParameterDecl> parameters;
+  SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
   std::string value;
   std::string type;
+  std::string docPath;
   bool isGlobalAlias;
 
   //===----------------------------------------------------------------------===//
@@ -602,8 +629,7 @@ public:
   ///   "parameters": PublicParameterDecl[],
   ///   "raises": boolean,
   ///   "raisesDoc": string,
-  ///   "returnsDoc": string,
-  ///   "returnType": string,
+  ///   "returns": {"type": string, "path": string?, "doc": string?},
   ///   "signature": string, // E.g., "baz() -> Int"
   ///   "summary": string
   /// }
@@ -638,8 +664,8 @@ private:
   /// parameters and args.
   void augmentWithDocumentation(ArrayRef<StringRef> description);
 
-  SmallVector<PublicArgumentDecl> args;
-  SmallVector<PublicParameterDecl> parameters;
+  SmallVector<PublicArgumentDecl, kTypicalArgumentCount> args;
+  SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
   // TODO: Convert this to MojoASTTypeRef.
   std::optional<std::string> returnType;
 
@@ -867,7 +893,7 @@ private:
   /// parameters.
   void augmentWithDocumentation(ArrayRef<StringRef> description);
 
-  SmallVector<PublicParameterDecl> parameters;
+  SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
 
   KGEN::LIT::TypeConvention convention;
 
