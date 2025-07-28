@@ -8,7 +8,7 @@
 # UNSUPPORTED: asan, ubsan
 # RUN: MODULAR_USE_DRIVER_CUBIN_COMPILER=1 kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s
 
-from sys.info import _TargetType
+from sys.info import _TargetType, CompilationTarget
 from gpu.host import get_gpu_target
 from collections.string.string_slice import StaticString, _get_kgen_string
 
@@ -34,11 +34,13 @@ fn _compile_info[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     emission_kind: Int = 0,
-    compile_options: StaticString = "nvptx-short-ptr=true",
-    compile_target: _TargetType = get_gpu_target(),
+    target: _TargetType = get_gpu_target(),
+    compile_options: StaticString = CompilationTarget[
+        target
+    ].default_compile_options(),
 ]() -> Info:
     var info = __mlir_op.`kgen.compile_offload`[
-        target_type=compile_target,
+        target_type=target,
         emission_kind = index(emission_kind),
         emission_option = _get_kgen_string[compile_options](),
         func=func,
