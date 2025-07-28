@@ -34,7 +34,7 @@ from gpu import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import get_gpu_target
-from gpu.host.info import A100, H100
+from gpu.host.info import A100, H100, B200
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
     from_ndbuffer_row_major,
@@ -56,6 +56,7 @@ from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
 from .matmul_vendor import matmul as matmul_vendor
 from .matmul_dispatch_sm90 import matmul_dispatch_sm90
+from .matmul_sm100 import matmul_sm100_fallback
 from .utils import (
     GemmShape,
     elementwise_compute_lambda_type,
@@ -476,6 +477,38 @@ fn _matmul_gpu[
             _trace_description=_trace_description,
         ](c, a, b, ctx)
 
+    alias use_experimental_kernels = Bool(
+        env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+    )
+    alias use_A100_kernels_on_H100 = use_experimental_kernels
+
+    alias bf16_or_fp16 = (DType.bfloat16, DType.float16)
+    alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
+
+    @parameter
+    if (
+        ctx.device_info is B200
+        and use_experimental_kernels
+        and transpose_b
+        and (
+            a_type in bf16_or_fp16
+            and b_type in bf16_or_fp16
+            and c_type in bf16_or_fp16_fp32
+        )
+    ):
+        var a_layout_tensor = from_ndbuffer_row_major(a)
+        var b_layout_tensor = from_ndbuffer_row_major(b)
+        var c_layout_tensor = from_ndbuffer_row_major(c)
+        alias umma_shape = Index(64, 128, 16)
+        alias BK = 64
+        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+        return matmul_sm100_fallback[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+        ](c_layout_tensor, a_layout_tensor, b_layout_tensor, ctx)
+
     @parameter
     if ctx.default_device_info > H100:
         return _matmul_sm100[
@@ -489,10 +522,6 @@ fn _matmul_gpu[
             _trace_description=_trace_description,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
-
-    alias use_A100_kernels_on_H100 = env_get_int[
-        "USE_EXPERIMENTAL_KERNELS", 0
-    ]()
 
     @parameter
     if ctx.default_device_info is H100 and not use_A100_kernels_on_H100:
