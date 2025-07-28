@@ -21,6 +21,7 @@ from max.engine import InferenceSession
 from max.interfaces import (
     GenerationStatus,
     InputContext,
+    RequestID,
     SchedulerResult,
     TextGenerationOutput,
     TokenGenerator,
@@ -247,8 +248,8 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
 
         return responses
 
-    def release(self, context: TextContext) -> None:
-        self.kv_manager.release(context.request_id)
+    def release(self, request_id: RequestID) -> None:
+        self.kv_manager.release(request_id)
 
 
 @dataclass

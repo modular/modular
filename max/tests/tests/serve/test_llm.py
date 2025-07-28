@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
-from max.interfaces import TextGenerationRequest, TokenGenerator
+from max.interfaces import RequestID, TextGenerationRequest, TokenGenerator
 from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -38,7 +38,7 @@ class MockValueErrorTokenGenerator(TokenGenerator[str]):
     ) -> dict[str, str]:
         raise ValueError()
 
-    def release(self, context: str) -> None:
+    def release(self, request_id: RequestID) -> None:
         pass
 
 
@@ -55,7 +55,7 @@ class MockTokenGenerator(TokenGenerator[str]):
     ) -> dict[str, str]:
         return batch
 
-    def release(self, context: str) -> None:
+    def release(self, request_id: RequestID) -> None:
         pass
 
 
