@@ -390,10 +390,9 @@ def test_vision_embeddings_multi_gpu(
         )
 
         # Test that we can shard to each device
-        for shard_idx in range(n_devices):
-            device = DeviceRef.GPU(shard_idx)
-            sharded = embeddings.shard(shard_idx, device)
-
+        devices = [DeviceRef.GPU(i) for i in range(n_devices)]
+        shards = embeddings.shard(devices)
+        for sharded in shards:
             # Verify sharded embeddings maintain configuration
             assert isinstance(sharded, InternVisionEmbeddings)
             assert (
