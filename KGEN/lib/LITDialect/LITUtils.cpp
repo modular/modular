@@ -1128,11 +1128,9 @@ LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   if (!conformance)
     return failure();
 
-  ParameterEvaluator evaluator;
+  ParameterEvaluator evaluator(structDecl.getInputParams(),
+                               structType.getParamValues());
   evaluator.setEvaluationContext(this);
-  for (auto [param, value] :
-       llvm::zip(structDecl.getInputParams(), structType.getParamValues()))
-    evaluator.setDeclBinding(param, value);
 
   FailureOr<TypedAttr> simplified =
       getWitness.simplify(conformance, &evaluator);
