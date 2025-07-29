@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Optional, TypeVar, Union, cast
+from typing import Any, Optional, TypeVar, Union
 
 import numpy as np
 from max.interfaces import (
@@ -89,18 +89,11 @@ class PreTrainedPipelineTokenizer(
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                " PreTrainedTokenGeneratorTokenizer"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        templated_message = self.delegate.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -212,18 +205,11 @@ class TextTokenizer(
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
         }
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages, tokenize=False, tools=tools, **chat_template_options
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                f" TextTokenizer({self.model_path})"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        templated_message = self.delegate.apply_chat_template(
+            messages, tokenize=False, tools=tools, **chat_template_options
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -481,27 +467,11 @@ class TextAndVisionTokenizer(
         # TODO: Refactor this.
         if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             messages = self._wrap_str_message_content(messages)
-        try:
-            templated_message = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception as e:
-            msg = "apply_chat_template failed for TextAndVisionTokenizer"
-            logger.warning(msg)
-            logger.warning(str(e))
-            prompt = []
-            for message in messages:
-                if isinstance(message["content"], str):
-                    prompt.append(message["content"])
-                elif isinstance(message["content"], list):
-                    for content in message["content"]:
-                        if content["type"] == "text":
-                            if "text" in content:
-                                prompt.append(content["text"])
-                            else:
-                                prompt.append(content["content"])
-            return "\n".join(prompt)
+        templated_message = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
