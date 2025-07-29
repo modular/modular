@@ -129,7 +129,6 @@ dependencies = [
   # tts
   "zhon",
   "zhconv",
-  "faster-whisper",
 ]
 
 [dependency-groups]
