@@ -73,7 +73,7 @@ def ndarray_to_shared_memory(arr: np.ndarray) -> SharedMemoryArray | None:
         SharedMemoryArray if successful, None if shared memory is full or creation fails
     """
     # Check shared memory capacity.
-    if not can_allocate(arr.nbytes):
+    if not can_allocate(arr.nbytes) or arr.nbytes == 0:
         return None
 
     try:
