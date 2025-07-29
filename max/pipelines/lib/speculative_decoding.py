@@ -16,7 +16,7 @@
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, TypeVar, cast
+from typing import Any, Optional, Union
 
 import numpy as np
 from max.driver import Tensor, load_devices, scan_available_devices
@@ -31,13 +31,14 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
-    InputContext,
     RequestID,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -51,8 +52,6 @@ from .pipeline import (
 )
 from .ragged_token_merger import ragged_token_merger
 from .sampling import rejection_sampler_with_residuals, token_sampler
-
-T = TypeVar("T", bound=InputContext)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -128,7 +127,9 @@ class SpeculativeDecodingMetrics:
         )
 
 
-class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
+class SpeculativeDecodingTextGenerationPipeline(
+    TokenGenerator[Union[TextContext, TextAndVisionContext]]
+):
     """Generalized token generator pipeline with speculative decoding."""
 
     def __init__(
@@ -369,7 +370,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         model: PipelineModel,
         huggingface_config: AutoConfig,
         num_steps: int,
-        context: T,
+        context: Union[TextContext, TextAndVisionContext],
         is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
@@ -390,7 +391,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     def prepare_batch(
         self,
         model: PipelineModel,
-        batch: list[T],
+        batch: list[Union[TextContext, TextAndVisionContext]],
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
@@ -408,9 +409,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 model, model.huggingface_config, num_steps, context, is_draft
             )
 
-        kv_cache_inputs = model.kv_manager.fetch(
-            cast(list[InputContext], batch), num_steps
-        )
+        kv_cache_inputs = model.kv_manager.fetch(batch, num_steps)
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
@@ -447,7 +446,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def sample_draft_logits(
         self,
-        batch: list[T],
+        batch: list[Union[TextContext, TextAndVisionContext]],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
@@ -475,7 +474,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def generate_draft_tokens(
-        self, batch: list[T], num_steps: int, model_inputs: ModelInputs
+        self,
+        batch: list[Union[TextContext, TextAndVisionContext]],
+        num_steps: int,
+        model_inputs: ModelInputs,
     ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
         # Create sampling parameters once for the entire batch
         top_k_np = np.array(
@@ -581,7 +583,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     def verify_draft_tokens_with_target_model(
         self,
         draft_inputs: ModelInputs,
-        context_batch: list[T],
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
         num_draft_tokens_generated: int,
         draft_tokens: Tensor,
         draft_logits: Tensor,
@@ -625,18 +627,19 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def next_token(
-        self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationOutput]:
+        self,
+        inputs: TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
+        context_batch = list(inputs.batch.values())
 
         # Generate draft tokens.
         draft_inputs, draft_num_steps = self.prepare_batch(
             self._draft_model,
             context_batch,
-            num_steps,
+            inputs.num_steps,
             return_n_logits=1,
             is_draft=True,
         )
@@ -682,15 +685,13 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
 
-        res = self.build_response(batch=batch, context_batch=context_batch)
+        res = self.build_response(
+            batch=inputs.batch, context_batch=context_batch
+        )
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
-        self._draft_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
+        self._target_model.kv_manager.step(context_batch)
+        self._draft_model.kv_manager.step(context_batch)
 
         return res
 
@@ -713,7 +714,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     def update_contexts(
         self,
-        context_batch: list[T],
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
         first_rejected_tokens: np.ndarray,
         recovered_tokens: np.ndarray,
         bonus_tokens: np.ndarray,
@@ -775,9 +776,9 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     def build_response(
         self,
-        batch: dict[str, T],
-        context_batch: list[T],
-    ) -> dict[str, TextGenerationOutput]:
+        batch: dict[RequestID, Union[TextContext, TextAndVisionContext]],
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Build response from updated contexts.
 
         Args:
@@ -787,7 +788,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         Returns:
             Dictionary mapping request IDs to TextGenerationOutput objects
         """
-        res: dict[str, TextGenerationOutput] = {}
+        res: dict[RequestID, TextGenerationOutput] = {}
         request_ids = list(batch.keys())
 
         for _, context in enumerate(context_batch):

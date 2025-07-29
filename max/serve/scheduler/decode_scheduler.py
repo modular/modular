@@ -22,6 +22,7 @@ import zmq
 from max.interfaces import (
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -401,7 +402,7 @@ class DecodeScheduler(Scheduler):
             num_steps: Number of tokens to generate for this batch.
         """
         responses = self.pipeline.next_token(
-            self.active_batch, num_steps=num_steps
+            TextGenerationInputs(self.active_batch, num_steps=num_steps)
         )
 
         self._handle_terminated_responses(responses)

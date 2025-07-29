@@ -20,6 +20,7 @@ from max.interfaces import (
     GenerationStatus,
     PipelineTokenizer,
     RequestID,
+    TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -140,11 +141,12 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
         self._echo_indices: dict[str, int] = {}
 
     def next_token(
-        self, batch: dict[str, TextContext], num_steps: int = 1
-    ) -> dict[str, TextGenerationOutput]:
+        self,
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
         responses = {}
 
-        for request_id, context in batch.items():
+        for request_id, context in inputs.batch.items():
             if request_id not in responses:
                 responses[request_id] = TextGenerationOutput(
                     request_id=request_id,
@@ -157,7 +159,7 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
             if request_id not in self._echo_indices:
                 self._echo_indices[request_id] = 0
 
-            for step in range(num_steps):  # noqa: B007
+            for step in range(inputs.num_steps):  # noqa: B007
                 echo_idx = self._echo_indices[request_id]
                 prompt_tokens = context.prompt_tokens
 

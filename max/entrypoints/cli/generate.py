@@ -24,6 +24,7 @@ from typing import Optional
 import requests
 from max.interfaces import (
     PipelineTokenizer,
+    TextGenerationInputs,
     TextGenerationRequest,
     TokenGenerator,
 )
@@ -72,7 +73,7 @@ async def stream_text_to_console(
         generate_again = True
         while generate_again:
             responses = pipeline.next_token(
-                pipeline_request, num_steps=num_steps
+                TextGenerationInputs(pipeline_request, num_steps=num_steps)
             )
 
             for request_idx, response in responses.items():  # noqa: B007

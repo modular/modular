@@ -23,6 +23,7 @@ from typing import Generic, TypeVar, Union
 import zmq
 from max.interfaces import (
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -749,7 +750,9 @@ class TokenGenerationScheduler(Scheduler):
 
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute, num_steps=sch_output.num_steps
+            TextGenerationInputs(
+                batch_to_execute, num_steps=sch_output.num_steps
+            )
         )
         # put the unfinished request back into the queue, and delete its responses
         if self.scheduler_config.enable_chunked_prefill:
@@ -770,7 +773,7 @@ class TokenGenerationScheduler(Scheduler):
         METRICS.batch_size(len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute, num_steps=sch_output.num_steps
+            TextGenerationInputs(batch_to_execute, sch_output.num_steps)
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
