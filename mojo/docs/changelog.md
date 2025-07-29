@@ -187,6 +187,8 @@ mutation.
 
 - Added support for NVIDIA GeForce RTX 3090.
 
+- `String.split()` now returns a `List[StringSlice]`.
+
 - `StringLiteral.strip()` family of functions now return a `StaticString`.
 
 ### Tooling changes
