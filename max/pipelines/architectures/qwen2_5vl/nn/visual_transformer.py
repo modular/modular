@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from functools import cached_property
 from typing import Optional
 
 from max.dtype import DType
@@ -121,26 +120,33 @@ class VisionRotaryEmbedding(Module):
     dim: int
     n_heads: int
     theta: float
-    """The maximum sequence length for model's input."""
-    _inv_freqs: Optional[TensorValueLike] = None
+    _inv_freqs: Optional[TensorValue] = None
 
     def __post_init__(self):
         super().__init__()
 
-    def _compute_inv_freqs(self) -> TensorValue:
-        if self._inv_freqs is None:
-            n = (self.dim // self.n_heads) // 2
-            # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
-            iota = ops.range(
-                0, n - 1, 2, device=DeviceRef.CPU(), dtype=DType.float64
-            )
-            inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
-            self._inv_freqs = inv_freq
-        return TensorValue(self._inv_freqs)
+    def _compute_inv_freqs(self, device: DeviceRef) -> TensorValue:
+        """Compute inverse frequencies for the given device."""
+        n = (self.dim // self.n_heads) // 2
+        # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
+        iota = ops.range(
+            0,
+            n - 1,
+            2,
+            out_dim=n // 2,
+            device=device,
+            dtype=DType.float64,
+        )
+        inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
+        return TensorValue(inv_freq)
 
-    @cached_property
-    def inv_freqs(self) -> TensorValue:
-        self._inv_freqs = self._compute_inv_freqs()
+    def inv_freqs(self, device: DeviceRef) -> TensorValue:
+        """Compute and cache inverse frequencies for the given device.
+
+        Truly cached - computes once and returns the same TensorValue object.
+        """
+        if self._inv_freqs is None:
+            self._inv_freqs = self._compute_inv_freqs(device)
         return self._inv_freqs
 
     def generate_rot_pos_embeddings(
@@ -166,10 +172,10 @@ class VisionRotaryEmbedding(Module):
             max_grid_size,
             1,
             out_dim=max_grid_size,
-            device=DeviceRef.CPU(),
-            dtype=DType.float64,
+            device=rot_pos_ids.device,
+            dtype=DType.float32,
         )
-        rotary_pos_emb_full = ops.outer(t, self.inv_freqs)
+        rotary_pos_emb_full = ops.outer(t, self.inv_freqs(rot_pos_ids.device))
         # Retrieve position embeddings for each patch in input images or videos.
         rotary_pos_emb = ops.gather(rotary_pos_emb_full, rot_pos_ids, axis=0)
         rotary_pos_emb = rotary_pos_emb.flatten(1)
