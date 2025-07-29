@@ -844,7 +844,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 
   // Specialize the type first and check for typing errors.
   GeneratorType specializedType =
-      getType().getSpecializedGenerator(specialization);
+      getType().getSpecializedGenerator(specialization, emitErrorFn);
 
   if (!specializedType)
     return {};

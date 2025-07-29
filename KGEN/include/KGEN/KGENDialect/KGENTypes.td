@@ -181,7 +181,8 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
 
     /// Get this GeneratorType with some parameters bound.
     GeneratorType getSpecializedGenerator(
-      PartiallySpecializedInputParams &specialization);
+      PartiallySpecializedInputParams &specialization,
+      function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorType getSpecializedGenerator(
       ArrayRef<TypedAttr> paramBindings,
       ParameterEvaluationContext *evaluationContext,
