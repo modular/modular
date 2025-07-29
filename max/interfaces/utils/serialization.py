@@ -13,10 +13,7 @@ from typing import Any, Callable
 import msgspec
 import numpy as np
 
-from .shared_memory import (
-    ndarray_to_shared_memory,
-    open_shm_array,
-)
+from .shared_memory import ndarray_to_shared_memory, open_shm_array
 
 
 def numpy_encoder_hook(
