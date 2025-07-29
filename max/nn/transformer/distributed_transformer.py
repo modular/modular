@@ -20,12 +20,15 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
     Value,
     ops,
 )
+from max.graph.ops.allreduce import matmul_allreduce
+from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
@@ -35,8 +38,8 @@ from ..kv_cache import (
     KVCacheParams,
     PagedKVCacheCollection,
 )
-from ..layer import LayerList, Module
-from ..linear import ColumnParallelLinear
+from ..layer import LayerList, Module, Shardable
+from ..linear import ColumnParallelLinear, DistributedGemmConfig
 from ..norm import DistributedRMSNorm
 from .transformer import ReturnLogits
 
@@ -58,17 +61,26 @@ class DistributedTransformerBlock(Module):
     def __init__(
         self,
         attention: Module,
-        mlp: Module,
+        mlp: Shardable,
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
+        distributed_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
+        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+            len(devices)
+        )
+        self.mlp_shards = mlp.shard(devices)
+
         self.input_layernorm = attention_norm
         self.post_attention_layernorm = mlp_norm
         self.devices = devices
+
+        self.distributed_gemm_config = distributed_gemm_config
+        self.allreduce = Allreduce(num_accelerators=len(devices))
 
     def __call__(
         self,
@@ -89,7 +101,28 @@ class DistributedTransformerBlock(Module):
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
-        mlp_outs = self.mlp(self.post_attention_layernorm(hs), signal_buffers)
+
+        norm_outs = self.post_attention_layernorm(hs)
+        mlp_outs = [
+            self.mlp_shards[i](norm_outs[i])  # type: ignore[operator]
+            for i in range(len(self.mlp_shards))
+        ]
+
+        if (
+            self.distributed_gemm_config is None
+            or not self.distributed_gemm_config.enable_matmul_allreduce
+        ):
+            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+        else:
+            # Special matmul + allreduce split version
+            # extract the sharded weights from the last linear layers
+            weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[attr-defined]
+            mlp_outs = matmul_allreduce(
+                mlp_outs,
+                weights,
+                signal_buffers,
+            )
+
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
 
         return hs
