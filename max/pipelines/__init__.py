@@ -15,8 +15,6 @@
 
 from .architectures import register_all_models
 from .core import (
-    EmbeddingsGenerator,
-    PipelinesFactory,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -66,7 +64,6 @@ __all__ = [
     "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
-    "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
@@ -76,7 +73,6 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
-    "PipelinesFactory",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
@@ -94,7 +90,6 @@ __all__ = [
     "TextContext",
     "TextGenerationPipeline",
     "TextTokenizer",
-    "TokenGeneratorContext",
     "download_weight_files",
     "upper_bounded_default",
 ]

@@ -26,8 +26,7 @@ from typing import Callable
 
 import uvloop
 import zmq
-from max.interfaces import PipelineTask
-from max.pipelines.core import PipelinesFactory
+from max.interfaces import PipelinesFactory, PipelineTask
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
