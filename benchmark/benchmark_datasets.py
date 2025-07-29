@@ -908,10 +908,6 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         Returns:
             List of SampledRequest objects
         """
-        assert fixed_output_len is not None, (
-            "fixed_output_len must be provided for AxolotlBenchmarkDataset"
-        )
-
         assert self.dataset_path is not None, (
             "dataset_path must be provided for AxolotlBenchmarkDataset"
         )
