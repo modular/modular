@@ -25,12 +25,12 @@ from max.interfaces import (
     AudioGeneratorOutput,
     GenerationStatus,
     SchedulerResult,
+    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     TextContext,
     TTSContext,
-    msgpack_numpy_encoder,
 )
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import AudioGenerationScheduler

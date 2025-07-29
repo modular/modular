@@ -10,12 +10,12 @@ import uuid
 import numpy as np
 import pytest
 import zmq
-from max.pipelines.core.context import TextAndVisionContext, TextContext
-from max.pipelines.core.serialization import (
+from max.interfaces import (
+    SharedMemoryArray,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core.shared_memory import SharedMemoryArray
+from max.pipelines.core.context import TextAndVisionContext, TextContext
 from max.serve.queue.zmq_queue import (
     ZmqPullSocket,
     ZmqPushSocket,
@@ -94,7 +94,7 @@ def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa
 
     # Test 1: Fallback case - when shared memory allocation fails
     mocker.patch(
-        "max.pipelines.core.shared_memory.ndarray_to_shared_memory",
+        "max.interfaces.utils.shared_memory.ndarray_to_shared_memory",
         return_value=None,
     )
 
@@ -119,7 +119,7 @@ def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa
         name="test_shm_123", shape=shape, dtype="float32"
     )
     mocker.patch(
-        "max.pipelines.core.shared_memory.ndarray_to_shared_memory",
+        "max.interfaces.utils.shared_memory.ndarray_to_shared_memory",
         return_value=mock_shm,
     )
 

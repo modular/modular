@@ -18,11 +18,11 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
+    msgpack_numpy_encoder,
 )
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    msgpack_numpy_encoder,
 )
 from max.serve.queue.zmq_queue import (
     ZmqPullSocket,
