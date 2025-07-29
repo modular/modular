@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pytest
 from max.driver import DeviceSpec, Tensor
+from max.interfaces import TextGenerationInputs
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -338,7 +339,10 @@ def test_speculative_decoding_multiple_token_without_rejection(
     context1_len = context1.current_length
     context2_len = context2.current_length
     for _ in range(5):
-        pipeline.next_token(pipeline_request, num_steps)
+        inputs = TextGenerationInputs(
+            batch=pipeline_request, num_steps=num_steps
+        )
+        pipeline.next_token(inputs)
 
         # num_steps generated from draft and +1 from the target
         assert context1.current_length == context1_len + (num_steps + 1)

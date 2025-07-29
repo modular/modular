@@ -10,7 +10,7 @@ import json
 
 import hf_repo_lock
 from max.driver import DeviceSpec
-from max.interfaces import SamplingParams
+from max.interfaces import SamplingParams, TextGenerationInputs
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
@@ -88,7 +88,8 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
 
     tokens = []
     while True:
-        response = pipeline.next_token({request_id: context}, num_steps=1)
+        inputs = TextGenerationInputs(batch={request_id: context}, num_steps=1)
+        response = pipeline.next_token(inputs)
 
         for token in response[request_id].tokens:
             tokens.append(token.next_token)

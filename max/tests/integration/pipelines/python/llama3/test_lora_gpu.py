@@ -8,7 +8,11 @@ from typing import Any
 
 import hf_repo_lock
 import pytest
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+)
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -137,7 +141,8 @@ async def test_lora_vs_base_model_logits(
     tokens: dict[str, list[Any]] = {"lora": [], "base": []}
     done = {}
     while True:
-        response = pipeline.next_token(contexts, num_steps=1)
+        inputs = TextGenerationInputs(batch=contexts, num_steps=1)
+        response = pipeline.next_token(inputs)
 
         for name, ctx in response.items():
             tokens[name].extend(ctx.tokens)

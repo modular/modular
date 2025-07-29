@@ -8,7 +8,11 @@
 from typing import Any
 
 import pytest
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+)
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,
@@ -52,7 +56,9 @@ async def test_smollm2_with_lora_adapter() -> None:
     contexts = {"test": context}
 
     while contexts:
-        response = pipeline_with_lora.next_token(contexts, num_steps=1)
+        response = pipeline_with_lora.next_token(
+            TextGenerationInputs(contexts, num_steps=1)
+        )
 
         for req_id, resp in response.items():
             generated_tokens.extend(resp.tokens)
@@ -112,7 +118,9 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate from base model
     contexts = {"base": base_context}
     while contexts:
-        response = pipeline_base.next_token(contexts, num_steps=1)
+        response = pipeline_base.next_token(
+            TextGenerationInputs(contexts, num_steps=1)
+        )
         for req_id, resp in response.items():
             base_tokens.extend(resp.tokens)
             if resp.is_done:
@@ -121,7 +129,9 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate from LoRA model
     contexts = {"lora": lora_context}
     while contexts:
-        response = pipeline_with_lora.next_token(contexts, num_steps=1)
+        response = pipeline_with_lora.next_token(
+            TextGenerationInputs(contexts, num_steps=1)
+        )
         for req_id, resp in response.items():
             lora_tokens.extend(resp.tokens)
             if resp.is_done:
@@ -174,7 +184,9 @@ async def test_multiple_lora_adapters() -> None:
     results: dict[str, list[Any]] = {req_id: [] for req_id in contexts}
 
     while contexts:
-        response = pipeline.next_token(contexts, num_steps=1)
+        response = pipeline.next_token(
+            TextGenerationInputs(contexts, num_steps=1)
+        )
 
         for req_id, resp in response.items():
             results[req_id].extend(resp.tokens)

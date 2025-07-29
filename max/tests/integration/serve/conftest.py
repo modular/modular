@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from max.interfaces import PipelineTask, TextGenerationOutput
+from max.interfaces import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PipelineConfig
@@ -33,12 +38,12 @@ class MockPipelineConfig(PipelineConfig):
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
     def next_token(
-        self, batch: dict[str, TextContext], num_steps: int = 1
-    ) -> dict[str, TextGenerationOutput]:
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
         # Sleep for 1 ms - otherwise, the echo token generator
         # can break some separation of timescale assumptions
         time.sleep(1e-3)
-        return super().next_token(batch, num_steps)
+        return super().next_token(inputs)
 
 
 # This has to be picklable and lambdas are not picklable

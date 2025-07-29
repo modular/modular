@@ -11,7 +11,11 @@ from unittest.mock import patch
 
 import hf_repo_lock
 from max.driver import DeviceSpec
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+)
 from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
     MockTextTokenizer,
@@ -113,7 +117,8 @@ def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  #
         length = [0 for _ in range(len(context_batch))]
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
-            output = pipeline.next_token(context_batch, num_steps=1)
+            inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
+            output = pipeline.next_token(inputs)
             assert len(output) == len(context_batch)
 
             for request_idx, response in output.items():
