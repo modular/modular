@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
+from collections.string.string_slice import _to_string_list
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -382,11 +383,10 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = String(
-            StaticString(unsafe_from_utf8_ptr=driver_version_buffer)
+        var driver_version_list = StaticString(
+            unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
-        var driver_version = DriverVersion(driver_version_list)
-        return driver_version
+        return DriverVersion(to_string_list(driver_version_list))
 
     fn _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()
