@@ -47,8 +47,8 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
-using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
+using namespace llvm::dwarf;
 using namespace mlir;
 
 /// Convert a KGENDType, which is an extension to the regular DType, into
