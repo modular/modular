@@ -12,12 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import TextAndVisionContext, TextContext, TTSContext
-from .serialization import msgpack_numpy_decoder, msgpack_numpy_encoder
 
 __all__ = [
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "msgpack_numpy_decoder",
-    "msgpack_numpy_encoder",
 ]
