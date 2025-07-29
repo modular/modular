@@ -27,8 +27,9 @@ modular_py_test(
         "//SDK/lib/API/python/tests/graph/testdata",
     ],
     env = {
-        "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
     },
     env_inherit = ["HF_TOKEN"],
     gpu_constraints = [
