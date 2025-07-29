@@ -386,7 +386,7 @@ struct Device(Writable):
         var driver_version_list = StaticString(
             unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
-        return DriverVersion(to_string_list(driver_version_list))
+        return DriverVersion(_to_string_list(driver_version_list))
 
     fn _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()
