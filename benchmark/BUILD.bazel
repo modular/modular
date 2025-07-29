@@ -1,4 +1,22 @@
-load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+modular_py_binary(
+    name = "benchmark_serving",
+    srcs = ["benchmark_serving.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_datasets",
+        ":sample_workload_utils",
+        requirement("aiohttp"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("nvitop"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
 
 modular_py_library(
     name = "benchmark_datasets",
