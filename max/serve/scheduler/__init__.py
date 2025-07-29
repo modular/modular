@@ -13,9 +13,8 @@
 from __future__ import annotations
 
 import zmq
-from max.interfaces import TokenGenerator
+from max.interfaces import AudioGenerator, EmbeddingsGenerator, TokenGenerator
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import AudioGenerator, EmbeddingsGenerator
 from max.pipelines.lib import PipelineConfig, PipelineRole
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient

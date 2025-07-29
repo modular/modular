@@ -27,11 +27,15 @@ import zmq
 from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
+    AudioGenerator,
     AudioGeneratorOutput,
     SchedulerResult,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import AudioGenerator, TTSContext, msgpack_numpy_decoder
+from max.pipelines.core import (
+    TTSContext,
+    msgpack_numpy_decoder,
+)
 from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger

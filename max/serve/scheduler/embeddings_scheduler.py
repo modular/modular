@@ -17,9 +17,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-from max.interfaces import EmbeddingsOutput, SchedulerResult
-from max.pipelines.core import (
+from max.interfaces import (
     EmbeddingsGenerator,
+    EmbeddingsOutput,
+    SchedulerResult,
+)
+from max.pipelines.core import (
     TextContext,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
