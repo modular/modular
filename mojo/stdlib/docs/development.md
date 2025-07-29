@@ -84,6 +84,15 @@ To run the tests for the standard library, you can run:
 ./bazelw test //mojo/stdlib/test/...
 ```
 
+## Testing only a subset of the standard library
+
+You can filter the stdlib tests only run a specific subdirectory of the
+tests by passing `--test_tag_filters=dir-SUBDIR` to the test command.
+
+```bash
+./bazelw test //mojo/stdlib/test/... --test_tag_filters=dir-math
+```
+
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.
