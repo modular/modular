@@ -15,9 +15,7 @@ class LogProbabilities(msgspec.Struct, tag=True, omit_defaults=True):
     and serialization purposes.
     """
 
-    token_log_probabilities: list[float] = msgspec.field(default_factory=list)
+    token_log_probabilities: list[float]
     """Probabilities of each token."""
-    top_log_probabilities: list[dict[int, float]] = msgspec.field(
-        default_factory=list
-    )
+    top_log_probabilities: list[dict[int, float]]
     """Top tokens and their corresponding probabilities."""
