@@ -240,9 +240,14 @@ def GeneratorMetadataAttrInterface
     InterfaceMethod<[{
       Get a new metadata attribute for a generator where the parameters
       indicated by set bits in `boundParams` been removed from the generator by
-      being explicitly bound to values, such as those in call signatures.
-    }], "GeneratorMetadataAttrInterface", "getWithBoundParams", (ins
-      "const llvm::BitVector &":$boundParams)>,
+      being explicitly bound to values. The `evaluator` can be used to
+      substitute the bound values into any attr/type of the metadata. A null
+      result indicates a failure, and the `emitError` function can be used to
+      report the error.
+    }], "GeneratorMetadataAttrInterface", "getSpecializedMetadata", (ins
+      "ParameterEvaluator &":$evaluator,
+      "const llvm::BitVector &":$boundParams,
+      "function_ref<InFlightDiagnostic()>":$emitError)>,
     InterfaceMethod<[{
       Get a new metadata attribute for a generator with a number of positional
       input parameters prepended, determined from the number of declared by the

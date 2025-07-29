@@ -263,21 +263,25 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   p << '>';
 }
 
-GeneratorMetadataAttrInterface
-PogListAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
+GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
+    ParameterEvaluator &evaluator, const llvm::BitVector &boundParams,
+    function_ref<InFlightDiagnostic()> emitError) const {
   SmallVector<TypedAttr> newDefaultPosParams;
   SmallVector<TypedAttr> newDefaultKwOnlyParams;
   SmallVector<PogMetadataAttr> newPogs;
 
   DefaultValueHandler defaultHandler(*this);
   size_t numParams = boundParams.size();
-  for (size_t idx = 0; idx < numParams; ++idx) {
+  for (auto [idx, pog] : llvm::enumerate(getPogs().take_front(numParams))) {
     if (!boundParams[idx]) {
-      newPogs.emplace_back(getPogs()[idx]);
+      auto newPog = cast<PogMetadataAttr>(evaluator.getReboundAttribute(pog));
+      newPogs.emplace_back(newPog);
       if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
-        newDefaultPosParams.emplace_back(defaultOr);
+        newDefaultPosParams.emplace_back(
+            evaluator.getReboundAttribute(defaultOr));
       else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
-        newDefaultKwOnlyParams.emplace_back(defaultOr);
+        newDefaultKwOnlyParams.emplace_back(
+            evaluator.getReboundAttribute(defaultOr));
     }
   }
 

@@ -320,12 +320,14 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
-    PartiallySpecializedInputParams &specialization) {
+    PartiallySpecializedInputParams &specialization,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
   GeneratorMetadataAttrInterface genMetadata = getMetadata();
   if (genMetadata) {
-    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
-        specialization.evaluator.getReboundAttribute(genMetadata));
-    genMetadata = genMetadata.getWithBoundParams(specialization.boundParams);
+    genMetadata = genMetadata.getSpecializedMetadata(
+        specialization.evaluator, specialization.boundParams, emitErrorFn);
+    if (!genMetadata)
+      return {};
   }
 
   return GeneratorType::get(specialization.unboundParamTypes,
@@ -351,7 +353,7 @@ GeneratorType GeneratorType::getSpecializedGenerator(
   if (!specializationOpt)
     return {};
 
-  return getSpecializedGenerator(*specializationOpt);
+  return getSpecializedGenerator(*specializationOpt, emitErrorFn);
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
