@@ -149,7 +149,6 @@ _EXPECT_FAIL = [
 
 _FILECHECK_TESTS = [
     "algorithm/test_elementwise.mojo",
-    "algorithm/test_elementwise_1d.mojo",
     "algorithm/test_parallelize.mojo",  # TODO: Move off filecheck
     "algorithm/test_reductions.mojo",  # TODO: Move off filecheck
     "algorithm/test_stencil.mojo",
