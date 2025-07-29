@@ -121,7 +121,8 @@ static int format(const State &state) {
   StringRef mblack = config.getMBlackPath();
   if (!std::filesystem::exists(mblack.str(), ec) || ec ||
       !llvm::sys::fs::can_execute(mblack)) {
-    return state.reportError("unable to resolve Mojo formatter in PATH");
+    return state.reportError(
+        "unable to resolve Mojo formatter in PATH, try installing `mojo`.");
   }
 
   // Forward the curated options to mblack.
