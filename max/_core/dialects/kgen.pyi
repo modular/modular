@@ -79,8 +79,12 @@ class GeneratorMetadataAttrInterface(Protocol):
         arg2: max._core.Type,
         /,
     ) -> bool: ...
-    def get_with_bound_params(
-        self, arg: max._core._BitVector, /
+    def get_specialized_metadata(
+        self,
+        arg0: ParameterEvaluator,
+        arg1: max._core._BitVector,
+        arg2: DiagnosticHandler,
+        /,
     ) -> GeneratorMetadataAttrInterface: ...
     def prepend_pos_params_from_ops(
         self, arg: Sequence[max._core.Operation], /
@@ -4162,4 +4166,7 @@ class _KGENDType:
     pass
 
 class ParamDefValue:
+    pass
+
+class ParameterEvaluator:
     pass
