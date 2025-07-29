@@ -1,16 +1,8 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
+# This file is Modular Inc proprietary.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Shared memory utilities for zero-copy NumPy array transfer."""
 
 from __future__ import annotations
@@ -24,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-logger = logging.getLogger("max.serve")
+logger = logging.getLogger(__name__)
 
 
 def can_allocate(size: int) -> bool:
