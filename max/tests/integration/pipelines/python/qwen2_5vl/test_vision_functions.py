@@ -9,7 +9,10 @@ from typing import Union
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 from max.pipelines.architectures.qwen2_5vl.nn.input_processing_fns import (
+    get_cu_seqlens_numpy,
+    get_cu_window_seqlens_numpy,
     get_window_index_numpy,
     rot_pos_emb_numpy,
 )
@@ -19,6 +22,25 @@ from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionTransformerPretrainedModel,
 )
+
+
+def cu_seqlens_torch(
+    cu_window_seqlens: list[int], grid_thw: torch.Tensor
+) -> torch.Tensor:
+    cu_window_seqlens = torch.tensor(
+        cu_window_seqlens,
+    )
+    cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+
+    cu_seqlens = torch.repeat_interleave(
+        grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+    ).cumsum(
+        dim=0,
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+    cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+    return cu_seqlens, cu_window_seqlens
 
 
 def rot_pos_emb_torch(
@@ -52,7 +74,7 @@ def rot_pos_emb_torch(
     return pos_ids, max_grid_size
 
 
-def test_get_window_index():
+def test_get_window_index_and_cumulative_seqlens():
     grid_thw = np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64)
     window_size = 112
     spatial_merge_size = 2
@@ -80,8 +102,22 @@ def test_get_window_index():
         atol=1e-8,
     )
 
-    # Compare cu_window_seqlens as lists (both are Python lists)
-    assert cu_window_seqlens_torch == cu_window_seqlens_numpy
+    # Compare cu_window_seqlens (convert to numpy arrays for comparison)
+    assert np.array_equal(cu_window_seqlens_torch, cu_window_seqlens_numpy)
+
+    cu_seqlens_torch_result, cu_window_seqlens_torch_result = cu_seqlens_torch(
+        cu_window_seqlens_torch, torch.from_numpy(grid_thw)
+    )
+    cu_seqlens_numpy = get_cu_seqlens_numpy(grid_thw)
+    cu_window_seqlens_numpy = get_cu_window_seqlens_numpy(
+        cu_window_seqlens_numpy
+    )
+
+    assert np.array_equal(
+        cu_window_seqlens_torch_result, cu_window_seqlens_numpy
+    )
+
+    assert np.array_equal(cu_seqlens_torch_result, cu_seqlens_numpy)
 
 
 def test_rot_pos_emb():
