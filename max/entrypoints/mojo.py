@@ -32,6 +32,16 @@ def _sdk_default_env() -> dict[str, str]:
 
     ext = ".dylib" if sys.platform == "darwin" else ".so"
 
+    # Special case for wheel entrypoint - in
+    # the venv it is actually put in the root `bin`.
+    # lib/python3.13/site-packages/max/
+    # ->
+    # bin/mblack
+    extra_env = {}
+    maybe_mblack_path = root.parent.parent.parent.parent / "bin" / "mblack"
+    if maybe_mblack_path.exists():
+        extra_env["MODULAR_MOJO_MAX_MBLACK_PATH"] = str(maybe_mblack_path)
+
     return {
         "MODULAR_MAX_PACKAGE_ROOT": str(root),
         "MODULAR_MAX_CACHE_DIR": str(root / "share" / "max" / ".max_cache"),
@@ -67,7 +77,6 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MOJO_MAX_LLDB_VISUALIZERS_PATH": str(lib / "lldb-visualizers"),
         # env["MODULAR_MOJO_MAX_LLDB_VSCODE_PATH"] = str(bin / "mojo-lldb-dap")
         "MODULAR_MOJO_MAX_LSP_SERVER_PATH": str(bin / "mojo-lsp-server"),
-        # MODULAR_MOJO_MAX_MBLACK_PATH
         "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
         "MODULAR_MOJO_MAX_LLD_PATH": str(bin / "lld"),
         "MODULAR_MOJO_MAX_SYSTEM_LIBS": (
@@ -80,7 +89,7 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": str(
             bin / "modular-crashpad-handler"
         ),
-    }
+    } | extra_env
 # fmt: on
 
 
