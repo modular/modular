@@ -31,7 +31,7 @@ from algorithm import vectorize
 from bit import log2_floor
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
@@ -5723,7 +5723,7 @@ struct ThreadScope(Copyable, Movable):
 
 
 @always_inline("nodebug")
-fn _get_worker_idx[thread_scope: ThreadScope]() -> UInt:
+fn _get_worker_idx[thread_scope: ThreadScope, block_dim_count: Int = 1]() -> UInt:
     """
     Returns the worker index for the current thread scope.
 
@@ -5734,15 +5734,29 @@ fn _get_worker_idx[thread_scope: ThreadScope]() -> UInt:
 
     Parameters:
         thread_scope: The scope at which the worker index is determined.
+        block_dim_count: The number of dimensions in the thread block.
 
     Returns:
         UInt: The worker index within the specified scope.
 
     """
 
+    constrained[
+        block_dim_count >= 1 and block_dim_count <= 3,
+        "block_dim_count = ",
+        String(block_dim_count),
+        ". Thread blocks contain between 1 (x) and 3 (x,y,z) dimensions"
+    ]()
+
     @parameter
     if thread_scope == ThreadScope.BLOCK:
-        return thread_idx.x
+        @parameter
+        if block_dim_count == 1:
+            return thread_idx.x
+        elif block_dim_count == 2:
+            return thread_idx.y * block_dim.x + thread_idx.x
+        else:
+            return thread_idx.z * block_dim.y * block_dim.x + thread_idx.y * block_dim.x + thread_idx.x
     else:
         return lane_id()
 
@@ -5799,6 +5813,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """Synchronously copy data from DRAM (global memory) to SRAM (shared memory)
     in a GPU context.
@@ -5830,6 +5845,7 @@ fn copy_dram_to_sram[
         thread_scope: Scope at which thread operations are performed (`BLOCK` or
             `WARP`). Defaults to `ThreadScope.BLOCK`, where all threads in a
             block participate.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -5862,7 +5878,7 @@ fn copy_dram_to_sram[
     _copy_dram_to_sram_validate_args(dst, src)
 
     alias num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope]()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
     if num_threads > num_busy_threads:
@@ -5948,6 +5964,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
     """Efficiently copy data from global memory (DRAM) to shared memory (SRAM)
     on AMD GPUs.
@@ -5973,6 +5990,7 @@ fn copy_dram_to_sram[
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in shared memory (SRAM).
@@ -5986,9 +6004,9 @@ fn copy_dram_to_sram[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
     ]()
     _copy_dram_to_sram_validate_args(dst, src_tensor)
-    alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
     if num_threads > num_busy_threads:
@@ -6259,6 +6277,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout
     for AMD GPUs.
@@ -6280,6 +6299,7 @@ fn copy_dram_to_sram[
         thread_scope: Scope at which thread operations are performed (`BLOCK` or
             `WARP`). Defaults to `BLOCK`, where all threads in a block
             participate.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -6308,6 +6328,7 @@ fn copy_dram_to_sram[
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         num_threads=num_threads,
+        block_dim_count=block_dim_count,
         thread_scope=thread_scope,
     ](dst, src_iter, bound)
 
@@ -6318,6 +6339,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout.
 
@@ -6338,6 +6360,7 @@ fn copy_dram_to_sram[
         thread_scope: Scope at which thread operations are performed
                 (`BLOCK` or `WARP`). Defaults to `ThreadScope.BLOCK`, where all
                 threads in a block participate.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -6367,6 +6390,7 @@ fn copy_dram_to_sram[
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         num_threads=num_threads,
+        block_dim_count=block_dim_count,
         thread_scope=thread_scope,
     ](dst, src)
 
@@ -6379,6 +6403,7 @@ fn copy_dram_to_sram_async[
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = src_thread_layout.size(),
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """Asynchronously copy data from DRAM (global memory) to SRAM (shared
     memory) in a GPU context.
@@ -6415,6 +6440,7 @@ fn copy_dram_to_sram_async[
             - `CacheEviction.EVICT_LAST`: Keep data in cache until last use.
         num_threads: Total number of threads participating in the copy operation.
                     Defaults to the size of src_thread_layout.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -6467,12 +6493,13 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     # We know at compile time that only partial threads copy based on the size
     # of input tensors. Return if current thread doesn't have work.
     @parameter
     if num_threads > num_busy_threads:
-        if thread_idx.x >= num_busy_threads:
+        if worker_idx >= num_busy_threads:
             return
 
     alias row_size = dst.stride[0]()
@@ -6503,8 +6530,8 @@ fn copy_dram_to_sram_async[
         )
     )
 
-    var src_fragments = src.distribute[src_thread_layout](thread_idx.x)
-    var dst_fragments = dst.distribute[dst_thread_layout](thread_idx.x)
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
 
@@ -6552,6 +6579,7 @@ fn copy_dram_to_sram_async[
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """
     Asynchronous copy from DRAM to SRAM with thread affinity mapping.
@@ -6568,6 +6596,7 @@ fn copy_dram_to_sram_async[
         eviction_policy: Cache eviction policy to use during the transfer.
         num_threads: Number of threads to use for the operation, defaults to
             the size of `thread_layout`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: Destination tensor in SRAM.
@@ -6585,6 +6614,7 @@ fn copy_dram_to_sram_async[
         swizzle=swizzle,
         eviction_policy=eviction_policy,
         num_threads=num_threads,
+        block_dim_count=block_dim_count
     ](dst, src)
 
 
@@ -6613,6 +6643,7 @@ fn copy_sram_to_dram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
+    block_dim_count: Int = 1,
     binary_op: OptionalReg[binary_op_type] = None,
 ](dst: LayoutTensor, src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to DRAM (global
@@ -6639,6 +6670,7 @@ fn copy_sram_to_dram[
             which can improve memory access patterns and reduce bank conflicts.
         num_threads: Total number of threads participating in the copy
             operation. Defaults to the size of thread_layout.
+        block_dim_count: The number of dimensions in the thread block.
         binary_op: Optional binary operation to apply during the copy, combining
             source data with existing destination data.
 
@@ -6682,14 +6714,15 @@ fn copy_sram_to_dram[
     ]()
 
     alias num_busy_threads = thread_layout.size()
+    var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     @parameter
     if num_threads > num_busy_threads:
-        if thread_idx.x >= num_busy_threads:
+        if worker_idx >= num_busy_threads:
             return
 
-    var src_fragments = src.distribute[thread_layout](thread_idx.x)
-    var dst_fragments = dst.distribute[thread_layout](thread_idx.x)
+    var src_fragments = src.distribute[thread_layout](worker_idx)
+    var dst_fragments = dst.distribute[thread_layout](worker_idx)
 
     # TODO: copy_from only allows static layout
     @parameter
@@ -6897,7 +6930,9 @@ fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
 @always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
+    num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM).
 
@@ -6915,10 +6950,13 @@ fn copy_local_to_dram[
         dst_thread_layout: The layout used to distribute the destination tensor
             across threads. This determines how the workload is divided among
             participating threads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in global memory (DRAM).
@@ -6926,7 +6964,14 @@ fn copy_local_to_dram[
     """
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+    alias num_busy_threads = dst_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     @parameter
@@ -6983,7 +7028,9 @@ fn copy_local_to_dram[
 @always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
+    num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM) on
     AMD GPUs.
@@ -7004,10 +7051,13 @@ fn copy_local_to_dram[
         dst_thread_layout: The layout used to distribute the destination tensor
             across threads. This determines how the workload is divided among
             participating threads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in global memory (DRAM).
@@ -7028,7 +7078,14 @@ fn copy_local_to_dram[
 
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+    alias num_busy_threads = dst_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
@@ -7078,7 +7135,9 @@ fn copy_local_to_dram[
 @always_inline("nodebug")
 fn copy_dram_to_local[
     src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
@@ -7102,10 +7161,13 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7126,7 +7188,15 @@ fn copy_dram_to_local[
     alias simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var descriptor = get_amd_buffer_descriptor(src_base)
 
@@ -7173,7 +7243,9 @@ fn copy_dram_to_local[
 @always_inline("nodebug")
 fn copy_dram_to_local[
     src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: UInt32):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7187,10 +7259,13 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7216,7 +7291,14 @@ fn copy_dram_to_local[
     alias simd_width = src_tensor.element_layout.size()
     _copy_local_to_dram_validate_args(src_tensor, dst)
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
 
     var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
@@ -7253,7 +7335,9 @@ fn copy_dram_to_local[
 @always_inline("nodebug")
 fn copy_dram_to_local[
     src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1
 ](dst: LayoutTensor, src: LayoutTensor):
     """Efficiently copy data from global memory (DRAM) to registers.
 
@@ -7271,16 +7355,27 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
         src:  The source tensor in global memory (DRAM).
     """
-    var worker_idx = _get_worker_idx[thread_scope]()
+
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
     @parameter
@@ -7338,8 +7433,10 @@ fn copy_dram_to_local[
 fn copy_local_to_shared[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    row_major: Bool = False,
+    block_dim_count: Int = 1,
+    row_major: Bool = False
     # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
 ](
     dst: LayoutTensor[*_, address_space = _GPUAddressSpace.SHARED, **_],
@@ -7368,10 +7465,13 @@ fn copy_local_to_shared[
         swizzle: Optional swizzling function to rearrange the destination
             indices, which can improve memory access patterns and reduce bank
             conflicts.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
         row_major: Whether to use row-major ordering for the copy operation.
             This is particularly relevant when prefetching from DRAM to SRAM
             via registers on AMD GPUs. Defaults to False.
@@ -7407,7 +7507,13 @@ fn copy_local_to_shared[
         "src address space must be LOCAL.",
     ]()
 
-    var worker_idx = _get_worker_idx[thread_scope]()
+    alias num_busy_threads = thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
 
     constrained[
         src.dtype == dst.dtype
