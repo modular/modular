@@ -1011,6 +1011,9 @@ executeTests(ArrayRef<Test> tests, const std::filesystem::path &entrypointPath,
     return emitInitError("unable to open Mojo configuration file: " +
                          Twine(config.getError()));
   StringRef testExecutorPath = config->getTestExecutorPath();
+  if (!std::filesystem::exists(testExecutorPath.str()))
+    return emitInitError(
+        "unable to locate the test executor path, try installing `mojo`.");
 
   std::vector<Test> filteredTests;
   SmallVector<TestID> skippedTests;
