@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
+from typing import Callable, Union
+
 from .context import InputContext, SamplingParams
 from .log_probabilities import LogProbabilities
 from .pipeline import PipelineOutput
@@ -12,7 +14,9 @@ from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
     AudioGenerationResponse,
+    AudioGenerator,
     AudioGeneratorOutput,
+    EmbeddingsGenerator,
     EmbeddingsOutput,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -29,24 +33,27 @@ from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
 
+PipelinesFactory = Callable[
+    [], Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
+]
+
 __all__ = [
     "AudioGenerationMetadata",
     "AudioGenerationRequest",
     "AudioGenerationResponse",
+    "AudioGenerator",
     "AudioGeneratorOutput",
+    "EmbeddingsGenerator",
     "EmbeddingsOutput",
-    "EngineStatus",
     "GenerationStatus",
     "InputContext",
     "LogProbabilities",
     "PipelineOutput",
     "PipelineTask",
-    "PipelineTask",
     "PipelineTokenizer",
     "PipelineTokenizer",
+    "PipelinesFactory",
     "Request",
-    "Request",
-    "RequestID",
     "RequestID",
     "SamplingParams",
     "SchedulerResult",
