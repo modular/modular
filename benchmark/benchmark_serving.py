@@ -75,7 +75,8 @@ class RequestFuncInput:
     img: Optional[OpenAIImage]
     api_url: str
     prompt_len: int
-    output_len: int
+    max_tokens: Optional[int]
+    ignore_eos: bool
     model: str
     lora: str
     session_id: Optional[str] = None
@@ -125,6 +126,11 @@ class RequestCounter:
             return True
 
 
+def min_ignore_none(x: Sequence[Optional[int]]) -> Optional[int]:
+    filtered = [elem for elem in x if elem is not None]
+    return min(filtered, default=None)
+
+
 def compute_output_len(
     tokenizer: PreTrainedTokenizerBase, output: RequestFuncOutput
 ) -> int:
@@ -149,9 +155,13 @@ async def async_request_trt_llm(
             "text_input": request_func_input.prompt,
             "temperature": 0.0,
             "top_p": 1.0,
-            "max_tokens": request_func_input.output_len,
+            "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
+
+        if request_func_input.max_tokens is not None:
+            payload["max_tokens"] = request_func_input.max_tokens
+
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
 
@@ -216,11 +226,13 @@ async def async_request_openai_completions(
             "prompt": request_func_input.prompt,
             "temperature": 0.0,
             "best_of": 1,
-            "max_tokens": request_func_input.output_len,
             "stream": True,
-            "ignore_eos": True,
+            "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.max_tokens is not None:
+            payload["max_tokens"] = request_func_input.max_tokens
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -316,11 +328,13 @@ async def async_request_openai_chat_completions(
             "messages": messages_data,
             "lora": request_func_input.lora,
             "temperature": 0.0,
-            "max_tokens": request_func_input.output_len,
             "stream": True,
-            "ignore_eos": True,
+            "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.max_tokens is not None:
+            payload["max_tokens"] = request_func_input.max_tokens
 
         if request_func_input.img:
             # TODO: Remove this type ignore
@@ -839,7 +853,8 @@ async def chat_session_driver(
         prompt=[],
         api_url=api_url,
         prompt_len=0,
-        output_len=0,
+        max_tokens=0,
+        ignore_eos=True,
         img=None,
         session_id=str(chat_session.id),
     )
@@ -872,7 +887,7 @@ async def chat_session_driver(
         )
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
-        request_func_input.output_len = output_len
+        request_func_input.max_tokens = output_len
         response = await request_func(request_func_input, pbar)
         if (
             skip_session_count is None
@@ -928,6 +943,7 @@ async def benchmark(
     num_chat_sessions: Optional[int],
     delay_between_chat_turns: Optional[int],
     ttft_skip_requests: int,
+    max_output_len: Optional[int],
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
 ):
@@ -951,13 +967,17 @@ async def benchmark(
                 }
             ]
             test_prompt_len = test_question.num_tokens
-            test_output_len = test_answer.num_tokens
+            test_max_tokens: Optional[int] = test_answer.num_tokens
+            test_ignore_eos = True
             test_img = None
         else:
             test_request = input_requests[0]
             test_prompt = test_request.prompt_formatted
             test_prompt_len = test_request.prompt_len
-            test_output_len = test_request.output_len
+            test_max_tokens = min_ignore_none(
+                (test_request.output_len, max_output_len)
+            )
+            test_ignore_eos = test_request.output_len is not None
             test_img = test_request.encoded_img
 
         test_input = RequestFuncInput(
@@ -965,7 +985,8 @@ async def benchmark(
             prompt=test_prompt,
             api_url=api_url,
             prompt_len=test_prompt_len,
-            output_len=test_output_len,
+            max_tokens=test_max_tokens,
+            ignore_eos=test_ignore_eos,
             img=test_img,
             lora=lora_id,
         )
@@ -1038,13 +1059,24 @@ async def benchmark(
         async for request in get_request(
             input_requests, request_rate, burstiness
         ):
+            # If the request length is pinned, then we use ignore_eos+max_tokens
+            # to force the model's hand into the given request length. Otherwise,
+            # we run until the model generates EOS. Letting the model choose
+            # request lengths has some downsides (e.g., benchmarking is
+            # vulnerable to correctness bugs or even minor optimizations), but
+            # sometimes necessary if we have no other way to set the appropriate
+            # distribution of output lengths.
+            ignore_eos = request.output_len is not None
+            max_tokens = min_ignore_none((request.output_len, max_output_len))
+
             request_func_input = RequestFuncInput(
                 model=model_id,
                 lora=lora_id,
                 prompt=request.prompt_formatted,
                 api_url=api_url,
                 prompt_len=request.prompt_len,
-                output_len=request.output_len,
+                max_tokens=max_tokens,
+                ignore_eos=ignore_eos,
                 img=request.encoded_img,
             )
             tasks.append(
@@ -1462,6 +1494,7 @@ def main(args: argparse.Namespace) -> None:
             num_chat_sessions=args.num_chat_sessions,
             delay_between_chat_turns=args.delay_between_chat_turns,
             ttft_skip_requests=args.ttft_skip_requests,
+            max_output_len=args.max_output_len,
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
         )
@@ -1656,6 +1689,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Fixed output/answer length for each request/round of chats. "
             "Overrides the length from dataset."
+        ),
+    )
+    parser.add_argument(
+        "--max-output-len",
+        type=int,
+        default=None,
+        help=(
+            "Max output length for each request. Only takes effect for datasets"
+            " which do not include explicit output lengths."
         ),
     )
     parser.add_argument(

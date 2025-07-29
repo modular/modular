@@ -45,7 +45,7 @@ class OpenAIImage(TypedDict):
 class SampledRequest:
     prompt_formatted: str
     prompt_len: int
-    output_len: int
+    output_len: int | None
     encoded_img: OpenAIImage | None
 
 
