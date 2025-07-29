@@ -18,13 +18,7 @@ from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    ops,
-)
+from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
 
 from ..comm import Allreduce
 from ..kernels import grouped_matmul_ragged, moe_create_indices

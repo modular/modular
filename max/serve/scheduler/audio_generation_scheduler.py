@@ -33,9 +33,7 @@ from max.interfaces import (
     msgpack_numpy_decoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import (
-    TTSContext,
-)
+from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger

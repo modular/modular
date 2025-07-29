@@ -31,9 +31,7 @@ from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
-from max.pipelines.architectures.llama3.llama3 import (
-    StackedMLP,
-)
+from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 

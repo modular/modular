@@ -18,13 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Dim,
-    TensorValue,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DeviceRef, Dim, TensorValue, TensorValueLike, ops
 from max.graph.weights import Weights
 from max.nn import Conv2DV1, EmbeddingV1, LayerNormV1, LinearV1
 from max.nn.layer import Layer

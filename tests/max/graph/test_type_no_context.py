@@ -15,13 +15,7 @@ been initialized."""
 
 import pytest
 from hypothesis import given
-from max.graph import (
-    BufferType,
-    Dim,
-    TensorType,
-    _ChainType,
-    _OpaqueType,
-)
+from max.graph import BufferType, Dim, TensorType, _ChainType, _OpaqueType
 
 
 @given(dim=...)

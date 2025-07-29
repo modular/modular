@@ -23,17 +23,11 @@ from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
-from max.pipelines.core import (
-    TextAndVisionContext,
-)
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
 from PIL import Image
 from PIL.Image import Image as ImageType
-from transformers import (
-    AutoConfig,
-    AutoProcessor,
-    AutoTokenizer,
-)
+from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig

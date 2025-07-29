@@ -17,11 +17,7 @@ from typing import Any, Callable, Literal, Optional
 
 from max.driver import Tensor
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 
 from ..llama3.model import LlamaModelBase

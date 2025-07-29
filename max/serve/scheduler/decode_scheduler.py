@@ -33,10 +33,7 @@ from max.nn.kv_cache import (
     KVTransferEngineMetadata,
     PagedKVCacheManager,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced

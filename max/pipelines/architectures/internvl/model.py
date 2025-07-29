@@ -24,13 +24,7 @@ import numpy as np
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    Type,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,

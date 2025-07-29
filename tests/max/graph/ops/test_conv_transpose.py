@@ -16,11 +16,7 @@ from math import sqrt
 
 import numpy as np
 import pytest
-from conftest import (
-    MAX_INT32,
-    static_dims,
-    tensor_types,
-)
+from conftest import MAX_INT32, static_dims, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType

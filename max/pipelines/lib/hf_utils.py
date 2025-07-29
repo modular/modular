@@ -38,10 +38,7 @@ from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 from transformers import AutoConfig
 
-from .config_enums import (
-    RepoType,
-    SupportedEncoding,
-)
+from .config_enums import RepoType, SupportedEncoding
 
 logger = logging.getLogger("max.pipelines")
 

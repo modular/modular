@@ -26,15 +26,10 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.nn.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import (
-    TTSContext,
-)
+from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 
-from .pipeline import (
-    PipelineModel,
-    TextGenerationPipeline,
-)
+from .pipeline import PipelineModel, TextGenerationPipeline
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

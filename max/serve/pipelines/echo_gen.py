@@ -26,9 +26,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TokenGenerator,
 )
-from max.pipelines.core import (
-    TextContext,
-)
+from max.pipelines.core import TextContext
 
 
 @dataclass

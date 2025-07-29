@@ -15,14 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterator
-from typing import (
-    Any,
-    Callable,
-    Optional,
-    Protocol,
-    TypeVar,
-    runtime_checkable,
-)
+from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
 from max.driver import CPU, DLPackArray, Tensor

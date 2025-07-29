@@ -40,10 +40,7 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler import (
-    PrefillRequest,
-    PrefillResponse,
-)
+from max.serve.scheduler import PrefillRequest, PrefillResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config

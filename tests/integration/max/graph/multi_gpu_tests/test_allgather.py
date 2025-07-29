@@ -20,13 +20,7 @@ import pytest
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn import Signals
 
 M = 512

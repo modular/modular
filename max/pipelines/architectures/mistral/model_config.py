@@ -20,11 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 
