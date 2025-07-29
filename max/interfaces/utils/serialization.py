@@ -23,16 +23,22 @@ def numpy_encoder_hook(
     use_shared_memory: bool = False,
     shared_memory_threshold: int = 24000000,
 ) -> Callable[[Any], Any]:
-    """Create a configurable numpy encoding hook.
+    """
+    Create a configurable numpy encoding hook.
 
     Args:
-        use_shared_memory: Whether to attempt shared memory conversion for numpy arrays
+        use_shared_memory: Whether to attempt shared memory conversion for numpy arrays.
         shared_memory_threshold: Minimum size in bytes for shared memory conversion.
-                                If 0, all arrays are candidates for conversion.
+            If 0, all arrays are candidates for conversion.
+            The default value is 24MB (24,000,000 bytes), which is chosen based on
+            internal micro-benchmarks. These benchmarks indicate that serialization
+            using shared memory begins to show a measurable speedup for numpy arrays
+            at or above this size, making it a practical default for performance-sensitive
+            applications.
 
     Returns:
         Encoding hook function that handles numpy arrays and optionally converts
-        them to shared memory
+        them to shared memory.
     """
 
     def encode_hook(obj: Any) -> Any:
