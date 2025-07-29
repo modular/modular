@@ -17,18 +17,10 @@ from __future__ import annotations
 from typing import cast
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    TensorValueLike,
-    ops,
-)
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 from max.nn import (
-    MLP,
-    Allreduce,
     ColumnParallelLinear,
+    DistributedMLP,
     DistributedRMSNorm,
     Llama3RotaryEmbedding,
     Module,
@@ -96,19 +88,12 @@ class Llama4DecoderLayer(Module):
                 apply_router_weight_first=True,
             )
         else:
-            self.feed_forward = MLP(
+            self.feed_forward = DistributedMLP(
                 config.dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size_mlp,
                 devices=config.devices,
-            )
-            self.feed_forward.sharding_strategy = (
-                ShardingStrategy.tensor_parallel(len(config.devices))
-            )
-            self.feed_forward_shards = self.feed_forward.shard(config.devices)
-            self.feed_forward_allreduce = Allreduce(
-                num_accelerators=len(config.devices)
             )
         self.input_layernorm = DistributedRMSNorm(
             config.hidden_size,
@@ -147,16 +132,9 @@ class Llama4DecoderLayer(Module):
         hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
         post_norm_states = self.post_attention_layernorm(hidden_states)
 
-        if self.is_moe_layer:
-            mlp_outs = self.feed_forward(
-                post_norm_states, signal_buffers=signal_buffers
-            )
-        else:
-            mlp_outs = [
-                shard(x)
-                for shard, x in zip(self.feed_forward_shards, post_norm_states)
-            ]
-            mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
+        mlp_outs = self.feed_forward(
+            post_norm_states, signal_buffers=signal_buffers
+        )
         hidden_states = [
             h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
         ]

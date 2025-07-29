@@ -16,21 +16,20 @@ from __future__ import annotations
 
 import functools
 
-from max.graph import ShardingStrategy
 from max.nn import (
-    MLP,
     ColumnParallelLinear,
+    DistributedMLP,
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    Shardable,
+    Module,
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
     DistributedLatentAttentionWithRope,
 )
 from max.nn.kv_cache import FetchPagedKVCacheCollection
-from max.nn.moe import MoE
+from max.nn.moe import DistributedTPMoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -129,7 +128,7 @@ class DistributedDeepseekV2(DistributedTransformer):
             devices=config.devices,
         )
 
-    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Shardable:
+    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
 
@@ -138,14 +137,14 @@ class DistributedDeepseekV2(DistributedTransformer):
             i: Layer index
 
         Returns:
-            List of MLP shards or MoE modules depending on the layer index and config
+            Either a MoE or MLP module depending on the layer index and config
         """
         if (
             config.n_routed_experts is not None
             and i >= config.first_k_dense_replace
             and i % config.moe_layer_freq == 0
         ):
-            moe = MoE(
+            return DistributedTPMoE(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.n_routed_experts,
@@ -157,19 +156,11 @@ class DistributedDeepseekV2(DistributedTransformer):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
             )
-            moe.sharding_strategy = ShardingStrategy.tensor_parallel(
-                len(config.devices)
-            )
-            return moe
         else:
-            mlp = MLP(
+            return DistributedMLP(
                 dtype=config.dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
             )
-            mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-                len(config.devices)
-            )
-            return mlp

@@ -20,9 +20,9 @@ import logging
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
-    MLP,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
+    DistributedMLP,
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
@@ -96,22 +96,6 @@ class DistributedLlama3(DistributedTransformer):
                 if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
                 else config.dtype
             )
-
-            mlp = MLP(
-                mlp_dtype,
-                config.model_quantization_encoding,
-                config.hidden_size,
-                config.intermediate_size,
-                config.devices,
-                linear_cls,
-                float8_config=(
-                    fp8_cfg
-                    if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
-                    else None
-                ),
-                dist_gemm_config=config.dist_gemm_config,
-            )
-
             layers.append(
                 DistributedTransformerBlock(
                     attention=DistributedAttentionWithRope(
@@ -135,11 +119,24 @@ class DistributedLlama3(DistributedTransformer):
                             else None
                         ),
                     ),
-                    mlp=mlp,
+                    mlp=DistributedMLP(
+                        mlp_dtype,
+                        config.model_quantization_encoding,
+                        config.hidden_size,
+                        config.intermediate_size,
+                        config.devices,
+                        linear_cls,
+                        # Only pass the float8 config if this MLP layer is quantized.
+                        float8_config=(
+                            fp8_cfg
+                            if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
+                            else None
+                        ),
+                        dist_gemm_config=config.dist_gemm_config,
+                    ),
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),
                     devices=config.devices,
-                    distributed_gemm_config=config.dist_gemm_config,
                     # TODO: Support residual_multiplier
                     # residual_multiplier=config.residual_multiplier,
                 )
