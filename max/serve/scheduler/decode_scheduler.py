@@ -25,6 +25,8 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import (
     KVTransferEngine,
@@ -34,8 +36,6 @@ from max.nn.kv_cache import (
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager

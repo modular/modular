@@ -30,11 +30,11 @@ from max.interfaces import (
     AudioGenerator,
     AudioGeneratorOutput,
     SchedulerResult,
+    msgpack_numpy_decoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TTSContext,
-    msgpack_numpy_decoder,
 )
 from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket

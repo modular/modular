@@ -23,7 +23,7 @@ from typing import Any, Generic, Optional, TypeVar
 
 import msgspec
 import zmq
-from max.pipelines.core import msgpack_numpy_decoder, msgpack_numpy_encoder
+from max.interfaces import msgpack_numpy_decoder, msgpack_numpy_encoder
 from max.serve.kvcache_agent.dispatcher_base import ReplyContext
 from max.serve.queue.zmq_queue import (
     ZmqDealerSocket,

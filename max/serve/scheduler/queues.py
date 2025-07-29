@@ -24,8 +24,9 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Generic, Optional, TypeVar
 
 import zmq
-from max.interfaces import InputContext, PipelineTask
-from max.pipelines.core.serialization import (
+from max.interfaces import (
+    InputContext,
+    PipelineTask,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
