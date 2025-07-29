@@ -15,7 +15,7 @@
 #     fn __init__(out self): ...
 
 # trait Movable
-#     fn __moveinit__(out self, owned existing: Self):
+#     fn __moveinit__(out self, var existing: Self):
 
 alias MassProducible = Defaultable & Movable
 
@@ -30,7 +30,7 @@ struct Thing(MassProducible):
     fn __init__(out self):
         self.id = 0
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, var existing: Self):
         self.id = existing.id
 
 
