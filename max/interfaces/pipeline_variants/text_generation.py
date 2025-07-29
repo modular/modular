@@ -22,6 +22,7 @@ from typing import (
 import msgspec
 from max.interfaces.context import SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
+from max.interfaces.pipeline import PipelineInputs
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 
@@ -224,18 +225,33 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 T = TypeVar("T")
 
 
+@dataclass(frozen=True)
+class TextGenerationInputs(PipelineInputs, Generic[T]):
+    """
+    Input parameters for text generation pipeline operations.
+
+    This class encapsulates the batch of contexts and number of steps required
+    for token generation in a single input object, replacing the previous
+    pattern of passing batch and num_steps as separate parameters.
+    """
+
+    batch: dict[RequestID, T]
+    """Dictionary mapping request IDs to context objects."""
+    num_steps: int
+    """Number of tokens to generate."""
+
+
 @runtime_checkable
 class TokenGenerator(Generic[T], Protocol):
     """Interface for LLM token-generator models."""
 
     def next_token(
-        self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationOutput]:
+        self, inputs: TextGenerationInputs[T]
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Computes the next token response for a single batch.
 
         Args:
-            batch: Batch of contexts.
-            num_steps: Number of tokens to generate.
+            inputs: Input data containing batch of contexts and number of steps to generate.
 
         Returns:
             dict[str, TextGenerationOutput]: Dictionary of responses indexed by request ID.
