@@ -15,6 +15,7 @@
 import ast
 import os
 import pickle
+import re
 import string
 import subprocess
 import sys
@@ -60,7 +61,10 @@ def spec_to_dict(spec: str) -> dict:
     for x in spec_split[1:]:
         k, v = x.split("=")
         k = k.strip("$")
-        d[k] = v
+        try:
+            d[k] = eval(v)
+        except:
+            d[k] = v
     return d
 
 
@@ -70,29 +74,9 @@ def specs_to_df(specs: list[str]) -> pd.DataFrame:
     return df
 
 
-def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):
-    if not exclude:
-        exclude = ["name", "AUTOTUNING_MODE"]
-
-    df = specs_to_df(x_labels)
-    valid_columns = []
-    for c in list(df.columns):
-        if c not in exclude:
-            valid_columns.append(c)
-
-    pivot_columns = []
-    for c in valid_columns:
-        if len(set(df[c])) > 1:
-            pivot_columns.append(c)
-
-    # set(df.columns)-set(pivot_columns)
-    non_pivot_columns = [c for c in valid_columns if c not in pivot_columns]
-    return pivot_columns, non_pivot_columns
-
-
 def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):
-    if not exclude:
-        exclude = ["name", "AUTOTUNING_MODE"]
+    if exclude is None:
+        exclude = []
     # df = specs_to_df(x_labels)
     valid_columns = []
     for c in list(df.columns):
@@ -107,6 +91,11 @@ def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):
     # set(df.columns)-set(pivot_columns)
     non_pivot_columns = [c for c in valid_columns if c not in pivot_columns]
     return pivot_columns, non_pivot_columns
+
+
+def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):
+    df = specs_to_df(x_labels)
+    return extract_pivots_df(df=df, exclude=exclude)
 
 
 def load_pickle(path):  # noqa: ANN001
@@ -136,7 +125,7 @@ def replace_vals_snippet(p_spec, snippet_path) -> str:  # noqa: ANN001
     c = c_init[:]
     for k, v in p_spec.items():
         print(f"Replacing [{k}]:[{v}]")
-        c = c.replace(f"[@{k}]", v)
+        c = c.replace(f"[@{k}]", str(v))
     return c
 
 
@@ -268,6 +257,7 @@ def profile_results(
         pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
     except:
         print(f"Invalid pkl [{pickle_path}]")
+        print(LINE)
         return None
     merged_df, tune_df, pkl_data = (
         pkl.merged_df,
@@ -297,7 +287,9 @@ def profile_results(
         spec = spec_to_dict(tune_df.iloc[0]["spec"])
 
         if not pivots:
-            _, pivots = extract_pivots(list(tune_df["spec"]))
+            _, pivots = extract_pivots(
+                list(tune_df["spec"]), exclude=["name", "AUTOTUNING_MODE"]
+            )
 
         shape = "/".join([f"{p}={spec[p]}" for p in pivots])
         print(
@@ -325,7 +317,6 @@ def profile_results(
         merged_df = df_round_floats(merged_df, prec=3)
         df_to_console_table(merged_df)
 
-    print("[Best Spec]\n")
     spec = TuningSpec(
         name=str(pkl_data.get("name", None)),
         file=Path(pkl_data.get("file", Path())),
@@ -334,8 +325,10 @@ def profile_results(
         git_sha=str(pkl_data.get("git-revision", None)),
         datetime=str(pkl_data.get("datetime", None)),
     )
-    print(spec)
-    print(LINE)
+    if verbose:
+        print("[Best Spec]\n")
+        print(spec)
+        print(LINE)
     return spec
 
 
@@ -379,7 +372,9 @@ def diff_baseline(
         print(LINE)
 
     if not pivots:
-        _, non_pivot_columns = extract_pivots(list(tune_df_base["spec"]))
+        _, non_pivot_columns = extract_pivots(
+            list(tune_df_base["spec"]), exclude=["name", "AUTOTUNING_MODE"]
+        )
         pivots = non_pivot_columns
 
     shape = "/".join([f"{p}={base_dict[p]}" for p in pivots])
@@ -421,7 +416,7 @@ def diff_baseline(
             print(LINE)
 
 
-def codegen(
+def codegen_snippet(
     specs: list[TuningSpec], snippet_path: Path, output_path: Path
 ) -> None:
     details = []
@@ -461,6 +456,70 @@ def codegen(
         print(LINE)
 
     print(f"wrote results to [{abs_output_path}]")
+
+
+def yaml_reference_handling(s: str):
+    # all of them should be uniq
+    ref_pattern = re.compile(r"('<<'[\s]*:[\s]*'*)([^']*)'")
+    refs = re.findall(ref_pattern, s)
+    assert len(set(refs)) == 1
+    ref_name = refs[0][1].lstrip("*")
+
+    s = re.sub(ref_pattern, r"<<: \2", s)
+    refline_pattern = re.compile(rf"'([^:]*):[\s]*(&[\s]*{ref_name})':")
+    refline = re.findall(refline_pattern, s)
+    assert len(refline) == 1
+    new_refline = f"{refline[0][0]}: &{ref_name}"
+
+    s = re.sub(refline_pattern, new_refline, s)
+    return s
+
+
+def codegen_yaml(specs: list[TuningSpec], output_path: Path) -> None:
+    names = [s.name for s in specs]
+    files = [s.file for s in specs]
+    # "name" and "file" in all specs should be identical.
+    assert len(set(names)) == 1
+    assert len(set(files)) == 1
+
+    # collect first set of parameters (i.e., "params[0]") from all specs.
+    params = [s.params[0] for s in specs]
+    df = pd.DataFrame(params)
+    _, non_pivots = extract_pivots_df(df, exclude=[])
+    print("common columns", non_pivots)
+
+    # remove common columns (non-pivots) to get unique rows of data
+    uniq_rows = df.drop(columns=non_pivots)
+    # drop duplicates in common columns (non-pivots)
+    common = df[non_pivots].drop_duplicates()
+
+    # convert to list of dictionaries
+    uniq_params = list(uniq_rows.T.to_dict().values())
+    common_params = list(common.T.to_dict().values())
+
+    common_key = "common"
+    b = dict({"<<": f"*{common_key}"})
+    for i, p in enumerate(uniq_params):
+        uniq_params[i] = dict(b, **p)
+
+    obj = {
+        "name": specs[0].name,
+        "file": str(specs[0].file),
+        f"common: &{common_key}": common_params,
+        "params": uniq_params,
+    }
+
+    # TODO: revise this dump function to directly write yaml merge-key values.
+    # TODO: remove or revise 'yaml_reference_handling'.
+    yaml_str = yaml.dump(obj, sort_keys=False)
+    yaml_str = HEADER + yaml_reference_handling(yaml_str)
+
+    output_yaml = Path(output_path).with_suffix(".yaml")
+    with open(output_yaml, "w") as f:
+        f.write(yaml_str)
+
+    print(f"wrote results to [{output_yaml}]")
+    print(LINE)
 
 
 # TODO: add more checks for inconsistency between various input files.
@@ -747,15 +806,18 @@ def cli(
 
         if snippet_path:
             check_specs(specs=specs, key_cols=pivots)
-            codegen(
+            codegen_snippet(
                 specs=specs, snippet_path=snippet_path, output_path=output_path
             )
+
+        codegen_yaml(specs=specs, output_path=output_path)
 
         print(
             f"num invalid pkls: {len(invalid_pkls)} out of num-files: {len(files)}"
         )
-        for i, pkl in enumerate(invalid_pkls):
-            print(f"invalid pkl [{i}]: [{pkl}]")
+        if verbose:
+            for i, pkl in enumerate(invalid_pkls):
+                print(f"invalid pkl [{i}]: [{pkl}]")
 
         print(LINE)
 
