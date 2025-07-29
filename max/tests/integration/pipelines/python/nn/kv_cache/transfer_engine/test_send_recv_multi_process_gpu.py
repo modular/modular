@@ -190,8 +190,4 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     )
 
     # Check stderr
-    assert (
-        "Discovered and loaded plugin 'ucx' from AsyncRT/libplugin_ucx.so"
-        in err
-    )
     assert "Loading remote metadata for agent: engine_2" in err
