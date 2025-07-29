@@ -14,17 +14,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
     DeviceRef,
     ShardingStrategy,
     TensorValue,
     ops,
 )
 
+from ..comm import Allreduce
 from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import LayerList, Module, Shardable
 from ..linear import MLP, Linear
@@ -218,11 +220,28 @@ class MoE(Module, Shardable):
         # Get sharded weights
         gate_score_shards = self.gate.gate_score.shard(devices)
 
+        shared_gate_proj_shards = []
+        shared_up_proj_shards = []
+        shared_down_proj_shards = []
         if self.has_shared_experts:
-            shared_experts_shards = self.shared_experts.shard(devices)
+            shared_gate_proj_shards = self.shared_experts.gate_proj.shard(
+                devices
+            )
+            shared_up_proj_shards = self.shared_experts.up_proj.shard(devices)
+            shared_down_proj_shards = self.shared_experts.down_proj.shard(
+                devices
+            )
 
-        # Shard each expert's MLP
-        expert_mlps_shards = [expert.shard(devices) for expert in self.experts]
+        # Shard each expert's weights
+        expert_gate_proj_shards = [
+            expert.gate_proj.shard(devices) for expert in self.experts
+        ]
+        expert_up_proj_shards = [
+            expert.up_proj.shard(devices) for expert in self.experts
+        ]
+        expert_down_proj_shards = [
+            expert.down_proj.shard(devices) for expert in self.experts
+        ]
 
         shards = []
         for shard_idx, device in enumerate(devices):
@@ -244,10 +263,32 @@ class MoE(Module, Shardable):
             # Replace the weights with sharded versions.
             sharded.gate.gate_score = gate_score_shards[shard_idx]
             if self.has_shared_experts:
-                sharded.shared_experts = shared_experts_shards[shard_idx]
+                sharded.shared_experts.gate_proj = shared_gate_proj_shards[
+                    shard_idx
+                ]
+                sharded.shared_experts.up_proj = shared_up_proj_shards[
+                    shard_idx
+                ]
+                sharded.shared_experts.down_proj = shared_down_proj_shards[
+                    shard_idx
+                ]
 
-            for idx, sharded_mlps in enumerate(expert_mlps_shards):
-                sharded.experts[idx] = sharded_mlps[shard_idx]
+            for _expert_idx, (
+                expert,
+                gate_shards,
+                up_shards,
+                down_shards,
+            ) in enumerate(
+                zip(
+                    sharded.experts,
+                    expert_gate_proj_shards,
+                    expert_up_proj_shards,
+                    expert_down_proj_shards,
+                )
+            ):
+                expert.gate_proj = gate_shards[shard_idx]
+                expert.up_proj = up_shards[shard_idx]
+                expert.down_proj = down_shards[shard_idx]
 
             shards.append(sharded)
 
@@ -353,3 +394,35 @@ class MoE(Module, Shardable):
             routed_expert_out += self.shared_experts(hidden_state)
 
         return routed_expert_out
+
+
+class DistributedTPMoE(MoE):
+    """Distributed implementation of Mixture of Experts (MoE) with tensor parallelism."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not self.devices or len(self.devices) < 2:
+            raise ValueError(
+                f"Must provide at least 2 devices to `DistributedMoE`, got {self.devices}"
+            )
+        self.num_devices = len(self.devices)
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(
+            self.num_devices
+        )
+        self.allreduce = Allreduce(self.num_devices)
+
+        self.list_of_moes = self.shard(self.devices)
+
+    def __call__(  # type: ignore[override]
+        self,
+        hidden_states: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        assert self.devices
+        return self.allreduce(
+            [
+                expert(hidden)
+                for expert, hidden in zip(self.list_of_moes, hidden_states)
+            ],
+            signal_buffers=signal_buffers,
+        )

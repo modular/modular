@@ -33,10 +33,12 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.graph.ops.allreduce import matmul_allreduce
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
 from .clamp import clamp
+from .comm import Allreduce
 from .kernels import (
     dynamic_scaled_matmul,
     matmul_static_scaled_float8,
@@ -1066,7 +1068,7 @@ class DistributedGemmConfig:
         return DistributedGemmConfig(enable_matmul_allreduce)
 
 
-class MLP(Module, Shardable):
+class MLP(Module):
     """
     Simple multi-layer perceptron composed of three :obj:`Linear` layers.
     Defaults to SiLU activation function.
@@ -1111,10 +1113,7 @@ class MLP(Module, Shardable):
         """
         super().__init__()
         self.devices = devices
-        self.num_devices = len(devices)
         self.dist_gemm_config = dist_gemm_config
-        self.hidden_dim = hidden_dim
-        self.feed_forward_length = feed_forward_length
         self.gate_proj = linear_cls(  # [ffl, hidden]
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
@@ -1145,9 +1144,7 @@ class MLP(Module, Shardable):
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
         assert activation_function in _ACTIVATION_FUNCTIONS
-        self._activation_function_name = activation_function
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
-        self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -1211,77 +1208,79 @@ class MLP(Module, Shardable):
             else:
                 return hidden
 
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the MLP sharding strategy."""
-        return self._sharding_strategy
 
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the MLP layers.
+class DistributedMLP(MLP):
+    """A distributed multi-layer perceptron.
+
+    This class has the same state keys as the non-distributed :obj:`MLP` layer.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if kwargs.get("has_bias"):
+            raise ValueError(
+                "has_bias=True is not supported in DistributedMLP."
+            )
+
+        self.num_devices = len(self.devices)
+
+        self.gate_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
+        )
+        self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+            self.num_devices
+        )
+        self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
+        )
+
+        # Create normal MLP layers for each device. These layers and weights are
+        # not recorded by the nn.Module and do not appear in the state dict.
+        gate_proj_shards = self.gate_proj.shard(self.devices)
+        down_proj_shards = self.down_proj.shard(self.devices)
+        up_proj_shards = self.up_proj.shard(self.devices)
+
+        self.list_of_mlps = []
+        for n, _device in enumerate(self.devices):
+            layer = MLP(*args, **kwargs)
+
+            layer.gate_proj = gate_proj_shards[n]
+            layer.down_proj = down_proj_shards[n]
+            layer.up_proj = up_proj_shards[n]
+
+            self.list_of_mlps.append(layer)
+
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
+
+    def __call__(  # type: ignore[override]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
+    ) -> list[TensorValue]:
+        """Applies the MLP transformation to the input data.
 
         Args:
-            strategy: The sharding strategy to apply.
-        """
-        self._sharding_strategy = strategy
-
-        if strategy.is_replicate:
-            # For replicate strategy, both layers use the same strategy
-            self.gate_proj.sharding_strategy = strategy
-            self.down_proj.sharding_strategy = strategy
-            self.up_proj.sharding_strategy = strategy
-        elif strategy.is_tensor_parallel:
-            self.gate_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
-                strategy.num_devices
-            )
-            self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-        else:
-            raise ValueError(f"Unsupported sharding strategy: {strategy}")
-
-    def shard(self, devices: Iterable[DeviceRef]) -> list[MLP]:
-        """Creates sharded views of this MLP across multiple devices.
-
-        Args:
-            devices: Iterable of devices to place the shards on.
+            x: Input sequence of :obj:`TensorValue` tensors of shape ``(..., hidden_dim)``.
+                The last dimension must match the layer's ``hidden_dim``.
+                The input tensors must reside on their respective devices.
+            signal_buffers: :obj:`BufferValue` buffers for peer-to-peer communication in allreduce.
 
         Returns:
-            List of sharded MLP instances, one for each device.
+            List of output :obj:`TensorValue` tensors of shape ``(..., hidden_dim)``.
+            The results reside on their respective devices.
+
+        Raises:
+            ValueError: If the last dimension of ``x`` doesn't match ``hidden_dim``.
         """
-        if self.sharding_strategy is None:
-            raise ValueError("Sharding strategy is not set")
+        mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
 
-        # Get sharded layers
-        sharded_gate_projs = self.gate_proj.shard(devices)
-        sharded_down_projs = self.down_proj.shard(devices)
-        sharded_up_projs = self.up_proj.shard(devices)
+        dist_gemm_cfg = self.list_of_mlps[0].dist_gemm_config
+        if dist_gemm_cfg is None or not dist_gemm_cfg.enable_matmul_allreduce:
+            return self.allreduce(mlp_outs, signal_buffers)
 
-        shards = []
-        for device, gate_proj, down_proj, up_proj in zip(
-            devices, sharded_gate_projs, sharded_down_projs, sharded_up_projs
-        ):
-            # Create new MLP instance with the sharded layers
-            sharded = MLP(
-                dtype=self.gate_proj.weight.dtype,
-                quantization_encoding=self.quantization_encoding,
-                hidden_dim=self.hidden_dim,
-                feed_forward_length=self.feed_forward_length,
-                devices=[device],
-                has_bias=self.gate_proj.bias is not None,
-                activation_function=self._activation_function_name,
-                float8_config=self.float8_config,
-                dist_gemm_config=self.dist_gemm_config,
-            )
-
-            # Assign the sharded linear layers
-            sharded.gate_proj = gate_proj
-            sharded.down_proj = down_proj
-            sharded.up_proj = up_proj
-
-            shards.append(sharded)
-
-        return shards
+        # Special matmul + allreduce split version
+        # extract the sharded weights from the last linear layers
+        weights = [layer.down_proj.weight for layer in self.list_of_mlps]
+        return matmul_allreduce(
+            mlp_outs,
+            weights,
+            signal_buffers,
+        )

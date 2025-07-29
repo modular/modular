@@ -33,10 +33,10 @@ from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
 from max.nn import (
-    MLP,
     Allreduce,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
+    DistributedMLP,
     DistributedRMSNorm,
     DynamicRotaryEmbedding,
     LayerList,
@@ -125,7 +125,7 @@ class InternVLDecoderLayer(Module):
             has_bias=True,  # Qwen2 uses attention bias
         )
 
-        self.mlp = MLP(
+        self.mlp = DistributedMLP(
             llm_config.dtype,
             quantization_encoding=None,
             hidden_dim=llm_config.hidden_size,
@@ -133,11 +133,6 @@ class InternVLDecoderLayer(Module):
             devices=devices,
             linear_cls=Linear,
         )
-        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-            len(devices)
-        )
-        self.mlp_shards = self.mlp.shard(devices)
-        self.mlp_allreduce = Allreduce(num_accelerators=len(devices))
 
         self.input_layernorm = DistributedRMSNorm(
             dim=llm_config.hidden_size,
@@ -183,9 +178,7 @@ class InternVLDecoderLayer(Module):
         # Add residual.
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
 
-        normed_hs = self.post_attention_layernorm(hs)
-        mlp_outs = [shard(x) for shard, x in zip(self.mlp_shards, normed_hs)]
-        mlp_outs = self.mlp_allreduce(mlp_outs, signal_buffers)
+        mlp_outs = self.mlp(self.post_attention_layernorm(hs), signal_buffers)
 
         # Add residual.
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
