@@ -14,7 +14,9 @@ import pytest
 import zmq
 from max.interfaces import (
     GenerationStatus,
+    RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
 )
 from max.pipelines.core import (
@@ -43,12 +45,11 @@ def zmq_ctx():
 @pytest.fixture
 def mock_pipeline():
     def next_token_behavior(
-        batch: dict[str, TextContext],
-        num_steps=1,  # noqa: ANN001
-    ) -> dict[str, TextGenerationOutput]:
-        responses: dict[str, TextGenerationOutput] = {}
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        responses: dict[RequestID, TextGenerationOutput] = {}
 
-        for request_id, request in batch.items():
+        for request_id, request in inputs.batch.items():
             # Update the InputContext.
             request.update(0)
 
@@ -270,8 +271,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     assert mock_request.request_id in scheduler.active_batch
     scheduler.pipeline.next_token.assert_called_once_with(
-        batch_to_execute,
-        num_steps=1,
+        TextGenerationInputs(batch_to_execute, num_steps=1)
     )
 
 
@@ -390,6 +390,8 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     scheduler._schedule_tg(sch_output)
 
     scheduler.pipeline.next_token.assert_called_once_with(
-        batch_to_execute,
-        num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+        TextGenerationInputs(
+            batch_to_execute,
+            num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+        )
     )

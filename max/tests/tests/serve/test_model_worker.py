@@ -8,7 +8,12 @@
 import time
 
 import pytest
-from max.interfaces import PipelineTask, RequestID, TokenGenerator
+from max.interfaces import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TokenGenerator,
+)
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
@@ -43,7 +48,7 @@ class MockInvalidTokenGenerator(TokenGenerator[str]):
     def __init__(self) -> None:
         raise ValueError(MockInvalidTokenGenerator.ERROR_MESSAGE)
 
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:  # type: ignore
+    def next_token(self, inputs: TextGenerationInputs[str]) -> dict[str, str]:  # type: ignore
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:
@@ -73,7 +78,7 @@ class MockSlowTokenGenerator(TokenGenerator[str]):
     def __init__(self) -> None:
         time.sleep(0.2)
 
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:  # type: ignore
+    def next_token(self, inputs: TextGenerationInputs[str]) -> dict[str, str]:  # type: ignore
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:

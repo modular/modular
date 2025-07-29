@@ -23,6 +23,7 @@ from max.interfaces import (
     InputContext,
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -197,30 +198,30 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         self.prev_num_steps: int = 0
 
     def next_token(
-        self, batch: dict[str, TextContext], num_steps: int = 1
+        self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[str, TextGenerationOutput]:
         max_seq_len = self.kv_manager.max_seq_len
         # Truncate num steps based on the max seq len
-        for context in batch.values():
+        for context in inputs.batch.values():
             num_available_steps = context.compute_num_available_steps(
                 max_seq_len
             )
             assert num_available_steps > 0
-            num_steps = min(num_steps, num_available_steps)
+            num_steps = min(inputs.num_steps, num_available_steps)
         self.prev_num_steps = num_steps
 
         # Claim cache rows for context.
-        for _, context in batch.items():
+        for _, context in inputs.batch.items():
             if not self.kv_manager.contains(context.request_id):
                 self.kv_manager.external_claim(context.request_id)
 
-        ctxs: list[TextContext] = list(batch.values())
+        ctxs: list[TextContext] = list(inputs.batch.values())
 
         self.kv_manager.fetch(ctxs, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
-        for req_id, context in batch.items():
+        for req_id, context in inputs.batch.items():
             tokens = []
             final_status = GenerationStatus.ACTIVE
 
