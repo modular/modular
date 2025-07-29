@@ -80,7 +80,7 @@ def get_window_index_numpy(
     window_size: int,
     spatial_merge_size: int,
     patch_size: int,
-) -> tuple[np.ndarray, list[int]]:
+) -> tuple[np.ndarray, np.ndarray]:
     """NumPy implementation of get_window_index function.
 
     Args:
@@ -165,4 +165,56 @@ def get_window_index_numpy(
     # Concatenate all window indices
     window_index = np.concatenate(window_index, axis=0)
 
-    return window_index, cu_window_seqlens
+    return window_index, np.array(cu_window_seqlens)
+
+
+def get_cu_window_seqlens_numpy(
+    cu_window_seqlens: np.ndarray,
+) -> np.ndarray:
+    """NumPy implementation to get cumulative window sequence lengths.
+
+    Removes duplicate consecutive values from the cumulative window sequence lengths.
+
+    Args:
+        cu_window_seqlens: List of cumulative window sequence lengths.
+
+    Returns:
+        np.ndarray: Unique consecutive cumulative window sequence lengths.
+    """
+
+    # NumPy equivalent of torch.unique_consecutive
+    # Find positions where consecutive elements are different
+    if len(cu_window_seqlens) <= 1:
+        return cu_window_seqlens
+
+    # Create mask for elements that are different from the next element, plus the last element
+    mask = np.ones(len(cu_window_seqlens), dtype=bool)
+    mask[:-1] = cu_window_seqlens[:-1] != cu_window_seqlens[1:]
+
+    return cu_window_seqlens[mask]
+
+
+def get_cu_seqlens_numpy(
+    grid_thw: np.ndarray,
+) -> np.ndarray:
+    """NumPy implementation to compute cumulative sequence lengths.
+
+    Computes cumulative sequence lengths for each image/video based on their
+    temporal, height, and width dimensions. For each image with dimensions (t, h, w),
+    the sequence length is h * w, repeated t times, then accumulated.
+
+    Args:
+        grid_thw: Array of shape [num_images, 3] with (t, h, w) for each image/video.
+
+    Returns:
+        np.ndarray: Cumulative sequence lengths with a leading zero, of shape [total_sequences + 1].
+    """
+
+    cu_seqlens = np.repeat(
+        grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+    ).cumsum(
+        axis=0,
+    )
+    cu_seqlens = np.pad(cu_seqlens, (1, 0), mode="constant", constant_values=0)
+
+    return cu_seqlens
