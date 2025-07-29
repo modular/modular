@@ -9,13 +9,16 @@ from typing import Union
 
 import numpy as np
 import pytest
-from max.interfaces import GenerationStatus, SamplingParams
+from max.interfaces import (
+    GenerationStatus,
+    SamplingParams,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
+)
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
     TTSContext,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 
 
