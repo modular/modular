@@ -1096,19 +1096,36 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 // ConvertPOPStackAllocLifetimeStart
 //===----------------------------------------------------------------------===//
 
+static Value stripAddrspaceCast(Value value) {
+  while (isa<LLVM::AddrSpaceCastOp>(value.getDefiningOp()))
+    value = value.getDefiningOp()->getOperand(0);
+  return value;
+}
+
 template <typename OpT>
-static void lowerLifetimeMarker(Operation *op, ValueRange values,
-                                TargetInfoAttr target,
-                                ConversionPatternRewriter &b) {
-  for (auto [ptr, values] : llvm::zip(op->getOperands(), values)) {
+static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
+                                         TargetInfoAttr target,
+                                         ConversionPatternRewriter &b) {
+  for (unsigned i = 0, e = values.size(); i < e; ++i) {
+    Value ptr = op->getOperand(i);
+    Value value = values[i];
     int64_t typeAllocSize = *DataLayoutInterface::getTypeAllocSize(
         target, cast<PointerType>(ptr.getType()).getElementType());
     auto alloc = ptr.template getDefiningOp<StackAllocationOp>();
     assert(alloc && "expected a parent stack allocation");
+    SmallVector<Value> newValues;
+
+    // LLVM verifies that pointers used by lifetime marks are defined by alloca
+    // instruction directly.
+    value = stripAddrspaceCast(value);
+    if (!isa<LLVM::AllocaOp>(value.getDefiningOp()))
+      return op->emitError("lifetime marker is only allowed for alloca");
+
     int64_t count = cast<IntegerAttr>(alloc.getCountAttr()).getInt();
-    b.create<OpT>(op->getLoc(), typeAllocSize * count, values);
+    b.create<OpT>(op->getLoc(), typeAllocSize * count, value);
   }
   b.eraseOp(op);
+  return success();
 }
 
 class ConvertPOPStackAllocLifetimeStart
@@ -1121,9 +1138,8 @@ public:
   LogicalResult matchAndRewrite(StackAllocLifetimeStartOp op,
                                 StackAllocLifetimeStartOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
-    lowerLifetimeMarker<LLVM::LifetimeStartOp>(op, adaptor.getValues(), target,
-                                               b);
-    return success();
+    return lowerLifetimeMarker<LLVM::LifetimeStartOp>(op, adaptor.getValues(),
+                                                      target, b);
   }
 
 private:
@@ -1144,9 +1160,8 @@ public:
   LogicalResult matchAndRewrite(StackAllocLifetimeEndOp op,
                                 StackAllocLifetimeEndOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
-    lowerLifetimeMarker<LLVM::LifetimeEndOp>(op, adaptor.getValues(), target,
-                                             b);
-    return success();
+    return lowerLifetimeMarker<LLVM::LifetimeEndOp>(op, adaptor.getValues(),
+                                                    target, b);
   }
 
 private:

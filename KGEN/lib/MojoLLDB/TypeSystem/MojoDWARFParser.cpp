@@ -22,8 +22,8 @@ using namespace M;
 using namespace M::KGEN::Mojo;
 using namespace lldb;
 using namespace lldb_private;
-using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
+using namespace llvm::dwarf;
 
 /// Implementation of `generateFunctionDisplayName` that recursively traverses
 /// the scopes in the source name, generating a human readable version of the
