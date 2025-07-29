@@ -187,6 +187,8 @@ mutation.
 
 - Added support for NVIDIA GeForce RTX 3090.
 
+- `StringLiteral.strip()` family of functions now return a `StaticString`.
+
 ### Tooling changes
 
 - Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match
