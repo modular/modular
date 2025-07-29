@@ -30,10 +30,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from PIL import Image
 from transformers import (
     AutoProcessor,

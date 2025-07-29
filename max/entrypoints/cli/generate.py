@@ -28,10 +28,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenGenerator,
 )
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 from .metrics import TextGenerationMetrics
 

@@ -24,12 +24,7 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import (
-    Dim,
-    StaticDim,
-    SymbolicDim,
-    TensorType,
-)
+from max.graph import Dim, StaticDim, SymbolicDim, TensorType
 from test_common.graph_utils import (
     are_all_tensor_values_iterable as _are_all_tensor_values_iterable,
 )
