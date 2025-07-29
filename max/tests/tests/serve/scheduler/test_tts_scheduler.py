@@ -28,10 +28,7 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
-from max.pipelines.core import (
-    TextContext,
-    TTSContext,
-)
+from max.pipelines.core import TextContext, TTSContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (

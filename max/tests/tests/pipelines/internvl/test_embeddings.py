@@ -13,9 +13,7 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.internvl.internvl import InternVisionEmbeddings
-from max.pipelines.architectures.internvl.model_config import (
-    VisionConfig,
-)
+from max.pipelines.architectures.internvl.model_config import VisionConfig
 
 
 def create_test_vision_config(

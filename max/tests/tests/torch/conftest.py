@@ -12,9 +12,7 @@ from pathlib import Path
 
 import pytest
 from max import mlir
-from max.graph import (
-    KernelLibrary,
-)
+from max.graph import KernelLibrary
 from max.torch import CustomOpLibrary
 
 

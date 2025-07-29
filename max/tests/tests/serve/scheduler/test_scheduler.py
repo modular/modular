@@ -20,10 +20,7 @@ from max.interfaces import (
     TextGenerationOutput,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.queue.zmq_queue import (
     ZmqPullSocket,
     ZmqPushSocket,

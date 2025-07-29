@@ -30,9 +30,7 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
-from max.pipelines.core import (
-    TextContext,
-)
+from max.pipelines.core import TextContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,

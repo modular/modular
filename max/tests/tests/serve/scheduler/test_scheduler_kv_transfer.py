@@ -30,9 +30,7 @@ from max.nn.kv_cache import (
     KVTransferEngineMetadata,
     load_kv_manager,
 )
-from max.pipelines.core import (
-    TextContext,
-)
+from max.pipelines.core import TextContext
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
     DispatcherFactory,

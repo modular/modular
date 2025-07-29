@@ -9,12 +9,7 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Graph,
-    ShardingStrategy,
-    TensorType,
-)
+from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
 from max.nn.conv import Conv2D
 
 
