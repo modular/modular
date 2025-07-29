@@ -9,7 +9,6 @@ load("//bazel:api.bzl", "mojo_test")
             "full",
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
-        tags = ["dir-pathlib"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

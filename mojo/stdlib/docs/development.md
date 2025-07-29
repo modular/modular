@@ -86,11 +86,11 @@ To run the tests for the standard library, you can run:
 
 ## Testing only a subset of the standard library
 
-You can filter the stdlib tests only run a specific subdirectory of the
-tests by passing `--test_tag_filters=dir-SUBDIR` to the test command.
+You can run all of the tests within a specific subdirectory by simply
+specifying the subdirectory and using `/...`. For example:
 
 ```bash
-./bazelw test //mojo/stdlib/test/... --test_tag_filters=dir-math
+./bazelw test //mojo/stdlib/test/math/...
 ```
 
 ## Formatting changes

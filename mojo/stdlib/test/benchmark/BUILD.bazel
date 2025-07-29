@@ -26,7 +26,6 @@ _TEST_RUNTIME_ARGS = {
             "--debug-level",
             "full",
         ],
-        tags = ["dir-benchmark"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
@@ -44,7 +43,6 @@ _TEST_RUNTIME_ARGS = {
             "--debug-level",
             "full",
         ],
-        tags = ["dir-benchmark"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

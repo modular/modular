@@ -13,7 +13,6 @@ _DISABLED_ASSERTIONS = [
             "full",
         ],
         enable_assertions = src not in _DISABLED_ASSERTIONS,
-        tags = ["dir-bit"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

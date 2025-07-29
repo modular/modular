@@ -29,7 +29,6 @@ _DISABLED_ASSERTIONS = [
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
-        tags = ["dir-algorithm"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -46,7 +45,6 @@ _DISABLED_ASSERTIONS = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-algorithm"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

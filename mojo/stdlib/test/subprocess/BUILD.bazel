@@ -20,7 +20,6 @@ _PLATFORM_CONSTRAINTS = {
             "--debug-level",
             "full",
         ],
-        tags = ["dir-subprocess"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",

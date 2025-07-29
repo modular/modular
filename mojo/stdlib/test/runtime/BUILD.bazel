@@ -17,7 +17,6 @@ _LIT_TESTS = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-runtime"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -34,7 +33,6 @@ _LIT_TESTS = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-runtime"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

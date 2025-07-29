@@ -60,7 +60,6 @@ _EXPECT_FAIL = [
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         expect_fail = src in _EXPECT_FAIL,
-        tags = ["dir-sys"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
@@ -78,7 +77,6 @@ _EXPECT_FAIL = [
             "--debug-level",
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
-        tags = ["dir-sys"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
