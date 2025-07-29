@@ -8272,7 +8272,7 @@ only in declared parameter names, e.g. the following now works correctly:
   ```
 
   When `takeValueAsOwned()` takes its argument as an
-  [`owned`](/mojo/manual/values/ownership#transfer-arguments-owned-and-)
+  [`owned`](/mojo/manual/values/ownership#transfer-arguments-var-and-)
   value (this is
   common in initializers for example), it is allowed to do whatever it wants
   with the value and destroy it when it is finished. In order to support this,
@@ -8430,7 +8430,7 @@ only in declared parameter names, e.g. the following now works correctly:
   optimized Matmul implementation is 3x faster.
 
 - Renamed the [`^` postfix
-operator](/mojo/manual/values/ownership#transfer-arguments-owned-and-)
+operator](/mojo/manual/values/ownership#transfer-arguments-var-and-)
 from "consume" to "transfer."
 
 #### 🛠️ Fixed

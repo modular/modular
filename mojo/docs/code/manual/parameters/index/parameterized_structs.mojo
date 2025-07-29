@@ -16,13 +16,13 @@ struct GenericArray[ElementType: Copyable & Movable]:
     var data: UnsafePointer[ElementType]
     var size: Int
 
-    fn __init__(out self, owned *elements: ElementType):
+    fn __init__(out self, var *elements: ElementType):
         self.size = len(elements)
         self.data = UnsafePointer[ElementType].alloc(self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i])
 
-    fn __del__(owned self):
+    fn __del__(var self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()

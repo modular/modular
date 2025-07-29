@@ -15,7 +15,7 @@
 trait Stacklike:
     alias EltType: Copyable & Movable
 
-    fn push(mut self, owned item: Self.EltType):
+    fn push(mut self, var item: Self.EltType):
         ...
 
     fn pop(mut self) -> Self.EltType:
@@ -33,7 +33,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
     fn __init__(out self):
         self.list = Self.list_type()
 
-    fn push(mut self, owned item: Self.EltType):
+    fn push(mut self, var item: Self.EltType):
         self.list.append(item)
 
     fn pop(mut self) -> Self.EltType:

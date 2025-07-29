@@ -393,7 +393,7 @@ There are multiple ways that Mojo can transfer ownership of a value:
 * If a type implements the [move
   constructor](/mojo/manual/lifecycle/life#move-constructor),
   `__moveinit__()`, Mojo may invoke this method *if* a value of that type is
-  transferred into a function as an `var` argument, *and* the original
+  transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
   transfer sigil).
 
