@@ -8,7 +8,6 @@ load("//bazel:api.bzl", "mojo_test")
             "--debug-level",
             "full",
         ],
-        tags = ["dir-base64"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

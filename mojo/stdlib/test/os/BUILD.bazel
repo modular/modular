@@ -29,7 +29,6 @@ _EXPECT_CRASH = [
             "full",
         ],
         expect_crash = src in _EXPECT_CRASH,
-        tags = ["dir-os"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -48,7 +47,6 @@ _EXPECT_CRASH = [
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
         env = _ENV.get(src, {}),
-        tags = ["dir-os"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",

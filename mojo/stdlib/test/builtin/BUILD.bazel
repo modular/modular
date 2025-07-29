@@ -73,7 +73,6 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
-        tags = ["dir-builtin"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
@@ -92,7 +91,6 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = _DATA + [src],  # NOTE: some tests attempt to read their source files
-        tags = ["dir-builtin"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",

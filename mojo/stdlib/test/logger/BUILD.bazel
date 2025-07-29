@@ -27,7 +27,6 @@ _EXPECT_CRASH = [
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         expect_crash = src in _EXPECT_CRASH,
-        tags = ["dir-logger"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -44,7 +43,6 @@ _EXPECT_CRASH = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-logger"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

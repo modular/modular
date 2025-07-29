@@ -8,7 +8,6 @@ load("//bazel:api.bzl", "mojo_test")
             "--debug-level",
             "full",
         ],
-        tags = ["dir-time"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

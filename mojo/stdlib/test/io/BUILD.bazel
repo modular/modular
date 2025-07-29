@@ -12,7 +12,6 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-io"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -29,7 +28,6 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
-        tags = ["dir-io"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

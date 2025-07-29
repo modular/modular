@@ -8,7 +8,6 @@ load("//bazel:api.bzl", "mojo_test")
             "--debug-level",
             "full",
         ],
-        tags = ["dir-hashlib"],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -26,7 +25,6 @@ mojo_test(
         "full",
         "-O0",
     ],
-    tags = ["dir-hashlib"],
     deps = [
         "@mojo//:stdlib",
     ],
