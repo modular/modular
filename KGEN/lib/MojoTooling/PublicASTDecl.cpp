@@ -909,6 +909,7 @@ std::string PublicAliasDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
+  dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
   return markdown;
 }
 
@@ -919,6 +920,7 @@ llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
                          {"name", getName().str()},
                          {"summary", summary},
                          {"parameters", toJSONArray(ctx, parameters)},
+                         {"signature", getSignature(ctx)},
                          {"value", value}};
 
   // Only include type if it's not empty
@@ -940,6 +942,41 @@ static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
   return declRef->getParentDecl() &&
          isa_and_nonnull<FileModuleOp, PackageOp, StructDeclOp>(
              declRef->getParentDecl()->getIfOperation());
+}
+
+void PublicAliasDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
+  // Process the lines of the description, looking for markers.
+  SmallVector<std::string> pureDescriptionLines;
+
+  for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
+    std::string paramsSectionHeader =
+        (Twine(DocString::kSectionParameters) + ":").str();
+    if (desc[line] == paramsSectionHeader) {
+      augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
+    } else {
+      // Handle any badly-indented ad-hoc sections
+      maybeParseDocStringAdHocSection(pureDescriptionLines, desc, line,
+                                      lineEnd);
+    }
+  }
+
+  SmallVector<StringRef> pureDescriptionLinesRef;
+  for (const auto &descLine : pureDescriptionLines) {
+    pureDescriptionLinesRef.push_back(StringRef(descLine));
+  }
+  description = DocString::formatDescription(pureDescriptionLinesRef);
+}
+
+std::string PublicAliasDecl::getSignature(
+    MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
+  std::string output;
+  llvm::raw_string_ostream os(output);
+  os << "alias " << getName();
+  if (!parameters.empty())
+    printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
+                                 os);
+  return output;
 }
 
 PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
@@ -983,7 +1020,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = DocString::formatDescription(docStr->getDescription());
+    augmentWithDocumentation(docStr->getDescription());
   }
 }
 
@@ -994,20 +1031,27 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
 void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<std::string> pureDescriptionLines;
+  std::string argsSectionHeader = (Twine(DocString::kSectionArgs) + ":").str();
+  std::string paramsSectionHeader =
+      (Twine(DocString::kSectionParameters) + ":").str();
+  std::string returnsSectionHeader =
+      (Twine(DocString::kSectionReturns) + ":").str();
+  std::string constraintsSectionHeader =
+      (Twine(DocString::kSectionConstraints) + ":").str();
+  std::string raisesSectionHeader =
+      (Twine(DocString::kSectionRaises) + ":").str();
 
   for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
-    if (desc[line] == (Twine(DocString::kSectionArgs) + ":").str()) {
+    if (desc[line] == argsSectionHeader) {
       augmentDeclsWithDocumentation(desc, line, lineEnd, args);
-    } else if (desc[line] ==
-               (Twine(DocString::kSectionParameters) + ":").str()) {
+    } else if (desc[line] == paramsSectionHeader) {
       augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
-    } else if (desc[line] == (Twine(DocString::kSectionReturns) + ":").str()) {
+    } else if (desc[line] == returnsSectionHeader) {
       if (returnType)
         returnsDoc = parseDocStringSection(desc, line, lineEnd);
-    } else if (desc[line] ==
-               (Twine(DocString::kSectionConstraints) + ":").str()) {
+    } else if (desc[line] == constraintsSectionHeader) {
       constraints = parseDocStringSection(desc, line, lineEnd);
-    } else if (desc[line] == (Twine(DocString::kSectionRaises) + ":").str()) {
+    } else if (desc[line] == raisesSectionHeader) {
       if (raises())
         raisesDoc = parseDocStringSection(desc, line, lineEnd);
     } else {
@@ -1585,10 +1629,14 @@ void PublicStructDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<std::string>
       pureDescriptionLines; // Change to std::string to own the data
+  std::string paramsSectionHeader =
+      (Twine(DocString::kSectionParameters) + ":").str();
+  std::string constraintsSectionHeader =
+      (Twine(DocString::kSectionConstraints) + ":").str();
   for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
-    if (desc[line] == (Twine(DocString::kSectionParameters) + ":").str())
+    if (desc[line] == paramsSectionHeader)
       augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
-    else if (desc[line] == (Twine(DocString::kSectionConstraints) + ":").str())
+    else if (desc[line] == constraintsSectionHeader)
       constraints = parseDocStringSection(desc, line, lineEnd);
     else
       // Handle any badly-indented ad-hoc sections

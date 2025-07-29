@@ -504,6 +504,16 @@ public:
   /// Return if this alias is global.
   bool isGlobal() const { return isGlobalAlias; }
 
+  /// Populate the parameter descriptions from a docstring.
+  void augmentWithDocumentation(ArrayRef<StringRef> description);
+
+  /// Generate a string for the signature of this alias, given its
+  /// components. The positions of parameters within the printed signature may
+  /// be extracted via the optionally null `parameterOffsets`.
+  std::string getSignature(MojoParserContext &ctx,
+                           SmallVectorImpl<std::pair<unsigned, unsigned>>
+                               *parameterOffsets = nullptr) const;
+
   /// The output of the generation is defined in the following schema:
   ///
   ///  {
@@ -512,6 +522,7 @@ public:
   ///    "description": string,
   ///    "summary": string,
   ///    "parameters": PublicParameterDecl[],
+  ///    "signature": string,
   ///    "value": string,
   ///    "type": string
   ///  }
