@@ -965,6 +965,16 @@ PIPELINES = {
             kl_div_threshold=0.19,
         ),
     ),
+    "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big", "tts"],  # TTS tag to identify text-to-speech models
+        run=_make_pipeline_runner(
+            pipeline="llasa-8b",
+            encoding="bfloat16",
+            cos_dist_threshold=5.6e-03,
+            kl_div_threshold=5.8e-01,
+        ),
+    ),
 }
 
 

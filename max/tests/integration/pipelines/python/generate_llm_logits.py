@@ -969,6 +969,24 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # upstream modeling_deepsek.py uses a deprecated transformers function
         use_cache=False,
     ),
+    "llasa-8b": GenericOracle(
+        model_path="HKUSTAudio/Llasa-8B",
+        config_params={
+            "max_length": 2048,
+            "trust_remote_code": False,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+        },
+        # TTS-specific prompts formatted according to the HF model card.
+        prompts=[
+            "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>Hello, this is a test of the Llasa text-to-speech system.<|TEXT_UNDERSTANDING_END|>",
+            "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>The quick brown fox jumps over the lazy dog.<|TEXT_UNDERSTANDING_END|>",
+            "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>Good morning! How are you today?<|TEXT_UNDERSTANDING_END|>",
+            "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>In a hole in the ground there lived a hobbit.<|TEXT_UNDERSTANDING_END|>",
+        ],
+        use_cache=True,
+    ),
 }
 
 

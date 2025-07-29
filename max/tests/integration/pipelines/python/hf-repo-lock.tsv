@@ -1,6 +1,7 @@
 hf_repo	revision
 000EXAMPLE-for-unit-test	0123456789abcdef0123456789abcdef01234567
 FinGPT/fingpt-mt_llama3-8b_lora	5b5850574ec13e4ce7c102e24f763205992711b7
+HKUSTAudio/Llasa-8B	2a8339e387348a5cad5160b978a6f364fa06ad74
 HuggingFaceM4/Idefics3-8B-Llama3	fddb4ff79181e55a994674777e06cd5456ce3dc3
 HuggingFaceTB/SmolLM-135M	1d461723eec654e65efdc40cf49301c89c0c92f4
 HuggingFaceTB/SmolLM2-135M	93efa2f097d58c2a74874c7e644dbc9b0cee75a2
