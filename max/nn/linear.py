@@ -57,20 +57,26 @@ class Float8ScaleGranularity(Enum):
     """
 
     TENSOR = "tensor"
+    """Per-tensor scaling."""
+
     ROWWISE = "rowwise"
+    """Per-row scaling."""
+
     COLWISE = "colwise"
+    """Per-column scaling."""
+
     BLOCK = "block"
+    """Per-block scaling."""
 
 
 class Float8ScaleOrigin(Enum):
-    """Specifies whether the quantization scale is determined statically or dynamically.
-
-    STATIC scales are pre-computed and loaded with the model weights.
-    DYNAMIC scales are computed at runtime based on the input data.
-    """
+    """Specifies whether the quantization scale is determined statically or dynamically."""
 
     STATIC = "static"
+    """Scales are pre-computed and loaded with the model weights."""
+
     DYNAMIC = "dynamic"
+    """Scales are computed at runtime based on the input data."""
 
 
 @dataclass
@@ -78,10 +84,10 @@ class Float8WeightScaleSpec:
     """Specifies how weights are scaled for float8 quantization."""
 
     granularity: Float8ScaleGranularity
-    """The granularity of the weight scale factor application."""
+    """The :obj:`Float8ScaleGranularity` of the weight scale factor application."""
 
     dtype: DType
-    """The data type of the weight scale factor(s)."""
+    """The :obj:`DType` of the weight scale factor(s)."""
 
     @property
     def is_tensor(self) -> bool:
@@ -109,13 +115,13 @@ class Float8InputScaleSpec:
     """Specifies how input activations are scaled for float8 quantization."""
 
     granularity: Float8ScaleGranularity
-    """The granularity of the input scale factor application."""
+    """The :obj:`Float8ScaleGranularity` of the input scale factor application."""
 
     origin: Float8ScaleOrigin
-    """The origin (static or dynamic) of the input scale factor."""
+    """The :obj:`Float8ScaleOrigin` (static or dynamic) of the input scale factor."""
 
     dtype: DType
-    """The data type of the input scale factor(s)."""
+    """The :obj:`DType` of the input scale factor(s)."""
 
     activation_scale_ub: float | None = None
     """An optional upper bound for dynamic activation scaling."""
@@ -126,10 +132,10 @@ class Float8Config:
     """Configures float8 quantization settings for a layer or model section."""
 
     input_scale: Float8InputScaleSpec
-    """Specification for input activation scaling."""
+    """:obj:`Float8InputScaleSpec` for input activation scaling."""
 
     weight_scale: Float8WeightScaleSpec
-    """Specification for weight scaling."""
+    """:obj:`Float8WeightScaleSpec` for weight scaling."""
 
     mlp_in_float8: set[int]
     """Set of layer indices with MLPs in float8.
@@ -148,19 +154,19 @@ class Float8Config:
     """
 
     embedding_output_dtype: DType | None = None
-    """The data type of the output from the embedding layer."""
+    """The :obj:`DType` of the output from the embedding layer."""
 
     quant_method: str | None = None
     """The quantization method used (e.g., "fbgemm_fp8")."""
 
     @property
     def is_static(self) -> bool:
-        """Returns true if this input scale is static."""
+        """Returns ``True`` if this input scale is static."""
         return self.input_scale.origin == Float8ScaleOrigin.STATIC
 
     @property
     def is_dynamic(self) -> bool:
-        """Returns true if this input scale is dynamic."""
+        """Returns ``True`` if this input scale is dynamic."""
         return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
 
@@ -171,7 +177,7 @@ class Linear(Module, Shardable):
     This layer implements a fully connected layer where inputs are multiplied
     by a weight matrix and optionally added with a bias vector.
     Both weights and bias initially reside on CPU, and the model init phase
-    moves them to :obj:`device`.
+    moves them to the specified device.
 
     Example:
 
@@ -193,19 +199,19 @@ class Linear(Module, Shardable):
 
     weight: Weight
     """The weight matrix stored on CPU with shape (out_dim, in_dim).
-    Model init transposes the weight and moves it to :obj:`device`."""
+    Model init transposes the weight and moves it to the target device."""
 
     bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_dim,).
-    Model init moves the bias to :obj:`device` if present."""
+    Model init moves the bias to the target device if present."""
 
     input_scale: Weight | None = None
     """The optional input scale stored on CPU with shape ().
-    Model init moves the input_scale to :obj:`device` if present."""
+    Model init moves the input_scale to the target device if present."""
 
     weight_scale: Weight | None = None
     """The optional weight scale stored on CPU with shape () or (N,).
-    Model init moves the weight_scale to :obj:`device` if present."""
+    Model init moves the weight_scale to the target device if present."""
 
     device: DeviceRef
     """The device where matrix operations are performed."""
@@ -227,13 +233,16 @@ class Linear(Module, Shardable):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The data type for both weights and bias.
-            device: The target device for computation.
+            dtype: The :obj:`DType` for both weights and bias.
+            device: The target :obj:`DeviceRef` for computation.
                 Weights remain on CPU until moved during computation.
             name: Base name for weights (appended with ``.weight`` and
                 ``.bias`` if applicable).
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
-                Defaults to :obj:`False`.
+            has_bias: When ``True``, adds a bias vector to the layer.
+                Defaults to ``False``.
+            quantization_encoding: :obj:`QuantizationEncoding` for the weights.
+            float8_config: :obj:`Float8Config` for float8 quantization.
+            clip_weight: Optional weight clipping threshold.
         """
         super().__init__()
 
@@ -314,7 +323,7 @@ class Linear(Module, Shardable):
         """Set the weight sharding strategy.
 
         Args:
-            strategy: The strategy describing the weight sharding.
+            strategy: The :obj:`ShardingStrategy` describing the weight sharding.
         """
         self.weight.sharding_strategy = strategy
 
@@ -352,10 +361,10 @@ class Linear(Module, Shardable):
         """Creates sharded views of this Linear layer across multiple devices.
 
         Args:
-            devices: Iterable of devices to place the shards on.
+            devices: Iterable of :obj:`DeviceRef` devices to place the shards on.
 
         Returns:
-            List of sharded Linear instances, one for each device.
+            List of sharded :obj:`Linear` instances, one for each device.
         """
         if not self.weight.sharding_strategy:
             raise ValueError(
@@ -442,13 +451,13 @@ class Linear(Module, Shardable):
         """Applies a linear transformation to the input data.
 
         Args:
-            x: Input tensor of shape ``(..., in_dim)``.
+            x: Input :obj:`TensorValue` of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
-                The input tensor must reside on :obj:`device`.
+                The input tensor must reside on the target device.
 
         Returns:
-            Output tensor of shape ``(..., out_dim)``.
-            The result resides on the device specified in :obj:`device`.
+            Output :obj:`TensorValue` of shape ``(..., out_dim)``.
+            The result resides on the target device.
 
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
@@ -491,7 +500,7 @@ class Linear(Module, Shardable):
 
 
 class ColumnParallelLinear(Linear):
-    """A Linear layer where the weight and bias are sharded onto multiple devices.
+    """A :obj:`Linear` layer where the weight and bias are sharded onto multiple devices.
 
     This layer first computes :math:`y = xW_i^T + b_i` for each device `i` in
     `[0,..., num_devices]`:
@@ -554,10 +563,11 @@ class ColumnParallelLinear(Linear):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The data type for both weights and bias.
-            devices: The target devices for computation.
+            dtype: The :obj:`DType` for both weights and bias.
+            devices: The target :obj:`DeviceRef` devices for computation.
                 Weights remain on CPU until sharded and moved to device during
                 computation.
+            tied_weight: Optional :obj:`Weight` to tie with this layer.
         """
         if len(devices) == 0:
             raise ValueError(
@@ -609,14 +619,14 @@ class ColumnParallelLinear(Linear):
         """Applies a linear transformation to the input data.
 
         Args:
-            x: Input tensor of shape ``(..., in_dim)``.
+            x: Input sequence of :obj:`TensorValue` tensors of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
-                The input tensor must reside on :obj:`device`.
-            signal_buffers: Buffers for peer-to-peer communication in allgather.
+                The input tensors must reside on their respective devices.
+            signal_buffers: :obj:`BufferValue` buffers for peer-to-peer communication in allgather.
 
         Returns:
-            Output tensor of shape ``(..., out_dim)``.
-            The result resides on the device specified in :obj:`device`.
+            List of output :obj:`TensorValue` tensors of shape ``(..., out_dim)``.
+            The results reside on their respective devices.
 
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
@@ -639,11 +649,15 @@ def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:  # noq
 class LinearV1(Layer):
     """A unified linear layer that delegates to either regular or quantized implementation.
 
-    Deprecated: Use `Linear` instead.
+    .. deprecated::
+        Use :obj:`Linear` instead.
     """
 
     weight: TensorValueLike
+    """The weight tensor for the linear transformation."""
+
     bias: TensorValueLike | None = None
+    """Optional bias tensor for the linear transformation."""
 
     def __call__(self, x: TensorValue) -> TensorValue:
         weight = TensorValue(self.weight)
@@ -668,7 +682,20 @@ class LinearV1(Layer):
         bias: Weights | Weight | None = None,
         quantization_config: QuantizationConfig | None = None,
     ) -> LinearV1:
-        """Factory method to create a Linear layer with appropriate implementation."""
+        """Factory method to create a :obj:`LinearV1` layer with appropriate implementation.
+
+        Args:
+            dtype: The :obj:`DType` for the layer.
+            quantization_encoding: The :obj:`QuantizationEncoding` for the weights.
+            in_features: The input feature dimension.
+            out_features: The output feature dimension.
+            weights: The :obj:`Weights` or :obj:`Weight` object for the layer.
+            bias: Optional :obj:`Weights` or :obj:`Weight` object for bias.
+            quantization_config: Optional :obj:`QuantizationConfig` for quantization.
+
+        Returns:
+            A :obj:`LinearV1` instance.
+        """
         if not quantization_encoding:
             weight = _allocate_if_needed(
                 weights, dtype, [in_features, out_features]
@@ -693,10 +720,14 @@ class LinearV1(Layer):
 
 @dataclass
 class QLinearV1(LinearV1):
-    """A quantized fully connected layer."""
+    """A quantized fully connected layer.
 
-    # Because Linear.bias is optional and Linear is a dataclass and we inherit from Linear, all our fields must be optional even if it doesn't make logical sense
+    .. deprecated::
+        Use :obj:`Linear` instead.
+    """
+
     quantization_encoding: QuantizationEncoding | None = None
+    """The :obj:`QuantizationEncoding` for the quantized weights."""
 
     @classmethod
     def _create(
@@ -748,11 +779,17 @@ class QLinearV1(LinearV1):
 
 @dataclass
 class GPTQLinearV1(QLinearV1):
-    "A Linear layer for GPTQ encoding"
+    """A :obj:`Linear` layer for GPTQ encoding.
 
-    # Because QLinear has optional fields, so must we, since we subclass QLinear
+    .. deprecated::
+        Use :obj:`GPTQLinear` instead.
+    """
+
     quantization_config: QuantizationConfig | None = None
+    """The :obj:`QuantizationConfig` for GPTQ quantization."""
+
     perm_idx: TensorValueLike | None = None
+    """Optional permutation indices for GPTQ quantization."""
 
     @classmethod
     def _create(
@@ -765,7 +802,20 @@ class GPTQLinearV1(QLinearV1):
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
     ) -> LinearV1:
-        """Internal method to create a Linear layer from GPTQ weights."""
+        """Internal method to create a :obj:`LinearV1` layer from GPTQ weights.
+
+        Args:
+            dtype: The :obj:`DType` for the layer.
+            quantization_encoding: The :obj:`QuantizationEncoding` for GPTQ.
+            in_features: The input feature dimension.
+            out_features: The output feature dimension.
+            weights: The :obj:`Weights` or :obj:`Weight` object for the layer.
+            bias: Optional :obj:`Weights` or :obj:`Weight` object for bias.
+            quantization_config: The :obj:`QuantizationConfig` for GPTQ.
+
+        Returns:
+            A :obj:`LinearV1` instance.
+        """
 
         assert quantization_config, (
             "QuantizationConfig must be provided for GPTQLinear"
@@ -846,7 +896,7 @@ class GPTQLinearV1(QLinearV1):
 
 @dataclass
 class GPTQLinear(Linear):
-    "A Linear layer for GPTQ encoding"
+    """A :obj:`Linear` layer for GPTQ encoding."""
 
     def __init__(
         self,
@@ -865,13 +915,14 @@ class GPTQLinear(Linear):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The data type for both weights and bias.
-            device: The target device for computation.
+            dtype: The :obj:`DType` for both weights and bias.
+            device: The target :obj:`DeviceRef` for computation.
                 Weights remain on CPU until moved during computation.
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
-                Defaults to :obj:`False`.
-            quantization_encoding: The quantization encoding of the weights.
-            quantization_config: Extra config for the weight quantization.
+            has_bias: When ``True``, adds a bias vector to the layer.
+                Defaults to ``False``.
+            quantization_encoding: The :obj:`QuantizationEncoding` of the weights.
+            quantization_config: Extra :obj:`QuantizationConfig` for the weight quantization.
+            float8_config: :obj:`Float8Config` for float8 quantization (not supported).
         """
         del out_dim, dtype  # Unused.
         if has_bias:
@@ -953,13 +1004,21 @@ class GPTQLinear(Linear):
 @dataclass
 class MLPV1(Layer):
     """
-    Simple multi-layer perceptron composed of three linear layers.
+    Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
     Uses SiLU activation function.
+
+    .. deprecated::
+        Use :obj:`MLP` instead.
     """
 
     gate_proj: LinearV1
+    """The gate projection :obj:`LinearV1` layer."""
+
     down_proj: LinearV1
+    """The down projection :obj:`LinearV1` layer."""
+
     up_proj: LinearV1
+    """The up projection :obj:`LinearV1` layer."""
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -989,16 +1048,18 @@ _ACTIVATION_FUNCTIONS = {
 
 @dataclass
 class DistributedGemmConfig:
-    """Configure how distributed GEMM is executed"""
+    """Configure how distributed GEMM is executed."""
 
-    # Required fields
-
-    # If True, use the matmul + all_reduce kernel
     enable_matmul_allreduce: bool
+    """If ``True``, use the matmul + all_reduce kernel."""
 
     @staticmethod
     def generate() -> DistributedGemmConfig | None:
-        """Returns the default DistributedGemmConfig"""
+        """Returns the default :obj:`DistributedGemmConfig`.
+
+        Returns:
+            A :obj:`DistributedGemmConfig` instance with default settings.
+        """
         opts_env = os.getenv("LLAMA_ENABLE_DIST_GEMM_KERNELS")
         if opts_env is None:
             return DistributedGemmConfig(True)
@@ -1009,7 +1070,7 @@ class DistributedGemmConfig:
 
 class MLP(Module):
     """
-    Simple multi-layer perceptron composed of three linear layers.
+    Simple multi-layer perceptron composed of three :obj:`Linear` layers.
     Defaults to SiLU activation function.
     """
 
@@ -1028,22 +1089,27 @@ class MLP(Module):
     ) -> None:
         """
         Args:
-            dtype: DType to use for the layer weights, which should match the
+            dtype: :obj:`DType` to use for the layer weights, which should match the
                 input dtype.
-            quantization_encoding: Quantization encoding of the layer weights.
+            quantization_encoding: :obj:`QuantizationEncoding` of the layer weights.
             hidden_dim: The last dimension of the layer input.
             feed_forward_length: Size of dimension used to project the inputs.
-            linear_cls: Linear class to use to create the projection layers.
-            devices: Devices to run the `MLP` layer. If multiple are provided,
-                the first device is used instead. Use `DistributedMLP` to use
+            linear_cls: :obj:`Linear` class to use to create the projection layers.
+            devices: :obj:`DeviceRef` devices to run the ``MLP`` layer. If multiple are provided,
+                the first device is used instead. Use :obj:`DistributedMLP` to use
                 all devices.
+            has_bias: Whether to include bias terms in the linear layers.
             activation_function: Activation function to use. Options are:
-                - "silu"
-                - "gelu"
-                - "gelu_tanh"
-                - "relu"
-                - "tanh"
-                - "sigmoid"
+
+                - ``silu``
+                - ``gelu``
+                - ``gelu_tanh``
+                - ``relu``
+                - ``tanh``
+                - ``sigmoid``
+
+            float8_config: :obj:`Float8Config` for float8 quantization.
+            dist_gemm_config: :obj:`DistributedGemmConfig` for distributed GEMM configuration.
         """
         super().__init__()
         self.devices = devices
@@ -1146,7 +1212,7 @@ class MLP(Module):
 class DistributedMLP(MLP):
     """A distributed multi-layer perceptron.
 
-    This class has the same state keys as the non-distributed MLP Layer.
+    This class has the same state keys as the non-distributed :obj:`MLP` layer.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -1189,20 +1255,20 @@ class DistributedMLP(MLP):
     def __call__(  # type: ignore[override]
         self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
-        """Applies a linear transformation to the input data.
+        """Applies the MLP transformation to the input data.
 
         Args:
-            x: Input tensor of shape ``(..., in_dim)``.
-                The last dimension must match the layer's ``in_dim``.
-                The input tensor must reside on :obj:`device`.
-            signal_buffers: Buffers for peer-to-peer communication in allreduce.
+            x: Input sequence of :obj:`TensorValue` tensors of shape ``(..., hidden_dim)``.
+                The last dimension must match the layer's ``hidden_dim``.
+                The input tensors must reside on their respective devices.
+            signal_buffers: :obj:`BufferValue` buffers for peer-to-peer communication in allreduce.
 
         Returns:
-            Output tensor of shape ``(..., out_dim)``.
-            The result resides on the device specified in :obj:`device`.
+            List of output :obj:`TensorValue` tensors of shape ``(..., hidden_dim)``.
+            The results reside on their respective devices.
 
         Raises:
-            ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
+            ValueError: If the last dimension of ``x`` doesn't match ``hidden_dim``.
         """
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
 
