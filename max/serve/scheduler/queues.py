@@ -26,7 +26,6 @@ from typing import Generic, Optional, TypeVar
 import zmq
 from max.interfaces import InputContext, PipelineTask
 from max.pipelines.core.serialization import (
-    SharedMemoryEncoder,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -67,7 +66,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
             zmq_ctx,
             request_zmq_endpoint,
-            serialize=SharedMemoryEncoder(),
+            serialize=msgpack_numpy_encoder(use_shared_memory=True),
         )
 
         # TODO: Fix Pickle Deserialization for AUDIO_GENERATION
