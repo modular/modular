@@ -15,16 +15,13 @@
 
 from __future__ import annotations
 
-import copy
 import functools
 from typing import Any, Callable, TypeVar
 
 import msgspec
 import numpy as np
 
-from .context import TextAndVisionContext
 from .shared_memory import (
-    SharedMemoryArray,
     ndarray_to_shared_memory,
     open_shm_array,
 )
@@ -32,97 +29,68 @@ from .shared_memory import (
 T = TypeVar("T")
 
 
-def msgpack_numpy_encoder() -> Callable[[Any], bytes]:
+def numpy_encoder_hook(
+    use_shared_memory: bool = False,
+    shared_memory_threshold: int = 24000000,
+) -> Callable[[Any], Any]:
+    """Create a configurable numpy encoding hook.
+
+    Args:
+        use_shared_memory: Whether to attempt shared memory conversion for numpy arrays
+        shared_memory_threshold: Minimum size in bytes for shared memory conversion.
+                                If 0, all arrays are candidates for conversion.
+
+    Returns:
+        Encoding hook function that handles numpy arrays and optionally converts
+        them to shared memory
+    """
+
+    def encode_hook(obj: Any) -> Any:
+        """Custom encoder that handles numpy arrays with optional shared memory conversion."""
+        if isinstance(obj, np.ndarray):
+            # Try shared memory conversion if enabled and array meets threshold
+            if (
+                use_shared_memory
+                and obj.nbytes >= shared_memory_threshold
+                and (shm_array := ndarray_to_shared_memory(obj)) is not None
+            ):
+                return {
+                    "__shm__": True,
+                    "name": shm_array.name,
+                    "shape": shm_array.shape,
+                    "dtype": shm_array.dtype,
+                }
+
+            # Fall back to regular numpy encoding
+            return {
+                "__np__": True,
+                "data": obj.tobytes(),
+                "shape": obj.shape,
+                "dtype": str(obj.dtype),
+            }
+
+        return obj
+
+    return encode_hook
+
+
+def msgpack_numpy_encoder(
+    use_shared_memory: bool = False,
+    shared_memory_threshold: int = 0,
+) -> Callable[[Any], bytes]:
     """Create an encoder function that handles numpy arrays.
+
+    Args:
+        use_shared_memory: Whether to attempt shared memory conversion for numpy arrays
+        shared_memory_threshold: Minimum size in bytes for shared memory conversion.
+                                If 0, all arrays are candidates for conversion.
 
     Returns:
         A function that encodes objects into bytes
     """
-    encoder = msgspec.msgpack.Encoder(enc_hook=encode_numpy_array)
+    enc_hook = numpy_encoder_hook(use_shared_memory, shared_memory_threshold)
+    encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)
     return encoder.encode
-
-
-def _shared_memory(
-    pixel_values: tuple[np.ndarray, ...],
-) -> tuple[SharedMemoryArray, ...] | None:
-    """Convert pixel values to shared memory arrays.
-
-    Args:
-        pixel_values: Tuple of numpy arrays to convert
-
-    Returns:
-        Tuple of SharedMemoryArray objects if all arrays were successfully
-        converted, None if any conversion failed or if input is empty.
-    """
-    if not pixel_values:
-        # Empty tuple doesn't need conversion
-        return None
-
-    # Check if there's actually data to convert
-    total_bytes = sum(img.nbytes for img in pixel_values)
-    if total_bytes == 0:
-        return None
-
-    # Try to convert each image to shared memory
-    shm_arrays = []
-    for img in pixel_values:
-        shm_array = ndarray_to_shared_memory(img)
-        if shm_array is None:
-            # Conversion failed, bail out early
-            return None
-        shm_arrays.append(shm_array)
-
-    return tuple(shm_arrays)
-
-
-class SharedMemoryEncoder:
-    """Encoder that converts vision contexts to use shared memory.
-
-    This encoder wraps the standard msgpack encoder and adds special handling
-    for vision contexts with pixel_values, converting large numpy arrays to
-    shared memory for zero-copy transfer between processes.
-    """
-
-    def __init__(self) -> None:
-        """Initializes the encoder with a base msgpack encoder."""
-        self._base_encoder = msgpack_numpy_encoder()
-
-    def __call__(self, obj: Any) -> bytes:
-        """Encodes an object to bytes, with special handling for vision contexts.
-
-        Args:
-            obj: The object to encode. If it's a (req_id, context) tuple where
-                context has pixel_values, attempts to use shared memory.
-
-        Returns:
-            Encoded bytes representation of the object.
-        """
-        # Only process tuples of (req_id, context).
-        if not (isinstance(obj, tuple) and len(obj) == 2):
-            return self._base_encoder(obj)
-
-        req_id, context = obj
-
-        # Check if context is a vision context.
-        if not isinstance(context, TextAndVisionContext):
-            return self._base_encoder(obj)
-
-        # Only process if pixel_values is non-empty.
-        if not context.pixel_values:
-            return self._base_encoder(obj)
-
-        # Try to convert pixel values to shared memory.
-        if (shm_arrays := _shared_memory(context.pixel_values)) is not None:
-            # Create a shallow copy with shared memory references.
-            context_copy = copy.copy(context)
-            # Type ignore needed because we're replacing np.ndarray with
-            # SharedMemoryArray.
-            # However, this assignment is safe because the serialization
-            # handles it correctly.
-            context_copy.pixel_values = shm_arrays  # type: ignore[assignment]
-            obj = (req_id, context_copy)
-
-        return self._base_encoder(obj)
 
 
 def msgpack_numpy_decoder(
@@ -141,28 +109,6 @@ def msgpack_numpy_decoder(
         type=type_, dec_hook=functools.partial(decode_numpy_array, copy=copy)
     )
     return decoder.decode
-
-
-def encode_numpy_array(obj: Any) -> dict:
-    """Custom encoder for numpy arrays to be used with msgspec."""
-    if isinstance(obj, np.ndarray):
-        return {
-            "__np__": True,
-            "data": obj.tobytes(),
-            "shape": obj.shape,
-            "dtype": str(obj.dtype),
-        }
-
-    # Handle SharedMemoryArray objects from max.pipelines.core.shared_memory.
-    if hasattr(obj, "name") and hasattr(obj, "shape") and hasattr(obj, "dtype"):
-        return {
-            "__shm__": True,
-            "name": obj.name,
-            "shape": obj.shape,
-            "dtype": obj.dtype,
-        }
-
-    return obj
 
 
 def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
