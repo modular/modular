@@ -17,14 +17,13 @@ from max.engine import InferenceSession
 from max.graph import (
     DeviceRef,
     Graph,
-    ShardingStrategy,
     TensorType,
     TensorValue,
     Type,
     Value,
     ops,
 )
-from max.nn import MLP, Allreduce, DistributedGemmConfig, Module, Signals
+from max.nn import MLP, DistributedGemmConfig, DistributedMLP, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
 DTYPE = DType.float32
@@ -162,25 +161,29 @@ def mlp_output(
             }
         )
 
-    mlp: Union[MLP, WrapModuleForSubgraph]
+    mlp: Union[MLP, DistributedMLP, WrapModuleForSubgraph]
 
-    mlp = MLP(
-        dtype,
-        None,
-        gate_proj.shape[1],
-        gate_proj.shape[0],
-        devices=devices_refs,
-        activation_function=activation_function,
-        has_bias=has_bias,
-        dist_gemm_config=DistributedGemmConfig(enable_matmul_allreduce)
-        if n_gpus > 1
-        else None,
-    )
-
-    if n_gpus > 1:
-        mlp.sharding_strategy = ShardingStrategy.tensor_parallel(n_gpus)
-        mlp_shards = mlp.shard(devices_refs)
-        mlp_allreduce = Allreduce(num_accelerators=n_gpus)
+    if n_gpus <= 1:
+        mlp = MLP(
+            dtype,
+            None,
+            gate_proj.shape[1],
+            gate_proj.shape[0],
+            devices=devices_refs,
+            activation_function=activation_function,
+            has_bias=has_bias,
+        )
+    else:
+        mlp = DistributedMLP(
+            dtype,
+            None,
+            gate_proj.shape[1],
+            gate_proj.shape[0],
+            devices=devices_refs,
+            activation_function=activation_function,
+            has_bias=has_bias,
+            dist_gemm_config=DistributedGemmConfig(enable_matmul_allreduce),
+        )
 
     if use_subgraphs:
         mlp = WrapModuleForSubgraph(mlp)
@@ -210,19 +213,11 @@ def mlp_output(
         if n_gpus <= 1:
             graph_output = mlp(graph_input)
         else:
-            assert isinstance(mlp, WrapModuleForSubgraph)
-            distributed_inputs = _distribute_value(graph_input, devices)
-            mlp_outputs = [
-                mlp_shard(x)
-                for mlp_shard, x in zip(mlp_shards, distributed_inputs)
-            ]
-            graph_output = mlp_allreduce(mlp_outputs, graph_signal_buffers)
-
-            if enable_matmul_allreduce:
-                graph_output = [
-                    mlp_shards[i].down_proj(output)
-                    for i, output in enumerate(graph_output)
-                ]
+            assert isinstance(mlp, (DistributedMLP, WrapModuleForSubgraph))
+            graph_output = mlp(
+                _distribute_value(graph_input, devices),
+                graph_signal_buffers,
+            )
 
         if isinstance(graph_output, list):
             graph.output(*graph_output)
