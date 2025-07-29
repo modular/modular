@@ -24,9 +24,7 @@ from max.nn import Signals
 from max.pipelines.architectures.internvl.internvl import (
     InternVisionEncoderLayer,
 )
-from max.pipelines.architectures.internvl.model_config import (
-    InternVLConfig,
-)
+from max.pipelines.architectures.internvl.model_config import InternVLConfig
 from torch.utils.dlpack import from_dlpack
 from utils.assert_tensors import assert_tensors_close
 from utils.config_loader import ConfigNames, get_config_loader

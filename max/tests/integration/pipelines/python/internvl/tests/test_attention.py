@@ -23,9 +23,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.internvl.layers.attention import (
     InternVLMultiheadAttention,
 )
-from max.pipelines.architectures.internvl.model_config import (
-    VisionConfig,
-)
+from max.pipelines.architectures.internvl.model_config import VisionConfig
 from torch.utils.dlpack import from_dlpack
 from utils.assert_tensors import assert_tensors_close
 from utils.config_loader import ConfigNames, get_config_loader

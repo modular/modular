@@ -23,9 +23,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn.rotary_embedding import (
-    Llama3RotaryEmbedding,
-)
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,

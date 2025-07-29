@@ -14,9 +14,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
 )
 from torch.utils.dlpack import from_dlpack
-from torch_reference.configuration_deepseek import (
-    DeepseekV2Config,
-)
+from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import (
     DeepseekV2YarnRotaryEmbedding,
     apply_rotary_pos_emb,

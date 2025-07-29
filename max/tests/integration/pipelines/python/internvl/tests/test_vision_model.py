@@ -14,20 +14,14 @@ import torch
 from internvl_impl.configuration_intern_vit import (
     InternVisionConfig as HFInternVLConfig,
 )
-from internvl_impl.modeling_intern_vit import (
-    InternVLVisionModelWithProjection,
-)
+from internvl_impl.modeling_intern_vit import InternVLVisionModelWithProjection
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Signals
-from max.pipelines.architectures.internvl.internvl import (
-    InternVLVisionModel,
-)
-from max.pipelines.architectures.internvl.model_config import (
-    InternVLConfig,
-)
+from max.pipelines.architectures.internvl.internvl import InternVLVisionModel
+from max.pipelines.architectures.internvl.model_config import InternVLConfig
 from max.pipelines.architectures.internvl.tokenizer import (
     extract_patches_from_image,
 )

@@ -21,12 +21,8 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.internvl.internvl import (
-    InternVisionEmbeddings,
-)
-from max.pipelines.architectures.internvl.model_config import (
-    InternVLConfig,
-)
+from max.pipelines.architectures.internvl.internvl import InternVisionEmbeddings
+from max.pipelines.architectures.internvl.model_config import InternVLConfig
 from max.pipelines.architectures.internvl.tokenizer import (
     extract_patches_from_image,
 )

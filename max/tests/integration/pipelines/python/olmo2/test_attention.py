@@ -32,13 +32,8 @@ from max.pipelines.architectures.olmo2.model_config import (
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
-from transformers.models.olmo2.modeling_olmo2 import (
-    Olmo2RotaryEmbedding,
-)
-from transformers.models.olmo2.modular_olmo2 import (
-    Olmo2Attention,
-    Olmo2Config,
-)
+from transformers.models.olmo2.modeling_olmo2 import Olmo2RotaryEmbedding
+from transformers.models.olmo2.modular_olmo2 import Olmo2Attention, Olmo2Config
 
 # Max position embeddings for OLMo2-7B
 # Based on OLMo2 configuration

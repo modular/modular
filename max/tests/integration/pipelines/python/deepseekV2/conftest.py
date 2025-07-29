@@ -10,9 +10,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from torch_reference.configuration_deepseek import (
-    DeepseekV2Config,
-)
+from torch_reference.configuration_deepseek import DeepseekV2Config
 
 """
 Fixtures for DeepseekV2 tests, including config, generated input tensors, and dummy weights.

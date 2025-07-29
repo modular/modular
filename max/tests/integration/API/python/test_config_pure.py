@@ -12,11 +12,7 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.entrypoints.cli.config import parse_task_flags
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
-from max.pipelines.lib import (
-    MAXModelConfig,
-    PipelineConfig,
-    SamplingConfig,
-)
+from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_hf_dependencies,

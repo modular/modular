@@ -13,9 +13,7 @@ from unittest.mock import MagicMock, patch
 from max.driver import DeviceSpec
 from max.engine import GPUProfilingMode
 from max.graph.weights import WeightsFormat
-from max.nn.kv_cache import (
-    KVCacheStrategy,
-)
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,

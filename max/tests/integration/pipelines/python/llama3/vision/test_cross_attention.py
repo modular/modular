@@ -28,9 +28,7 @@ from max.support.math import ceildiv
 from test_common.context_utils import create_text_context
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
-from transformers.models.mllama.modeling_mllama import (
-    MllamaTextCrossAttention,
-)
+from transformers.models.mllama.modeling_mllama import MllamaTextCrossAttention
 
 
 class CrossAttentionModel:

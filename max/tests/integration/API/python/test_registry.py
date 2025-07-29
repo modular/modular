@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import pytest
 from max.interfaces import PipelineTask
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry

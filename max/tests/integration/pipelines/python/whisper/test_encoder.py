@@ -23,10 +23,7 @@ from max.pipelines.architectures.whisper.encoder import (
     WhisperSdpaAttention,
 )
 from max.pipelines.lib import generate_local_model_path
-from transformers import (
-    AutoModelForSpeechSeq2Seq,
-    AutoProcessor,
-)
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6

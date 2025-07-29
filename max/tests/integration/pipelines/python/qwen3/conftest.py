@@ -10,9 +10,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from transformers.models.qwen3.configuration_qwen3 import (
-    Qwen3Config,
-)
+from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 
 """
 Fixtures for qwen3 tests, including config, generated input tensors, and dummy

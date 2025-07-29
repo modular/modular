@@ -18,10 +18,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
-    flare_mla_prefill_ragged,
-    flash_attention_gpu,
-)
+from max.nn.kernels import flare_mla_prefill_ragged, flash_attention_gpu
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
@@ -38,9 +35,7 @@ from test_common.context_utils import create_text_context
 from test_common.distance_metrics import is_euclidean_distance_close
 from torch.nn.functional import scaled_dot_product_attention
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
-from transformers.models.mllama.modeling_mllama import (
-    MllamaTextCrossAttention,
-)
+from transformers.models.mllama.modeling_mllama import MllamaTextCrossAttention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2

@@ -13,12 +13,7 @@ import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import ColumnParallelLinear, Linear, Signals
 
 

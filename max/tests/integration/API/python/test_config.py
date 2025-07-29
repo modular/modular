@@ -12,16 +12,9 @@ from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from test_common.mocks import mock_estimate_memory_footprint
-from test_common.pipeline_model_dummy import (
-    DUMMY_ARCH,
-    DUMMY_GPTQ_ARCH,
-)
+from test_common.pipeline_model_dummy import DUMMY_ARCH, DUMMY_GPTQ_ARCH
 from test_common.registry import prepare_registry
 
 

@@ -37,10 +37,7 @@ from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from transformers import AutoConfig
 
 

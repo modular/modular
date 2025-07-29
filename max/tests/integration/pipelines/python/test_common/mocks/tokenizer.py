@@ -17,9 +17,7 @@ from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines.core import (
-    TextContext,
-)
+from max.pipelines.core import TextContext
 
 T = TypeVar("T", bound=InputContext)
 

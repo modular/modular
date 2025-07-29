@@ -14,11 +14,7 @@ import pytest
 from max.driver import DeviceSpec, Tensor
 from max.interfaces import TextGenerationInputs
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_decoding import (
     SpeculativeDecodingTextGenerationPipeline,

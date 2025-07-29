@@ -15,11 +15,7 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 
 
 def test_context__get_min_token_logit_mask() -> None:
