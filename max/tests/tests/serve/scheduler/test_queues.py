@@ -12,7 +12,6 @@ import pytest
 import zmq
 from max.pipelines.core.context import TextAndVisionContext, TextContext
 from max.pipelines.core.serialization import (
-    SharedMemoryEncoder,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -91,7 +90,7 @@ def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa
     )
 
     # Test the encoder directly
-    encoder = SharedMemoryEncoder()
+    encoder = msgpack_numpy_encoder(use_shared_memory=True)
 
     # Test 1: Fallback case - when shared memory allocation fails
     mocker.patch(
