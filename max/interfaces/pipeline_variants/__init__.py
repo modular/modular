@@ -8,9 +8,10 @@ from .audio_generation import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
     AudioGenerationResponse,
+    AudioGenerator,
     AudioGeneratorOutput,
 )
-from .embeddings_generation import EmbeddingsOutput
+from .embeddings_generation import EmbeddingsGenerator, EmbeddingsOutput
 from .text_generation import (
     TextGenerationInputs,
     TextGenerationOutput,
@@ -26,7 +27,9 @@ __all__ = [
     "AudioGenerationMetadata",
     "AudioGenerationRequest",
     "AudioGenerationResponse",
+    "AudioGenerator",
     "AudioGeneratorOutput",
+    "EmbeddingsGenerator",
     "EmbeddingsOutput",
     "TextGenerationInputs",
     "TextGenerationOutput",
@@ -35,6 +38,5 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
-    "TextResponse",
     "TokenGenerator",
 ]
