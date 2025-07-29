@@ -14,7 +14,10 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
             "//:has_gpu",
             "//:has_multi_gpu",
             "//:nvidia_gpu",
-        ],
+        ] + select({
+            "//:a10_gpu": ["@platforms//:incompatible"] if src == "test_send_recv_multi_process_gpu.py" else [],
+            "//conditions:default": [],
+        }),
         imports = ["."],
         tags = ["gpu"],
         deps = [
