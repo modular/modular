@@ -58,7 +58,7 @@ description: {% if decl.summary
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">
 
-`alias {{ alias.name }} = {{ alias.value }}`
+`{{ alias.signature }} = {{ alias.value }}`
 
 </div>
 
@@ -73,6 +73,29 @@ description: {% if decl.summary
 **Deprecated:** {{ alias.deprecated }}
 {% endif %}
 
+{% if alias.parameters %}
+
+#### Parameters
+
+{% for param in alias.parameters -%}
+*   ​<b>{{ param.name }}</b> ({% if param.traits -%}
+        {%- for trait in param.traits -%}
+            {%- if trait.path -%}
+                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+            {%- else -%}
+                `{{ trait.type }}`
+            {%- endif -%}
+            {%- if not loop.last %} & {% endif -%}
+        {%- endfor -%}
+    {%- else -%}
+        {%- if param.path -%}
+            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+        {%- else -%}
+            `{{ param.type }}`
+        {%- endif -%}
+    {%- endif %}): {{ param.description }}
+{% endfor %}
+{% endif %}
 </div>
 
 {% endfor %}

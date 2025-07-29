@@ -2999,6 +2999,13 @@ struct LayoutTensor[
         masked = masked or _tile_is_masked[layout, *tile_sizes](),
         alignment=alignment,
     ]
+    """The tile type returned by the `tile()` method given
+    the specified set of tile sizes.
+
+    Parameters:
+        tile_sizes: The dimensions of each tile along each axis of the
+            tensor.
+    """
 
     @always_inline
     fn tile[

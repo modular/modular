@@ -186,9 +186,9 @@ description: {% if decl.summary
 
 {# don't show value for trait aliases (no value) or if name == value #}
 {% if alias.value and alias.name != alias.value %}
-`alias {{ alias.name }} = {{ alias.value }}`
+`{{ alias.signature }} = {{ alias.value }}`
 {% else %}
-`alias {{ alias.name }}`
+`{{ alias.signature }}`
 {% endif %}
 
 </div>
@@ -204,6 +204,29 @@ description: {% if decl.summary
 **Deprecated:** {{ alias.deprecated }}
 {% endif %}
 
+{% if alias.parameters %}
+
+#### Parameters
+
+{% for param in alias.parameters -%}
+*   ​<b>{{ param.name }}</b> ({% if param.traits -%}
+        {%- for trait in param.traits -%}
+            {%- if trait.path -%}
+                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+            {%- else -%}
+                `{{ trait.type }}`
+            {%- endif -%}
+            {%- if not loop.last %} & {% endif -%}
+        {%- endfor -%}
+    {%- else -%}
+        {%- if param.path -%}
+            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+        {%- else -%}
+            `{{ param.type }}`
+        {%- endif -%}
+    {%- endif %}): {{ param.description }}
+{% endfor %}
+{% endif %}
 </div>
 
 {% endfor %}
