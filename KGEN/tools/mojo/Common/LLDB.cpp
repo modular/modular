@@ -28,7 +28,7 @@ static ErrorOr<std::string> getLLDB(KGEN::MojoConfig &config) {
   std::error_code ec;
   StringRef lldb = config.getLLDBPath();
   if (!std::filesystem::exists(lldb.str(), ec) || ec)
-    return Error("unable to resolve the lldb path");
+    return Error("unable to resolve the lldb path, try installing `mojo`");
   return lldb.str();
 }
 
