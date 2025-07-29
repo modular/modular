@@ -32,6 +32,11 @@ from .scheduler import SchedulerResult, SchedulerStatus
 from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
+from .utils import (
+    SharedMemoryArray,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
+)
 
 PipelinesFactory = Callable[
     [], Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
@@ -58,6 +63,7 @@ __all__ = [
     "SamplingParams",
     "SchedulerResult",
     "SchedulerStatus",
+    "SharedMemoryArray",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
