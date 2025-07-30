@@ -34,7 +34,7 @@ _EXTRA_CONSTRAINTS = {
     ],
     "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
     "test_warp_specialization_hilbert_gemm.mojo": ["//:h100_gpu"],
-    "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
+    "test_matmul_sm90_bf16.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_deepseek_scheduler.mojo": ["//:h100_gpu"],
     "test_sm90_splitk.mojo": ["//:h100_gpu"],
 }
