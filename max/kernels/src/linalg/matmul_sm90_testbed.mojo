@@ -15,6 +15,7 @@ from collections import OptionalReg
 from math import ceildiv
 from sys import alignof
 import linalg.vendor_blas
+from linalg.vendor_blas import Backend
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -57,12 +58,13 @@ fn test_matmul_sm90[
         elementwise_compute_lambda_type
     ] = None,
     measure_threshold: OptionalReg[Float64] = None,
+    backend: Backend = Backend.CUBLAS,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    handle: Optional[linalg.vendor_blas.Handle] = None,
+    handle: Optional[linalg.vendor_blas.Handle[backend=backend]] = None,
 ) raises:
     var M = m.value
     var N = n.value
