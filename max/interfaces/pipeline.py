@@ -25,7 +25,8 @@ class PipelineInputs:
     Concrete implementations should inherit from this class and define
     the specific input data structures required for their pipeline operations.
 
-    Example:
+    .. code-block:: python
+
         class MyPipelineInputs(PipelineInputs):
             def __init__(self, data: str, config: dict):
                 self.data = data
@@ -119,7 +120,8 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
         PipelineInputsType: The type of inputs this pipeline accepts, must inherit from PipelineInputs
         PipelineOutputType: The type of outputs this pipeline produces, must be a subclass of PipelineOutput
 
-    Example:
+    .. code-block:: python
+
         class MyPipeline(Pipeline[MyInputs, MyOutput]):
             def execute(self, inputs: MyInputs) -> dict[RequestID, MyOutput]:
                 # Implementation here
