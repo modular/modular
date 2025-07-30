@@ -6,6 +6,7 @@ platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [tasks]
 tests = "./stdlib/scripts/run-tests.sh"
+format = "mojo format ./stdlib"
 
 [dependencies]
 python = ">=3.9,<3.14"
