@@ -26,7 +26,7 @@ from max.graph import (
     dtype_promotion,
     ops,
 )
-from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
+from max.nn import MLP, Conv3D, Linear, RMSNorm
 from max.nn.layer import Module
 
 
@@ -407,37 +407,41 @@ class PatchMerger(Module):
         spatial_merge_size: int,
     ):
         super().__init__()
-        self.dim = out_hidden_size
-        input_dim = hidden_size * (spatial_merge_size**2)
+        self.input_dim = hidden_size * (spatial_merge_size**2)
+        self.out_hidden_size = out_hidden_size
 
         # Create RMSNorm layer
         self.norm = RMSNorm(
             dim=hidden_size, dtype=dtype, eps=1e-6, multiply_before_cast=False
         )
 
-        # Create MLP sequential layers
-        self.mlp = Sequential(
-            [
-                Linear(
-                    in_dim=input_dim,
-                    out_dim=input_dim,
-                    dtype=dtype,
-                    device=device,
-                    has_bias=True,
-                ),
-                ops.gelu,  # type: ignore
-                Linear(
-                    in_dim=input_dim,
-                    out_dim=out_hidden_size,
-                    dtype=dtype,
-                    device=device,
-                    has_bias=True,
-                ),
-            ]
+        # Create individual MLP layers
+        self.linear1 = Linear(
+            in_dim=self.input_dim,
+            out_dim=self.input_dim,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        self.linear2 = Linear(
+            in_dim=self.input_dim,
+            out_dim=out_hidden_size,
+            dtype=dtype,
+            device=device,
+            has_bias=True,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        return self.mlp(self.norm(x).reshape((-1, self.dim)))
+        # Apply RMSNorm and reshape for MLP input
+        x = self.norm(x).reshape((-1, self.input_dim))
+
+        # Apply first linear layer, then GELU, then second linear layer
+        x = self.linear1(x)
+        x = ops.gelu(x)
+        x = self.linear2(x)
+
+        return x
 
 
 class VisionTransformer(Module):
