@@ -46,6 +46,9 @@ do
   elif [[ "$arg" = --xctrace ]]; then
     export MODULAR_XCTRACE="1"
     shift
+  elif [[ "$arg" = --rr ]]; then
+    export MODULAR_RR="1"
+    shift
   else
     before_target+=("$arg")
     shift
