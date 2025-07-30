@@ -19,6 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
     InputContext,
+    RequestID,
     SchedulerResult,
     TextGenerationOutput,
     msgpack_numpy_decoder,
@@ -308,18 +309,20 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
     # Create response pull socket
     response_pull_socket = ZmqPullSocket[
-        dict[str, SchedulerResult[TextGenerationOutput]]
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ](
         zmq_ctx,
         zmq_endpoint=decode_response_zmq_path,
         deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[TextGenerationOutput]]
+            dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ),
     )
 
     # Create cancel push socket
-    cancel_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, zmq_endpoint=decode_cancel_zmq_path
+    cancel_push_socket = ZmqPushSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=decode_cancel_zmq_path,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # Create queues for assertion results

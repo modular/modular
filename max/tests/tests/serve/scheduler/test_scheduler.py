@@ -18,6 +18,7 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
+    msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -123,7 +124,7 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     mock_request = create_mock_request()
@@ -138,7 +139,7 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -164,7 +165,7 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN00
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -230,12 +231,15 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
         zmq_ctx,
-        scheduler.response_q.zmq_endpoint,
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
     )
 
     cancel_push_socket = ZmqPushSocket[list[str]](
         zmq_ctx,
-        scheduler.cancel_q.zmq_endpoint,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     cancel_push_socket.put([mock_request.request_id])
@@ -262,7 +266,13 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+    ](
+        zmq_ctx,
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
+    )
 
     scheduler._schedule_ce(sch_output)
 
@@ -283,14 +293,20 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+    ](
+        zmq_ctx,
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
+    )
 
     request_push_socket.put((mock_request.request_id, mock_request))
     time.sleep(1)
@@ -332,7 +348,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     request_push_socket.put_nowait(
@@ -343,7 +359,13 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+    ](
+        zmq_ctx,
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
+    )
 
     batch_to_execute = scheduler._create_batch_to_execute().batch_inputs
     assert len(batch_to_execute) == 1
@@ -382,7 +404,13 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     # Create a response queue endpoint to receive from.
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+    ](
+        zmq_ctx,
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[TextGenerationOutput]]
+        ),
+    )
 
     scheduler._schedule_tg(sch_output)
 

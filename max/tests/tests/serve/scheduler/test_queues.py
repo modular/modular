@@ -33,10 +33,10 @@ def test_serialization_and_deserialization_through_queue_with_pickle(
 ) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[int, TextContext]](
-        zmq_ctx, test_address, serialize=pickle.dumps
+        zmq_ctx, zmq_endpoint=test_address, serialize=pickle.dumps
     )
     pull_socket = ZmqPullSocket[tuple[int, TextContext]](
-        zmq_ctx, test_address, deserialize=pickle.loads
+        zmq_ctx, zmq_endpoint=test_address, deserialize=pickle.loads
     )
 
     context = (
@@ -55,12 +55,12 @@ def test_serialization_and_deserialization_through_queue_with_msgpack(
 ) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[str, TextContext]](
-        zmq_ctx, test_address, serialize=msgpack_numpy_encoder()
+        zmq_ctx, zmq_endpoint=test_address, serialize=msgpack_numpy_encoder()
     )
 
     pull_socket = ZmqPullSocket[tuple[str, TextContext]](
         zmq_ctx,
-        test_address,
+        zmq_endpoint=test_address,
         deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
     )
 

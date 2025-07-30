@@ -25,6 +25,7 @@ from max.interfaces import (
     AudioGeneratorOutput,
     GenerationStatus,
     SchedulerResult,
+    msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
@@ -430,7 +431,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -438,6 +439,9 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
         zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
     )
 
     # Check that we would exceed max_seq_len during TG step
@@ -478,13 +482,16 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
     )
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
     _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
         zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
     )
 
     for _ in range(num_prompts):
@@ -534,18 +541,22 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
     _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
         zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
     )
 
-    _ = ZmqPullSocket[list[str]](
+    _ = ZmqPushSocket[list[str]](
         zmq_ctx,
-        scheduler.cancel_q.zmq_endpoint,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility
@@ -617,18 +628,22 @@ def test_paged_scheduler_max_queue_size_tg(
 
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
     _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
         zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
     )
 
-    _ = ZmqPullSocket[list[str]](
+    _ = ZmqPushSocket[list[str]](
         zmq_ctx,
-        scheduler.cancel_q.zmq_endpoint,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility
@@ -725,18 +740,22 @@ def test_paged_scheduler_tg_batching(
 
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
     _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
         zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
     )
 
-    _ = ZmqPullSocket[list[str]](
+    _ = ZmqPushSocket[list[str]](
         zmq_ctx,
-        scheduler.cancel_q.zmq_endpoint,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility

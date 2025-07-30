@@ -394,7 +394,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -456,7 +456,7 @@ def test_paged_scheduler_basic_chunked_prefill(zmq_ctx) -> None:  # noqa: ANN001
     )
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     # Create this so the schedule process has a client to send to.
@@ -518,7 +518,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
     )
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -579,7 +579,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -595,7 +595,8 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     cancel_pull_socket = ZmqPullSocket[list[str]](
         zmq_ctx,
-        scheduler.cancel_q.zmq_endpoint,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     # set seed for reproducibility
@@ -652,7 +653,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -666,8 +667,10 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -723,7 +726,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
@@ -736,8 +739,10 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -799,7 +804,7 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
@@ -812,8 +817,10 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -881,7 +888,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
@@ -894,8 +901,10 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -975,7 +984,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -989,8 +998,10 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -1040,7 +1051,7 @@ def test_paged_scheduler_tg_preemption_basic(zmq_ctx) -> None:  # noqa: ANN001
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -1054,8 +1065,10 @@ def test_paged_scheduler_tg_preemption_basic(zmq_ctx) -> None:  # noqa: ANN001
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -1116,7 +1129,7 @@ def test_paged_scheduler_oom(zmq_ctx) -> None:  # noqa: ANN001
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -1130,8 +1143,10 @@ def test_paged_scheduler_oom(zmq_ctx) -> None:  # noqa: ANN001
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     for _ in range(num_prompts):
@@ -1192,7 +1207,7 @@ def test_paged_scheduler_dont_oom_during_cow(zmq_ctx) -> None:  # noqa: ANN001
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -1206,8 +1221,10 @@ def test_paged_scheduler_dont_oom_during_cow(zmq_ctx) -> None:  # noqa: ANN001
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     # Request A needs 3 blocks
@@ -1280,7 +1297,7 @@ def test_paged_scheduler_paging_to_host(
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -1292,8 +1309,10 @@ def test_paged_scheduler_paging_to_host(
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(list[str]),
     )
 
     # Submit reqs for the first time
@@ -1407,7 +1426,7 @@ def test_paged_scheduler_misc_sch_configs(
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
         zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
 
@@ -1421,8 +1440,10 @@ def test_paged_scheduler_misc_sch_configs(
         ),
     )
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationOutput]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        deserialize=list[str],
     )
 
     for _ in range(num_prompts):
