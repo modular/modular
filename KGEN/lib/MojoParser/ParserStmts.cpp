@@ -440,7 +440,7 @@ ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 }
 
 /// Emit a warning when an expression is emitted at statement context, and it
-/// returns a result.
+/// returns an unused result.
 static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
                                   SharedState &shared) {
   ASTType valueType = value.getRValueType();
