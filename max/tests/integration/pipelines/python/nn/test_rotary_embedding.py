@@ -5,7 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -13,6 +15,7 @@ import torch
 from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
 from max.nn import (
     DynamicRotaryEmbedding,
@@ -105,6 +108,17 @@ class RopeParams:
         return self.dim // self.n_heads
 
 
+def load_and_execute_numpy(
+    session: InferenceSession, graph: Graph
+) -> np.ndarray:
+    model = session.load(graph)
+    results = model.execute()
+    assert len(results) == 1
+    result = results[0]
+    assert isinstance(result, Tensor)
+    return result.to_numpy()
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -113,7 +127,9 @@ class RopeParams:
     ],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
-def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:  # noqa: ANN001
+def test_freqs_cis(
+    session: InferenceSession, dtype: DType, params: RopeParams
+) -> None:
     with Graph("freqs_cis", input_types=[]) as graph:
         rope = RotaryEmbedding(
             params.dim,
@@ -124,8 +140,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:  # noqa: 
             device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
-        model = session.load(graph)
-    result = model.execute()[0].to_numpy()
+    result = load_and_execute_numpy(session, graph)
 
     # Handle flattened freqs_cis format - reshape back to 3D to extract real/imaginary
     if len(result.shape) == 2:
@@ -151,16 +166,8 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:  # noqa: 
 @pytest.mark.parametrize(
     "base_params",
     [
-        RopeParams(
-            dim=64,
-            n_heads=4,
-            theta=1e4,
-        ),
-        RopeParams(
-            dim=512,
-            n_heads=16,
-            theta=5e5,
-        ),
+        RopeParams(dim=64, n_heads=4, theta=1e4),
+        RopeParams(dim=512, n_heads=16, theta=5e5),
     ],
 )
 @pytest.mark.parametrize(
@@ -182,7 +189,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams) -> None:  # noqa: 
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
 def test_llama3_freqs_cis(
-    session,  # noqa: ANN001
+    session: InferenceSession,
     dtype: DType,
     base_params: RopeParams,
     scaling_params: Llama3RopeScalingParams,
@@ -198,8 +205,7 @@ def test_llama3_freqs_cis(
             device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
-        model = session.load(graph)
-    result = model.execute()[0].to_numpy()
+    result = load_and_execute_numpy(session, graph)
     d0, d1 = result.shape
     result = result.reshape(d0, d1 // 2, 2)
     # freqs_cis result is stacked along a new dimension - real goes first, then imaginary.
@@ -231,7 +237,7 @@ def test_llama3_freqs_cis(
     ],
 )
 def test_dynamic_rope_freqs_cis(
-    session,  # noqa: ANN001
+    session: InferenceSession,
     dim: int,
     n_heads: int,
     theta: float,
@@ -254,11 +260,10 @@ def test_dynamic_rope_freqs_cis(
             device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
-        model = session.load(graph)
 
     # Manually reshape and recombine the real and imaginary components into a
     # complex-valued array for comparison against the expected result.
-    result = model.execute()[0].to_numpy()
+    result = load_and_execute_numpy(session, graph)
     d0, d1 = result.shape
     result = result.reshape((d0, d1 // 2, 2))
     result_complex = result[:, :, 0] + 1j * result[:, :, 1]
@@ -286,11 +291,10 @@ def test_dynamic_rope_freqs_cis(
         dummy_position_ids = ops.range(0, long_seq_len, 1, dtype=DType.int64)
         rope.maybe_update_freqs(dummy_position_ids)
         graph.output(rope.freqs_cis)
-        model = session.load(graph)
 
     # Manually reshape and recombine the real and imaginary components into a
     # complex-valued array for comparison against the expected result.
-    result = model.execute()[0].to_numpy()
+    result = load_and_execute_numpy(session, graph)
     d0, d1 = result.shape
     result = result.reshape((d0, d1 // 2, 2))
     result_complex = result[:, :, 0] + 1j * result[:, :, 1]
@@ -310,7 +314,9 @@ class CannedRotaryEmbedding(RotaryEmbedding):
         self._freqs_cis = freqs_cis
 
 
-def torch_rope(x, freqs_cis, cache):  # noqa: ANN001
+def torch_rope(
+    x: torch.Tensor, freqs_cis: torch.Tensor, cache: torch.Tensor
+) -> torch.Tensor:
     start_pos = cache.shape[0]
     seq_len = x.shape[1]
     freqs_cis = freqs_cis[start_pos : start_pos + seq_len]
@@ -318,7 +324,9 @@ def torch_rope(x, freqs_cis, cache):  # noqa: ANN001
     return apply_rotary_emb(x, freqs_cis)
 
 
-def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+def _reshape_for_broadcast(
+    freqs_cis: torch.Tensor, x: torch.Tensor
+) -> torch.Tensor:
     ndim = x.ndim
     assert 1 < ndim
     assert freqs_cis.shape == (x.shape[1], x.shape[-1])
@@ -343,7 +351,9 @@ def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     ],
 )
 @pytest.mark.parametrize("start_pos", [0, 15])
-def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:  # noqa: ANN001
+def test_rope(
+    session: InferenceSession, input_type: TensorType, start_pos: Dim
+) -> None:
     _, seqlen, _, head_dim = input_type.shape
     freqs_cis_type = TensorType(
         input_type.dtype, [MAX_SEQ_LEN, head_dim], device=DeviceRef.CPU()
@@ -360,25 +370,29 @@ def test_rope(session, input_type: TensorType, start_pos: Dim) -> None:  # noqa:
         rope = CannedRotaryEmbedding(freqs_cis)
         graph.output(rope(x, start_pos, seq_len))
 
-        @modular_graph_test(session, graph, max_magnitude=1.0)
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
-            x, freqs_cis, cache = inputs
-            start_pos = cache.shape[0]
-            seq_len = x.shape[1]
-            assume(start_pos + seq_len < MAX_SEQ_LEN)
-            result = execute(inputs).to_numpy()
-            expected = torch_rope(*torch_inputs).detach().numpy()
+    @modular_graph_test(session, graph, max_magnitude=1.0)
+    def test_correctness(
+        execute: Callable[[Sequence[Tensor]], Tensor],
+        inputs: Sequence[Tensor],
+        torch_inputs: Sequence[torch.Tensor],
+    ) -> None:
+        x, freqs_cis, cache = inputs
+        start_pos = cache.shape[0]
+        seq_len = x.shape[1]
+        assume(start_pos + seq_len < MAX_SEQ_LEN)
+        result = execute(inputs).to_numpy()
+        expected = torch_rope(*torch_inputs).detach().numpy()
 
-            np.testing.assert_allclose(
-                result,
-                expected,
-                atol=ACCURACY_ATOL,
-                rtol=ACCURACY_RTOL,
-                equal_nan=True,
-            )
+        np.testing.assert_allclose(
+            result,
+            expected,
+            atol=ACCURACY_ATOL,
+            rtol=ACCURACY_RTOL,
+            equal_nan=True,
+        )
 
 
-def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
+def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     num_q_heads = 32
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -395,11 +409,7 @@ def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
         device=DeviceRef.CPU(),
     )
     input_row_offsets_type = TensorType(
-        DType.uint32,
-        [
-            "input_row_offsets_len",
-        ],
-        device=DeviceRef.CPU(),
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.CPU()
     )
 
     freqs_cis_type = TensorType(
@@ -509,7 +519,11 @@ def test_kv_cache_ragged_rope(session) -> None:  # noqa: ANN001
             6: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+    def test_runs_without_nan(
+        execute: Callable[[Sequence[Tensor]], Tensor],
+        inputs: Sequence[Tensor],
+        torch_inputs: Sequence[torch.Tensor],
+    ) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)
@@ -523,7 +537,7 @@ def torch_longrope_freqs_cis(
     short_factor: list[float],
     long_factor: list[float],
     original_max_position: int,
-):
+) -> torch.Tensor:
     """PyTorch reference implementation of LongRoPE frequency computation with stitched table."""
     # Compute base inverse frequencies
     inv_freqs = 1.0 / (
@@ -570,7 +584,9 @@ def torch_longrope_freqs_cis(
     ],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
-def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  # noqa: ANN001
+def test_longrope_scaling(
+    session: InferenceSession, dtype: DType, params: RopeParams
+) -> None:
     """Test LongRoPE frequency scaling with different scaling factors for short and long sequences.
 
     This test verifies that LongRoPE correctly applies frequency scaling parameters:
@@ -600,9 +616,8 @@ def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  #
             scaling_params=scaling_params,
         )
         graph.output(rope.freqs_cis)
-        model = session.load(graph)
 
-    result = model.execute()[0].to_numpy()
+    result = load_and_execute_numpy(session, graph)
 
     # Basic shape and validity checks - enforce flattened 2D shape
     assert len(result.shape) == 2, (
@@ -652,9 +667,8 @@ def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  #
             scaling_params=scaling_params,
         )
         graph.output(rope_short.freqs_cis)
-        model_short = session.load(graph)
 
-    result_short = model_short.execute()[0].to_numpy()
+    result_short = load_and_execute_numpy(session, graph)
 
     # Validate short sequence uses short_factor
     if len(result_short.shape) == 2:
@@ -691,9 +705,8 @@ def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  #
             scaling_params=None,  # No scaling
         )
         graph.output(rope_no_scale.freqs_cis)
-        model_no_scale = session.load(graph)
 
-    result_no_scale = model_no_scale.execute()[0].to_numpy()
+    result_no_scale = load_and_execute_numpy(session, graph)
 
     # Should behave like standard RoPE when no scaling params
     assert result_no_scale.shape[0] == 4096 * 2
@@ -710,9 +723,8 @@ def test_longrope_scaling(session, dtype: DType, params: RopeParams) -> None:  #
             device=DeviceRef.CPU(),
         )
         graph.output(rope_standard.freqs_cis)
-        model_standard = session.load(graph)
 
-    result_standard = model_standard.execute()[0].to_numpy()
+    result_standard = load_and_execute_numpy(session, graph)
 
     # LongRoPE without scaling should match standard RoPE
     np.testing.assert_allclose(
