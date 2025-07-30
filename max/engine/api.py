@@ -417,7 +417,7 @@ class InferenceSession:
         self,
         style: Union[str, PrintStyle] = PrintStyle.COMPACT,
         precision: int = 6,
-        output_directory: str = "",
+        output_directory: str | Path | None = None,
     ) -> None:
         """Sets the debug print options.
 
@@ -458,17 +458,23 @@ class InferenceSession:
         if style == PrintStyle.FULL and not isinstance(precision, int):
             raise TypeError("Debug print precision must be an int.")
         if style in (PrintStyle.BINARY, PrintStyle.BINARY_MAX_CHECKPOINT):
-            if isinstance(output_directory, str):
+            if output_directory is None:
+                output_directory = ""
+            elif isinstance(output_directory, str):
                 pass
             elif isinstance(output_directory, Path):
                 output_directory = str(output_directory)
             else:
-                raise TypeError("Debug print output directory must be a str.")
+                raise TypeError(
+                    "Debug print output directory must be a str or Path."
+                )
 
             if not output_directory:
                 raise ValueError(
                     "Debug print output directory cannot be empty."
                 )
+        else:
+            output_directory = ""
         self._impl.set_debug_print_options(style, precision, output_directory)
 
     def set_split_k_reduction_precision(
