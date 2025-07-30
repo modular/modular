@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library")
-load(":lsp-tests.bzl", "lsp_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "modular_python_binding_library_test")
 
 modular_cc_library(
     name = "Support",
@@ -16,28 +15,83 @@ modular_cc_library(
 # different test targets to allow parallel execution.
 # You can execute all of them with
 #    bt //KGEN/unittests/mojo-lsp-server/...
-inputs = [
-    "CodeActionTest",
-    "CodeBlockTest",
-    "CompletionTest",
-    "DefinitionTest",
-    "DiagnosticsTest",
-    "DocumentSymbolTest",
-    "FoldingRangeTest",
-    "InitFileTest",
-    "MOGGAnnotateDiags",
-    "NotebookTest",
-    "ReferencesTest",
-    "RegressionTest",
-    "SampleTest",
-    "SemanticTokensTest",
-    "SignatureHelpTest",
-]
 
 [
-    lsp_test(
-        name = X,
-        pattern = (X + ".cpp"),
+    modular_cc_test(
+        name = src,
+        srcs = [src + ".cpp"],
+        data = glob([
+            "inputs/*.mojo",
+            "inputs_with_package/*.mojo",
+        ]) + [
+            "//KGEN/tools/mojo-lsp-server",
+        ],
+        env = {
+            "MODULAR_PATH": ".",
+            "PRESERVE_LSP_IO_FILES": "1",
+            "PYTHONHOME": "/dev/null",  # Make sure python tests are added below instead
+        },
+        mojo_deps = [
+            "//SDK/lib/API/mojo/max/tensor",
+            "@mojo//:compiler_internal",
+            "@mojo//:stdlib",
+        ],
+        deps = [
+            ":Support",
+        ],
     )
-    for X in inputs
+    for src in [
+        "CodeActionTest",
+        "CodeBlockTest",
+        "CompletionTest",
+        "DiagnosticsTest",
+        "DocumentSymbolTest",
+        "FoldingRangeTest",
+        "InitFileTest",
+        "ReferencesTest",
+        "RegressionTest",
+        "SampleTest",
+        "SemanticTokensTest",
+        "SignatureHelpTest",
+    ]
 ]
+
+modular_python_binding_library_test(
+    name = "PythonTests",
+    srcs = [
+        "MOGGAnnotateDiags.cpp",
+        "NotebookTest.cpp",
+    ],
+    data = [
+        "//KGEN/tools/mojo-lsp-server",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "PRESERVE_LSP_IO_FILES": "1",
+    },
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    py_deps = [],
+    deps = [
+        ":Support",
+    ],
+)
+
+# TODO: Figure out why this test needs stdlib_srcs and replace it with using stdlib.mojopkg
+modular_cc_test(
+    name = "DefinitionTest",
+    srcs = ["DefinitionTest.cpp"],
+    data = [
+        "//KGEN/tools/mojo-lsp-server",
+        "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
+    ],
+    env = {
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/max/mojo/stdlib",
+        "MODULAR_PATH": ".",
+        "PRESERVE_LSP_IO_FILES": "1",
+    },
+    deps = [
+        ":Support",
+    ],
+)
