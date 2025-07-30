@@ -541,21 +541,6 @@ class InputContext(Protocol):
         ...
 
     @property
-    def cache_seq_id(self) -> int:
-        """The cache sequence ID assigned to this context.
-
-        This identifier links the context to a specific slot in the KV cache,
-        enabling efficient memory management during generation.
-
-        Returns:
-            The cache sequence identifier for this context.
-
-        Raises:
-            RuntimeError: If no cache slot has been assigned to this context.
-        """
-        ...
-
-    @property
     def is_ce(self) -> bool:
         """Whether this context is in context encoding (CE) mode.
 
