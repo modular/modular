@@ -86,7 +86,7 @@ struct MmaOpSM100_SS[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
 ](Defaultable):
-    var idesc: UMMAInsDescriptor[UMMAKind.KIND_F16]
+    var idesc: UMMAInsDescriptor[Self._get_umma_kind[a_type]()]
     var mask: UInt16
 
     @always_inline
@@ -95,8 +95,12 @@ struct MmaOpSM100_SS[
         constrained[
             cta_group in (1, 2), "MmaOpSM100 only supports cta_group 1 or 2"
         ]()
+        constrained[
+            a_type == b_type,
+            "a_type and b_type must be the same",
+        ]()
 
-        self.idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+        self.idesc = UMMAInsDescriptor[Self._get_umma_kind[a_type]()].create[
             accum_type,
             a_type,
             b_type,
@@ -195,3 +199,21 @@ struct MmaOpSM100_SS[
     @always_inline
     fn wait(self):
         pass
+
+    @staticmethod
+    fn _get_umma_kind[dtype: DType]() -> UMMAKind:
+        @parameter
+        if dtype == DType.float32:
+            return UMMAKind.KIND_TF32
+        elif dtype in (DType.float16, DType.bfloat16):
+            return UMMAKind.KIND_F16
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+            return UMMAKind.KIND_F8F6F4
+        else:
+            constrained[
+                False,
+                "Unsupported/not implemented operand type for UMMA: ",
+                String(dtype),
+            ]()
+
+        return UMMAKind(-1)

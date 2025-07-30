@@ -46,6 +46,8 @@ trait Hashable:
     common hash map implementations.
 
     ```mojo
+    from hashlib.hasher import Hasher
+
     @fieldwise_init
     struct Foo(Hashable):
         var value: Int

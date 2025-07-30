@@ -17,7 +17,7 @@ import sys._libc as libc
 from sys import external_call
 from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
-from sys.info import os_is_windows
+from sys.info import CompilationTarget
 
 from memory import Span
 
@@ -35,7 +35,8 @@ struct _POpenHandle:
           mode: The mode to open the file in (the mode can be "r" or "w").
         """
         constrained[
-            not os_is_windows(), "popen is only available on unix systems"
+            not CompilationTarget.is_windows(),
+            "popen is only available on unix systems",
         ]()
 
         if mode != "r" and mode != "w":

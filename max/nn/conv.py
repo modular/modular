@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -212,15 +213,14 @@ class Conv2D(Module, Shardable):
         if self.bias:
             self.bias.sharding_strategy = strategy
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Conv2D:
-        """Creates a sharded view of this Conv2D layer for a specific device.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Conv2D]:
+        """Creates sharded views of this Conv2D layer across multiple devices.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded Conv2D instance.
+            List of sharded Conv2D instances, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
@@ -228,28 +228,38 @@ class Conv2D(Module, Shardable):
             )
         assert self.sharding_strategy.is_replicate
 
-        # Create new Conv2D with same configuration.
-        sharded = Conv2D(
-            kernel_size=self.kernel_size,
-            in_channels=self.in_channels,
-            out_channels=self.out_channels,
-            dtype=self.dtype,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            num_groups=self.num_groups,
-            device=device,
-            has_bias=self.has_bias,
-            permute=self.permute,
-            name=self.name,
-        )
+        # Get sharded weights
+        sharded_filters = self.filter.shard(devices)
+        sharded_biases = self.bias.shard(devices) if self.bias else None
 
-        # Replace the weights with sharded versions.
-        sharded.filter = self.filter.shard(shard_idx, device)
-        if self.bias:
-            sharded.bias = self.bias.shard(shard_idx, device)
+        shards = []
+        for idx, (device, filter_shard) in enumerate(
+            zip(devices, sharded_filters)
+        ):
+            # Create new Conv2D with same configuration.
+            sharded = Conv2D(
+                kernel_size=self.kernel_size,
+                in_channels=self.in_channels,
+                out_channels=self.out_channels,
+                dtype=self.dtype,
+                stride=self.stride,
+                padding=self.padding,
+                dilation=self.dilation,
+                num_groups=self.num_groups,
+                device=device,
+                has_bias=self.has_bias,
+                permute=self.permute,
+                name=self.name,
+            )
 
-        return sharded
+            # Replace the weights with sharded versions.
+            sharded.filter = filter_shard
+            if sharded_biases:
+                sharded.bias = sharded_biases[idx]
+
+            shards.append(sharded)
+
+        return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply 2D convolution to input `x`. Permutes pytorch weights to match max API if permute=True.
@@ -848,7 +858,7 @@ class Conv3D(Module):
             self.num_groups,
             self.bias,
         )
-        # permute output from (batch_size, depth, height, width, out_channels) (batch_size, out_channels, depth, height, width).
+        # permute output from (batch_size, depth, height, width, out_channels) to (batch_size, out_channels, depth, height, width).
         if self.permute:
             res = ops.permute(res, [0, 4, 1, 2, 3])
         return res

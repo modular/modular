@@ -24,13 +24,11 @@ from typing import Optional
 import requests
 from max.interfaces import (
     PipelineTokenizer,
+    TextGenerationInputs,
     TextGenerationRequest,
     TokenGenerator,
 )
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 from .metrics import TextGenerationMetrics
 
@@ -72,7 +70,7 @@ async def stream_text_to_console(
         generate_again = True
         while generate_again:
             responses = pipeline.next_token(
-                pipeline_request, num_steps=num_steps
+                TextGenerationInputs(pipeline_request, num_steps=num_steps)
             )
 
             for request_idx, response in responses.items():  # noqa: B007
@@ -100,7 +98,7 @@ async def stream_text_to_console(
         if metrics:
             metrics.signpost("end_generation")
 
-        pipeline.release(context)
+        pipeline.release(context.request_id)
 
     if print_tokens:
         print()

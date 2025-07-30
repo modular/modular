@@ -14,10 +14,7 @@
 
 from hypothesis import given
 from max.dtype import DType
-from max.graph import (
-    TensorType,
-    ops,
-)
+from max.graph import TensorType, ops
 
 
 @given(base_type=..., target_dtype=...)

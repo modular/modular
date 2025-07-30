@@ -266,15 +266,6 @@ def main():
             transpose_b=False,
         ](bench, ctx, dynamic(4096), static[1](), static[4095]())
 
-        # gevm_tc_kernel_vector_8x with Nvidia multistage_gemm with AMDGPU
-        # M = 1, K % WARP_SIZE == 0, transpose_b = False
-        # Need to add tolerance
-        # test[
-        #    in_type = DType.bfloat16,
-        #    out_type = DType.float32,
-        #    transpose_b=False,
-        # ](bench, ctx, dynamic(1), static[4096](), static[4096]())
-
         # matmaul_naive
         # M = 1, K % WARP_SIZE != 0, transpose_b = False
         test[

@@ -35,11 +35,15 @@ def create_sharded_weight_graph() -> Graph:
         DeviceRef.CPU(),
         sharding_strategy=ShardingStrategy(num_devices, sharding_strategy),
     )
+
+    devices = [DeviceRef.CPU(), DeviceRef.GPU(0), DeviceRef.GPU(1)]
+
     # Shards must be able to be created outside the graph.
-    shard_0 = weight.shard(0, DeviceRef.CPU())  # Keep on CPU.
-    assert isinstance(shard_0, Weight)
-    shard_1 = weight.shard(1, DeviceRef.GPU(0))  # Move to GPU 0.
-    shard_2 = weight.shard(2, DeviceRef.GPU(1))  # Move to GPU 1.
+    shards = weight.shard(devices)
+    shard_0, shard_1, shard_2 = shards
+    assert isinstance(shards[0], Weight)
+    assert isinstance(shards[1], Weight)
+    assert isinstance(shards[2], Weight)
 
     with Graph("shard_weight", input_types=()) as graph:
         assert shard_0.device == DeviceRef.CPU()

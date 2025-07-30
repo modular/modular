@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.param_env import env_get_string, is_defined
-
+from sys.info import _accelerator_arch
 from gpu.host import DeviceContext
+from gpu.host.info import GPUInfo
 
 
 fn expect_eq[
@@ -37,7 +38,7 @@ fn api() -> String:
 
         @parameter
         if api == "gpu":
-            return String(DeviceContext.device_api)
+            return String(GPUInfo.from_name[_accelerator_arch()]().api)
         return String(api)
     return "default"
 

@@ -16,12 +16,7 @@
 from typing import Optional
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn.embedding import Embedding
 

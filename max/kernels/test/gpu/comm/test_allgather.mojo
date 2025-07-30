@@ -18,7 +18,7 @@ from gpu.comm.allgather import allgather
 from gpu.comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from sys import sizeof
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
 
 def all_gather_test[
@@ -191,6 +191,10 @@ fn _verify_results[
 
 
 def main() -> None:
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
+
     # Test configurations.
     alias test_lengths = (
         List[Int](8 * 1024, 8 * 1024),

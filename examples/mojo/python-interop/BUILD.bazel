@@ -15,6 +15,20 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "person",
+    srcs = ["person.py"],
+    data = ["person_module.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/lib/API/python/max/mojo",
+    ],
+)
+
+modular_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
     data = ["mandelbrot_mojo.mojo"],
@@ -30,6 +44,12 @@ modular_py_binary(
 modular_run_binary_test(
     name = "hello_test",
     binary = "hello",
+    external_noop = True,
+)
+
+modular_run_binary_test(
+    name = "person_test",
+    binary = "person",
     external_noop = True,
 )
 

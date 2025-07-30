@@ -351,7 +351,7 @@ def get_rope_index(
             max_position_ids = position_ids.max(axis=1, keepdims=True).max(
                 axis=-1, keepdims=True
             )
-            mrope_position_deltas = (
+            mrope_position_deltas_array = (
                 max_position_ids + 1 - attention_mask.shape[-1]
             )
         else:

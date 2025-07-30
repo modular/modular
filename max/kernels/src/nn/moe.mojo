@@ -237,7 +237,7 @@ fn moe_create_indices[
             RuntimeLayout[unknown_layout].row_major(IndexList[1](pow_2_length)),
         )
 
-        alias hw_info = cuda_ctx.device_info
+        alias hw_info = cuda_ctx.default_device_info
         alias registers_per_thread = 255
         alias registers_per_block = hw_info.max_registers_per_block
         alias block_size_unrounded = registers_per_block // registers_per_thread
