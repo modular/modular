@@ -261,7 +261,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
                     f"request_id: {ctx.request_id} not currently in cache."
                 )
 
-            seq_id = self.request_to_seq_id[ctx.request_id]
+            seq_id = self._request_to_seq_id[ctx.request_id]
             lookup_table_values.append(seq_id)
             prompt = ctx.next_tokens
             if seq_id > self.max_batch_size:

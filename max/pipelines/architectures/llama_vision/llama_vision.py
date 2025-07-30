@@ -325,7 +325,7 @@ class MultimodalKVCacheManager(KVCacheManager):
             np.array(
                 [
                     [
-                        self.vision_kv_manager.request_to_seq_id[
+                        self.vision_kv_manager._request_to_seq_id[
                             ctx.request_id
                         ],
                         1,
