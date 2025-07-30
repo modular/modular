@@ -124,9 +124,6 @@ class EchoPipelineTokenizer(
             sampling_params=request.sampling_params,
         )
 
-        # Assign to cache if needed
-        context.assign_to_cache(request.index)
-
         return context
 
 

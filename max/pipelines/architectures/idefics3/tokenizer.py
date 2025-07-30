@@ -269,7 +269,6 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
         )
-        context.assign_to_cache(request.index)
         return context
 
 

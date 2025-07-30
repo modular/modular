@@ -370,7 +370,6 @@ class TextTokenizer(
             model_name=request.model_name,
             lora_name=request.lora_name,
         )
-        context.assign_to_cache(request.index)
         return context
 
     @property
@@ -653,7 +652,6 @@ class TextAndVisionTokenizer(
             else self.max_length,
             json_schema=json_schema,
         )
-        context.assign_to_cache(request.index)
         return context
 
 

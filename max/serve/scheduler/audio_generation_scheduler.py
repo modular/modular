@@ -252,7 +252,6 @@ class AudioGenerationScheduler(Scheduler):
         while True:
             try:
                 req_id, req_data = self.request_q.get_nowait()
-                req_data.unassign_from_cache()
                 self.pending_reqs.append((req_id, req_data))
             except queue.Empty:
                 break

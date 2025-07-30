@@ -233,9 +233,6 @@ class DecodeScheduler(Scheduler):
                 if not self.paged_manager.contains(request_id):
                     self.paged_manager.external_claim(request_id)
 
-                # Ensure request_context is unassigned from cache
-                request_context.unassign_from_cache()
-
                 # TODO: E2EOPT-269
 
                 # Prefetch memory for Context Encoding eagerly, this only needs to be
