@@ -113,6 +113,9 @@ ParserEvaluationContext::evaluateGetWitness(TypedAttr typeValue,
   ASTDecl &decl =
       shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
   auto structDeclOp = cast<StructDeclOp>(decl.getIfOperation());
+  if (failed(shared.declResolver->resolveBody(decl, decl.getLoc()))) {
+    return failure();
+  }
   auto conformanceDecls = decl.lookupInCurrentScope(traitName);
   // If no conformance exists, still allow it to go through, just don't fold.
   if (conformanceDecls.empty())
