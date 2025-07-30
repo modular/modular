@@ -39,9 +39,8 @@ async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:  # noqa: AN
 
     # Mock the processor to return expected format
     tokenizer.processor = MagicMock()
-    tokenizer.processor.return_value = {
-        "input_ids": [1, 2, 3],
-    }
+    tokenizer.processor.return_value = {"input_ids": [1, 2, 3]}
+    tokenizer.processor.apply_chat_template.return_value = "test prompt"
 
     request = TextGenerationRequest(
         messages=[TextGenerationRequestMessage(role="user", content="test")],
@@ -87,22 +86,14 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:  # noqa: 
     # IMAGE_CONTEXT_TOKEN_ID = 151667
     tokenizer.processor = MagicMock()
     tokenizer.processor.return_value = {
-        "input_ids": [
-            1,
-            2,
-            151667,
-            151667,
-            3,
-            151667,
-            4,
-        ],  # 3 image tokens at positions 2, 3, 5
-        "pixel_values": [
-            [np.zeros((448, 448, 3), dtype=np.float32)]
-        ],  # Mock image data
-        "image_token_indices": np.array(
-            [2, 3, 5], dtype=np.int32
-        ),  # Pre-computed indices
+        # 3 image tokens at positions 2, 3, 5
+        "input_ids": [1, 2, 151667, 151667, 3, 151667, 4],
+        # Mock image data
+        "pixel_values": [[np.zeros((448, 448, 3), dtype=np.float32)]],
+        # Pre-computed indices
+        "image_token_indices": np.array([2, 3, 5], dtype=np.int32),
     }
+    tokenizer.processor.apply_chat_template.return_value = "test prompt"
 
     # Create a real image for the test using config dimensions
     img_buffer = io.BytesIO()
