@@ -31,7 +31,7 @@ fn keep(val: Bool):
     Args:
       val: The value to not optimize away.
     """
-    keep(UInt8(val))
+    keep(Scalar[DType.bool](val).cast[DType.uint8]())
 
 
 @always_inline
