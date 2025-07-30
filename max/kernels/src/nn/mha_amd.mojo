@@ -34,6 +34,7 @@ from gpu.sync import (
 )
 from memory import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
+from layout.layout import blocked_product
 from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
 from layout.element import Element
 from layout.layout_tensor import (
@@ -166,10 +167,42 @@ struct KBuffer[
     alias num_k_tiles = ceildiv(BK, Self.MMA_K * k_group_size)
     alias simd_width = simdwidthof[dtype]()
 
-    alias smem_layout = Layout(
-        IntTuple(Int(BN), IntTuple(8, 4)),
-        IntTuple(8, IntTuple(1, Int(BN) * 8)),
+    alias num_repeats = BK // Self.simd_width
+
+    # Shared memory layout
+    # Layout construction for standard memory access:
+    # - base_layout: Layout.row_major(BN, simd_width) -> BN×simd_width tiles
+    # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
+    # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
+    #
+    # Resulting shape: BN×(simd_width × num_repeats) = BN×BK tensor
+    # Where BK = simd_width × num_repeats, typically simd_width=8, num_repeats=BK/8
+    #
+    # This creates num_repeats blocks of BN×simd_width arranged horizontally:
+    # Within each simd_width-column block, elements are consecutive (stride 1)
+    # Between blocks: stride = BN × simd_width
+    #
+    # ASCII diagram for BN=128, simd_width=8, BK=32 (showing first 2 of 4 blocks):
+    # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    # │        Block 0 (128×8)                     │        Block 1 (128×8)                     │     ... 2 more blocks           │
+    # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
+    # │   0    1    2    3    4    5    6    7     │ 1024 1025 1026 1027 1028 1029 1030 1031    │ (Block 2: 2048-3071)            │
+    # │   8    9   10   11   12   13   14   15     │ 1032 1033 1034 1035 1036 1037 1038 1039    │ (Block 3: 3072-4095)            │
+    # │  16   17   18   19   20   21   22   23     │ 1040 1041 1042 1043 1044 1045 1046 1047    │                                 │
+    # │  24   25   26   27   28   29   30   31     │ 1048 1049 1050 1051 1052 1053 1054 1055    │                                 │
+    # │ ...                                        │  ...                                       │                                 │
+    # │1016 1017 1018 1019 1020 1021 1022 1023     │ 2040 2041 2042 2043 2044 2045 2046 2047    │                                 │
+    # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    # stride between blocks = BN × simd_width = 128 × 8 = 1024
+
+    alias base_layout = Layout.row_major(BN, Self.simd_width)
+    alias tiler_layout = Layout.row_major(1, Self.num_repeats)
+    alias smem_layout = blocked_product(
+        Self.base_layout,
+        Self.tiler_layout,
+        coalesce_output=True,
     )
+
     alias thread_layout = Layout.row_major(num_threads // 4, 4)
 
     alias LoadTileType = LayoutTensor[
@@ -330,14 +363,43 @@ struct VBuffer[
     depth: Int,
     num_threads: Int,
 ]:
-    alias smem_layout = Layout(
-        IntTuple(Int(depth + depth // 8), IntTuple(8, 4)),
-        IntTuple(
-            8,
-            IntTuple(1, Int(depth + depth // 8) * 8),
-        ),
-    )
     alias simd_width = simdwidthof[dtype]()
+    alias num_repeats = BK // Self.simd_width
+    alias padding = depth // 8
+
+    # V Buffer shared memory layout
+    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)×simd_width tiles
+    # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
+    # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout with padding
+    #
+    # Resulting shape: (depth + padding)×(simd_width × num_repeats) = (depth + depth//8)×BK tensor
+    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width × num_repeats
+    #
+    # This creates num_repeats blocks of (depth+padding)×simd_width arranged horizontally:
+    # Within each simd_width-column block, elements are consecutive (stride 1)
+    # Between blocks: stride = (depth + padding) × simd_width
+    #
+    # ASCII diagram for depth=128, padding=16, simd_width=8, BK=32 (showing first 2 of 4 blocks):
+    # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    # │        Block 0 (144×8)                     │        Block 1 (144×8)                     │     ... 2 more blocks           │
+    # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
+    # │   0    1    2    3    4    5    6    7     │ 1152 1153 1154 1155 1156 1157 1158 1159    │ (Block 2: 2304-3455)            │
+    # │   8    9   10   11   12   13   14   15     │ 1160 1161 1162 1163 1164 1165 1166 1167    │ (Block 3: 3456-4607)            │
+    # │  16   17   18   19   20   21   22   23     │ 1168 1169 1170 1171 1172 1173 1174 1175    │                                 │
+    # │  24   25   26   27   28   29   30   31     │ 1176 1177 1178 1179 1180 1181 1182 1183    │                                 │
+    # │ ...                                        │  ...                                       │                                 │
+    # │1144 1145 1146 1147 1148 1149 1150 1151     │ 2296 2297 2298 2299 2300 2301 2302 2303    │                                 │
+    # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    # stride between blocks = (depth + padding) × simd_width = 144 × 8 = 1152
+
+    alias base_layout = Layout.row_major(depth + Self.padding, Self.simd_width)
+    alias tiler_layout = Layout.row_major(1, Self.num_repeats)
+    alias smem_layout = blocked_product(
+        Self.base_layout,
+        Self.tiler_layout,
+        coalesce_output=True,
+    )
+
     alias MMA_M = mma_shape[0]
     alias MMA_K = mma_shape[2]
     alias num_k_tiles = ceildiv(BK, Self.MMA_K * k_group_size)
@@ -910,15 +972,13 @@ struct SharedMemoryManager[
         self,
         out result: LayoutTensorIter[
             dtype,
-            Layout.row_major(BN, BK) if token_gen else Layout(
-                IntTuple(BN, IntTuple(8, 4)),
-                IntTuple(8, IntTuple(1, BN * 8)),
-            ),
+            Layout.row_major(BN, BK),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
             circular=True,
         ],
     ):
+        constrained[token_gen, "this function is only used for token_gen"]()
         return __type_of(result)(self.k_v_smem, BN * depth)
 
     @always_inline
@@ -926,18 +986,13 @@ struct SharedMemoryManager[
         self,
         out result: LayoutTensorIter[
             dtype,
-            Layout.row_major(BK, BN) if token_gen else Layout(
-                IntTuple(Int(depth + depth // 8), IntTuple(8, 4)),
-                IntTuple(
-                    8,
-                    IntTuple(1, Int(depth + depth // 8) * 8),
-                ),
-            ),
+            Layout.row_major(BK, BN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
             circular=True,
         ],
     ):
+        constrained[token_gen, "this function is only used for token_gen"]()
         return __type_of(result)(self.k_v_smem, BN * depth)
 
     @always_inline
@@ -986,20 +1041,21 @@ struct GlobalMemoryManager[
     group: UInt32,
     token_gen: Bool,
 ]:
-    alias _kv_num_heads = num_heads // group
-    alias _q_gmem_layout = Layout(
+    alias kv_num_heads = num_heads // group
+    # BHSD layout for q and kv cache
+    alias q_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)),
         IntTuple(Int(num_heads * depth), 1),
     ) if not token_gen else Layout.row_major(Int(BM), Int(depth))
 
-    alias _kv_gmem_layout = Layout(
+    alias kv_gmem_layout = Layout(
         IntTuple(Int(BN), Int(depth)),
-        IntTuple(Int(Self._kv_num_heads * depth), 1),
+        IntTuple(Int(Self.kv_num_heads * depth), 1),
     )
 
     var q_offset: UInt32
     var q_runtime_layout: RuntimeLayout[
-        Self._q_gmem_layout,
+        Self.q_gmem_layout,
         element_type = DType.int32,
         linear_idx_type = DType.int32,
     ]
@@ -1019,11 +1075,11 @@ struct GlobalMemoryManager[
 
         self.q_runtime_layout = __type_of(self.q_runtime_layout)(
             RuntimeTuple[
-                Self._q_gmem_layout.shape,
+                Self.q_gmem_layout.shape,
                 element_type = __type_of(self.q_runtime_layout).element_type,
             ](Int(q_tile_num_rows), Int(depth)),
             RuntimeTuple[
-                Self._q_gmem_layout.stride,
+                Self.q_gmem_layout.stride,
                 element_type = __type_of(self.q_runtime_layout).linear_idx_type,
             ](Int(num_heads * depth if not token_gen else depth), 1),
         )
@@ -1036,7 +1092,7 @@ struct GlobalMemoryManager[
         ptr: UnsafePointer[Scalar[qtype]],
         out result: LayoutTensor[
             qtype,
-            Self._q_gmem_layout,
+            Self.q_gmem_layout,
             MutableAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -1056,7 +1112,7 @@ struct GlobalMemoryManager[
         ptr: UnsafePointer[Scalar[out_type]],
         out result: LayoutTensor[
             out_type,
-            Self._q_gmem_layout,
+            Self.q_gmem_layout,
             MutableAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -1074,7 +1130,7 @@ struct GlobalMemoryManager[
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
-            Self._kv_gmem_layout,
+            Self.kv_gmem_layout,
             ptr.origin,
             masked=True,
             address_space = ptr.address_space,
@@ -1087,7 +1143,7 @@ struct GlobalMemoryManager[
                 Int(kv_tile_num_rows), Int(depth)
             ),
             __type_of(result.runtime_layout.stride)(
-                Int(Self._kv_num_heads * depth), 1
+                Int(Self.kv_num_heads * depth), 1
             ),
         )
 
