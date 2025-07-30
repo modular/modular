@@ -20,6 +20,7 @@ class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
     """
 
     embeddings: np.ndarray
+    """The generated embeddings as a NumPy array."""
 
     @property
     def is_done(self) -> bool:
