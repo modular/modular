@@ -1205,8 +1205,10 @@ def test_deinterleave():
 
 
 def test_extract():
-    assert_equal(Int64(99).slice[1](), 99)
-    assert_equal(Int64(99).slice[1, offset=0](), 99)
+    alias s1 = Int64(99).slice[1]()  # test compile time
+    alias s2 = Int64(99).slice[1, offset=0]()
+    assert_equal(s1, 99)
+    assert_equal(s2, 99)
 
     assert_equal(
         SIMD[DType.index, 4](99, 1, 2, 4).slice[4](),
