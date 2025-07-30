@@ -281,15 +281,6 @@ information on Mojo function arguments and the
 [Parameters](/mojo/manual/parameters) section for more information on Mojo
 compile-time parameters and metaprogramming.)
 
-:::note
-
-Mojo currently doesn't typecheck the arguments to the compiled kernel function.
-This means that you can encounter obscure errors if the ordering, types, or
-argument count doesn't match. We're working to add more robust typechecking
-soon.
-
-:::
-
 We're invoking the compiled kernel function with `grid_dim=2` and
 `block_dim=64`, which means we're using a grid of 2 thread blocks, with 64
 threads each for a total of 128 threads in the grid.
@@ -850,6 +841,40 @@ The `enqueue_function()` method enqueues the compilation and invocation of the
 arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
 `block_size` aliases we defined in the previous step.
 
+:::note
+
+The current implementation of `enqueue_function()` doesn't typecheck the
+arguments to the compiled kernel function, which can lead to obscure run-time
+errors if the argument ordering, types, or count doesn't match the kernel
+function's definition.
+
+For compile-time typechecking, you can use the
+[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
+and
+[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+methods.
+
+Here's the typechecked equivalent of the `vector_addition()` kernel compilation
+and enqueuing shown above:
+
+```mojo
+ctx.enqueue_function_checked[vector_addition, vector_addition](
+    lhs_tensor,
+    rhs_tensor,
+    result_tensor,
+    grid_dim=num_blocks,
+    block_dim=block_size,
+)
+```
+
+Note that `enqueue_function_checked()` currently requires the kernel function to
+be provided *twice* as parameters when you use it to compile the kernel. This
+requirement will be removed in a future API update, when typechecking will
+become the default behavior for both `compile_function()` and
+`enqueue_function()`.
+
+:::
+
 After the kernel function has been compiled and enqueued, we create a
 `HostBuffer` to hold the result vector. Then we copy the result vector from the
 `DeviceBuffer` to the `HostBuffer`. Finally, we synchronize the `DeviceContext`
@@ -920,11 +945,11 @@ suggested next steps:
 import TutorialStack from '@site/src/components/TutorialStack';
 
 export const maxTutorials = [
-  'build-custom-ops',
+    'build-custom-ops',
 ];
 
 export const mojoTutorials = [
-  'get-started',
+    'get-started',
 ];
 
 <TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}

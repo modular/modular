@@ -237,7 +237,7 @@ fn test_conv_transposed_cudnn[
 fn main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
-        if ctx.device_info.vendor != Vendor.NVIDIA_GPU:
+        if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
             print("Skipping cuDNN tests - not running on NVIDIA GPU")
             return
 

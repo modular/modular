@@ -91,8 +91,7 @@ fn quantize_static_scaled_fp8[
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()
         out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
 
-    alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[in_dtype, target=compile_target]()
+    alias target_simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
         IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context
@@ -131,7 +130,7 @@ fn quantize_dynamic_scaled_fp8[
     ]() if group_size_or_per_token == -1 else group_size_or_per_token
     alias n_groups = input.shape.get[1]() // group_size
     alias simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )

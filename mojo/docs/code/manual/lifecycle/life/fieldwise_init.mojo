@@ -17,7 +17,7 @@ struct MyPet(Copyable, Movable):
     var name: String
     var age: Int
 
-    fn __init__(out self, owned name: String):
+    fn __init__(out self, var name: String):
         self.name = name^
         self.age = 0
 

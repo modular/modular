@@ -14,8 +14,8 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Mapping
-from typing import Optional
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -24,12 +24,8 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import (
-    Dim,
-    StaticDim,
-    SymbolicDim,
-    TensorType,
-)
+from max.engine import InferenceSession, Model
+from max.graph import Dim, Graph, StaticDim, SymbolicDim, TensorType
 from test_common.graph_utils import (
     are_all_tensor_values_iterable as _are_all_tensor_values_iterable,
 )
@@ -46,9 +42,12 @@ ACCURACY_ATOL = 1e-8
 are_all_tensor_values = _are_all_tensor_values_iterable
 
 
-def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):  # noqa: ANN001
-    if max_magnitude:
-        kwargs.setdefault("max_value", max_magnitude)
+def elements(
+    dtype: np.dtype, max_magnitude: float | None = None, **kwargs
+) -> st.SearchStrategy[Any]:
+    if max_magnitude is None:
+        max_magnitude = MAX_INPUT_MAGNITUDE
+    kwargs.setdefault("max_value", max_magnitude)
 
     if "min_value" not in kwargs:
         if np.issubdtype(dtype, np.integer):
@@ -70,7 +69,7 @@ def shapes(
     draw: st.DrawFn,
     tensor_type: TensorType,
     static_dims: Mapping[str, int] = {},
-):
+) -> tuple[int, ...]:
     """Defines a strategy for generating a concrete shape from a TensorType.
 
     Args:
@@ -85,7 +84,7 @@ def shapes(
         Shape tuple
     """
 
-    def draw_dim(dim: Dim):
+    def draw_dim(dim: Dim) -> int:
         if isinstance(dim, SymbolicDim):
             if (static := static_dims.get(dim.name)) is not None:
                 return static
@@ -102,7 +101,9 @@ def shapes(
     return tuple(draw_dim(dim) for dim in tensor_type.shape)
 
 
-def arrays(tensor_type: TensorType, static_dims={}, **kwargs):  # noqa: ANN001, B006
+def arrays(
+    tensor_type: TensorType, static_dims: Mapping[str, int] = {}, **kwargs
+) -> st.SearchStrategy[Tensor]:
     if tensor_type.dtype == DType.bfloat16:
         tensor_type = TensorType(
             DType.float32, tensor_type.shape, device=tensor_type.device
@@ -122,12 +123,12 @@ def arrays(tensor_type: TensorType, static_dims={}, **kwargs):  # noqa: ANN001, 
 
 
 def given_input_types(
-    input_types,  # noqa: ANN001
+    input_types: Iterable[TensorType],
     static_dims: Mapping[str, int] = {},
     provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
-    max_magnitude: Optional[float] = None,
+    max_magnitude: float | None = None,
     **kwargs,
-):
+) -> Callable[[Callable[[tuple[Tensor, ...]], None]], Callable[[], None]]:
     input_arrays = []
     for i, input_type in enumerate(input_types):
         if i in provided_inputs:
@@ -154,37 +155,64 @@ def given_input_types(
     return given(st.tuples(*input_arrays))
 
 
-def execute(model, inputs):  # noqa: ANN001
+def execute(model: Model, inputs: Sequence[np.ndarray | Tensor]) -> Tensor:
     tensor_inputs = [
         t if isinstance(t, Tensor) else Tensor.from_dlpack(t) for t in inputs
     ]
     results = model.execute(*tensor_inputs)
-    if results:
-        return results[0]
+    assert results
+    assert isinstance(results[0], Tensor)
+    return results[0]
 
 
 def modular_graph_test(
-    session,  # noqa: ANN001
-    graph,  # noqa: ANN001
+    session: InferenceSession,
+    graph: Graph,
     *,
     static_dims: Mapping[str, int] = {},
     provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
-    hypothesis_settings: Optional[settings] = None,
-    max_magnitude: Optional[float] = None,
+    hypothesis_settings: settings | None = None,
+    max_magnitude: float | None = None,
     **kwargs,
-):
-    def decorator(test_fn):  # noqa: ANN001
+) -> Callable[
+    [
+        Callable[
+            [
+                Callable[[Sequence[Tensor]], Tensor],
+                Sequence[Tensor],
+                Sequence[torch.Tensor],
+            ],
+            None,
+        ]
+    ],
+    Callable[[], None],
+]:
+    def decorator(
+        test_fn: Callable[
+            [
+                Callable[[Sequence[Tensor]], Tensor],
+                Sequence[Tensor],
+                Sequence[torch.Tensor],
+            ],
+            None,
+        ],
+    ) -> Callable[[], None]:
         model = session.load(graph)
+
+        input_types = []
+        for input in graph.inputs:
+            assert isinstance(input.type, TensorType)
+            input_types.append(input.type)
 
         @settings(suppress_health_check=[HealthCheck.data_too_large])
         @given_input_types(
-            (input.type for input in graph.inputs),
+            input_types,
             static_dims=static_dims,
             provided_inputs=provided_inputs,
             max_magnitude=max_magnitude,
             **kwargs,
         )
-        def test_correctness(inputs) -> None:  # noqa: ANN001
+        def test_correctness(inputs: Sequence[Tensor]) -> None:
             model_execute = functools.partial(execute, model)
 
             torch_inputs = [torch.from_dlpack(t) for t in inputs]

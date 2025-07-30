@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_PLATFORM_CONSTRAINTS = {
+    "test_erf.mojo": ["@platforms//os:linux"],
+    "test_tanh.mojo": ["@platforms//os:linux"],
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

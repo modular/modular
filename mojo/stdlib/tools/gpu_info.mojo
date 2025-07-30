@@ -65,7 +65,7 @@ fn main() raises:
     var minor = compute_capability % 10
 
     if ctx.api() == "cuda":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.NVIDIA_GPU,")
         print('api="' + String(ctx.api()) + '", ')
@@ -74,7 +74,6 @@ fn main() raises:
             + compute_capability_to_arch_name(major, minor)
             + '", '
         )
-        print('compile_options="nvptx-short-ptr=true", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )
@@ -165,12 +164,11 @@ fn main() raises:
         print("max_thread_block_size=1024, ")
         print(")")
     elif ctx.api() == "hip":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
         print('arch_name="' + arch_name + '", ')
-        print('compile_options="", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )

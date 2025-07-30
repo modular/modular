@@ -28,9 +28,10 @@ from sys.info import (
     _is_amd_rdna,
     is_amd_gpu,
     is_nvidia_gpu,
+    _accelerator_arch,
 )
 
-from .host.info import DEFAULT_GPU, DEFAULT_GPU_ARCH
+from .host.info import GPUInfo
 
 # ===-----------------------------------------------------------------------===#
 # WARP_SIZE
@@ -63,10 +64,10 @@ fn _resolve_warp_size() -> Int:
         return 32
     elif is_amd_gpu():
         return 64
-    elif DEFAULT_GPU_ARCH == "":
+    elif _accelerator_arch() == "":
         return 0
     else:
-        return DEFAULT_GPU.warp_size
+        return GPUInfo.from_name[_accelerator_arch()]().warp_size
 
 
 # ===-----------------------------------------------------------------------===#

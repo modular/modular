@@ -21,11 +21,8 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import PipelineTask, PipelineTokenizer
+from max.interfaces import EmbeddingsGenerator, PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import (
-    EmbeddingsGenerator,
-)
 from transformers import (
     AutoConfig,
     AutoTokenizer,

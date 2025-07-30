@@ -11,34 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Callable as _Callable
-from typing import Union as _Union
-
-from max.interfaces import TokenGenerator
-
 from .context import TextAndVisionContext, TextContext, TTSContext
-from .interfaces import (
-    AudioGenerator,
-    AudioGeneratorContext,
-    EmbeddingsGenerator,
-)
-from .serialization import msgpack_numpy_decoder, msgpack_numpy_encoder
-
-PipelinesFactory = _Callable[
-    [], _Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
-]
 
 __all__ = [
-    "AudioGenerator",
-    "AudioGeneratorContext",
-    "EmbeddingsGenerator",
-    "PipelinesFactory",
-    "TTSContext",
-    "TTSContext",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "TokenGeneratorContext",
-    "msgpack_numpy_decoder",
-    "msgpack_numpy_encoder",
 ]

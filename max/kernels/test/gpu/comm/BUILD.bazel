@@ -5,8 +5,14 @@ load("//bazel:api.bzl", "mojo_test")
         name = src + ".test",
         size = "large",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "2",
+        },
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:has_multi_gpu",
+        ],
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:kv_cache",
@@ -16,29 +22,5 @@ load("//bazel:api.bzl", "mojo_test")
             "@mojo//:stdlib",
         ],
     )
-    for src in glob(
-        ["**/*.mojo"],
-        exclude = ["test_allreduce.mojo"],
-    )
+    for src in glob(["**/*.mojo"])
 ]
-
-mojo_test(
-    name = "test_allreduce.mojo.test",
-    srcs = ["test_allreduce.mojo"],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    tags = ["gpu"],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:has_multi_gpu",
-    ],
-    deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:stdlib",
-    ],
-)

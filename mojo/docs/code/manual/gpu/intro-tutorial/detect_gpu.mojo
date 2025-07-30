@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .audio_generation import (
-    AudioGenerator,
-    AudioGeneratorContext,
-)
-from .embeddings_generation import EmbeddingsGenerator
+from gpu.host import DeviceContext
+from sys import has_accelerator
 
-__all__ = [
-    "AudioGenerator",
-    "AudioGeneratorContext",
-    "EmbeddingsGenerator",
-]
+
+def main():
+    @parameter
+    if not has_accelerator():
+        print("No compatible GPU found")
+    else:
+        ctx = DeviceContext()
+        print("Found GPU:", ctx.name())
