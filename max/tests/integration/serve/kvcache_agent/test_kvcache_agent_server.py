@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pickle
 import time
 
 import grpc
@@ -41,7 +42,9 @@ def zmq_endpoint():
 
 @pytest.fixture
 def zmq_push_socket(zmq_ctx, zmq_endpoint):  # noqa: ANN001
-    push_socket = ZmqPushSocket[KVCacheChangeMessage](zmq_ctx, zmq_endpoint)
+    push_socket = ZmqPushSocket[KVCacheChangeMessage](
+        zmq_ctx, zmq_endpoint=zmq_endpoint, serialize=pickle.dumps
+    )
     yield push_socket
     push_socket._cleanup()
 
