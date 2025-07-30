@@ -19,6 +19,10 @@ PATCH_CONV_STD = 0.0144
 # Attention
 QKV_PROJ_STD = 0.02
 O_PROJ_STD = 0.02
+
+# Patch Merger
+PATCH_MERGER_STD = 0.02
+
 # ==================================================
 
 
@@ -76,6 +80,40 @@ class WeightGenerator:
             ).to(torch.bfloat16),
             "proj.bias": torch.zeros(hidden_size, dtype=torch.bfloat16),
         }
+
+        return weights
+
+    def generate_vision_patch_merger_weights(self) -> dict[str, torch.Tensor]:
+        """Generate vision patch merger weights for Qwen2.5VL."""
+        hidden_size = self.vision_config["hidden_size"]
+        out_hidden_size = self.vision_config["out_hidden_size"]
+        spatial_merge_size = self.vision_config["spatial_merge_size"]
+
+        input_dim = hidden_size * (spatial_merge_size**2)
+
+        weights = {}
+
+        # RMSNorm layer weight
+        weights["norm.weight"] = torch.ones(hidden_size).to(torch.bfloat16)
+
+        # First linear layer weights (input_dim -> input_dim)
+        weights["mlp.0.weight"] = PATCH_MERGER_STD * torch.randn(
+            input_dim,
+            input_dim,
+        ).to(torch.bfloat16)
+
+        # Second linear layer weights (input_dim -> out_hidden_size)
+        weights["mlp.2.weight"] = PATCH_MERGER_STD * torch.randn(
+            out_hidden_size,
+            input_dim,
+        ).to(torch.bfloat16)
+
+        weights["mlp.0.bias"] = PATCH_MERGER_STD * torch.randn(
+            input_dim,
+        ).to(torch.bfloat16)
+        weights["mlp.2.bias"] = PATCH_MERGER_STD * torch.randn(
+            out_hidden_size,
+        ).to(torch.bfloat16)
 
         return weights
 

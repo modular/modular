@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""InternVL integration tests package."""
+"""Qwen2.5VL integration tests package."""
