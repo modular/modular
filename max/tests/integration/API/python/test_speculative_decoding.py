@@ -54,7 +54,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
         tokens=tokens1,
         max_length=1024,
     )
-    context1.assign_to_cache(1)
 
     req_id2 = "2"
     tokens2 = np.array(
@@ -78,8 +77,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
         tokens=tokens2,
         max_length=1024,
     )
-    context2.assign_to_cache(2)
-
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 

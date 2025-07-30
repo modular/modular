@@ -429,7 +429,7 @@ class FakeModel:
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
             lambda: defaultdict(lambda: np.array([]))
         )
-        self.seq_ids_and_all_tokens: dict[int, np.ndarray] = defaultdict(
+        self.seq_ids_and_all_tokens: dict[str, np.ndarray] = defaultdict(
             lambda: np.array([])
         )
 
@@ -459,11 +459,11 @@ class FakeModel:
 
     def run(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        seq_ids_and_prompts: dict[str, np.ndarray],
         fetch_kv_tuple,  # noqa: ANN001
         num_steps: int,
-        seq_ids_and_new_tokens: Optional[dict[int, np.ndarray]] = None,
-    ) -> dict[int, np.ndarray]:
+        seq_ids_and_new_tokens: Optional[dict[str, np.ndarray]] = None,
+    ) -> dict[str, np.ndarray]:
         """Given a batch and the fetch_kv_tuple, we `run` the model and check that
         the paged manager gave us valid blocks that contain the appropriate KV
         projections.
@@ -571,7 +571,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # run CE on 15 batches of batch_size requests each
     num_batches = 15
-    batch: dict[int, InputContext] = {}
+    batch: dict[str, InputContext] = {}
     for b in range(num_batches):
         for r in range(batch_size):
             seq_id = b * batch_size + r
@@ -580,19 +580,19 @@ async def test_prefix_caching_grouped_prefixes(
             prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
             ctx = create_text_context(seq_id, prompt)
             kv_manager.external_claim(ctx.request_id)
-            batch[seq_id] = ctx
+            batch[ctx.request_id] = ctx
 
         ctxs = list(batch.values())
         seq_ids_and_prompts = {
-            seq_id: batch[seq_id].next_tokens for seq_id in batch
+            request_id: ctx.next_tokens for request_id, ctx in batch.items()
         }
         fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         seq_ids_and_new_tokens_batch = model.run(
             seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
-        for seq_id in seq_ids_and_new_tokens_batch:
-            ctx = batch[seq_id]
-            for tok in seq_ids_and_new_tokens_batch[seq_id]:
+        for request_id in seq_ids_and_new_tokens_batch:
+            ctx = batch[request_id]
+            for tok in seq_ids_and_new_tokens_batch[request_id]:
                 ctx.update(tok)
         kv_manager.step(ctxs)
 
@@ -606,38 +606,38 @@ async def test_prefix_caching_grouped_prefixes(
     # we terminate requests with probability 10% each iteration
     num_tg_steps = 100
     for _ in range(num_tg_steps):
-        for seq_id in batch:
+        for ctx in batch.values():
             extended = gen_prompt(np.random.randint(0, 10))
-            orig_start_idx = batch[seq_id].start_idx
+            orig_start_idx = ctx.start_idx
             for tok in extended:
-                batch[seq_id].update(tok)
-            batch[seq_id].set_token_indices(start_idx=orig_start_idx)
+                ctx.update(tok)
+            ctx.set_token_indices(start_idx=orig_start_idx)
 
         ctxs = list(batch.values())
         orig_seq_ids_and_prompts = {
-            seq_id: batch[seq_id].next_tokens for seq_id in batch
+            request_id: ctx.next_tokens for request_id, ctx in batch.items()
         }
         fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         seq_ids_and_new_tokens_subset = model.run(
             orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
 
-        for seq_id in seq_ids_and_new_tokens_subset:
-            ctx = batch[seq_id]
-            for tok in seq_ids_and_new_tokens_subset[seq_id]:
+        for request_id in seq_ids_and_new_tokens_subset:
+            ctx = batch[request_id]
+            for tok in seq_ids_and_new_tokens_subset[request_id]:
                 ctx.update(tok)
         kv_manager.step(ctxs)
 
         # copying keys so we don't iterate over dict while deleting things
         copied_seq_ids = list(batch.keys())
-        for seq_id in copied_seq_ids:
+        for request_id in copied_seq_ids:
             # terminate requests with probability 10%
             if len(batch) > 1 and np.random.rand() < 0.1:
-                kv_manager.release(batch[seq_id].request_id)
-                del batch[seq_id]
+                kv_manager.release(request_id)
+                del batch[request_id]
 
-    for seq_id in batch:
-        kv_manager.release(batch[seq_id].request_id)
+    for request_id in batch:
+        kv_manager.release(request_id)
 
 
 def run_forward(
@@ -649,15 +649,14 @@ def run_forward(
     run_fetch: bool = True,
     run_step: bool = True,
 ) -> None:
-    seq_id = ctx.cache_seq_id
     orig_start_idx = ctx.start_idx
     for tok in prompt:
         ctx.update(tok)
     ctx.set_token_indices(start_idx=orig_start_idx)
     batch = [ctx]
-    seq_ids_and_prompts = {seq_id: prompt}
+    seq_ids_and_prompts = {ctx.request_id: prompt}
     orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
-    new_toks = {seq_id: np.array([next_tok])}
+    new_toks = {ctx.request_id: np.array([next_tok])}
     if run_fetch:
         scheduled = kv_manager.prefetch(ctx, num_steps=1)
         assert scheduled

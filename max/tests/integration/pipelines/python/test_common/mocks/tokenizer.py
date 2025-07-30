@@ -114,7 +114,6 @@ class MockTextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
         )
-        ctx.assign_to_cache(self.i)
         return ctx
 
     async def encode(

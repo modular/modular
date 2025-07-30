@@ -19,5 +19,4 @@ def create_text_context(
         max_length=max_length,
         tokens=tokens,
     )
-    ctx.assign_to_cache(cache_seq_id)
     return ctx  # type: ignore

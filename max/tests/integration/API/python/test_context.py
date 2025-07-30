@@ -25,7 +25,6 @@ def test_context__get_min_token_logit_mask() -> None:
         eos_token_ids={4},
         sampling_params=SamplingParams(min_new_tokens=3),
     )
-    context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
     assert vocab_mask[0].tolist() == [[0, 4]]
@@ -52,7 +51,6 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
         sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
-    context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
     assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
@@ -79,7 +77,6 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
         sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
-    context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(4)
     assert len(vocab_mask) == 4
     assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
@@ -102,7 +99,6 @@ def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
     )
-    context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
     assert vocab_mask[0].tolist() == []
@@ -126,7 +122,6 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4, 5},
     )
-    context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
     assert vocab_mask[0].tolist() == []
@@ -150,7 +145,6 @@ def test_context__eos() -> None:
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
     )
-    context.assign_to_cache(cache_seq_id=0)
     assert context.eos_token_ids == {4}
     assert context.is_initial_prompt == True
     context.update(4)
@@ -164,7 +158,6 @@ def test_context__max_length() -> None:
         max_length=6,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(cache_seq_id=0)
     for i in range(2):
         assert context.status == GenerationStatus.ACTIVE
         context.update(i)
@@ -176,7 +169,6 @@ def test_context__current_length() -> None:
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(0)
 
     assert context.current_length == 4
     assert context.is_initial_prompt == True
@@ -200,7 +192,6 @@ def test_context__seq_len() -> None:
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(0)
 
     assert context.active_length == 4
     context.update(4)
@@ -215,7 +206,6 @@ def test_context__bump_token_indices() -> None:
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(0)
 
     # Can't trim more tokens than the context has.
     with pytest.raises(ValueError):
@@ -249,7 +239,6 @@ def test_context__update_beyond_chunk_size() -> None:
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(0)
 
     # 128, is the CHUNK_SIZE defined in context
     for i in range(128):
@@ -261,7 +250,6 @@ def test_context__reset() -> None:
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
-    context.assign_to_cache(0)
     assert context.active_length == 4
     assert context.next_tokens.tolist() == [0, 1, 2, 3]
     context.update(4)
@@ -290,7 +278,6 @@ def test_context_sampling_params_integration() -> None:
         tokens=np.array([0, 1, 2, 3, 4]),
         sampling_params=custom_params,
     )
-    context.assign_to_cache(0)
 
     # Verify the sampling params persist through context operations
     context.update(5)
@@ -313,7 +300,6 @@ def test_context_sampling_params_stop() -> None:
         eos_sequences=[[1, 2]],
         sampling_params=custom_params,
     )
-    context.assign_to_cache(0)
 
     context.update(1)
     context.update(2)
@@ -327,7 +313,6 @@ def test_context_sampling_params_stop() -> None:
         eos_sequences=[[2], [3, 1]],
         sampling_params=custom_params,
     )
-    context.assign_to_cache(0)
     context.update(1)
     context.update(3)
 
@@ -345,7 +330,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
-    context.assign_to_cache(0)
     context.update(1)
     context.update(2)
 
@@ -358,7 +342,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
-    context.assign_to_cache(0)
     context.update(3)
     context.update(6)
 
@@ -499,7 +482,6 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
         audio_prompt_tokens=audio_prompt_tokens,
         sampling_params=SamplingParams(temperature=0.8),
     )
-    original_context.assign_to_cache(0)
 
     # Add some initial speech tokens to the context
     initial_speech_tokens = np.array([200, 201, 202], dtype=np.int32)
