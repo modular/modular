@@ -318,7 +318,7 @@ async function doInstallMagicAndMAXSDK(
     downloadSource,
     '-c',
     'conda-forge',
-    `max==${downloadSpec.version}`,
+    `mojo==${downloadSpec.version}`,
     'python>=3.11,<3.12',
   ];
   logger.info(`Installing the MAX SDK.`);
@@ -454,7 +454,7 @@ export async function findMagicSDKSpec(
   const modularHomePath = path.join(
     downloadSpec.magicDataHome,
     'envs',
-    'max',
+    'mojo',
     'share',
     'max',
   );
