@@ -16,6 +16,7 @@ import pytest
 import torch
 from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
@@ -27,7 +28,13 @@ from max.graph import DeviceRef, Graph, TensorType, ops
         ((1, 6, 15, 1), (3, 2), (3, 2), True),
     ],
 )
-def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode) -> None:  # noqa: ANN001
+def test_max_pool(
+    session: InferenceSession,
+    input_shape: tuple[int, ...],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+    ceil_mode: bool,
+) -> None:
     device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"
 
@@ -80,13 +87,13 @@ def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode) -> None:
     ],
 )
 def test_avg_pool(
-    session,  # noqa: ANN001
-    input_shape,  # noqa: ANN001
-    kernel_size,  # noqa: ANN001
-    stride,  # noqa: ANN001
-    padding,  # noqa: ANN001
-    ceil_mode,  # noqa: ANN001
-    count_boundary,  # noqa: ANN001
+    session: InferenceSession,
+    input_shape: tuple[int, ...],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    ceil_mode: bool,
+    count_boundary: bool,
 ) -> None:
     device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"

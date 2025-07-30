@@ -16,13 +16,14 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import accelerator_count
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ops
 
 
 @pytest.fixture(scope="module")
-def hann_window_graphs():
+def hann_window_graphs() -> tuple[Graph, list[tuple[int, bool, DType]]]:
     """Create all hann window graphs once for the module."""
     graphs = {}
     device = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
@@ -57,8 +58,8 @@ def hann_window_graphs():
 @pytest.mark.parametrize("periodic", [True, False])
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_hann_window(
-    session,  # noqa: ANN001
-    hann_window_graphs,  # noqa: ANN001
+    session: InferenceSession,
+    hann_window_graphs: tuple[Graph, list[tuple[int, bool, DType]]],
     window_length: int,
     periodic: bool,
     dtype: DType,
@@ -83,7 +84,9 @@ def test_hann_window(
     output_index = keys.index(key)
 
     model = session.load(graph)
-    max_window = model()[output_index].to_numpy()
+    max_window_tensor = model()[output_index]
+    assert isinstance(max_window_tensor, Tensor)
+    max_window = max_window_tensor.to_numpy()
 
     # Compare shapes
     assert max_window.shape == torch_window.shape, (
