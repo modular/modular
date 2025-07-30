@@ -322,8 +322,7 @@ class TextTokenizer(
         return eos_token_ids, eos_sequences
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
-        """Create a new TextContext object, leveraging necessary information like
-        cache_seq_id and prompt from TextGenerationRequest."""
+        """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
         # Encode Prompt / Messages
         prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
@@ -545,8 +544,7 @@ class TextAndVisionTokenizer(
     async def new_context(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
-        """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TextGenerationRequest."""
+        """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True
         if request.prompt is not None:
