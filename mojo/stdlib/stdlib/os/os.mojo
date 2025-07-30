@@ -98,14 +98,14 @@ struct _DirHandle:
         ]()
 
         if not isdir(path):
-            raise "the directory '" + path + "' does not exist"
+            raise Error("the directory '", path, "' does not exist")
 
         self._handle = external_call["opendir", OpaquePointer](
             path.unsafe_cstr_ptr()
         )
 
         if not self._handle:
-            raise "unable to open the directory '" + path + "'"
+            raise Error("unable to open the directory '", path, "'")
 
     fn __del__(deinit self):
         """Closes the handle opened via popen."""
