@@ -650,9 +650,12 @@ class BenchmarkMetrics:
     max_input: int
     max_output: int
     max_total: int
-    peak_gpu_memory_mib: float  # 'benchmark/gpu:0/memory_used (MiB)/max'
-    available_gpu_memory_mib: float  # 'benchmark/gpu:0/memory_free (MiB)/min'
-    gpu_utilization: float  # 'benchmark/gpu:0/gpu_utilization (%)/mean'
+    # 'benchmark/gpu:i/memory_used (MiB)/max'
+    peak_gpu_memory_mib: list[float]
+    # 'benchmark/gpu:i/memory_free (MiB)/min'
+    available_gpu_memory_mib: list[float]
+    # 'benchmark/gpu:i/gpu_utilization (%)/mean'
+    gpu_utilization: list[float]
 
 
 async def get_request(
@@ -711,6 +714,7 @@ def calculate_metrics(
     gpu_metrics: dict[str, Any],
     ttft_skip_requests: int,
     max_concurrency: Optional[int],
+    collect_gpu_stats: bool,
 ) -> tuple[BenchmarkMetrics, list[int]]:
     actual_output_lens: list[int] = []
     nonempty_response_chunks = 0
@@ -794,6 +798,35 @@ def calculate_metrics(
             ),
             stacklevel=2,
         )
+
+    peak_gpu_memory_mib = []
+    available_gpu_memory_mib = []
+    gpu_utilization = []
+    if collect_gpu_stats:
+        from nvitop import Device
+
+        for i in range(Device.count()):
+            peak_gpu_memory_mib.append(
+                float(
+                    gpu_metrics.get(f"benchmark/gpu:{i}/memory_used (MiB)/max")
+                    or 0
+                )
+            )
+            available_gpu_memory_mib.append(
+                float(
+                    gpu_metrics.get(f"benchmark/gpu:{i}/memory_free (MiB)/min")
+                    or 0
+                )
+            )
+            gpu_utilization.append(
+                float(
+                    gpu_metrics.get(
+                        f"benchmark/gpu:{i}/gpu_utilization (%)/mean"
+                    )
+                    or 0
+                )
+            )
+
     metrics = BenchmarkMetrics(
         completed=completed,
         failures=failures,
@@ -818,15 +851,9 @@ def calculate_metrics(
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
-        peak_gpu_memory_mib=float(
-            gpu_metrics.get("benchmark/gpu:0/memory_used (MiB)/max") or 0
-        ),
-        available_gpu_memory_mib=float(
-            gpu_metrics.get("benchmark/gpu:0/memory_free (MiB)/min") or 0
-        ),
-        gpu_utilization=float(
-            gpu_metrics.get("benchmark/gpu:0/gpu_utilization (%)/mean") or 0
-        ),
+        peak_gpu_memory_mib=peak_gpu_memory_mib,
+        available_gpu_memory_mib=available_gpu_memory_mib,
+        gpu_utilization=gpu_utilization,
     )
 
     return metrics, actual_output_lens
@@ -1175,6 +1202,7 @@ async def benchmark(
         gpu_metrics=gpu_metrics,
         ttft_skip_requests=ttft_skip_requests,
         max_concurrency=max_concurrency,
+        collect_gpu_stats=collect_gpu_stats,
     )
 
     print_section(title=" Serving Benchmark Result ", char="=")
@@ -1232,22 +1260,25 @@ async def benchmark(
     print("{:<40} {:<10}".format("Max output tokens:", metrics.max_output))
     print("{:<40} {:<10}".format("Max total tokens:", metrics.max_total))
     if collect_gpu_stats:
-        print_section(title="GPU Stats")
-        print(
-            "{:<40} {:<10.2f}".format(
-                "GPU Utilization (%):", metrics.gpu_utilization
+        for i in range(len(metrics.gpu_utilization)):
+            print_section(title=f"GPU Stats {i}")
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "GPU Utilization (%):", metrics.gpu_utilization[i]
+                )
             )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Peak GPU Memory Used (MiB):", metrics.peak_gpu_memory_mib
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Peak GPU Memory Used (MiB):",
+                    metrics.peak_gpu_memory_mib[i],
+                )
             )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "GPU Memory Available (MiB):", metrics.available_gpu_memory_mib
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "GPU Memory Available (MiB):",
+                    metrics.available_gpu_memory_mib[i],
+                )
             )
-        )
 
     print("=" * 50)
 
