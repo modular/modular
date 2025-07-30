@@ -555,34 +555,6 @@ class InputContext(Protocol):
         """
         ...
 
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assign this context to a specific cache sequence slot.
-
-        This method links the context to a KV cache slot, enabling efficient
-        storage and retrieval of attention keys and values during generation.
-
-        Args:
-            cache_seq_id: The cache sequence ID to assign to this context.
-        """
-        ...
-
-    def unassign_from_cache(self) -> None:
-        """Remove this context's assignment from its cache sequence slot.
-
-        This method frees up the cache slot for use by other contexts,
-        typically called when a generation request is completed or cancelled.
-        """
-        ...
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Whether this context is currently assigned to a cache sequence slot.
-
-        Returns:
-            ``True`` if the context is linked to a cache slot, ``False`` otherwise.
-        """
-        ...
-
     @property
     def is_ce(self) -> bool:
         """Whether this context is in context encoding (CE) mode.
