@@ -19,6 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
+from bit._mask import is_negative
 from sys import llvm_intrinsic
 from sys.info import bitwidthof
 
@@ -63,9 +64,14 @@ fn count_leading_zeros[
         leading zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic["llvm.ctlz", __type_of(val), has_side_effect=False](
-        val, False
+
+    # HACK(#5003): remove this workaround
+    alias d = dtype if dtype is not DType.index else (
+        DType.int32 if dtype.sizeof() == 4 else DType.int64
     )
+    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
+        val.cast[d](), False
+    ).cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -354,14 +360,13 @@ fn log2_floor(val: Int) -> Int:
 
     Returns:
         The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns -1 if val is 0.
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
-    alias bitwidth = bitwidthof[Int]()
-    return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
+    return Int(log2_floor(Scalar[DType.index](val)))
 
 
 @always_inline
-fn log2_floor(val: Scalar) -> __type_of(val):
+fn log2_floor(val: UInt) -> UInt:
     """Returns the floor of the base-2 logarithm of an integer value.
 
     Args:
@@ -369,13 +374,38 @@ fn log2_floor(val: Scalar) -> __type_of(val):
 
     Returns:
         The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns -1 if val is 0.
+        the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    constrained[val.dtype.is_integral(), "the input dtype must be integral"]()
-    alias bitwidth = bitwidthof[val.dtype]()
-    return select(
-        val <= 1, __type_of(val)(0), bitwidth - count_leading_zeros(val) - 1
-    )
+    return bitwidthof[UInt]() - count_leading_zeros(val) - 1
+
+
+@always_inline
+fn log2_floor[
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
+    """
+    constrained[dtype.is_integral(), "dtype must be integral"]()
+
+    alias bitwidth = bitwidthof[dtype]()
+    var res = bitwidth - count_leading_zeros(val) - 1
+
+    @parameter
+    if dtype.is_signed():
+        return res | is_negative(val)
+    else:
+        return res
 
 
 # ===-----------------------------------------------------------------------===#

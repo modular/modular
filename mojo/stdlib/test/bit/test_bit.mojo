@@ -487,7 +487,6 @@ fn _log2_ceil(n: Scalar) -> __type_of(n):
 
 
 def test_log2_floor():
-    assert_equal(log2_floor(0), 0)
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
@@ -501,6 +500,41 @@ def test_log2_floor():
                 log2_floor(i),
             ),
         )
+
+    # test dtypes
+    @parameter
+    for dtype in [
+        DType.int8,
+        DType.uint8,
+        DType.int16,
+        DType.uint16,
+        DType.int32,
+        DType.uint32,
+        DType.int64,
+        DType.uint64,
+        DType.int128,
+        DType.uint128,
+        DType.int256,
+        DType.uint256,
+    ]:
+        alias value = Scalar[dtype](-1) if dtype.is_signed() else (
+            Scalar[dtype](0) - 1
+        )
+
+        assert_equal(value, log2_floor(Scalar[dtype](0)), String(dtype))
+
+        @parameter
+        if dtype.is_signed():
+            assert_equal(value, log2_floor(Scalar[dtype](-1)))
+            assert_equal(value, log2_floor(Scalar[dtype](-2)))
+            assert_equal(value, log2_floor(Scalar[dtype](-3)))
+
+        for i in range(1, 100):
+            assert_equal(
+                log2_floor(Scalar[dtype](i)),
+                Scalar[dtype](_log2_floor(i)),
+                msg=String("mismatching value for the input value of ", i),
+            )
 
     fn _check_alias[n: Int](expected: Int) raises:
         alias res = log2_floor(n)
@@ -517,7 +551,6 @@ def test_log2_floor():
             ),
         )
 
-    _check_alias[0](0)
     _check_alias[1](0)
     _check_alias[2](1)
     _check_alias[15](3)
