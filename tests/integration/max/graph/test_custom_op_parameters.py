@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
@@ -29,8 +30,8 @@ def kernel_verification_ops_path() -> Path:
 
 def test_custom_op_with_int_parameter(
     kernel_verification_ops_path: Path,
-    session,  # noqa: ANN001
-    capfd,  # noqa: ANN001
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
 ) -> None:
     expected_int = 42
 
@@ -64,8 +65,8 @@ def test_custom_op_with_int_parameter(
 
 def test_custom_op_with_dtype_parameter(
     kernel_verification_ops_path: Path,
-    session,  # noqa: ANN001
-    capfd,  # noqa: ANN001
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
 ) -> None:
     expected_dtype = DType.int32
     expected_dtype_str = "int32"
@@ -100,8 +101,8 @@ def test_custom_op_with_dtype_parameter(
 
 def test_custom_op_with_static_string_parameter(
     kernel_verification_ops_path: Path,
-    session,  # noqa: ANN001
-    capfd,  # noqa: ANN001
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
 ) -> None:
     expected_string = "Socrates is a man"
 
