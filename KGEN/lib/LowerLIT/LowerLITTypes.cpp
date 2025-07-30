@@ -122,6 +122,76 @@ using TypeDomain = LowerLITReplacer::TypeDomain;
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// ParameterEvaluationContext
+//===----------------------------------------------------------------------===//
+
+namespace {
+class LowerLITEvaluationContext : public SymTabEvaluationContext {
+public:
+  LowerLITEvaluationContext(ModuleOp module,
+                            mlir::LockedSymbolTableCollection &symtab,
+                            StructDecls &decls)
+      : SymTabEvaluationContext(module, symtab), decls(decls) {}
+
+  FailureOr<TypedAttr>
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+
+  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
+
+private:
+  StructDecls &decls;
+};
+} // namespace
+
+FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateExpression(
+    ContextuallyEvaluatedAttrInterface attr) {
+  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr)) {
+    FailureOr<TypedAttr> simplified = evaluateGetWitness(getWitness);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+  return failure();
+}
+
+FailureOr<TypedAttr>
+LowerLITEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
+  // We can only simplify if the type reference is resolved already.
+  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
+  if (!typeParam)
+    return failure();
+
+  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  if (!structType)
+    return failure();
+
+  // Find the struct decl for the instance.
+  SymbolRefAttr structDeclRef = structType.getSymbol();
+  SymbolRefAttr structGenRef =
+      decls.structDecls[structDeclRef.getLeafReference()].symRef;
+
+  auto structDecl =
+      symtab.lookupSymbolIn<StructGeneratorOp>(module, structGenRef);
+  if (!structDecl)
+    return failure();
+
+  auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
+      structDecl, getWitness.getTraitName());
+  if (!conformance)
+    return failure();
+
+  ParameterEvaluator evaluator(structDecl.getInputParams(),
+                               structType.getParamValues());
+  evaluator.setEvaluationContext(this);
+
+  FailureOr<TypedAttr> simplified =
+      getWitness.simplify(conformance, &evaluator);
+  if (failed(simplified) || !simplified.value())
+    return failure();
+
+  return simplified.value();
+}
+
+//===----------------------------------------------------------------------===//
 // Type Lowering
 //===----------------------------------------------------------------------===//
 
@@ -467,7 +537,7 @@ struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
   LogicalResult materializeLowering(OpT op);
 
   /// Evaluation context used for simplifying parameters.
-  LITSymTabEvaluationContext evalContext;
+  LowerLITEvaluationContext evalContext;
   /// The struct decl map.
   StructDecls &structDecls;
   /// Converter for debuginfo.
@@ -531,7 +601,7 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 
 LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
                                mlir::LockedSymbolTableCollection &symtab)
-    : IRRewriter(module.getContext()), evalContext(module, symtab),
+    : IRRewriter(module.getContext()), evalContext(module, symtab, structDecls),
       structDecls(structDecls) {
   populateReplacer(structDecls, *this, evalContext, module.getContext());
 
