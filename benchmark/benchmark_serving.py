@@ -447,7 +447,7 @@ MIN_OUTPUT_LEN = 4
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit=65535) -> None:  # noqa: ANN001
+def set_ulimit(target_soft_limit: int = 65535) -> None:
     resource_type = resource.RLIMIT_NOFILE
     current_soft, current_hard = resource.getrlimit(resource_type)
 
@@ -1039,11 +1039,8 @@ async def benchmark(
         pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
         async def limited_request_func(
-            request_func_input,  # noqa: ANN001
-            semaphore,  # noqa: ANN001
-            benchmark_should_end_time,  # noqa: ANN001
-            pbar,  # noqa: ANN001
-        ):
+            request_func_input: RequestFuncInput,
+        ) -> RequestFuncOutput:
             if semaphore is None:
                 return await request_func(
                     request_func_input=request_func_input, pbar=pbar
@@ -1080,14 +1077,7 @@ async def benchmark(
                 img=request.encoded_img,
             )
             tasks.append(
-                asyncio.create_task(
-                    limited_request_func(
-                        request_func_input=request_func_input,
-                        semaphore=semaphore,
-                        benchmark_should_end_time=benchmark_should_end_time,
-                        pbar=pbar,
-                    )
-                )
+                asyncio.create_task(limited_request_func(request_func_input))
             )
         outputs = await asyncio.gather(*tasks)
 
@@ -1111,7 +1101,9 @@ async def benchmark(
         # apply the semaphore at the session level
         # ex: with max_concurrency = 1,
         # the first session finishes before the second session starts
-        async def limited_chat_session_driver(chat_session, semaphore, pbar):  # noqa: ANN001
+        async def limited_chat_session_driver(
+            chat_session: ChatSession,
+        ) -> list[RequestFuncOutput]:
             if semaphore is None:
                 return await chat_session_driver(
                     model_id,
@@ -1147,9 +1139,7 @@ async def benchmark(
             ):
                 await asyncio.sleep(warmup_delay_ms / 1000)
             tasks.append(
-                asyncio.create_task(
-                    limited_chat_session_driver(chat_session, semaphore, pbar)
-                )
+                asyncio.create_task(limited_chat_session_driver(chat_session))
             )
 
         session_outputs = await asyncio.gather(*tasks)
