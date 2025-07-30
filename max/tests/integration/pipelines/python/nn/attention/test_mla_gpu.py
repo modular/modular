@@ -81,11 +81,10 @@ def test_mla_prefill_plan() -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
+    # Create contexts
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -210,11 +209,10 @@ def test_mla_decompress_k_cache() -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
+    # Create contexts
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 

@@ -479,13 +479,8 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
 
     g = construct()
 
-    # Claim seq_ids in cache
-    seq_ids_to_claim = list(kv_manager.available)[:batch_size]
-    seq_ids = seq_ids_to_claim
-
     batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
+        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
     ]
 
     for context in batch:

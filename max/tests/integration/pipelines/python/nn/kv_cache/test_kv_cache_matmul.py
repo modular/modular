@@ -209,8 +209,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     # Create contexts and claim seq_ids in cache
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -364,8 +363,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -499,8 +497,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 

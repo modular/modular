@@ -151,12 +151,8 @@ def test_kv_cache_ragged_attention(
 
     g = construct()
 
-    # Claim seq_ids in cache
-    seq_ids = list(kv_manager.available)[:batch_size]
-
     batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
+        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
     ]
 
     for context in batch:

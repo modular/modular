@@ -709,9 +709,7 @@ def attention_lora_max_output(
         [0, seq_len, seq_len * 2], dtype=np.uint32
     )
 
-    seq_ids = list(kv_manager.available)[:batch_size]
-
-    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
+    batch = [create_text_context(np.empty(seq_len)) for _ in range(batch_size)]
 
     for context in batch:
         kv_manager.external_claim(context.request_id)

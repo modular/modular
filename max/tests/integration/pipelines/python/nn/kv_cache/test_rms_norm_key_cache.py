@@ -122,8 +122,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -201,8 +200,7 @@ def test_partial_rms_norm_key_cache(
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -293,8 +291,7 @@ def test_rms_norm_new_key_cache(
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -451,8 +448,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     # Create contexts and claim seq_ids in cache
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(seq_lens[i]))
+        context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 

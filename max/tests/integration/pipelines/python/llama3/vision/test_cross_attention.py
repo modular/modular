@@ -228,14 +228,13 @@ def test_cross_attention(
 
     # Phase 3: execution.
 
-    seq_ids = list(kv_manager.available)[:batch_size]
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
     batch = [
         create_text_context(
-            s, np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
+            np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
         )
-        for s in seq_ids
+        for _ in range(batch_size)
     ]
 
     for context in batch:

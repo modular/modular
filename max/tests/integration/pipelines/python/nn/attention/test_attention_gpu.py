@@ -256,14 +256,12 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 
     # Phase 3: execution.
 
-    # Create contexts and claim seq_ids in cache
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
     batch = []
-    for i in range(batch_size):
-        seq_id = i
+    for _ in range(batch_size):
         context = create_text_context(
-            seq_id, np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
+            np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
         )
         kv_manager.external_claim(context.request_id)
         batch.append(context)
@@ -449,11 +447,10 @@ def test_kv_cache_paged_mla_prefill() -> None:
         return g
 
     g = construct()
-    # Create contexts and claim seq_ids in cache
+    # Create contexts
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 

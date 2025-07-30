@@ -58,9 +58,8 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:  # 
     )
 
     # Reserve a slot in the KV cache manager.
-    seq_id = 0
     expected_cache_len = 42
-    context = create_text_context(seq_id, np.empty(expected_cache_len))
+    context = create_text_context(np.empty(expected_cache_len))
     batch = [context]
 
     kv_manager.external_claim(context.request_id)

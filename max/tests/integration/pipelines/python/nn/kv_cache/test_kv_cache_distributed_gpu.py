@@ -44,8 +44,7 @@ async def test_kv_cache_multi_gpu() -> None:
             devices=list_of_devices,
             session=inference_session,
         )
-        seq_id = 0
-        context = create_text_context(seq_id, np.empty(1))
+        context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
 
         batch = [context]
@@ -154,9 +153,9 @@ async def test_swapping_to_host_multi_gpu(
     prompt_len = 100
     reqs: list[InputContext] = []
     for i in range(10):  # noqa: B007
-        reqs.append(create_text_context(len(reqs), gen_prompt(prompt_len)))
+        reqs.append(create_text_context(gen_prompt(prompt_len)))
     for i in range(10):
-        reqs.append(create_text_context(len(reqs), reqs[i].all_tokens))
+        reqs.append(create_text_context(reqs[i].all_tokens))
 
     # Each batch has 4 requests
     batch_size = 4

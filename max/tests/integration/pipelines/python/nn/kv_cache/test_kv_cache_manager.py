@@ -33,8 +33,7 @@ async def test_step() -> None:
     prompt_lens = [3, 4, 7]
     batch = []
     for i in range(3):
-        seq_id = list(kv_manager.available)[0]
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 
@@ -79,8 +78,7 @@ async def test_claim_and_release() -> None:
     contexts = []
     prompt_lens = [2, 3, 4, 5, 6]
     for i in range(5):
-        seq_id = list(kv_manager.available)[0]
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
 
@@ -93,8 +91,7 @@ async def test_claim_and_release() -> None:
     contexts_2 = []
     prompt_lens_2 = [7, 8, 9]
     for i in range(3):
-        seq_id = list(kv_manager.available)[0]
-        context = create_text_context(seq_id, np.empty(prompt_lens_2[i]))
+        context = create_text_context(np.empty(prompt_lens_2[i]))
         kv_manager.external_claim(context.request_id)
         contexts_2.append(context)
 
@@ -133,19 +130,13 @@ async def test_fetch_continuous() -> None:
 
     # Raise on fetch when nothing has been claimed
     with pytest.raises(ValueError):
-        bogus_seq_id = 100
-        kv_collection = kv_manager.fetch(
-            [create_text_context(bogus_seq_id, np.empty(1))]
-        )[0]
+        kv_collection = kv_manager.fetch([create_text_context(np.empty(1))])[0]
 
     # Claim 5 items
-    seq_ids = []
     contexts = []
     for _ in range(5):
-        seq_id = list(kv_manager.available)[0]
-        context = create_text_context(seq_id, np.empty(1))
+        context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
-        seq_ids.append(seq_id)
         contexts.append(context)
 
     # Fetch 3 of the 5 ids

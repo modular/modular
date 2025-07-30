@@ -159,8 +159,7 @@ def generate_max_outputs(
     # Create contexts and claim seq_ids in cache.
     batch = []
     for i in range(batch_size):
-        seq_id = i
-        context = create_text_context(seq_id, np.empty(prompt_lens[i]))
+        context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         batch.append(context)
 

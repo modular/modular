@@ -11,7 +11,6 @@ from max.pipelines.core import TextContext
 
 
 def create_text_context(
-    cache_seq_id: int,
     tokens: np.ndarray,
     max_length: int = 1000,
 ) -> InputContext:

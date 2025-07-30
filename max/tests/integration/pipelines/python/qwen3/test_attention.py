@@ -238,8 +238,7 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=attention.state_dict())
 
     # Set up cache inputs and call the compiled model.
-    seq_id = 0
-    batch = [create_text_context(seq_id, np.empty(input_seq_len))]
+    batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.external_claim(batch[0].request_id)
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
