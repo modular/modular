@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: morrisoncole/pr-lint-action@v1.7.1
+      - uses: morrisoncole/pr-lint-action@51f3cfabaf5d46f94e54524214e45685f0401b2a
         if: github.actor != 'dependabot[bot]'
         with:
           title-regex: "^(Revert \")?(\\[\\S.*\\]\\s?)+\\s+[a-zA-Z`].*"
