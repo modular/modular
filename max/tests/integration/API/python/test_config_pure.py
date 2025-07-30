@@ -518,16 +518,15 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             max_length=1,
         )
 
-    with pytest.raises(ValueError):
-        # This should still raise. While allow_safetensors_weights_float32_to_bfloat16_cast is set to True,
-        # it will not cast the quantization encoding to float32.
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.float32,
-            max_batch_size=1,
-            max_length=1,
-            allow_safetensors_weights_float32_to_bfloat16_cast=True,
-        )
+    # This should pass, because the flag also supports casting bfloat16 weights
+    # to float32.
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.float32,
+        max_batch_size=1,
+        max_length=1,
+        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+    )
 
     # This should not raise, as allow_safetensors_weights_float32_to_bfloat16_cast is set to True,
     # and the quantization encoding is set to bfloat16.

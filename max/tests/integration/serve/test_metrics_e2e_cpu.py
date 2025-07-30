@@ -23,13 +23,14 @@ from max.serve.schemas.openai import (  # type: ignore
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
+            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
+            allow_safetensors_weights_float32_to_bfloat16_cast=True,
         )
     ],
     indirect=True,
@@ -61,7 +62,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "HuggingFaceTB/SmolLM-135M",
+                "model": "HuggingFaceTB/SmolLM-135M-Instruct",
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
             },
@@ -76,7 +77,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
         assert response.status_code == 200
         assert "maxserve_num_input_tokens_total" in response.text
         assert (
-            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M"} 1.0'
+            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M-Instruct"} 1.0'
             in response.text
         )
         assert "maxserve_request_time_milliseconds_bucket" in response.text
@@ -91,13 +92,14 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
+            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
+            allow_safetensors_weights_float32_to_bfloat16_cast=True,
         )
     ],
     indirect=True,
@@ -115,7 +117,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "HuggingFaceTB/SmolLM-135M",
+                "model": "HuggingFaceTB/SmolLM-135M-Instruct",
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
             },
@@ -130,7 +132,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
         assert raw_response.status_code == 200
         assert "maxserve_num_input_tokens_total" in raw_response.text
         assert (
-            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M"}'
+            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M-Instruct"}'
             in raw_response.text
         )
         assert "maxserve_request_time_milliseconds_bucket" in raw_response.text
@@ -146,13 +148,14 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
+            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
+            allow_safetensors_weights_float32_to_bfloat16_cast=True,
         )
     ],
     indirect=True,
