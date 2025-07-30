@@ -31,6 +31,7 @@ from max.interfaces import (
     AudioGeneratorOutput,
     SchedulerResult,
     msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
@@ -220,8 +221,11 @@ class AudioGenerationScheduler(Scheduler):
         )
         self.response_q = ZmqPushSocket[
             dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
-
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
