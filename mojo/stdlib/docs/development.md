@@ -100,6 +100,10 @@ directory:
 pixi run tests ./stdlib/test/bit
 ```
 
+```bash
+pixi run tests ./stdlib/test/bit/test_bit.mojo
+```
+
 will automatically execute the equivalent bazelw command
 
 ## Formatting changes

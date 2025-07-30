@@ -18,14 +18,19 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 REPO_ROOT="${SCRIPT_DIR}"/../../..
 
 
-FILTER="stdlib/test"
+FILTER=""
 if [[ $# -gt 0 ]]; then
-  # If an argument is provided, use it as the specific test directory
   FILTER="${1#./}" # remove leading relative file path if it has one
-  if [[ -f ${FILTER} ]]; then
-    FILTER=$(dirname $FILTER)
+  if [[ -f ${FILTER} ]]; then # specific file
+    FILTER="//mojo/$(dirname $FILTER):$(basename $FILTER)"
+    FILTER=$("$REPO_ROOT"/bazelw query $FILTER)
+  else
+    # specific test directory
+    FILTER="${FILTER%/}" # remove trailing / if it has one
+    FILTER="//mojo/${FILTER}/..."
   fi
-  FILTER="${FILTER%/}" # remove trailing / if it has one
+else
+  FILTER="//mojo/stdlib/test/..."
 fi
 
-exec "$REPO_ROOT"/bazelw test //mojo/${FILTER}/...
+exec "$REPO_ROOT"/bazelw test ${FILTER}
