@@ -93,6 +93,19 @@ specifying the subdirectory and using `/...`. For example:
 ./bazelw test //mojo/stdlib/test/math/...
 ```
 
+A convenience script exists for executing standard library tests within the mojo
+directory:
+
+```bash
+pixi run tests ./stdlib/test/bit
+```
+
+```bash
+pixi run tests ./stdlib/test/bit/test_bit.mojo
+```
+
+will automatically execute the equivalent bazelw command
+
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.

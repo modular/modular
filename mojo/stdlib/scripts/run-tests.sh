@@ -17,4 +17,20 @@ set -euo pipefail
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 REPO_ROOT="${SCRIPT_DIR}"/../../..
 
-exec "$REPO_ROOT"/bazelw test //mojo/stdlib/test/...
+
+FILTER=""
+if [[ $# -gt 0 ]]; then
+  FILTER="${1#./}" # remove leading relative file path if it has one
+  if [[ -f ${FILTER} ]]; then # specific file
+    FILTER="//mojo/$(dirname $FILTER):$(basename $FILTER)"
+    FILTER=$("$REPO_ROOT"/bazelw query $FILTER)
+  else
+    # specific test directory
+    FILTER="${FILTER%/}" # remove trailing / if it has one
+    FILTER="//mojo/${FILTER}/..."
+  fi
+else
+  FILTER="//mojo/stdlib/test/..."
+fi
+
+exec "$REPO_ROOT"/bazelw test ${FILTER}
