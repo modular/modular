@@ -54,10 +54,14 @@ alias CUDA_NVML_LIBRARY = _Global[
 fn _init_dylib() -> _OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
-        _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        _check_error(
+            dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        )
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](String("CUDA NVML library not found: ", e))
+        return abort[_OwnedDLHandle](
+            String("CUDA NVML library initialization failed: ", e)
+        )
 
 
 @always_inline
@@ -90,7 +94,7 @@ struct DriverVersion(Copyable, Movable, StringableRaising):
         return Int(self._value[1])
 
     fn patch(self) raises -> Int:
-        return Int(self._value[2])
+        return Int(self._value[2]) if len(self._value) > 2 else 0
 
     fn __str__(self) raises -> String:
         return String(self.major(), ".", self.minor(), ".", self.patch())
