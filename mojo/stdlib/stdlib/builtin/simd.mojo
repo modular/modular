@@ -329,7 +329,6 @@ struct SIMD[dtype: DType, size: Int](
     """Returns the minimum (lowest) finite value of SIMD value."""
 
     alias _Mask = SIMD[DType.bool, size]
-    alias _default_alignment = alignof[Scalar[dtype]]() if is_gpu() else 1
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

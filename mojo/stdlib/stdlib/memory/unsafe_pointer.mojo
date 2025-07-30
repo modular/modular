@@ -34,16 +34,6 @@ from python import PythonObject
 
 
 @always_inline
-fn _default_alignment[type: AnyType]() -> Int:
-    return alignof[type]() if is_gpu() else 1
-
-
-@always_inline
-fn _default_alignment[dtype: DType, width: Int = 1]() -> Int:
-    return _default_alignment[Scalar[dtype]]()
-
-
-@always_inline
 fn _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
@@ -56,7 +46,7 @@ struct UnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[type](),
+    alignment: Int = alignof[type](),
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
@@ -505,7 +495,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
@@ -564,7 +554,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
@@ -603,7 +593,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[dtype, width]:
@@ -639,7 +629,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -672,7 +662,7 @@ struct UnsafePointer[
         offset_type: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -706,7 +696,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
         """Stores a single element value.
@@ -731,7 +721,7 @@ struct UnsafePointer[
         dtype: DType,
         width: Int,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
         volatile: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
         constrained[mut, _must_be_mut_err]()
@@ -792,7 +782,7 @@ struct UnsafePointer[
         dtype: DType, //,
         *,
         width: Int = 1,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
@@ -847,7 +837,7 @@ struct UnsafePointer[
         dtype: DType, //,
         *,
         width: Int = 1,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = alignof[dtype](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
