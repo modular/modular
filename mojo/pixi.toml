@@ -10,4 +10,4 @@ tests = "./stdlib/scripts/run-tests.sh"
 [dependencies]
 python = ">=3.9,<3.14"
 lit = "*"
-max = "*"
+mojo = "*"
