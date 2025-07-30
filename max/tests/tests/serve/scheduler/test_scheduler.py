@@ -105,7 +105,6 @@ def create_mock_request(
         tokens=tokens,
     )
     assert context.active_idx == seq_len
-    context.assign_to_cache(cache_seq_id)
     context.bump_token_indices(start_idx=start_idx)
     return context
 

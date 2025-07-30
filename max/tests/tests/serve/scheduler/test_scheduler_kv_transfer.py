@@ -644,7 +644,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
         max_length=100,
         tokens=np.array([1, 2, 3, 4, 5], dtype=np.int32),
     )
-    mock_request_1.assign_to_cache(0)
 
     # Send the request to the decode scheduler
     print(
@@ -662,7 +661,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
         max_length=100,
         tokens=np.array([1, 2, 3], dtype=np.int32),
     )
-    mock_request_2.assign_to_cache(0)
 
     # Send the request to the decode scheduler
     print(
