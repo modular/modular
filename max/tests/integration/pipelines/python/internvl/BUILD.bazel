@@ -21,50 +21,52 @@ modular_py_library(
     ],
 )
 
-modular_py_test(
-    name = "internvl",
-    size = "large",
-    srcs = glob(
-        [
-            "tests/test_*.py",
-            "utils/*.py",
-            "internvl_impl/*.py",
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        size = "large",
+        srcs = [src] + glob(
+            [
+                "utils/*.py",
+                "internvl_impl/*.py",
+            ],
+        ) + ["tests/__init__.py"],
+        data = [
+            "configs/internvl-2B.json",
+            "configs/internvl-38B.json",
+            "configs/internvl-8B.json",
+            "//SDK:max",
         ],
-    ) + ["tests/__init__.py"],
-    data = [
-        "configs/internvl-2B.json",
-        "configs/internvl-38B.json",
-        "configs/internvl-8B.json",
-        "//SDK:max",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    gpu_constraints = ["//:has_multi_gpu"],
-    imports = ["."],
-    tags = [
-        "gpu",
-        "no-sandbox",
-    ],
-    deps = [
-        ":torch_utils",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/serve",
-        "//Support/python:support",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-mock"),
-        requirement("requests"),
-        requirement("timm"),
-        requirement("torch"),
-        requirement("torchvision"),
-        requirement("transformers"),
-    ],
-)
+        exec_properties = {
+            "test.resources:gpu-memory": "2",
+        },
+        gpu_constraints = ["//:has_multi_gpu"] if src == "tests/test_vision_embeddings.py" else ["//:has_gpu"],
+        imports = ["."],
+        tags = [
+            "gpu",
+            "no-sandbox",
+        ],
+        deps = [
+            ":torch_utils",
+            "//SDK/integration-test/pipelines/python/test_common",
+            "//SDK/lib/API/python/max/dtype",
+            "//SDK/lib/API/python/max/engine",
+            "//SDK/lib/API/python/max/entrypoints",
+            "//SDK/lib/API/python/max/graph",
+            "//SDK/lib/API/python/max/nn",
+            "//SDK/lib/API/python/max/pipelines/architectures",
+            "//SDK/lib/API/python/max/serve",
+            "//Support/python:support",
+            requirement("numpy"),
+            requirement("pillow"),
+            requirement("pytest-asyncio"),
+            requirement("pytest-mock"),
+            requirement("requests"),
+            requirement("timm"),
+            requirement("torch"),
+            requirement("torchvision"),
+            requirement("transformers"),
+        ],
+    )
+    for src in glob(["tests/test_*.py"])
+]
