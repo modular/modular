@@ -20,18 +20,13 @@ import uuid
 from typing import Optional
 
 from max.interfaces import (
+    EmbeddingsGenerator,
     EmbeddingsOutput,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
-from max.pipelines.core import (
-    EmbeddingsGenerator,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 from .metrics import EmbeddingsMetrics
 

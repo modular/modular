@@ -15,11 +15,11 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from sys.info import _get_arch, _TargetType
+from sys.info import _accelerator_arch, _TargetType, CompilationTarget
 
 from compile import CompiledFunctionInfo, compile_info
 
-from .info import A100, DEFAULT_GPU_ARCH, GPUInfo
+from .info import A100, GPUInfo
 
 # ===-----------------------------------------------------------------------===#
 # Targets
@@ -29,7 +29,7 @@ from .info import A100, DEFAULT_GPU_ARCH, GPUInfo
 @always_inline
 fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
-    target_arch: StaticString = DEFAULT_GPU_ARCH,
+    target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
     alias info = GPUInfo.from_name[target_arch]() if target_arch else A100
     return info.target()
@@ -53,9 +53,9 @@ fn _compile_code[
     *,
     emission_kind: StaticString = "asm",
     target: _TargetType = get_gpu_target(),
-    compile_options: StaticString = GPUInfo.from_target[
+    compile_options: StaticString = CompilationTarget[
         target
-    ]().compile_options,
+    ].default_compile_options(),
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,
@@ -114,7 +114,7 @@ fn _ptxas_compile[
             String(
                 ptxas_path,
                 " --gpu-name ",
-                _get_arch[target](),
+                CompilationTarget[target]._arch(),
                 " -O4 ",
                 ptx_file,
                 " ",

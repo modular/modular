@@ -29,7 +29,7 @@ eliminate the need for host-side synchronization when orchestrating dependent GP
 """
 from sys import env_get_int, has_nvidia_gpu_accelerator
 
-from .host.info import DEFAULT_GPU, H100
+from .host.info import H100, GPUInfo, _accelerator_arch
 from .host.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,
@@ -54,7 +54,7 @@ fn _support_pdl_launch() -> Bool:
     if not has_nvidia_gpu_accelerator():
         return False
 
-    if DEFAULT_GPU < H100:
+    if GPUInfo.from_name[_accelerator_arch()]() < H100:
         return False
 
     return True

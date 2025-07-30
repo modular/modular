@@ -172,7 +172,7 @@ fn test[
         depth,
         BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
         num_pipeline_stages=4 if (
-            ctx.device_info is H100 or ctx.device_info is B200
+            ctx.default_device_info is H100 or ctx.default_device_info is B200
         ) else 2,
     )
 
@@ -273,7 +273,7 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
-        alias is_sm90orsm100 = ctx.device_info is H100 or ctx.device_info is B200
+        alias is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
         alias min_depth = 64
         alias max_depth = 256 if is_sm90orsm100 else 128
 
@@ -495,7 +495,7 @@ def main():
             ](1, 600, ctx)
 
             @parameter
-            if ctx.device_info is A100 or is_sm90orsm100:
+            if ctx.default_device_info is A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
                     DType.bfloat16,

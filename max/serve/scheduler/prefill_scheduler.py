@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Union
 
 from max._core import nixl
-from max.interfaces import TokenGenerator
+from max.interfaces import TextGenerationInputs, TokenGenerator
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -146,7 +146,7 @@ class PrefillScheduler(Scheduler):
         it to the preempted queue.
 
         """
-        self.pipeline.release(prefill_request.context)
+        self.pipeline.release(prefill_request.context.request_id)
         prefill_request.context.reset()
         self.prefill_requests.appendleft(prefill_request)
 
@@ -162,7 +162,7 @@ class PrefillScheduler(Scheduler):
             status = self.transfer_engine.get_transfer_status(transfer)
 
             if status != nixl.Status.IN_PROG:
-                self.pipeline.release(context)
+                self.pipeline.release(context.request_id)
                 to_be_deleted.append(req_id)
 
         for id in to_be_deleted:
@@ -221,7 +221,8 @@ class PrefillScheduler(Scheduler):
         and sends completed requests to the decode queue while resetting their token indices.
         """
         # Execute the Batch
-        _ = self.pipeline.next_token(self.active_batch, num_steps=1)
+        inputs = TextGenerationInputs(batch=self.active_batch, num_steps=1)
+        _ = self.pipeline.next_token(inputs)
 
         # Send completed requests to decode queue.
         # TODO: E2EOPT-275 Handle chunked requests.

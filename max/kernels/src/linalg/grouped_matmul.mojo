@@ -687,7 +687,7 @@ fn grouped_matmul[
     alias is_expert_shape_static = b_shape.all_known[3]() and a_shape.has_value[
         1
     ]() and c_shape.has_value[1]()
-    alias is_sm90_kernel_applicable = ctx.device_info is H100 and is_expert_shape_static
+    alias is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:

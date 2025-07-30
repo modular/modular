@@ -1366,7 +1366,9 @@ struct String(
         """
         return self.as_string_slice().isspace()
 
-    fn split(self, sep: StringSlice, maxsplit: Int = -1) -> List[String]:
+    fn split(
+        self, sep: StringSlice, maxsplit: Int = -1
+    ) -> List[StringSlice[__origin_of(self)]]:
         """Split the string by a separator.
 
         Args:
@@ -1390,11 +1392,11 @@ struct String(
         _ = "123".split("") # ["", "1", "2", "3", ""]
         ```
         """
-        return _to_string_list(
-            self.as_string_slice().split(sep, maxsplit=maxsplit)
-        )
+        return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
-    fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
+    fn split(
+        self, sep: NoneType = None, maxsplit: Int = -1
+    ) -> List[StringSlice[__origin_of(self)]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1418,9 +1420,7 @@ struct String(
         _ = "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world".split()  # ["hello", "world"]
         ```
         """
-        return _to_string_list(
-            self.as_string_slice().split(sep, maxsplit=maxsplit)
-        )
+        return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
     fn splitlines(self, keepends: Bool = False) -> List[String]:
         """Split the string at line boundaries. This corresponds to Python's

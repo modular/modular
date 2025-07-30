@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
@@ -340,65 +340,85 @@ class InternVLMultiheadAttention(Module, Shardable):
             )
 
     def shard(
-        self, shard_idx: int, device: DeviceRef
-    ) -> InternVLMultiheadAttention:
-        """Creates a sharded view of this attention layer for a specific device.
+        self, devices: Iterable[DeviceRef]
+    ) -> list[InternVLMultiheadAttention]:
+        """Creates sharded views of this attention layer across multiple devices.
 
         Overrides the parent method to handle QK normalization layers.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            A sharded InternVLMultiheadAttention instance.
+            List of sharded InternVLMultiheadAttention instances, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
                 "InternVLMultiheadAttention layer cannot be sharded because no sharding strategy was provided."
             )
 
-        # Calculate sharded dimensions - handle uneven head distribution
-        sharded_num_heads = compute_heads_per_device(
-            total_heads=self.num_heads,
-            device_idx=shard_idx,
-            num_devices=self.sharding_strategy.num_devices,
-        )
-
-        # Create new attention instance with sharded configuration
-        sharded = InternVLMultiheadAttention(
-            num_attention_heads=sharded_num_heads,
-            hidden_size=self.embed_dim,
-            head_dim=self.head_dim,
-            devices=[device],
-            dtype=self.q_proj.weight.dtype
-            if hasattr(self, "q_proj")
-            else self.qkv_proj.dtype,
-            scale=self.scale,
-            qkv_has_bias=self.qkv_has_bias,
-            o_proj_has_bias=self.o_proj_has_bias,
-            stacked_qkv=self.stacked_qkv,
-            qk_normalization=self.qk_normalization,
-            layer_norm_eps=self.layer_norm_eps,
-        )
-
-        # Shard weights using parent's logic
+        # Get sharded weights
         if self.stacked_qkv:
-            sharded.qkv_proj = self.qkv_proj.shard(shard_idx, device)
+            qkv_proj_shards = self.qkv_proj.shard(devices)
+            qkv_proj_bias_shards = []
             if self.qkv_has_bias:
-                sharded.qkv_proj_bias = self.qkv_proj_bias.shard(
-                    shard_idx, device
-                )
+                qkv_proj_bias_shards = self.qkv_proj_bias.shard(devices)
         else:
-            sharded.q_proj = self.q_proj.shard(shard_idx, device)
-            sharded.k_proj = self.k_proj.shard(shard_idx, device)
-            sharded.v_proj = self.v_proj.shard(shard_idx, device)
+            q_proj_shards = self.q_proj.shard(devices)
+            k_proj_shards = self.k_proj.shard(devices)
+            v_proj_shards = self.v_proj.shard(devices)
 
-        sharded.o_proj = self.o_proj.shard(shard_idx, device)
+        o_proj_shards = self.o_proj.shard(devices)
 
-        # Shard QK normalization layers using replicate strategy.
+        q_norm_weight_shards = []
+        k_norm_weight_shards = []
         if self.qk_normalization:
-            sharded.q_norm.weight = self.q_norm.weight.shard(shard_idx, device)
-            sharded.k_norm.weight = self.k_norm.weight.shard(shard_idx, device)
+            q_norm_weight_shards = self.q_norm.weight.shard(devices)
+            k_norm_weight_shards = self.k_norm.weight.shard(devices)
 
-        return sharded
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            # Calculate sharded dimensions - handle uneven head distribution
+            sharded_num_heads = compute_heads_per_device(
+                total_heads=self.num_heads,
+                device_idx=shard_idx,
+                num_devices=self.sharding_strategy.num_devices,
+            )
+
+            # Create new attention instance with sharded configuration
+            sharded = InternVLMultiheadAttention(
+                num_attention_heads=sharded_num_heads,
+                hidden_size=self.embed_dim,
+                head_dim=self.head_dim,
+                devices=[device],
+                dtype=self.q_proj.weight.dtype
+                if hasattr(self, "q_proj")
+                else self.qkv_proj.dtype,
+                scale=self.scale,
+                qkv_has_bias=self.qkv_has_bias,
+                o_proj_has_bias=self.o_proj_has_bias,
+                stacked_qkv=self.stacked_qkv,
+                qk_normalization=self.qk_normalization,
+                layer_norm_eps=self.layer_norm_eps,
+            )
+
+            # Assign sharded weights
+            if self.stacked_qkv:
+                sharded.qkv_proj = qkv_proj_shards[shard_idx]
+                if qkv_proj_bias_shards:
+                    sharded.qkv_proj_bias = qkv_proj_bias_shards[shard_idx]
+            else:
+                sharded.q_proj = q_proj_shards[shard_idx]
+                sharded.k_proj = k_proj_shards[shard_idx]
+                sharded.v_proj = v_proj_shards[shard_idx]
+
+            sharded.o_proj = o_proj_shards[shard_idx]
+
+            # Assign QK normalization weights
+            if self.qk_normalization:
+                sharded.q_norm.weight = q_norm_weight_shards[shard_idx]
+                sharded.k_norm.weight = k_norm_weight_shards[shard_idx]
+
+            shards.append(sharded)
+
+        return shards

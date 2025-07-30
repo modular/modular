@@ -22,9 +22,7 @@ from typing import TYPE_CHECKING, cast
 from max.driver import Device
 from max.dtype import DType
 from max.support.human_readable_formatter import to_human_readable_bytes
-from transformers import (
-    AutoConfig,
-)
+from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

@@ -18,7 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from hashlib.hasher import Hasher
 from os import abort
-from sys import bitwidthof, os_is_windows, sizeof
+from sys import CompilationTarget, bitwidthof, sizeof
 from sys.intrinsics import _type_is_eq
 
 
@@ -1124,7 +1124,7 @@ fn _index_printf_format() -> StaticString:
     @parameter
     if bitwidthof[Int]() == 32:
         return "%d"
-    elif os_is_windows():
+    elif CompilationTarget.is_windows():
         return "%lld"
     else:
         return "%ld"
@@ -1153,14 +1153,14 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     elif dtype is DType.int64:
 
         @parameter
-        if os_is_windows():
+        if CompilationTarget.is_windows():
             return "%lld"
         else:
             return "%ld"
     elif dtype is DType.uint64:
 
         @parameter
-        if os_is_windows():
+        if CompilationTarget.is_windows():
             return "%llu"
         else:
             return "%lu"

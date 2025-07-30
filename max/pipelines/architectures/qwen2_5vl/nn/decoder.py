@@ -20,12 +20,7 @@ from typing import Callable, Optional
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import (
-    Embedding,
-    Module,
-    RMSNorm,
-    TransformerBlock,
-)
+from max.nn import Embedding, Module, RMSNorm, TransformerBlock
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,

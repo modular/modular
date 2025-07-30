@@ -31,18 +31,35 @@ from .weights import WeightData, Weights
 
 
 class SafetensorWeights(Weights):
-    """Helper for loading weights into a graph.
+    """Implementation for loading weights from safetensors files.
 
-    A weight (`max.graph.Weight`) is tensors in a graph which are backed by an
-    external buffer or mmap. Generally weights are used to avoid recompiling
-    the graph when new weights are used (like from finetuning). For large-enough
-    constants, it might be worth using weights for fast compilation times but
-    the graph may be less optimized.
+    SafetensorWeights provides a secure and efficient way to load model weights
+    from safetensors format files. Safetensors is designed by Hugging Face for
+    safe serialization that prevents arbitrary code execution and supports
+    memory-mapped loading for fast access.
 
-    `Weight` classes can be used to help with graph weight allocation and
-    naming. This protocol defines getter methods `__getattr__` and `__getitem__`
-    to assist with defining names. For example, `weights.a.b[1].c.allocate(...)`
-    creates a weight with the name "a.b.1.c".
+    .. code-block:: python
+
+        from pathlib import Path
+        from max.graph.weights import SafetensorWeights
+        from max.dtype import DType
+
+        # Load weights from safetensors files
+        weight_files = [Path("model.safetensors")]
+        weights = SafetensorWeights(weight_files)
+
+        # Check if a weight exists
+        if weights.model.embeddings.weight.exists():
+            # Allocate the embedding weight
+            embedding_weight = weights.model.embeddings.weight.allocate(
+                dtype=DType.float32,
+                device=DeviceRef.CPU()
+            )
+
+        # Access weights with hierarchical naming
+        attn_weight = weights.transformer.layers[0].attention.weight.allocate(
+            dtype=DType.float16
+        )
     """
 
     _filepaths: Sequence[PathLike]
