@@ -67,8 +67,9 @@ struct _SpanIter[
     fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
+            var curr = self.index
             self.index += 1
-            return self.src[self.index - 1]
+            return self.src[curr]
         else:
             self.index -= 1
             return self.src[self.index]
