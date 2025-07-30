@@ -38,7 +38,7 @@ from linalg.utils import (
 )
 
 
-fn test_warp_specialize_gemm[
+fn test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
