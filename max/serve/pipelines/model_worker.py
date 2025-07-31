@@ -131,7 +131,7 @@ class ModelWorker:
             pipeline_role = pipeline_config.pipeline_role
 
             if (
-                not pipeline_role.needs_dispatcher_client()
+                not pipeline_role.uses_dispatch_service()
                 and dispatcher_factory is not None
             ):
                 logger.info(
@@ -140,7 +140,7 @@ class ModelWorker:
                 dispatcher_factory = None
 
             dispatcher_client = None
-            if pipeline_role.needs_dispatcher_client():
+            if pipeline_role.uses_dispatch_service():
                 if dispatcher_factory is None:
                     raise ValueError(
                         f"Dispatcher factory is required for {pipeline_role} but was not provided"

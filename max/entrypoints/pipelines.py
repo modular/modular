@@ -133,13 +133,6 @@ def common_server_options(func):  # noqa: ANN001
         default=0,
         help="Simulate fake-perf with failure percentage",
     )
-    @click.option(
-        "--experimental-enable-kvcache-agent",
-        is_flag=True,
-        show_default=True,
-        default=False,
-        help="Experimental: Enable KV Cache Agent support.",
-    )
     @click.option("--port", type=int, help="Port to run the server on.")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -163,7 +156,6 @@ def cli_serve(
     profile_serve: bool,
     model_name: str | None,
     sim_failure: int,
-    experimental_enable_kvcache_agent: bool,
     port: int,
     task: str,
     task_arg: tuple[str, ...],
@@ -197,7 +189,6 @@ def cli_serve(
         profile=profile_serve,
         model_name=model_name,
         failure_percentage=failure_percentage,
-        experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
         port=port,
         pipeline_task=PipelineTask(task),
     )

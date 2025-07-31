@@ -84,26 +84,32 @@ async def lifespan(
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
-            # create dispatcher factory
-            dispatcher_factory = DispatcherFactory[
-                Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
-            ](
-                settings.dispatcher_config,
-                transport_payload_type=TransportMessage[
+            if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service():
+                # create dispatcher factory
+                dispatcher_factory = DispatcherFactory[
                     Union[
                         PrefillRequest,
                         PrefillResponse,
                         KVTransferEngineMetadata,
                     ]
-                ],
-            )
+                ](
+                    settings.dispatcher_config,
+                    transport_payload_type=TransportMessage[
+                        Union[
+                            PrefillRequest,
+                            PrefillResponse,
+                            KVTransferEngineMetadata,
+                        ]
+                    ],
+                )
 
-            if settings.experimental_enable_kvcache_agent:
-                logger.info("Starting KV Cache Agent...")
+                logger.info("Starting Dispatch Service...")
                 await exit_stack.enter_async_context(
                     start_kvcache_agent(settings, dispatcher_factory)
                 )
                 logger.info("KV Cache Agent started.")
+            else:
+                dispatcher_factory = None
 
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(

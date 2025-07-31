@@ -66,7 +66,6 @@ def serve_pipeline(
     profile: bool = False,
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
-    experimental_enable_kvcache_agent: bool = False,
     port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
@@ -77,10 +76,6 @@ def serve_pipeline(
 
     if port is not None:
         settings.port = port
-
-    settings.experimental_enable_kvcache_agent = (
-        experimental_enable_kvcache_agent
-    )
 
     override_architecture: Optional[str] = None
     # TODO: This is a workaround to support embeddings generation until the

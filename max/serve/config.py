@@ -235,12 +235,6 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
     )
 
-    experimental_enable_kvcache_agent: bool = Field(
-        default=False,
-        description="Experimental: Enable KV Cache Agent support.",
-        alias="MAX_SERVE_EXPERIMENTAL_ENABLE_KVCACHE_AGENT",
-    )
-
     request_zmq_endpoint: str = Field(
         default_factory=generate_zmq_ipc_path,
         description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
