@@ -112,9 +112,7 @@ modular_py_test(
     ],
 )
 
-# TODO(AITLIB-349): Fix this test. For some reason it doesn't work on AMD, so
-# we created a separate Bazel target and configured it to run only on NVIDIA GPUs.
-# TODO(E2EOPT-341): Debug the follwoing test on B200 and enable it.
+# TODO(E2EOPT-341): Debug the following test on B200 and enable it.
 modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
@@ -129,10 +127,7 @@ modular_py_test(
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "no-sandbox",

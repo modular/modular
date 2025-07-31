@@ -114,7 +114,6 @@ def test_config__validate_device_and_encoding_combinations(
     )
 
 
-@pytest.mark.skip(reason="TODO(AITLIB-363): Division by zero error.")
 def test_config__validate_target_and_draft_architecture(
     exaone_2_4b_local_path,  # noqa: ANN001
     smollm_135m_local_path,  # noqa: ANN001
