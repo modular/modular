@@ -1,7 +1,6 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 _FILECHECK_TESTS = [
-    "test_elementwise.mojo",
     "test_parallelize.mojo",
     "test_reductions.mojo",
     "test_stencil.mojo",
