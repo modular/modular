@@ -45,7 +45,7 @@ is a template of the information that should accompany every submitted issue.
 Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
-- Read the [Code of Conduct](../CODE_OF_CONDUCT.md).
+- Read the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ### Step 1: Evaluate and get buy-in on the change
 
