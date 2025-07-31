@@ -37,13 +37,13 @@ class MockPipelineConfig(PipelineConfig):
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
-    def next_token(
+    def execute(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         # Sleep for 1 ms - otherwise, the echo token generator
         # can break some separation of timescale assumptions
         time.sleep(1e-3)
-        return super().next_token(inputs)
+        return super().execute(inputs)
 
 
 # This has to be picklable and lambdas are not picklable

@@ -56,7 +56,7 @@ async def test_smollm2_with_lora_adapter() -> None:
     contexts = {"test": context}
 
     while contexts:
-        response = pipeline_with_lora.next_token(
+        response = pipeline_with_lora.execute(
             TextGenerationInputs(contexts, num_steps=1)
         )
 
@@ -118,7 +118,7 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate from base model
     contexts = {"base": base_context}
     while contexts:
-        response = pipeline_base.next_token(
+        response = pipeline_base.execute(
             TextGenerationInputs(contexts, num_steps=1)
         )
         for req_id, resp in response.items():
@@ -129,7 +129,7 @@ async def test_lora_vs_base_comparison() -> None:
     # Generate from LoRA model
     contexts = {"lora": lora_context}
     while contexts:
-        response = pipeline_with_lora.next_token(
+        response = pipeline_with_lora.execute(
             TextGenerationInputs(contexts, num_steps=1)
         )
         for req_id, resp in response.items():
@@ -184,9 +184,7 @@ async def test_multiple_lora_adapters() -> None:
     results: dict[str, list[Any]] = {req_id: [] for req_id in contexts}
 
     while contexts:
-        response = pipeline.next_token(
-            TextGenerationInputs(contexts, num_steps=1)
-        )
+        response = pipeline.execute(TextGenerationInputs(contexts, num_steps=1))
 
         for req_id, resp in response.items():
             results[req_id].extend(resp.tokens)

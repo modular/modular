@@ -142,7 +142,7 @@ async def test_lora_vs_base_model_logits(
     done = {}
     while True:
         inputs = TextGenerationInputs(batch=contexts, num_steps=1)
-        response = pipeline.next_token(inputs)
+        response = pipeline.execute(inputs)
 
         for name, ctx in response.items():
             tokens[name].extend(ctx.tokens)

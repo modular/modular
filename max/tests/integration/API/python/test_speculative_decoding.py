@@ -335,7 +335,7 @@ def test_speculative_decoding_multiple_token_without_rejection(
         inputs = TextGenerationInputs(
             batch=pipeline_request, num_steps=num_steps
         )
-        pipeline.next_token(inputs)
+        pipeline.execute(inputs)
 
         # num_steps generated from draft and +1 from the target
         assert context1.current_length == context1_len + (num_steps + 1)

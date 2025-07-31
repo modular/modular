@@ -116,7 +116,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     # Execute these batches until they are complete
     for _ in range(context.current_length, context.max_length):
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        response = pipeline.next_token(inputs)[0]
+        response = pipeline.execute(inputs)[0]
         assert context_batch.keys() == response.keys()
         response_tokens = list(response.values())
         assert all(response_tokens[0] == t for t in response_tokens)
@@ -124,7 +124,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     # The last execution must complete all batches
     assert len(context_batch) == batch_size
     inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-    last = pipeline.next_token(inputs)[0]
+    last = pipeline.execute(inputs)[0]
     assert not last
 
     # We should be resetting the cache
@@ -175,7 +175,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
             batch_id: c.current_length for batch_id, c in context_batch.items()
         }
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        response = pipeline.next_token(inputs)[0]
+        response = pipeline.execute(inputs)[0]
         completed_batch_ids = context_batch.keys() - response.keys()
         for batch_id in completed_batch_ids:
             context = context_batch[batch_id]
@@ -185,7 +185,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     # The last execution must complete all batches
     assert len(context_batch) == 1
     inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-    last = pipeline.next_token(inputs)[0]
+    last = pipeline.execute(inputs)[0]
     assert not last
 
     for context in context_batch.values():
@@ -243,7 +243,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         # Execute these batches until they are complete
         for _ in range(context.current_length, max_tokens):
             inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-            response = pipeline.next_token(inputs)[0]
+            response = pipeline.execute(inputs)[0]
             assert context_batch.keys() == response.keys()
             response_tokens = list(response.values())
             assert all(response_tokens[0] == t for t in response_tokens)
@@ -251,7 +251,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         # The last execution must complete all batches
         assert len(context_batch) == batch_size
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        last = pipeline.next_token(inputs)[0]
+        last = pipeline.execute(inputs)[0]
         assert not last
 
         for context in context_batch.values():

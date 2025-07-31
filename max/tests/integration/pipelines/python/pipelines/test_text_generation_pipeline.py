@@ -118,7 +118,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  #
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-            output = pipeline.next_token(inputs)
+            output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)
 
             for request_idx, response in output.items():

@@ -87,7 +87,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
     tokens = []
     while True:
         inputs = TextGenerationInputs(batch={request_id: context}, num_steps=1)
-        response = pipeline.next_token(inputs)
+        response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:
             tokens.append(token)
