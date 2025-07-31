@@ -12,11 +12,9 @@ from typing import (
     Generic,
     Literal,
     Optional,
-    Protocol,
     TypedDict,
     TypeVar,
     Union,
-    runtime_checkable,
 )
 
 import msgspec
@@ -252,29 +250,3 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """Dictionary mapping request IDs to context objects."""
     num_steps: int
     """Number of tokens to generate."""
-
-
-@runtime_checkable
-class TokenGenerator(Generic[TextGenerationContextType], Protocol):
-    """Interface for LLM token-generator models."""
-
-    def next_token(
-        self, inputs: TextGenerationInputs[TextGenerationContextType]
-    ) -> dict[RequestID, TextGenerationOutput]:
-        """Computes the next token response for a single batch.
-
-        Args:
-            inputs: Input data containing batch of contexts and number of steps to generate.
-
-        Returns:
-            dict[str, TextGenerationOutput]: Dictionary of responses indexed by request ID.
-        """
-        ...
-
-    def release(self, request_id: RequestID) -> None:
-        """Releases resources associated with this request ID.
-
-        Args:
-            request_id: Unique identifier for the finished request.
-        """
-        ...

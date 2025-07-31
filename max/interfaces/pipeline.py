@@ -149,3 +149,24 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
             NotImplementedError: If not implemented by a concrete subclass
         """
         ...
+
+    @abstractmethod
+    def release(self, request_id: RequestID) -> None:
+        """
+        Release any resources or state associated with a specific request.
+
+        This method should be implemented by concrete pipeline classes to perform
+        cleanup or resource deallocation for the given request ID. It is typically
+        called when a request has completed processing and its associated resources
+        (such as memory, cache, or temporary files) are no longer needed.
+
+        Args:
+            request_id (RequestID): The unique identifier of the request to release resources for.
+
+        Returns:
+            None
+
+        Raises:
+            NotImplementedError: If not implemented by a concrete subclass.
+        """
+        ...

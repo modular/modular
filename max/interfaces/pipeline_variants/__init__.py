@@ -21,7 +21,6 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
-    TokenGenerator,
 )
 
 __all__ = [
@@ -33,6 +32,7 @@ __all__ = [
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
     "TextGenerationContextType",
+    "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
@@ -40,5 +40,4 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
-    "TokenGenerator",
 ]
