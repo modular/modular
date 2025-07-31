@@ -7875,12 +7875,12 @@ struct Struct_moe_create_indices:
         token_expert_order: OutputTensor[dtype = DType.uint32, rank=1],
         expert_start_indices: OutputTensor[dtype = DType.uint32, rank=1],
         restore_token_order: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
         expert_usage_stats: OutputTensor[dtype = DType.uint32, rank=1],
-        topk_ids: InputTensor[dtype = DType.uint32, rank=1],
+        topk_ids: InputTensor[dtype = DType.int32, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        moe_create_indices[input_type = DType.uint32, target=target](
+        moe_create_indices[target=target](
             token_expert_order.to_layout_tensor(),
             expert_start_indices.to_layout_tensor(),
             restore_token_order.to_layout_tensor(),
@@ -7905,7 +7905,7 @@ struct Struct_grouped_matmul_ragged:
         a: InputTensor[dtype=a_type, rank=2],
         b: InputTensor[dtype=b_type, rank=3],
         expert_start_indices: InputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: InputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: InputTensor[dtype = DType.int32, rank=1],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
@@ -9615,7 +9615,7 @@ struct Struct_lora_sgmv_ragged:
         a: InputTensor[dtype=a_type, rank=2],
         b: InputTensor[dtype=b_type, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        lora_ids: InputTensor[dtype = DType.uint32, rank=1],
+        lora_ids: InputTensor[dtype = DType.int32, rank=1],
         max_seq_length: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -9656,7 +9656,7 @@ struct Struct_k_grouped_matmul_ragged_paged:
         a: InputTensor[dtype=dtype, rank=2],
         b: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        ids: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.int32, rank=1],
         max_num_tokens_per_expert: UInt32,
         kv_collection: PagedKVCacheCollection[
             dtype,
@@ -9699,7 +9699,7 @@ struct Struct_v_grouped_matmul_ragged_paged:
         a: InputTensor[dtype=dtype, rank=2],
         b: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        ids: InputTensor[dtype = DType.uint32, rank=1],
+        ids: InputTensor[dtype = DType.int32, rank=1],
         max_num_tokens_per_expert: UInt32,
         kv_collection: PagedKVCacheCollection[
             dtype,

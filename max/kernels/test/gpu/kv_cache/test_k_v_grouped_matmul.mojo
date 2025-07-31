@@ -78,7 +78,7 @@ fn test_kv_grouped_matmul[
 
     alias static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.uint32, 1](num_sequences)
+    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_sequences)
 
     # Setup offsets and expert ids
     a_offsets_host.tensor[0] = 0
@@ -106,7 +106,7 @@ fn test_kv_grouped_matmul[
     var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
         num_sequences + 1, ctx=ctx
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.uint32, 1](num_sequences, ctx=ctx)
+    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](num_sequences, ctx=ctx)
 
     ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)
@@ -306,7 +306,7 @@ fn test_lora_zero_weights_preserves_base_cache[
 
     alias static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.uint32, 1](num_sequences)
+    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_sequences)
 
     # Setup offsets and expert ids
     a_offsets_host.tensor[0] = 0
@@ -336,7 +336,7 @@ fn test_lora_zero_weights_preserves_base_cache[
     var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
         num_sequences + 1, ctx=ctx
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.uint32, 1](num_sequences, ctx=ctx)
+    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](num_sequences, ctx=ctx)
 
     ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)
@@ -562,7 +562,7 @@ fn test_lora_mixed_zero_nonzero_weights[
 
     alias static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.uint32, 1](num_sequences)
+    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_sequences)
 
     # Setup offsets and expert ids
     a_offsets_host.tensor[0] = 0
@@ -604,7 +604,7 @@ fn test_lora_mixed_zero_nonzero_weights[
     var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
         num_sequences + 1, ctx=ctx
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.uint32, 1](num_sequences, ctx=ctx)
+    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](num_sequences, ctx=ctx)
 
     ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)

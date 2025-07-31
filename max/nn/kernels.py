@@ -1814,7 +1814,7 @@ def moe_create_indices(
                 device=topk_ids.device,
             ),  # restore_token_order
             TensorType(
-                dtype=DType.uint32,
+                dtype=DType.int32,
                 shape=[num_local_experts],
                 device=topk_ids.device,
             ),  # expert_ids

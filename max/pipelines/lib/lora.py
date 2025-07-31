@@ -234,6 +234,10 @@ class LoRAManager:
     underlying buffers required for the forward pass.
     """
 
+    # -1 is used to indicate that there is no active LoRA for a given request
+    # downstream kernels use this to exit early.
+    _NO_ACTIVE_LORA = -1
+
     def __init__(
         self,
         base_model_path: str,
@@ -277,7 +281,7 @@ class LoRAManager:
         return (
             self._name_to_slot(name)
             if name in self._loras
-            else self.max_num_loras - 1
+            else self._NO_ACTIVE_LORA
         )
 
     def _model_name_to_rank(self, name: str | None) -> int:
@@ -326,7 +330,7 @@ class LoRAManager:
         ids = self._model_names_to_ids(model_names)
         ranks = self._model_names_to_ranks(model_names)
 
-        lora_ids = Tensor.from_numpy(np.array(ids, dtype=np.uint32)).to(device)
+        lora_ids = Tensor.from_numpy(np.array(ids, dtype=np.int32)).to(device)
         lora_ranks = Tensor.from_numpy(np.array(ranks, dtype=np.uint32)).to(
             device
         )
@@ -587,7 +591,7 @@ class LoRAManager:
             The graph input symbols.
         """
         lora_ids_type = TensorType(
-            DType.uint32, shape=["lora_ids"], device=device_ref
+            DType.int32, shape=["lora_ids"], device=device_ref
         )
         lora_ranks_type = TensorType(
             DType.uint32, shape=["lora_ranks"], device=device_ref

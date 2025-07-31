@@ -296,7 +296,7 @@ class MoE(Module, Shardable):
             expert_ids,
             expert_usage_stats,
         ) = moe_create_indices(
-            ops.cast(router_idx, DType.uint32), self.num_experts
+            ops.cast(router_idx, DType.int32), self.num_experts
         )
 
         permutated_states = ops.gather(

@@ -85,7 +85,7 @@ fn naive_grouped_matmul[
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
     b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
     a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -131,7 +131,7 @@ fn naive_grouped_matmul_kernel[
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
     b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
     a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
     var M: UInt = UInt(
@@ -157,11 +157,15 @@ fn naive_grouped_matmul_kernel[
 
     var accum = Scalar[accum_type](0.0)
 
-    for k in range(K):
-        accum += (
-            a_by_expert[m * K + k].cast[accum_type]()
-            * b_by_expert[n * K + k].cast[accum_type]()
-        )
+    # avoid doing matmul if expert is -1. We use this value to indicate that
+    # the block is not active for LoRA use cases.
+    # NOTE: we still call elementwise lambda even if expert is -1
+    if expert != -1:
+        for k in range(K):
+            accum += (
+                a_by_expert[m * K + k].cast[accum_type]()
+                * b_by_expert[n * K + k].cast[accum_type]()
+            )
 
     @parameter
     if elementwise_lambda_fn:
@@ -222,7 +226,7 @@ fn grouped_matmul_sm90[
     a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     max_num_tokens_per_expert: Int,
     b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -375,7 +379,7 @@ fn grouped_matmul_kernel[
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
     a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
@@ -421,6 +425,10 @@ fn grouped_matmul_kernel[
 
     alias N = c_layout.shape[1].value()
     expert = expert_ids[Int(block_idx.z)]
+    # We use -1 to indicate that the block is not active for LoRA use cases.
+    # but we still need to zero out the output for this case.
+    skip_matmul = expert < 0
+
     b_start_row = expert * N
 
     wgmma_op = TensorCoreAsync[
@@ -512,7 +520,7 @@ fn grouped_matmul_kernel[
     if warp_group_idx == 0:
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
-        if warp_group_thread_idx == 0 and lane_predicate:
+        if warp_group_thread_idx == 0 and lane_predicate and not skip_matmul:
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
             var m_coord = (
@@ -574,35 +582,37 @@ fn grouped_matmul_kernel[
 
         _ = c_reg_tile.fill(0.0)
 
-        @parameter
-        for i in range(pipeline_stages):
+        if not skip_matmul:
 
             @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[i].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[i].arrive()
+            for i in range(pipeline_stages):
 
-        var read_pipeline_states = PipelineState[pipeline_stages]()
+                @parameter
+                if cluster_size[cluster_shape]() > 1:
+                    if warp_group_thread_idx < CLUSTER_SIZE:
+                        _ = empty[i].arrive_cluster(warp_group_thread_idx)
+                else:
+                    if warp_group_thread_idx == 0:
+                        _ = empty[i].arrive()
 
-        consumer_main_loop[
-            cluster_shape=cluster_shape,
-            num_consumer=num_consumer,
-            num_k_iters=num_k_iters,
-        ](
-            dummy_c_reg_tile,
-            c_reg_tile,
-            a_smem_iter,
-            b_smem_iter,
-            read_pipeline_states,
-            full,
-            empty,
-            wgmma_op,
-            local_warp_group_idx,
-            warp_group_thread_idx,
-        )
+            var read_pipeline_states = PipelineState[pipeline_stages]()
+
+            consumer_main_loop[
+                cluster_shape=cluster_shape,
+                num_consumer=num_consumer,
+                num_k_iters=num_k_iters,
+            ](
+                dummy_c_reg_tile,
+                c_reg_tile,
+                a_smem_iter,
+                b_smem_iter,
+                read_pipeline_states,
+                full,
+                empty,
+                wgmma_op,
+                local_warp_group_idx,
+                warp_group_thread_idx,
+            )
 
         # C layout for current expert
         alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
@@ -679,7 +689,7 @@ fn grouped_matmul[
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
     b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
     a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
