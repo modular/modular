@@ -10,13 +10,16 @@ import json
 
 import hf_repo_lock
 from max.driver import DeviceSpec
-from max.interfaces import SamplingParams, TextGenerationInputs
-from max.pipelines import (
-    PipelineConfig,
-    SupportedEncoding,
+from max.interfaces import (
+    SamplingParams,
+    TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationResponseFormat,
+)
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
 )
 from max.pipelines.core import TextContext
 
@@ -79,12 +82,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
     # Get Context
     context: TextContext = asyncio.run(tokenizer.new_context(request))
 
-    print("\nRaw Prompt:")
-    print(context.prompt)
-    print("Initializing Pipeline...")
     pipeline = pipeline_factory()
-
-    print("Generating tokens...")
 
     tokens = []
     while True:
@@ -97,11 +95,9 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
         if response[request_id].is_done:
             break
 
-    print("Final Response: ")
     response_content = asyncio.run(
         tokenizer.decode(tokens, skip_special_tokens=True)
     )
-    print(response_content)
 
     result = json.loads(response_content)
 

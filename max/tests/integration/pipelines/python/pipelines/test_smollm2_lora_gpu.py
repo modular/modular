@@ -70,7 +70,7 @@ async def test_smollm2_with_lora_adapter() -> None:
     assert len(generated_tokens) > 0
     assert len(generated_tokens) <= 50
 
-    pipeline_with_lora.release(context)
+    pipeline_with_lora.release(context.request_id)
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
@@ -143,8 +143,8 @@ async def test_lora_vs_base_comparison() -> None:
     assert len(lora_tokens) > 0
 
     # Clean up
-    pipeline_base.release(base_context)
-    pipeline_with_lora.release(lora_context)
+    pipeline_base.release(base_context.request_id)
+    pipeline_with_lora.release(lora_context.request_id)
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
@@ -192,7 +192,7 @@ async def test_multiple_lora_adapters() -> None:
             results[req_id].extend(resp.tokens)
 
             if resp.is_done:
-                pipeline.release(contexts[req_id])
+                pipeline.release(req_id)
                 del contexts[req_id]
 
     # Verify all requests generated tokens
