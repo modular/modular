@@ -726,10 +726,7 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
   SmallVector<ParamDeclRefAttr, 16> capturedUses;
   for (Value capture : captures) {
     bool unused = false;
-    {
-      VerboseCompilerTimeTraceScope traceScope("collectParameters");
-      collector.collectUsesFromType(capture.getType(), capturedUses, unused);
-    }
+    collector.collectUsesFromType(capture.getType(), capturedUses, unused);
   }
 
   if (debugBuild) {

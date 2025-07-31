@@ -18,8 +18,7 @@ namespace M::KGEN {
 
 constexpr bool kIsTracingEnabled = Trace::EnableTrace(Trace::kCompiler, 1);
 
-using InterpreterProfilerEntry =
-    ProfilerEntry<kIsTracingEnabled, Trace::kCompiler>;
+using InterpreterProfilerEntry = ProfilerEntry<true, Trace::kCompiler>;
 
 /// Profiler entry for Mojo compilation passes.
 using CompilerProfilerEntry =
