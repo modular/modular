@@ -56,7 +56,6 @@ def main():
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 
-    var num_devices = DeviceContext.number_of_devices()
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
