@@ -42,7 +42,7 @@ def pipeline_config(llama_3_1_8b_lora_local_path: str) -> PipelineConfig:
         max_num_loras=1,
         lora_paths=[llama_3_1_8b_lora_local_path],
         max_lora_rank=8,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         max_length=2048,
         cache_strategy=KVCacheStrategy.PAGED,
     )

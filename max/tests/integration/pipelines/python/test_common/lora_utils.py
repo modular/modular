@@ -196,7 +196,7 @@ def create_pipeline_config_with_lora(
         max_num_loras=max_num_loras,
         lora_paths=lora_paths,
         max_lora_rank=max_lora_rank,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         max_length=512,
         cache_strategy=KVCacheStrategy.PAGED,
         device_specs=[DeviceSpec(device_type="gpu", id=0)],
@@ -218,7 +218,7 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
         max_batch_size=4,
         max_length=512,
         cache_strategy=KVCacheStrategy.PAGED,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         device_specs=[DeviceSpec(device_type="gpu", id=0)],
     )
 

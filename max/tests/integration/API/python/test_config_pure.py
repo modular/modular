@@ -496,7 +496,7 @@ def test_config__test_incompatible_quantization_encoding(
         ],
         max_batch_size=1,
         max_length=1,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
 
@@ -508,7 +508,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     PIPELINE_REGISTRY.register(DUMMY_ARCH, allow_override=True)
 
     with pytest.raises(ValueError):
-        # This should raise, as allow_safetensors_weights_float32_to_bfloat16_cast defaults to False, which
+        # This should raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast defaults to False, which
         # means it will not cast the (bfloat16) quantization encoding to
         # float32.
         config = PipelineConfig(
@@ -525,27 +525,27 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         quantization_encoding=SupportedEncoding.float32,
         max_batch_size=1,
         max_length=1,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
-    # This should not raise, as allow_safetensors_weights_float32_to_bfloat16_cast is set to True,
+    # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
     # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
         quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
-        allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
-    # Test that quantization_encoding is required when allow_safetensors_weights_float32_to_bfloat16_cast is True.
+    # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
     with pytest.raises(
         ValueError,
-        match="--quantization-encoding must be provided when --allow-safetensors-weights-float32-to-bfloat16-cast is enabled",
+        match="--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled",
     ):
         config = PipelineConfig(
             model_path="test/model",
-            allow_safetensors_weights_float32_to_bfloat16_cast=True,
+            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             # Note: quantization_encoding is not provided, which should cause the error
         )
 

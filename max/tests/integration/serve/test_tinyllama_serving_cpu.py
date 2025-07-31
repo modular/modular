@@ -31,7 +31,7 @@ pipeline_config = PipelineConfig(
     quantization_encoding=SupportedEncoding.float32,
     cache_strategy=KVCacheStrategy.CONTINUOUS,
     max_batch_size=16,
-    allow_safetensors_weights_float32_to_bfloat16_cast=True,
+    allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
 )
 
 
