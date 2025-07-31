@@ -13,7 +13,7 @@ from .context import (
     SamplingParams,
 )
 from .log_probabilities import LogProbabilities
-from .pipeline import PipelineOutput
+from .pipeline import Pipeline, PipelineOutputsDict
 from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
@@ -30,7 +30,6 @@ from .pipeline_variants import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
-    TokenGenerator,
 )
 from .request import Request, RequestID
 from .scheduler import SchedulerResult, SchedulerStatus
@@ -44,7 +43,7 @@ from .utils import (
 )
 
 PipelinesFactory = Callable[
-    [], Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
+    [], Union[EmbeddingsGenerator, AudioGenerator, Pipeline]
 ]
 
 __all__ = [
@@ -59,7 +58,8 @@ __all__ = [
     "GenerationStatus",
     "InputContext",
     "LogProbabilities",
-    "PipelineOutput",
+    "Pipeline",
+    "PipelineOutputsDict",
     "PipelineTask",
     "PipelineTokenizer",
     "PipelineTokenizer",
@@ -71,6 +71,7 @@ __all__ = [
     "SchedulerStatus",
     "SharedMemoryArray",
     "TextGenerationContextType",
+    "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
@@ -79,6 +80,4 @@ __all__ = [
     "TextGenerationRequestTool",
     "TextGenerationResponse",
     "TextGenerationResponseFormat",
-    "TextResponse",
-    "TokenGenerator",
 ]
