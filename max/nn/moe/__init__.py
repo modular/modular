@@ -12,6 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
-from .moe import DistributedTPMoE, MoE, MoEGate
+from .moe import MoE, MoEGate
 
-__all__ = ["DistributedTPMoE", "MoE", "MoEGate"]
+__all__ = ["MoE", "MoEGate"]
