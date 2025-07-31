@@ -442,7 +442,7 @@ def linear_lora_max_output(
         "LinearLoRA",
         input_types=[
             TensorType(DTYPE, x.shape, device=device_ref),
-            TensorType(DType.uint32, ["lora_ids"], device=device_ref),
+            TensorType(DType.int32, ["lora_ids"], device=device_ref),
             TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
         ],
@@ -461,7 +461,7 @@ def linear_lora_max_output(
     compiled = session.load(graph, weights_registry=max_lora.state_dict())
 
     batch_size = x.shape[0] * x.shape[1]
-    lora_ids = np.zeros(batch_size, dtype=np.uint32)
+    lora_ids = np.zeros(batch_size, dtype=np.int32)
     lora_ranks = np.full(batch_size, rank, dtype=np.uint32)
     input_row_offsets = np.arange(batch_size + 1, dtype=np.uint32)
 
@@ -645,7 +645,7 @@ def attention_lora_max_output(
                 DTYPE, [x.shape[0] * x.shape[1], hidden_size], device=device_ref
             ),
             TensorType(DType.uint32, [x.shape[0] + 1], device=device_ref),
-            TensorType(DType.uint32, ["lora_ids"], device=device_ref),
+            TensorType(DType.int32, ["lora_ids"], device=device_ref),
             TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
             TensorType(
                 DType.uint32, ["lora_input_row_offsets"], device=device_ref
@@ -703,7 +703,7 @@ def attention_lora_max_output(
         [0, seq_len, seq_len * 2], dtype=np.uint32
     )
 
-    lora_ids = np.zeros(batch_size, dtype=np.uint32)
+    lora_ids = np.zeros(batch_size, dtype=np.int32)
     lora_ranks = np.full(batch_size, config.rank, dtype=np.uint32)
     lora_input_row_offsets = np.array(
         [0, seq_len, seq_len * 2], dtype=np.uint32

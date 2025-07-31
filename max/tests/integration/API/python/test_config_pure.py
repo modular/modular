@@ -718,7 +718,7 @@ def test_config__validates_lora_configuration(
     assert config.lora_config is not None
     assert config.lora_config.lora_paths[0] == llama_3_1_8b_lora_local_path
     assert config.lora_config.max_lora_rank == 16
-    assert config.lora_config.max_num_loras == 101
+    assert config.lora_config.max_num_loras == 100
 
 
 @mock_pipeline_config_hf_dependencies

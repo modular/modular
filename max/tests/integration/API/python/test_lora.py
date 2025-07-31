@@ -5,7 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from max.driver import CPU
 from max.pipelines.lib.lora import LoRAManager
 
 
@@ -25,6 +27,7 @@ def configured_mock_lora(mock_lora_model):  # noqa: ANN001
     def _factory(name):  # noqa: ANN001
         instance = MagicMock()
         instance.name = name
+        instance.rank = 16
         return instance
 
     mock_lora_model.side_effect = lambda name, path: _factory(name)
@@ -115,3 +118,29 @@ def test_reloading_existing_adapter_raises(
         match="LoRA with name existing already exists in LoRA registry",
     ):
         manager.load_adapter("existing=/another/path")
+
+
+def test_get_lora_graph_inputs(
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+) -> None:
+    manager = LoRAManager(
+        base_model_path="a-name/best-ai-model",
+        base_weights=mock_weights,
+        max_num_loras=2,
+        max_lora_rank=16,
+    )
+
+    # Load a LoRA
+    manager.load_adapter("loaded_lora=/path/loaded")
+
+    # Create requests
+    device = CPU()
+
+    # Get LoRA graph inputs
+    lora_ids, _ = manager.get_lora_graph_inputs(["loaded_lora", None], device)
+
+    lora_ids_np = lora_ids.to_numpy()
+
+    # Assertions
+    assert np.all(lora_ids_np == [0, -1])
