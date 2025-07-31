@@ -21,8 +21,10 @@ from test_common.test_data import DEFAULT_PROMPTS
 
 MAX_READ_SIZE = 10 * 1024
 
+MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
+
 pipeline_config = PipelineConfig(
-    model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+    model_path=MODEL_NAME,
     max_length=512,
     max_new_tokens=3,
     device_specs=[DeviceSpec.cpu()],
@@ -45,7 +47,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: AN
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "HuggingFaceTB/SmolLM-135M-Instruct",
+                "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
             },
@@ -71,10 +73,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: AN
             # Completions endpoint instead of chat completions
             raw_response = await client.post(
                 "/v1/completions",
-                json={
-                    "model": "HuggingFaceTB/SmolLM-135M-Instruct",
-                    "prompt": prompt,
-                },
+                json={"model": MODEL_NAME, "prompt": prompt},
             )
             response = CreateCompletionResponse.model_validate(
                 raw_response.json()
@@ -93,7 +92,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app) -> None:  # noqa: ANN001
     def openai_completion_request(content):  # noqa: ANN001
         """Create the json request for /v1/completion (not chat)."""
         return {
-            "model": "HuggingFaceTB/SmolLM-135M-Instruct",
+            "model": MODEL_NAME,
             "prompt": content,
             "temperature": 0.7,
         }

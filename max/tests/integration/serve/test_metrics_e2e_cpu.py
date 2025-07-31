@@ -16,6 +16,8 @@ from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
 )
 
+MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
+
 
 @pytest.mark.skip("TODO(AITLIB-351): Fix this test")
 @pytest.mark.asyncio
@@ -23,7 +25,7 @@ from max.serve.schemas.openai import (  # type: ignore
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+            model_path=MODEL_NAME,
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
@@ -62,7 +64,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "HuggingFaceTB/SmolLM-135M-Instruct",
+                "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
             },
@@ -77,7 +79,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
         assert response.status_code == 200
         assert "maxserve_num_input_tokens_total" in response.text
         assert (
-            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M-Instruct"} 1.0'
+            f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0'
             in response.text
         )
         assert "maxserve_request_time_milliseconds_bucket" in response.text
@@ -92,7 +94,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+            model_path=MODEL_NAME,
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
@@ -117,7 +119,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "HuggingFaceTB/SmolLM-135M-Instruct",
+                "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
             },
@@ -132,7 +134,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
         assert raw_response.status_code == 200
         assert "maxserve_num_input_tokens_total" in raw_response.text
         assert (
-            'maxserve_pipeline_load_total{model="HuggingFaceTB/SmolLM-135M-Instruct"}'
+            f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}}'
             in raw_response.text
         )
         assert "maxserve_request_time_milliseconds_bucket" in raw_response.text
@@ -148,7 +150,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+            model_path=MODEL_NAME,
             max_length=512,
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
