@@ -18,13 +18,13 @@ from typing import Union, cast
 import numpy as np
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TokenGenerator,
 )
 from max.pipelines.core import TextContext
 
@@ -128,14 +128,16 @@ class EchoPipelineTokenizer(
 
 
 @dataclass
-class EchoTokenGenerator(TokenGenerator[TextContext]):
+class EchoTokenGenerator(
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
+):
     """Token generator that echoes the prompt tokens in their original order."""
 
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[str, int] = {}
 
-    def next_token(
+    def execute(
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:

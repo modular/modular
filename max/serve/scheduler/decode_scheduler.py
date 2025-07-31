@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import logging
 import queue
@@ -20,11 +21,11 @@ from typing import Union
 
 import zmq
 from max.interfaces import (
+    Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -62,7 +63,10 @@ class DecodeSchedulerConfig:
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TokenGenerator,
+        pipeline: Pipeline[
+            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationOutput,
+        ],
         scheduler_config: DecodeSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
@@ -395,7 +399,7 @@ class DecodeScheduler(Scheduler):
         Args:
             num_steps: Number of tokens to generate for this batch.
         """
-        responses = self.pipeline.next_token(
+        responses = self.pipeline.execute(
             TextGenerationInputs(self.active_batch, num_steps=num_steps)
         )
 
@@ -428,7 +432,10 @@ class DecodeScheduler(Scheduler):
 def load_decode_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
-    pipeline: TokenGenerator,
+    pipeline: Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ],
     pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
 ) -> DecodeScheduler:
