@@ -162,6 +162,7 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
     v_grouped_matmul_ragged_paged,
+    generic_kv_cache_radd_dispatch,
 )
 from nn.mha import flash_attention
 from nn.mha_mask import MHAMask
@@ -9719,4 +9720,45 @@ struct Struct_v_grouped_matmul_ragged_paged:
             kv_collection,
             layer_idx,
             context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Ragged RAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.ragged.paged.radd")
+struct Struct_kv_cache_ragged_paged_radd:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2],
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        batch_offset: UInt32,
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        cuda_ctx: Optional[DeviceContext] = None
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        generic_kv_cache_radd_dispatch[target=target,](
+            managed_tensor_slice_to_ndbuffer(a),
+            kv_collection,
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            batch_offset,
+            layer_idx,
+            cuda_ctx,
         )

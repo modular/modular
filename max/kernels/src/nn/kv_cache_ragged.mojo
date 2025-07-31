@@ -2837,7 +2837,7 @@ fn generic_kv_cache_radd_dispatch[
     a: NDBuffer[dtype, 2, _, _],
     cache: collection_t,
     input_row_offsets: NDBuffer[DType.uint32, 1, _, _],
-    batch_offset: Int,
+    batch_offset: UInt32,
     layer_idx: UInt32,
     ctx: Optional[DeviceContext],
 ) raises:
@@ -2894,16 +2894,16 @@ fn generic_kv_cache_radd_dispatch[
             UInt(corrected_dim), collection_t.kv_params.head_size
         )
 
-        var cache_length = cache.cache_length(corrected_batch_idx)
-        var cache_token_idx = tok_idx + cache_length
+        var cache_length = cache.cache_length(Int(corrected_batch_idx))
+        var cache_token_idx = Int(tok_idx) + cache_length
 
         var old_val = cache.load[width=width](
-            corrected_batch_idx, h_idx, cache_token_idx, hd_idx
+            Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
         )
         var a_val = rebind[__type_of(old_val)](a.load[width=width](idx))
 
         cache.store(
-            corrected_batch_idx,
+            Int(corrected_batch_idx),
             h_idx,
             cache_token_idx,
             hd_idx,
