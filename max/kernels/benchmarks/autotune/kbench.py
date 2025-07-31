@@ -1302,7 +1302,7 @@ def run(
                             spec,
                             Path(
                                 str(output_path.with_suffix(""))
-                                + f"-{lower_bound // Scheduler.EXEC_STRIDE}"
+                                + f"_partial-{lower_bound // Scheduler.EXEC_STRIDE}"
                             ),
                             mode,
                             t_elapsed_total,
@@ -1586,7 +1586,7 @@ def cli(
     if cached:
         obj_cache.load()
 
-    if not len(files) and not len(files):
+    if not len(files) and not len(shapes):
         logging.debug(
             "Nothing more to do without parameter or shape YAML provided!"
         )
