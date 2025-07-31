@@ -1891,15 +1891,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     return False
             return self.byte_length() != 0
 
-    fn split(
-        self, sep: StringSlice, maxsplit: Int = -1
-    ) -> List[Self.Immutable]:
+    @always_inline
+    fn split(self, sep: StringSlice) -> List[Self.Immutable]:
         """Split the string by a separator.
 
         Args:
             sep: The string to split on.
-            maxsplit: The maximum amount of items to split from String.
-                Defaults to unlimited.
 
         Returns:
             A List of Strings containing the input split by the separator.
@@ -1911,23 +1908,43 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         _ = StringSlice("hello world").split(" ") # ["hello", "world"]
         # Splitting adjacent separators
         _ = StringSlice("hello,,world").split(",") # ["hello", "", "world"]
-        # Splitting with maxsplit
-        _ = StringSlice("1,2,3").split(",", 1) # ['1', '2,3']
+        # Splitting with starting or ending separators
+        _ = StringSlice(",1,2,3,").split(",") # ['', '1', '2', '3', '']
         # Splitting with an empty separator
-        _ = StringSlice("123").split("") # ["", "1", "2", "3", ""]
+        _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
+        ```
+        """
+        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+
+    @always_inline
+    fn split(self, sep: StringSlice, maxsplit: Int) -> List[Self.Immutable]:
+        """Split the string by a separator.
+
+        Args:
+            sep: The string to split on.
+            maxsplit: The maximum amount of items to split from String.
+
+        Returns:
+            A List of Strings containing the input split by the separator.
+
+        Examples:
+        ```mojo
+        # Splitting with maxsplit
+        _ = StringSlice("1,2,3").split(",", maxsplit=1) # ['1', '2,3']
+        # Splitting with starting or ending separators
+        _ = StringSlice(",1,2,3,").split(",", maxsplit=1) # ['', '1,2,3,']
+        # Splitting with an empty separator
+        _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
         return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
 
-    fn split(
-        self, sep: NoneType = None, maxsplit: Int = -1
-    ) -> List[Self.Immutable]:
+    @always_inline
+    fn split(self, sep: NoneType = None) -> List[Self.Immutable]:
         """Split the string by every Whitespace separator.
 
         Args:
             sep: None.
-            maxsplit: The maximum amount of items to split from String. Defaults
-                to unlimited.
 
         Returns:
             A List of Strings containing the input split by the separator.
@@ -1945,6 +1962,27 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         _ = StringSlice(
             "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
         ).split()  # ["hello", "world"]
+        ```
+        """
+        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+
+    @always_inline
+    fn split(
+        self, sep: NoneType = None, *, maxsplit: Int
+    ) -> List[Self.Immutable]:
+        """Split the string by every Whitespace separator.
+
+        Args:
+            sep: None.
+            maxsplit: The maximum amount of items to split from String.
+
+        Returns:
+            A List of Strings containing the input split by the separator.
+
+        Examples:
+        ```mojo
+        # Splitting with maxsplit
+        _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
         return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
