@@ -9,6 +9,7 @@ import logging
 import hf_repo_lock
 import pytest
 from max.entrypoints import pipelines
+from max.pipelines.lib import generate_local_model_path
 
 # Keep original constants for non-LoRA tests
 REPO_ID = "hf-internal-testing/tiny-random-LlamaForCausalLM"
@@ -22,17 +23,27 @@ def test_pipelines_speculative_decoding_gpu(capsys) -> None:  # noqa: ANN001
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
-    # Use HuggingFace repo ID directly to ensure we have access to all weight formats
-    local_model_path = REPO_ID
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
 
     with pytest.raises(SystemExit):
         pipelines.main(
             [
                 "generate",
                 "--draft-model-path",
-                local_model_path,
+                model_path,
                 "--model-path",
-                local_model_path,
+                model_path,
+                "--draft-huggingface-model-revision",
+                REVISION,
+                "--huggingface-model-revision",
+                REVISION,
                 "--quantization-encoding=float32",
                 "--devices=gpu",
                 "--cache-strategy=paged",
