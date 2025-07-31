@@ -1,10 +1,4 @@
-# Llama4 tests.
-
-load(
-    "//bazel:api.bzl",
-    "modular_py_test",
-    "requirement",
-)
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "llama4",
@@ -28,6 +22,7 @@ modular_py_test(
     },
     exec_properties = {
         "test.resources:gpu-memory": "23",
+        "test.resources:gpu-1": "1",  # Exclusive access
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
