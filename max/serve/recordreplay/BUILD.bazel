@@ -9,7 +9,6 @@ modular_py_library(
         requirement("asgiref"),
         requirement("httpx"),
         requirement("msgspec"),
-        requirement("scipy"),
         requirement("taskgroup"),
         requirement("typing-extensions"),
     ],
