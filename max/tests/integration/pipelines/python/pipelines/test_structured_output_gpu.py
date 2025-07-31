@@ -20,13 +20,17 @@ from max.interfaces import (
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
+    TextGenerationPipeline,
 )
 from max.pipelines.core import TextContext
+from max.pipelines.lib.registry import PipelineRegistry
 
 pytest_plugins = "test_common.registry"
 
 
-def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: ANN001
+def test_smollm_with_structured_output_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
     pipeline_config = PipelineConfig(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         enable_structured_output=True,
@@ -83,6 +87,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
     context: TextContext = asyncio.run(tokenizer.new_context(request))
 
     pipeline = pipeline_factory()
+    assert isinstance(pipeline, TextGenerationPipeline)
 
     tokens = []
     while True:

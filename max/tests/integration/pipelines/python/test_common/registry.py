@@ -5,14 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for loading and ensuring registry works in test suite."""
 
+from collections.abc import Generator
 from functools import wraps
+from typing import Callable, TypeVar
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.lib.registry import PipelineRegistry
+from typing_extensions import ParamSpec
 
 
 @pytest.fixture(scope="session")
-def pipeline_registry():
+def pipeline_registry() -> Generator[PipelineRegistry]:
     """
     A pytest fixture that manages the registry of production models for testing purposes.
 
@@ -31,9 +35,13 @@ def pipeline_registry():
     yield PIPELINE_REGISTRY
 
 
-def prepare_registry(func):  # noqa: ANN001
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def prepare_registry(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         PIPELINE_REGISTRY.reset()
         result = func(*args, **kwargs)
 
