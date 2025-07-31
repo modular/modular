@@ -13,8 +13,8 @@ from max.driver import Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn import Signals
-from max.nn.moe import DistributedTPMoE
+from max.nn import Allreduce, ShardingStrategy, Signals
+from max.nn.moe import MoE
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )
@@ -97,7 +97,7 @@ def generate_max_outputs(
     device_refs = [DeviceRef(device.label, device.id) for device in devices]
     signals = Signals(device_refs)
 
-    tp_moe = DistributedTPMoE(
+    tp_moe = MoE(
         dtype=dtype,
         devices=device_refs,
         hidden_dim=config.hidden_size,
@@ -106,10 +106,16 @@ def generate_max_outputs(
         moe_dim=config.moe_intermediate_size,
         gate_cls=DeepSeekV2MoEGate,
         has_shared_experts=True,
-        shared_experts_dim=config.n_shared_experts
-        * config.moe_intermediate_size,
+        shared_experts_dim=(
+            config.n_shared_experts * config.moe_intermediate_size
+        ),
     )
+    tp_moe.sharding_strategy = ShardingStrategy.tensor_parallel(n_devices)
+    tp_moe_shards = tp_moe.shard(device_refs)
+
     tp_moe.load_state_dict(state_dict)
+
+    allreduce = Allreduce(num_accelerators=n_devices)
 
     session = InferenceSession(devices=devices)
     session.set_debug_print_options(style=PrintStyle.COMPACT)
@@ -127,7 +133,9 @@ def generate_max_outputs(
         assert isinstance(graph.inputs[0], TensorValue)
         inputs = _distribute_value(graph.inputs[0], devices)
         signal_buffers = [inp.buffer for inp in graph.inputs[1:]]
-        graph.output(*tp_moe(inputs, signal_buffers))
+        outputs = [tp_moe_shard(inputs) for tp_moe_shard in tp_moe_shards]
+        outputs = allreduce(outputs, signal_buffers)
+        graph.output(*outputs)
 
         compiled = session.load(graph, weights_registry=tp_moe.state_dict())
         return compiled.execute(input_tensor, *signals.buffers())
