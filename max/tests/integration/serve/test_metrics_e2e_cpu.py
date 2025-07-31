@@ -19,7 +19,6 @@ from max.serve.schemas.openai import (  # type: ignore
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 
-@pytest.mark.skip("TODO(AITLIB-351): Fix this test")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
