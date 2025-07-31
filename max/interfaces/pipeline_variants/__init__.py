@@ -13,6 +13,7 @@ from .audio_generation import (
 )
 from .embeddings_generation import EmbeddingsGenerator, EmbeddingsOutput
 from .text_generation import (
+    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
@@ -31,6 +32,7 @@ __all__ = [
     "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
+    "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
