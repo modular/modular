@@ -6,12 +6,15 @@
 # Unit tests for model_worker
 
 import time
+from dataclasses import dataclass
 
 import pytest
 from max.interfaces import (
+    GenerationStatus,
     PipelineTask,
     RequestID,
     TextGenerationInputs,
+    TextGenerationOutput,
     TokenGenerator,
 )
 from max.pipelines.lib import PipelineConfig
@@ -19,6 +22,25 @@ from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.metrics import NoopClient
+
+
+@dataclass(frozen=True)
+class MockContext:
+    """Mock context that implements BaseContext protocol."""
+
+    request_id: RequestID
+    status: GenerationStatus = GenerationStatus.ACTIVE
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def update_status(self, status: GenerationStatus) -> None:
+        """Update the generation status of the request."""
+        # Since this is a frozen dataclass, we can't actually update the status
+        # In a real implementation, this would be handled differently
+        pass
 
 
 class MockPipelineConfig(PipelineConfig):
@@ -42,13 +64,15 @@ async def test_model_worker_propagates_exception() -> None:
             raise AssertionError
 
 
-class MockInvalidTokenGenerator(TokenGenerator[str]):
+class MockInvalidTokenGenerator(TokenGenerator[MockContext]):
     ERROR_MESSAGE = "I am invalid"
 
     def __init__(self) -> None:
         raise ValueError(MockInvalidTokenGenerator.ERROR_MESSAGE)
 
-    def next_token(self, inputs: TextGenerationInputs[str]) -> dict[str, str]:  # type: ignore
+    def next_token(
+        self, inputs: TextGenerationInputs[MockContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:
@@ -74,11 +98,13 @@ async def test_model_worker_propagates_construction_exception() -> None:
             pass
 
 
-class MockSlowTokenGenerator(TokenGenerator[str]):
+class MockSlowTokenGenerator(TokenGenerator[MockContext]):
     def __init__(self) -> None:
         time.sleep(0.2)
 
-    def next_token(self, inputs: TextGenerationInputs[str]) -> dict[str, str]:  # type: ignore
+    def next_token(
+        self, inputs: TextGenerationInputs[MockContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:

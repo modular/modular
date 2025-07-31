@@ -15,8 +15,10 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from max.interfaces import (
+    GenerationStatus,
     RequestID,
     TextGenerationInputs,
+    TextGenerationOutput,
     TextGenerationRequest,
     TokenGenerator,
 )
@@ -29,19 +31,38 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class MockContext:
+    """Mock context that implements BaseContext protocol."""
+
+    request_id: RequestID
+    status: GenerationStatus = GenerationStatus.ACTIVE
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def update_status(self, status: GenerationStatus) -> None:
+        """Update the generation status of the request."""
+        # Since this is a frozen dataclass, we can't actually update the status
+        # In a real implementation, this would be handled differently
+        pass
+
+
 class MockPipelineConfig(PipelineConfig):
     def __init__(self):
         self.max_batch_size = 1
 
 
 @dataclass(frozen=True)
-class MockValueErrorTokenGenerator(TokenGenerator[str]):
+class MockValueErrorTokenGenerator(TokenGenerator[MockContext]):
     """A mock generator that throws a value error when used."""
 
-    def next_token(  # type: ignore
+    def next_token(
         self,
-        inputs: TextGenerationInputs[str],
-    ) -> dict[str, str]:
+        inputs: TextGenerationInputs[MockContext],
+    ) -> dict[str, TextGenerationOutput]:
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:
@@ -55,12 +76,19 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
 
 
 @dataclass(frozen=True)
-class MockTokenGenerator(TokenGenerator[str]):
-    def next_token(  # type: ignore
+class MockTokenGenerator(TokenGenerator[MockContext]):
+    def next_token(
         self,
-        inputs: TextGenerationInputs[str],
-    ) -> dict[str, str]:
-        return inputs.batch
+        inputs: TextGenerationInputs[MockContext],
+    ) -> dict[str, TextGenerationOutput]:
+        return {
+            key: TextGenerationOutput(
+                request_id=ctx.request_id,
+                tokens=[],
+                final_status=GenerationStatus.ACTIVE,
+            )
+            for key, ctx in inputs.batch.items()
+        }
 
     def release(self, request_id: RequestID) -> None:
         pass
