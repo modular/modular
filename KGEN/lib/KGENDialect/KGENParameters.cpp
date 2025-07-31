@@ -305,8 +305,6 @@ private:
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
 #ifndef MODULAR_PRODUCTION
-  VerboseCompilerTimeTraceScope traceScope("verifyRefAttr");
-
   // We only check this during the op verification phase.
   if (!evaluationContext)
     return;
@@ -517,7 +515,6 @@ struct GraphTraits<ParameterUseDefGraph *> {
 void impl::scanAllAttrsAndTypes(Operation *op,
                                 function_ref<void(Attribute)> scanAttr,
                                 function_ref<void(Type)> scanType) {
-  VerboseCompilerTimeTraceScope traceScope("scanAllAttrsAndTypes");
   llvm::for_each(op->getResultTypes(), scanType);
   for (Region &region : op->getRegions())
     llvm::for_each(region.getArgumentTypes(), scanType);
@@ -532,18 +529,14 @@ void impl::scanAllAttrsAndTypes(Operation *op,
 /// parametric.
 static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
                         Operation *op, bool isDefOrDecl) {
-  VerboseCompilerTimeTraceScope traceScope("collectUses");
-
   // Track whether parameter uses or expressions were found.
   bool hasConstExpr = false;
   SmallVector<ParamDeclRefAttr> uses;
 
   auto scanAttr = [&](Attribute attr) {
-    VerboseCompilerTimeTraceScope traceScope("collectParameters");
     c.collectUsesFromAttr(attr, uses, hasConstExpr);
   };
   auto scanType = [&](Type type) {
-    VerboseCompilerTimeTraceScope traceScope("collectParameters");
     c.collectUsesFromType(type, uses, hasConstExpr);
   };
 
@@ -697,8 +690,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
   VerifyingParameterCollector c(evaluationContext, cache);
 
   auto processOp = [&](Operation *op) -> WalkResult {
-    VerboseCompilerTimeTraceScope traceScope("processOp");
-
     // Set the operation for which we are collecting parameters. It will be used
     // to report errors.
     c.op = op;
@@ -763,7 +754,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         (*def)->index = index++;
         bool unused = false;
         for (Attribute expr : value.exprs) {
-          VerboseCompilerTimeTraceScope traceScope("collectParameters");
           c.collectUsesFromAttr(expr, (*def)->uses, unused);
         }
         // If the definition of this parameter depends on a region, defer
