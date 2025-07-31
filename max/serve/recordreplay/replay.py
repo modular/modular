@@ -32,6 +32,7 @@ else:
     from taskgroup import TaskGroup
 
 import httpx
+import scipy.special
 
 from . import schema
 
@@ -101,15 +102,10 @@ class _IncrementalDistributionComputer:
         return statistics.NormalDist(mean, stdev)
 
 
-def _erfcx(x: float) -> float:
-    """Scaled complementary error function."""
-    return math.exp(x**2) * math.erfc(x)
-
-
 def _tnmean(a: float) -> float:
     """Mean of the standard normal distribution, truncated to (a, +∞)."""
     # Implementation ported from https://github.com/cossio/TruncatedNormal.jl.
-    return math.sqrt(2 / math.pi) * _erfcx(a / math.sqrt(2))
+    return math.sqrt(2 / math.pi) * scipy.special.erfcx(a / math.sqrt(2))
 
 
 def _low_truncated_expectation(
