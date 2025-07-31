@@ -19,7 +19,7 @@ from hashlib.hasher import Hasher
 from math import CeilDivable
 from sys import bitwidthof
 
-from builtin.math import Absable
+from builtin.math import Absable, DivModable
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -33,6 +33,7 @@ struct UInt(
     Comparable,
     Copyable,
     Defaultable,
+    DivModable,
     ExplicitlyCopyable,
     Hashable,
     Indexer,
