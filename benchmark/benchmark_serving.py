@@ -11,16 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-
-# TODO: This file is a fork of the benchmark_serving.py file in
-# open-source/max/benchmark.
-# We have unreleased changes but are staged here for now.
-
 """Benchmark online serving throughput."""
 
 import argparse
