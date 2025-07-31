@@ -90,7 +90,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry) -> None:  # noqa: 
         response = pipeline.next_token(inputs)
 
         for token in response[request_id].tokens:
-            tokens.append(token.next_token)
+            tokens.append(token)
 
         if response[request_id].is_done:
             break
