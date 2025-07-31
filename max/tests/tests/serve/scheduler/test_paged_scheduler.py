@@ -21,11 +21,11 @@ from max.engine import InferenceSession
 from max.interfaces import (
     GenerationStatus,
     InputContext,
+    Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -190,14 +190,16 @@ def create_paged_scheduler(
     return scheduler
 
 
-class FakeTokenGeneratorPipeline(TokenGenerator):
+class FakeTokenGeneratorPipeline(
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
+):
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.kv_manager = kv_manager
         self.prev_num_steps: int = 0
 
-    def next_token(
+    def execute(
         self, inputs: TextGenerationInputs[TextContext]
-    ) -> dict[str, TextGenerationOutput]:
+    ) -> dict[RequestID, TextGenerationOutput]:
         max_seq_len = self.kv_manager.max_seq_len
         # Truncate num steps based on the max seq len
         for context in inputs.batch.values():

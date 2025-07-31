@@ -7,6 +7,8 @@
 
 """Unit tests for serve/pipelines/llm.py."""
 
+from __future__ import annotations
+
 import json
 import logging
 from dataclasses import dataclass
@@ -16,11 +18,11 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
-    TokenGenerator,
 )
 from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -55,14 +57,15 @@ class MockPipelineConfig(PipelineConfig):
         self.max_batch_size = 1
 
 
-@dataclass(frozen=True)
-class MockValueErrorTokenGenerator(TokenGenerator[MockContext]):
+class MockValueErrorTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     """A mock generator that throws a value error when used."""
 
-    def next_token(
+    def execute(
         self,
         inputs: TextGenerationInputs[MockContext],
-    ) -> dict[str, TextGenerationOutput]:
+    ) -> dict[RequestID, TextGenerationOutput]:
         raise ValueError()
 
     def release(self, request_id: RequestID) -> None:
@@ -76,11 +79,13 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
 
 
 @dataclass(frozen=True)
-class MockTokenGenerator(TokenGenerator[MockContext]):
-    def next_token(
+class MockTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
+    def execute(
         self,
         inputs: TextGenerationInputs[MockContext],
-    ) -> dict[str, TextGenerationOutput]:
+    ) -> dict[RequestID, TextGenerationOutput]:
         return {
             key: TextGenerationOutput(
                 request_id=ctx.request_id,

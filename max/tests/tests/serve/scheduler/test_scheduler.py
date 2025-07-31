@@ -62,7 +62,7 @@ def mock_pipeline():
         return responses
 
     pipeline = Mock()
-    pipeline.next_token = Mock(side_effect=next_token_behavior)
+    pipeline.execute = Mock(side_effect=next_token_behavior)
     pipeline.release = Mock()
     return pipeline
 
@@ -276,7 +276,7 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     scheduler._schedule_ce(sch_output)
 
     assert mock_request.request_id in scheduler.active_batch
-    scheduler.pipeline.next_token.assert_called_once_with(
+    scheduler.pipeline.execute.assert_called_once_with(
         TextGenerationInputs(batch_to_execute, num_steps=1)
     )
 
@@ -413,7 +413,7 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     scheduler._schedule_tg(sch_output)
 
-    scheduler.pipeline.next_token.assert_called_once_with(
+    scheduler.pipeline.execute.assert_called_once_with(
         TextGenerationInputs(
             batch_to_execute,
             num_steps=scheduler.scheduler_config.max_forward_steps_tg,

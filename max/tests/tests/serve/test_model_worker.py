@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # Unit tests for model_worker
+from __future__ import annotations
 
 import time
 from dataclasses import dataclass
@@ -11,11 +12,11 @@ from dataclasses import dataclass
 import pytest
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelineTask,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
 )
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import Settings
@@ -64,13 +65,15 @@ async def test_model_worker_propagates_exception() -> None:
             raise AssertionError
 
 
-class MockInvalidTokenGenerator(TokenGenerator[MockContext]):
+class MockInvalidTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     ERROR_MESSAGE = "I am invalid"
 
     def __init__(self) -> None:
         raise ValueError(MockInvalidTokenGenerator.ERROR_MESSAGE)
 
-    def next_token(
+    def execute(
         self, inputs: TextGenerationInputs[MockContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         raise ValueError()
@@ -98,11 +101,13 @@ async def test_model_worker_propagates_construction_exception() -> None:
             pass
 
 
-class MockSlowTokenGenerator(TokenGenerator[MockContext]):
+class MockSlowTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     def __init__(self) -> None:
         time.sleep(0.2)
 
-    def next_token(
+    def execute(
         self, inputs: TextGenerationInputs[MockContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         raise ValueError()
