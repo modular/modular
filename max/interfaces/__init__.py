@@ -31,6 +31,7 @@ from .pipeline_variants import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
 )
+from .queue import MAXQueue
 from .request import Request, RequestID
 from .scheduler import SchedulerResult, SchedulerStatus
 from .status import GenerationStatus
@@ -58,6 +59,7 @@ __all__ = [
     "GenerationStatus",
     "InputContext",
     "LogProbabilities",
+    "MAXQueue",
     "Pipeline",
     "PipelineOutputsDict",
     "PipelineTask",
