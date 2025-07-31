@@ -18,7 +18,6 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
-    llvm_intrinsic,
     simdwidthof,
 )
 from sys import sizeof
@@ -68,40 +67,6 @@ from .utils_gpu import (
     _bk_base,
     select_config,
 )
-
-
-@always_inline
-fn __nvvm_ldg_f4[
-    dtype: DType
-](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, 4]:
-    # Load a register variable from global state space via non-coherent cache.
-
-    alias alignment = Int32(alignof[SIMD[dtype, 4]]())
-
-    @parameter
-    if dtype is DType.float32:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
-            ](x.bitcast[Float32](), alignment)
-        )
-    elif dtype is DType.bfloat16:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
-                SIMD[DType.bfloat16, 4],
-            ](x.bitcast[BFloat16](), alignment)
-        )
-    elif dtype is DType.float16:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
-                SIMD[DType.float16, 4],
-            ](x.bitcast[Float16](), alignment)
-        )
-    else:
-        constrained[False, "Unhandled DType"]()
-        return 0
 
 
 fn matmul_kernel[
