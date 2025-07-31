@@ -2804,6 +2804,38 @@ struct LayoutTensor[
         return self.runtime_layout.shape.value[idx]
 
     @always_inline
+    fn stride(self, idx: Int) -> Int:
+        """Returns the runtime stride of the tensor along the specified
+        axis.
+
+        Unlike the static `stride` method, this instance method takes a runtime
+        dimension index.
+
+        Args:
+            idx: The dimension index to query (0-based).
+                 For example, in a row-major 3D tensor with shape `[10, 20, 30]`:
+                 - `stride(0)` returns 600 (first dimension).
+                 - `stride(1)` returns 30 (second dimension).
+                 - `stride(2)` returns 1 (third dimension).
+
+        Returns:
+            The dimension of the tensor along the specified axis as an integer.
+        """
+
+        constrained[
+            0 <= depth(layout.stride) <= 1,
+            String(
+                (
+                    "This method only works with tensors that have depth-1"
+                    " layouts (no nested shapes). Received: "
+                ),
+                layout,
+            ),
+        ]()
+
+        return self.runtime_layout.stride.value[idx]
+
+    @always_inline
     fn dim[idx: Int](self) -> Int:
         """Returns the dimension size of the tensor along the specified
         axis.
