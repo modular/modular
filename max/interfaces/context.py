@@ -87,6 +87,35 @@ class SamplingParams:
 
 
 @runtime_checkable
+class BaseContext(Protocol):
+    """
+    Core interface for request lifecycle management across all of MAX, including serving, scheduling, and pipelines.
+
+    This protocol is intended to provide a unified, minimal contract for request state and status handling throughout the MAX stack.
+    Over time, `BaseContext` is expected to supersede and replace `InputContext` as the canonical context interface, as we refactor and standardize context handling across the codebase.
+    """
+
+    @property
+    def request_id(self) -> RequestID:
+        """Unique identifier for the request."""
+        ...
+
+    @property
+    def status(self) -> GenerationStatus:
+        """Current generation status of the request."""
+        ...
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def update_status(self, status: GenerationStatus) -> None:
+        """Update the generation status of the request."""
+        ...
+
+
+@runtime_checkable
 class InputContext(Protocol):
     """Protocol defining the interface for model input contexts in token generation.
 
