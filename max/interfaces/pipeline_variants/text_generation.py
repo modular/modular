@@ -20,7 +20,7 @@ from typing import (
 )
 
 import msgspec
-from max.interfaces.context import SamplingParams
+from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs
 from max.interfaces.request import Request, RequestID
@@ -222,11 +222,24 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         return self.final_status.is_done
 
 
-T = TypeVar("T")
+# NOTE: TextGenerationContextType only enforces the BaseContext protocol, which provides the minimal contract for context objects.
+# It is NOT sufficient for actual text generation functionality, as real text generation requires additional methods and properties
+# (such as token management, status updates, and sampling parameters) that are not guaranteed by BaseContext alone.
+# This is a temporary solution to allow for gradual migration of the codebase to the new context interface.
+
+TextGenerationContextType = TypeVar(
+    "TextGenerationContextType",
+    bound=BaseContext,
+)
+"""Type variable for text generation context types, constrained to BaseContext.
+
+This allows generic typing of text generation pipeline components to accept any
+context type that implements the BaseContext protocol.
+"""
 
 
 @dataclass(frozen=True)
-class TextGenerationInputs(PipelineInputs, Generic[T]):
+class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """
     Input parameters for text generation pipeline operations.
 
@@ -235,18 +248,18 @@ class TextGenerationInputs(PipelineInputs, Generic[T]):
     pattern of passing batch and num_steps as separate parameters.
     """
 
-    batch: dict[RequestID, T]
+    batch: dict[RequestID, TextGenerationContextType]
     """Dictionary mapping request IDs to context objects."""
     num_steps: int
     """Number of tokens to generate."""
 
 
 @runtime_checkable
-class TokenGenerator(Generic[T], Protocol):
+class TokenGenerator(Generic[TextGenerationContextType], Protocol):
     """Interface for LLM token-generator models."""
 
     def next_token(
-        self, inputs: TextGenerationInputs[T]
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Computes the next token response for a single batch.
 

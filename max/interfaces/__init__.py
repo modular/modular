@@ -7,7 +7,11 @@
 
 from typing import Callable, Union
 
-from .context import InputContext, SamplingParams
+from .context import (
+    BaseContext,
+    InputContext,
+    SamplingParams,
+)
 from .log_probabilities import LogProbabilities
 from .pipeline import PipelineOutput
 from .pipeline_variants import (
@@ -18,6 +22,7 @@ from .pipeline_variants import (
     AudioGeneratorOutput,
     EmbeddingsGenerator,
     EmbeddingsOutput,
+    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
@@ -48,6 +53,7 @@ __all__ = [
     "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorOutput",
+    "BaseContext",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
     "GenerationStatus",
@@ -64,6 +70,7 @@ __all__ = [
     "SchedulerResult",
     "SchedulerStatus",
     "SharedMemoryArray",
+    "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
