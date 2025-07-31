@@ -10,6 +10,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
             # outside of Bazel.
             "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
         },
+        exec_properties = {
+            "test.resources:gpu-memory": "16",
+        },
         gpu_constraints = [
             "//:has_gpu",
             "//:has_multi_gpu",

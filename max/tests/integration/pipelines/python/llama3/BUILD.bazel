@@ -99,7 +99,8 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "test.resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-1": "1",  # Exclusive access
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -172,9 +173,9 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "resources:gpu-memory": "23",
+        "resources:gpu-memory": "22",
     },
-    gpu_constraints = ["//:has_multi_gpu"],  # Requires multiple GPUs
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "gpu",
         "no-sandbox",

@@ -32,6 +32,9 @@ modular_py_test(
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
     env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = [
         "//:has_gpu",
     ],
@@ -202,6 +205,9 @@ modular_py_test(
         "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_4_gpus"],
     tags = ["gpu"],

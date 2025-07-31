@@ -26,7 +26,7 @@ modular_py_test(
     timeout = "long",
     srcs = glob(["*_gpu.py"]) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "12",
+        "test.resources:gpu-memory": "18",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],

@@ -50,6 +50,9 @@ modular_py_test(
             "test_conv_transpose_gpu.py",
         ],
     ) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = ["gpu"],
@@ -95,7 +98,7 @@ modular_py_test(
     size = "enormous",
     srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "20",
     },
     gpu_constraints = ["//:has_4_gpus"],
     tags = ["gpu"],

@@ -38,7 +38,7 @@ modular_py_library(
             "//SDK:max",
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "2",
+            "test.resources:gpu-memory": "4",
         },
         gpu_constraints = ["//:has_multi_gpu"] if src == "tests/test_vision_embeddings.py" else ["//:has_gpu"],
         imports = ["."],

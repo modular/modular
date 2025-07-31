@@ -135,7 +135,7 @@ modular_py_test(
     srcs = ["test_pipelines_cli_gpu.py"],
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "21.25",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [

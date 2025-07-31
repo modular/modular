@@ -67,7 +67,7 @@ def transfer_routine_sender(
     # We found that CUDA_COPY yields ~.3GB/s while CUDA_IPC yields 100+GB/s
     # Note that CUDA_IPC requires memory to be allocated via `cuMemAlloc` and not
     # `cuMemAllocAsync`.
-    assert bw > 1.0, "Transfer speed is too low"
+    assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
 
     # Verify results
     expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
