@@ -170,7 +170,12 @@ from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import group_norm, layer_norm, rms_norm
+from nn.normalization import (
+    group_norm,
+    layer_norm,
+    rms_norm,
+    rms_norm_fused_residual_add,
+)
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
@@ -4463,6 +4468,111 @@ struct LayerNorm:
         gamma: InputTensor[dtype=dtype, rank=1],
         beta: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("rms_norm_fused_residual_add")
+struct RMSNormFusedResidualAdd:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        residual_output: OutputTensor[dtype=dtype, rank=rank],
+        input: FusedInputTensor[dtype=dtype, rank=rank],
+        residual_input: FusedInputTensor[dtype=dtype, rank=rank],
+        gamma1: InputTensor[dtype=dtype, rank=1],
+        gamma2: InputTensor[dtype=dtype, rank=1],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return residual_input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn residual_output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        var gamma1_buf = managed_tensor_slice_to_ndbuffer(gamma1)
+        var gamma2_buf = managed_tensor_slice_to_ndbuffer(gamma2)
+
+        rms_norm_fused_residual_add[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma1_buf,
+            epsilon1,
+            weight_offset1,
+            gamma2_buf,
+            epsilon2,
+            weight_offset2,
+            ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        residual_input: InputTensor[dtype=dtype, rank=rank],
+        gamma1: InputTensor[dtype=dtype, rank=1],
+        gamma2: InputTensor[dtype=dtype, rank=1],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
     ) -> IndexList[rank]:
         return input.shape()
 
