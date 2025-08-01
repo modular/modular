@@ -689,7 +689,11 @@ def attention_lora_max_output(
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         full_attention_output = max_attention(
-            layer_idx, x_input.tensor, kv_collection, input_row_offsets.tensor
+            layer_idx,
+            x_input.tensor,
+            kv_collection,
+            freqs_cis=rope.freqs_cis,
+            input_row_offsets=input_row_offsets.tensor,
         ).cast(DType.float32)
 
         graph.output(full_attention_output)
