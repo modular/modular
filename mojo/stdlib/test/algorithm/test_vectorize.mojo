@@ -15,11 +15,10 @@ from algorithm import vectorize
 from buffer import NDBuffer
 from memory import memcmp
 
+from testing import assert_equal
 
-# CHECK-LABEL: test_vectorize
-fn test_vectorize():
-    print("== test_vectorize")
 
+def test_vectorize():
     # Create a mem of size 5
     var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
     var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack)
@@ -34,16 +33,11 @@ fn test_vectorize():
 
     vectorize[add_two, 2](len(vector))
 
-    # CHECK: 3.0
-    print(vector[0])
-    # CHECK: 4.0
-    print(vector[1])
-    # CHECK: 5.0
-    print(vector[2])
-    # CHECK: 6.0
-    print(vector[3])
-    # CHECK: 7.0
-    print(vector[4])
+    assert_equal(vector[0], 3.0)
+    assert_equal(vector[1], 4.0)
+    assert_equal(vector[2], 5.0)
+    assert_equal(vector[3], 6.0)
+    assert_equal(vector[4], 7.0)
 
     @always_inline
     @__copy_capture(vector)
@@ -57,22 +51,14 @@ fn test_vectorize():
 
     vectorize[add, 2](len(vector))
 
-    # CHECK: 6.0
-    print(vector[0])
-    # CHECK: 8.0
-    print(vector[1])
-    # CHECK: 10.0
-    print(vector[2])
-    # CHECK: 12.0
-    print(vector[3])
-    # CHECK: 14.0
-    print(vector[4])
+    assert_equal(vector[0], 6.0)
+    assert_equal(vector[1], 8.0)
+    assert_equal(vector[2], 10.0)
+    assert_equal(vector[3], 12.0)
+    assert_equal(vector[4], 14.0)
 
 
-# CHECK-LABEL: test_vectorize_unroll
-fn test_vectorize_unroll():
-    print("== test_vectorize_unroll")
-
+def test_vectorize_unroll():
     alias buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
@@ -109,29 +95,25 @@ fn test_vectorize_unroll():
     vectorize[double_buf, simd_width](len(buf))
 
     var err = memcmp(vec.data, buf.data, len(buf))
-    # CHECK: 0
-    print(err)
+    assert_equal(err, 0)
 
 
-# CHECK-LABEL: test_vectorize_size_param
-fn test_vectorize_size_param():
-    print("== test_vectorize_size_param")
+def test_vectorize_size_param():
+    var output = String()
 
     # remainder elements are correctly printed
     @parameter
     fn printer[els: Int](n: Int):
-        print(els, n)
+        output.write(els, " ", n, "\n")
 
-    # CHECK: 16 0
-    # CHECK: 16 16
-    # CHECK: 8 32
     vectorize[printer, 16, size=40]()
+    assert_equal(output, "16 0\n16 16\n8 32\n")
 
-    # CHECK: 8 0
     vectorize[printer, 16, size=8]()
+    assert_equal(output, "16 0\n16 16\n8 32\n8 0\n")
 
 
-fn main():
+def main():
     test_vectorize()
     test_vectorize_unroll()
     test_vectorize_size_param()
