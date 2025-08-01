@@ -346,6 +346,88 @@ struct Span[
                 return True
         return False
 
+    @no_inline
+    fn __str__[
+        U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_]) -> String:
+        """Returns a string representation of a `Span`.
+
+        Parameters:
+            U: The type of the elements in the span. Must implement the
+              trait `Representable`.
+
+        Returns:
+            A string representation of the span.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet,
+            the way to call this method is a bit special. Here is an example
+            below:
+
+            ```mojo
+            var my_list = [1, 2, 3]
+            var my_span = Span(my_list)
+            print(my_span.__str__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `String(my_span)` will be enough.
+        """
+        # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
+        var l = len(self)
+        var output = String(capacity=l + 2 * (l - 1) * Int(l > 1) + 3)
+        self.write_to(output)
+        return output^
+
+    @no_inline
+    fn write_to[
+        W: Writer, U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_], mut writer: W):
+        """Write `my_span.__str__()` to a `Writer`.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+            U: The type of the Span elements. Must have the trait
+                `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write("[")
+        for i in range(len(self)):
+            writer.write(repr(self[i]))
+            if i < len(self) - 1:
+                writer.write(", ")
+        writer.write("]")
+
+    @no_inline
+    fn __repr__[
+        U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_]) -> String:
+        """Returns a string representation of a `Span`.
+
+        Parameters:
+            U: The type of the elements in the span. Must implement the
+              trait `Representable`.
+
+        Returns:
+            A string representation of the span.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet, the way
+            to call this method is a bit special. Here is an example below:
+
+            ```mojo
+            var my_list = [1, 2, 3]
+            var my_span = Span(my_list)
+            print(my_span.__repr__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `repr(my_list)` will be enough.
+        """
+        return self.__str__()
+
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
