@@ -37,6 +37,7 @@ qwen2_arch = SupportedArchitecture(
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
