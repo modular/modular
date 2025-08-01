@@ -224,3 +224,36 @@ fn gelu_approximate[
     return (
         0.5 * val * (1 + math.tanh(SQRT_TWO_OVER_PI * (val + 0.044715 * val3)))
     ).cast[dtype]()
+
+
+
+# ===----------------------------------------------------------------------=== #
+# leaky_relu
+# ===----------------------------------------------------------------------=== #
+
+@always_inline
+fn leaky_relu[
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width], negative_slope: SIMD[dtype, 1]) -> SIMD[dtype, simd_width]:
+    """Compute the Leaky ReLU using the equation
+    $max(0, x) + negative_slope * min(0, x)$.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        x: The value to compute the Leaky ReLU operation on.
+        negative_slope: The slope for negative values.
+    
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the Leaky ReLU operation.
+    """
+    constrained[
+        dtype.is_floating_point(),
+        "dtype must be a floating point dtype",
+    ]()
+    return (x >= 0).select(x, negative_slope * x)
