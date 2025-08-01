@@ -169,6 +169,22 @@ RUFF_VERSION = "0.11.13"
     ]
 ]
 
+NVSHMEM_VERSION = "3.3.9_cuda12"
+
+http_archive(
+    name = "libnvshmem_device_bc",
+    build_file_content = """
+filegroup(
+    name = "libnvshmem_device_bc",
+    srcs = ["lib/libnvshmem_device.bc"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "72a788ef5723a30d8882b193f0a513f454ecaee3ab5a225a5c43db79d433ef66",
+    strip_prefix = "libnvshmem-linux-x86_64-{}-archive".format(NVSHMEM_VERSION),
+    urls = ["https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-{}-archive.tar.xz".format(NVSHMEM_VERSION)],
+)
+
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.gpu_toolchains(
     # nvidia-smi / amd-smi output -> GPU name, empty string to ignore GPU
