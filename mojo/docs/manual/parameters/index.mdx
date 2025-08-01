@@ -879,6 +879,63 @@ var x: Float16 = 0  # Float16 works like a "typedef"
 Like `var` variables, aliases obey scope, and you can use local aliases within
 functions as you'd expect.
 
+### Parametric aliases
+
+A *parametric alias* is a compile-time expression that takes a list of
+parameters and returns a compile-time constant value:
+
+```mojo
+alias AddOne[a: Int] : Int = a + 1
+
+alias nine = AddOne(8)
+```
+
+As you can see in the previous example, a parametric alias is a little like a
+*compile-time-only function*. A regular function or method can also be invoked
+at compile time:
+
+```mojo
+fn add_one(a: Int) -> Int:
+    return a + 1
+
+alias ten = add_one(9)
+```
+
+A major difference between a function and a parametric alias is that the value
+of an alias can be a type, while a function can't return a type as a value.
+
+```mojo
+# Does not work—-dynamic type values not permitted
+fn int_type() -> AnyType:
+    return Int
+
+# Works
+alias IntType = Int
+```
+
+Because the value of an alias can be a type, you can use parametric aliases to
+express new types:
+
+```mojo
+alias TwoOfAKind[dt: DType] = SIMD[dt, 2]
+twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
+
+alias StringKeyDict[ValueType: Copyable & Movable] = Dict[String, ValueType]
+var b: StringKeyDict[UInt8] = {"answer": 42}
+```
+
+Parametric alias signatures support the same features as parameterized structs
+or functions: infer-only parameters, keyword-only and optional parameters,
+[automatic parameterization](#automatic-parameterization), and so on.
+
+```mojo
+    alias Floats[size: Int, half_width: Bool = False] = SIMD[
+        (DType.float16 if half_width else DType.float32), size
+    ]
+    var floats = Floats[2](6.0, 8.0)
+    var half_floats = Floats[2, True](10.0, 12.0)
+```
+
 ## Fully-bound, partially-bound, and unbound types
 
 A parametric type with its parameters specified is said to be *fully-bound*.
@@ -898,6 +955,20 @@ Here, `StringKeyDict` is a type alias for a `Dict` that takes `String` keys. The
 underscore `_` in the parameter list indicates that the second parameter,
 `V` (the value type), is unbound.
 You specify the `V` parameter later, when you use `StringKeyDict`.
+
+:::note Partially-bound types versus parametric aliases
+
+You may notice that this example is very similar to an example in the section
+on [parametric aliases](#parametric-aliases). For simple type aliases like this,
+you can use either a partially-bound type or a parametric alias.
+Parametric aliases provide a more flexible way to define type aliases, since
+you can define the order of the parameters, add default values, and so on.
+
+Partially-bound and unbound types can provide a handy shortcut when defining
+parametric functions and aliases, called
+[automatic parameterization](#automatic-parameterization).
+
+:::
 
 You can also use partially-bound types as the type bound for an argument or
 parameter.
@@ -967,7 +1038,7 @@ original type declaration is ignored.
 Partially-bound and unbound parametric types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
 [aliases](#alias-named-parameter-expressions) and
-[automatically parameterized functions](#automatic-parameterization-of-functions).
+[automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
 
@@ -999,11 +1070,11 @@ explicitly unbound parameters in the future.
 
 :::
 
-## Automatic parameterization of functions
+## Automatic parameterization
 
-Mojo  supports "automatic" parameterization of functions. If a function
-argument type is a
-[partially-bound or unbound type](#fully-bound-partially-bound-and-unbound-types),
+Mojo supports "automatic" parameterization of functions and parametric aliases.
+If a function argument type or parameter type is
+[partially-bound or unbound](#fully-bound-partially-bound-and-unbound-types),
 the unbound parameters are automatically added as input parameters on the
 function. This is easier to understand with an example:
 
@@ -1027,7 +1098,7 @@ an [unbound parameterized
 type](#fully-bound-partially-bound-and-unbound-types)—that is, it doesn't
 specify any parameter values for the type. Mojo treats the unbound parameters
 on `vec` as infer-only parameters on the function. This is roughly equivalent to
-the following codes:
+the following code:
 
 ```mojo
 fn print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
@@ -1091,8 +1162,8 @@ writing the equivalent `SIMD[v1.type, v1.size]`.
 
 ### Automatic parameterization of parameters
 
-You can also take advantage of automatic parameterization in a function's
-parameter list. For example:
+You can also take advantage of automatic parameterization in the parameter list
+of a function or parametric alias. For example:
 
 ```mojo
 fn foo[value: SIMD]():
@@ -1101,6 +1172,15 @@ fn foo[value: SIMD]():
 # Equivalent to:
 fn foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
     pass
+```
+
+Here's another example using a parametric alias:
+
+```mojo
+alias Foo[S: SIMD] = Bar[S]
+
+# Equivalent to:
+alias Foo[dtype: DType, size: Int, //, S: SIMD[dtype, size]] = Bar[S]
 ```
 
 ### Automatic parameterization with partially-bound types

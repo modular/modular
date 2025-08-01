@@ -6028,7 +6028,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
   For more information see the Mojo Manual sections on
   [partially-bound types](/mojo/manual/parameters/#fully-bound-partially-bound-and-unbound-types)
   and
-  [automatic parameterization of functions](/mojo/manual/parameters/#automatic-parameterization-of-functions).
+  [automatic parameterization of functions](/mojo/manual/parameters/#automatic-parameterization).
 
 - [`DynamicVector`](/mojo/stdlib/collections/list/List) now supports iteration.
   Iteration values are instances of `Reference` and require dereferencing:
@@ -6243,7 +6243,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 
 - It is no longer possible to explicitly specify implicit argument parameters in
   [automatically parameterized
-  functions](/mojo/manual/parameters/#automatic-parameterization-of-functions).
+  functions](/mojo/manual/parameters/#automatic-parameterization).
   This ability was an oversight and this is now an error:
 
   ```mojo
