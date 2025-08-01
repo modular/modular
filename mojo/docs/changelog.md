@@ -28,6 +28,8 @@ what we publish.
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the
   Python equivalent function.
+- `Span` is now `Representable` if its elements implement trait
+  `Representable`.
 
 ### Tooling changes
 
