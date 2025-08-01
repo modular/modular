@@ -24,6 +24,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.graph.ops.allreduce import matmul_allreduce
 from max.nn import MLP, Allreduce, DistributedGemmConfig, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
@@ -215,14 +216,14 @@ def mlp_output(
                 mlp_shard(x)
                 for mlp_shard, x in zip(mlp_shards, distributed_inputs)
             ]
-            graph_output = mlp_allreduce(mlp_outputs, graph_signal_buffers)
 
             if enable_matmul_allreduce:
-                graph_output = [
-                    mlp_shards[i].down_proj(output)
-                    for i, output in enumerate(graph_output)
-                ]
-                graph_output = mlp_allreduce(graph_output, graph_signal_buffers)
+                weights = [layer.down_proj.weight for layer in mlp_shards]
+                graph_output = matmul_allreduce(
+                    mlp_outputs, weights, graph_signal_buffers
+                )
+            else:
+                graph_output = mlp_allreduce(mlp_outputs, graph_signal_buffers)
 
         if isinstance(graph_output, list):
             graph.output(*graph_output)
