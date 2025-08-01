@@ -176,6 +176,7 @@ def test_distributed_attention_with_rope_call_validation(
                     list[PagedKVCacheCollection],
                     kv_collections,
                 ),
+                freqs_cis=[rope.freqs_cis, rope.freqs_cis],
                 input_row_offsets=[dummy_tensor],
             )
 
@@ -192,6 +193,7 @@ def test_distributed_attention_with_rope_call_validation(
                     list[PagedKVCacheCollection],
                     kv_collections,
                 ),
+                freqs_cis=[rope.freqs_cis, rope.freqs_cis],
                 input_row_offsets=[dummy_tensor, "not-a-tensor-value"],  # type: ignore
             )
 
