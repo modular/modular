@@ -68,24 +68,23 @@ struct MoveOnly[T: Movable](Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct ObservableMoveOnly(Movable):
-    # It's a weak reference, we don't want to delete the actions
-    # after the struct is deleted, otherwise we can't observe the __del__.
-    var actions: UnsafePointer[List[String]]
+struct ObservableMoveOnly[actions_origin: ImmutableOrigin](Movable):
+    alias _U = UnsafePointer[List[String], mut=False, origin=actions_origin]
+    var actions: Self._U
     var value: Int
 
-    fn __init__(out self, value: Int, actions: UnsafePointer[List[String]]):
+    fn __init__(out self, value: Int, actions: Self._U):
         self.actions = actions
         self.value = value
-        self.actions[0].append("__init__")
+        self.actions.origin_cast[mut=True]()[0].append("__init__")
 
     fn __moveinit__(out self, owned existing: Self):
         self.actions = existing.actions
         self.value = existing.value
-        self.actions[0].append("__moveinit__")
+        self.actions.origin_cast[mut=True]()[0].append("__moveinit__")
 
     fn __del__(owned self):
-        self.actions[0].append("__del__")
+        self.actions.origin_cast[mut=True]()[0].append("__del__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -152,9 +151,7 @@ struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
         return self
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("CopyCounter(")
-        writer.write(String(self.copy_count))
-        writer.write(")")
+        writer.write("CopyCounter(", self.copy_count, ")")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -234,19 +231,19 @@ struct MoveCopyCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
+struct DelRecorder[recorder_origin: ImmutableOrigin](
+    Copyable, ExplicitlyCopyable, Movable
+):
     var value: Int
-    var destructor_counter: UnsafePointer[List[Int]]
-
-    fn __init__(out self, *, other: Self):
-        self.value = other.value
-        self.destructor_counter = other.destructor_counter
+    var destructor_recorder: UnsafePointer[
+        List[Int], mut=False, origin=recorder_origin
+    ]
 
     fn __del__(owned self):
-        self.destructor_counter[].append(self.value)
+        self.destructor_recorder.origin_cast[mut=True]()[].append(self.value)
 
     fn copy(self) -> Self:
-        return DelRecorder(other=self)
+        return Self(self.value, self.destructor_recorder)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -273,16 +270,14 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 
 
 @fieldwise_init
-struct DelCounter(Copyable, Movable, Writable):
-    var counter: UnsafePointer[Int]
+struct DelCounter[counter_origin: ImmutableOrigin](Copyable, Movable, Writable):
+    var counter: UnsafePointer[Int, mut=False, origin=counter_origin]
 
     fn __del__(owned self):
-        self.counter[] += 1
+        self.counter.origin_cast[mut=True]()[] += 1
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("DelCounter(")
-        writer.write(String(self.counter[]))
-        writer.write(")")
+        writer.write("DelCounter(", self.counter[], ")")
 
 
 # ===----------------------------------------------------------------------=== #

@@ -220,23 +220,25 @@ def test_array_contains():
 
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
-    var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
+    var destructor_recorder = List[Int]()
+    var ptr = UnsafePointer[mut=False](to=destructor_recorder)
     alias capacity = 32
-    var inline_list = InlineArray[DelRecorder, 4, run_destructors=True](
-        DelRecorder(0, pointer_to_destructor_counter),
-        DelRecorder(10, pointer_to_destructor_counter),
-        DelRecorder(20, pointer_to_destructor_counter),
-        DelRecorder(30, pointer_to_destructor_counter),
+    var inline_list = InlineArray[
+        DelRecorder[ptr.origin], 4, run_destructors=True
+    ](
+        DelRecorder(0, ptr),
+        DelRecorder(10, ptr),
+        DelRecorder(20, ptr),
+        DelRecorder(30, ptr),
     )
     _ = inline_list
     # This is the last use of the inline list, so it should be destroyed here,
     # along with each element.
-    assert_equal(len(destructor_counter), 4)
-    assert_equal(destructor_counter[0], 0)
-    assert_equal(destructor_counter[1], 10)
-    assert_equal(destructor_counter[2], 20)
-    assert_equal(destructor_counter[3], 30)
+    assert_equal(len(destructor_recorder), 4)
+    assert_equal(destructor_recorder[0], 0)
+    assert_equal(destructor_recorder[1], 10)
+    assert_equal(destructor_recorder[2], 20)
+    assert_equal(destructor_recorder[3], 30)
 
 
 fn test_unsafe_ptr() raises:
@@ -300,20 +302,24 @@ def test_move():
     # === 3. Check that the destructor is not called when moving. ===
 
     var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
-    var del_recorder = DelRecorder(0, pointer_to_destructor_counter)
-    var arr3 = InlineArray[DelRecorder, 1, run_destructors=True](del_recorder)
+    var dest_recorder_ptr = UnsafePointer(to=destructor_counter).origin_cast[
+        mut=False
+    ]()
+    var del_recorder = DelRecorder(0, dest_recorder_ptr)
+    var arr3 = InlineArray[
+        DelRecorder[dest_recorder_ptr.origin], 1, run_destructors=True
+    ](del_recorder)
 
-    assert_equal(len(pointer_to_destructor_counter[]), 0)
+    assert_equal(len(dest_recorder_ptr[]), 0)
 
     var moved_arr3 = arr3^
 
-    assert_equal(len(pointer_to_destructor_counter[]), 0)
+    assert_equal(len(dest_recorder_ptr[]), 0)
 
     _ = moved_arr3
 
     # Double check that the destructor is called when the array is destroyed
-    assert_equal(len(pointer_to_destructor_counter[]), 1)
+    assert_equal(len(dest_recorder_ptr[]), 1)
     _ = del_recorder
 
 
