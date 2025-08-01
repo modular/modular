@@ -1,7 +1,7 @@
-# Benchmark MAX Serve
+# Benchmark MAX
 
-This directory contains tools to benchmark
-[MAX Serve](https://docs.modular.com/max/serve/) performance. You can also use
+This directory contains tools to benchmark the performance of the
+[MAX inference engine](https://docs.modular.com/max/serve/). You can also use
 these scripts to compare different LLM serving backends such as
 [vLLM](https://github.com/vllm-project/vllm) and
 [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) against MAX. The
@@ -19,7 +19,7 @@ Key features:
 > [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
 > licensed under Apache 2.0. We forked this script to ensure consistency with
 > vLLM's measurement methodology and extended it with features we found helpful,
-> such as client-side GPU metric collection via `nvitop`.
+> such as client-side NVIDIA GPU metric collection via `nvitop`.
 
 ## Table of contents
 
@@ -30,9 +30,9 @@ Key features:
 
 ## Get started
 
-If this is your first time benchmarking a MAX Serve endpoint,
-we recommend that you follow our [tutorial to benchmark MAX Serve on
-a GPU](https://docs.modular.com/max/tutorials/benchmark-max-serve/).
+If this is your first time benchmarking a MAX endpoint, we recommend that you
+follow our [tutorial to benchmark MAX on a
+GPU](https://docs.modular.com/max/tutorials/benchmark-max-serve/).
 
 ## Basic usage
 
@@ -44,13 +44,13 @@ First enter the local virtual environment:
 ```cd
 git clone -b stable https://github.com/modular/modular.git
 
-cd max/benchmark
+cd modular/benchmark
 
 pixi shell
 ```
 
 Then run the benchmark script while specifying your active
-MAX Serve endpoint, model, and corresponding dataset to
+MAX endpoint, model, and corresponding dataset to
 use for benchmarking (for more detail, see our [benchmarking
 tutorial](https://docs.modular.com/max/tutorials/benchmark-max-serve)):
 
@@ -60,7 +60,7 @@ python benchmark_serving.py \
     --endpoint /v1/completions \
     --backend modular \
     --model meta-llama/Meta-Llama-3.1-8B-Instruct \
-    --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json \
+    --dataset-name sharegpt \
     --num-prompts 500
 ```
 
@@ -68,8 +68,8 @@ To exit the virtual environment shell simply run `exit`.
 
 ### Output
 
-Results are saved in JSON format under the `results/` directory with the
-following naming convention:
+Results are in JSON format. If you use the `--save-results` flag, the file is
+saved locally with the following naming convention:
 
 ```bash
 {backend}-{request_rate}qps-{model_name}-{timestamp}.json
@@ -130,13 +130,14 @@ is being executed
 ### Command line arguments for `benchmark_serving.py`
 
 - Backend configuration:
-  - `--backend`: Choose from `modular` (MAX Serve), `vllm` (vLLM), or`trt-llm`
+  - `--backend`: Choose from `modular` (MAX `v1/completions` endpoint),
+  `modular-chat` (MAX `v1/chat/completions` endpoint), `vllm` (vLLM), or`trt-llm`
   (TensorRT-LLM)
   - `--model`: Hugging Face model ID or local path
 - Load generation:
-  - `--num-prompts`: Number of prompts to process (default: `500`)
-  - `--request-rate`: Request rate in requests/second (default: `inf`)
-  - `--seed`: The random seed used to sample the dataset (default: `0`)
+  - `--num-prompts`: Number of prompts to process (`int`, default: `500`)
+  - `--request-rate`: Request rate in requests/second (`int`, default: `inf`)
+  - `--seed`: The random seed used to sample the dataset (`int`, default: `0`)
 - Serving options
   - `--base-url`: Base URL of the API service
   - `--endpoint`: Specific API endpoint (`/v1/completions` or
@@ -149,13 +150,14 @@ is being executed
   - `--collect-gpu-stats`: Report GPU utilization and memory consumption.
   Only works when running `benchmark_serving.py` on the same instance as
   the server, and only on NVIDIA GPUs.
+  - `--save-results`: Saves results to a local JSON file.
 
 ## Troubleshooting
 
 ### Memory issues
 
 - Reduce batch size
-- Check GPU memory availability: `nvidia-smi`
+- Check GPU memory availability: `nvidia-smi` or `rocm-smi`
 
 ### Permission issues
 
