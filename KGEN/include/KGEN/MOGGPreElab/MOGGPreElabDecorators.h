@@ -125,6 +125,8 @@ static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kMOGGUpdateViewFunctionLabel =
     "mogg.update_view";
+static constexpr StringLiteral kMOGGElementwiseFunctionLabel =
+    "mogg.elementwise";
 
 // An array of attributes, each of which correspond to an input argument type.
 //
@@ -168,6 +170,8 @@ static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
 
 // Generator level annotations for fusion.
 static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
+static constexpr StringLiteral kMOGGElementwiseKernel =
+    "mogg.elementwise_kernel";
 
 // The number of DPS (Destination Passing Style) output operands there are.
 static constexpr StringLiteral kMOGGNumDPSOutputs = "mogg.num_dps_outputs";

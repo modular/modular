@@ -312,7 +312,7 @@ struct MojoKernelFunctionAdaptor {
   }
 
   inline bool isElementwise() {
-    return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseLambda);
+    return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseKernel);
   }
 
   inline bool isView() {
