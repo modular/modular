@@ -1523,6 +1523,67 @@ fn rms_norm_fused_residual_add_gpu[
         )
 
 
+fn rms_norm_fused_residual_add_cpu[
+    dtype: DType,
+    rank: Int, //,
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: fn[width: Int, alignment: Int] (
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    multiply_before_cast: Bool = True,
+](
+    shape: IndexList[rank],
+    gamma1: NDBuffer[dtype, 1],
+    epsilon1: Scalar[dtype],
+    weight_offset1: Scalar[dtype],
+    gamma2: NDBuffer[dtype, 1],
+    epsilon2: Scalar[dtype],
+    weight_offset2: Scalar[dtype],
+) raises:
+    var intermediate_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        shape.flattened_length()
+    )
+    var intermediate_buffer = NDBuffer[dtype, rank](
+        intermediate_buffer_ptr, shape
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(intermediate_buffer)
+    fn intermediate_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var residual_val = input_0_fn[width](idx)
+        intermediate_buffer.store[width=width, alignment=alignment](
+            idx, val + residual_val
+        )
+
+    rms_norm_cpu[
+        input_0_fn,
+        intermediate_output_fn,
+        multiply_before_cast=multiply_before_cast,
+    ](shape, gamma1, epsilon1, weight_offset1)
+
+    @parameter
+    @always_inline
+    @__copy_capture(intermediate_buffer)
+    fn intermediate_input_fn[
+        width: Int, rank_: Int
+    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
+        return intermediate_buffer.load[width=width](idx)
+
+    rms_norm_cpu[
+        intermediate_input_fn,
+        output_0_fn,
+        multiply_before_cast=multiply_before_cast,
+    ](shape, gamma2, epsilon2, weight_offset2)
+
+    intermediate_buffer_ptr.free()
+
+
 @register_internal("rms_norm")
 @always_inline
 fn rms_norm[
@@ -1614,22 +1675,35 @@ fn _rms_norm_fused_residual_add_impl[
     if shape.flattened_length() == 0:
         # Nothing to do.
         return
-    constrained[
-        is_gpu[target](), "rms_norm_fused_residual_add only supports GPUs"
-    ]()
 
-    rms_norm_fused_residual_add_gpu[
-        input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
-    ](
-        shape,
-        gamma1,
-        epsilon1,
-        weight_offset1,
-        gamma2,
-        epsilon2,
-        weight_offset2,
-        ctx.get_device_context(),
-    )
+    @parameter
+    if is_gpu[target]():
+        rms_norm_fused_residual_add_gpu[
+            input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
+        ](
+            shape,
+            gamma1,
+            epsilon1,
+            weight_offset1,
+            gamma2,
+            epsilon2,
+            weight_offset2,
+            ctx.get_device_context(),
+        )
+    else:
+        rms_norm_fused_residual_add_cpu[
+            input_0_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            shape,
+            gamma1,
+            epsilon1,
+            weight_offset1,
+            gamma2,
+            epsilon2,
+            weight_offset2,
+        )
 
 
 @register_internal("rms_norm_fused_residual_add")
