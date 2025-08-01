@@ -14,13 +14,14 @@
 from sys import external_call, sizeof
 
 from gpu._utils import to_llvm_ptr
-from gpu.host import DeviceContext, DeviceStream
+from gpu.host import DeviceContext, DeviceStream, DeviceFunction
 from gpu.host.device_context import (
     _CharPtr,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceStreamPtr,
+    _DeviceFunctionPtr,
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
@@ -36,8 +37,13 @@ struct _CUstream_st:
     pass
 
 
+struct _CUmod_st:
+    pass
+
+
 alias CUcontext = UnsafePointer[_CUctx_st]
 alias CUstream = UnsafePointer[_CUstream_st]
+alias CUmodule = UnsafePointer[_CUmod_st]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
@@ -75,6 +81,25 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
         ](
             UnsafePointer(to=result),
             stream._handle,
+        )
+    )
+    return result
+
+
+# Accessor function to get access to the underlying CUmodule from a DeviceFunction.
+@always_inline
+fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
+    var result = CUmodule()
+    # const char *AsyncRT_DeviceFunction_cuda_module(CUmodule *result, const DeviceFunction *func)
+    _checked(
+        external_call[
+            "AsyncRT_DeviceFunction_cuda_module",
+            _CharPtr,
+            UnsafePointer[CUmodule],
+            _DeviceFunctionPtr,
+        ](
+            UnsafePointer(to=result),
+            func._handle,
         )
     )
     return result
