@@ -124,5 +124,6 @@ class DistributedMistral(DistributedTransformer):
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
             devices=config.devices,
+            rope=rope,
             return_logits=config.return_logits,
         )

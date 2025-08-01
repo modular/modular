@@ -68,18 +68,20 @@ class DistributedDeepseekV2(DistributedTransformer):
             multiply_before_cast=False,
         )
 
+        rope = DeepseekYarnRotaryEmbedding(
+            config.qk_rope_head_dim,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_position_embeddings,
+            scaling_params=scaling_params,
+            device=config.devices[0],
+        )
+
         layers = [
             DistributedTransformerBlock(
                 devices=config.devices,
                 attention=DistributedLatentAttentionWithRope(
-                    rope=DeepseekYarnRotaryEmbedding(
-                        config.qk_rope_head_dim,
-                        n_heads=config.num_attention_heads,
-                        theta=config.rope_theta,
-                        max_seq_len=config.max_position_embeddings,
-                        scaling_params=scaling_params,
-                        device=config.devices[0],
-                    ),
+                    rope=rope,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
@@ -125,6 +127,7 @@ class DistributedDeepseekV2(DistributedTransformer):
             kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params
             ),
+            rope=rope,
             devices=config.devices,
             use_subgraphs=True,
             subgraph_layer_groups=[

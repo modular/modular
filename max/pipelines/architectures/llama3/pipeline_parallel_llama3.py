@@ -139,6 +139,7 @@ class PipelineParallelLlama3(Transformer):
             ),
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
+            rope=self.rope,
             logits_postprocessor=config.logits_postprocessor,
         )
 
@@ -165,7 +166,7 @@ class PipelineParallelLlama3(Transformer):
     def _create_model_components(self, config: Llama3Config):
         """Create embedding, layers, norm, and output components using standard approach."""
         # Use the same approach as llama3.py to avoid weight naming issues
-        rope = Llama3RotaryEmbedding(
+        self.rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
@@ -257,7 +258,7 @@ class PipelineParallelLlama3(Transformer):
                     hidden_size=config.hidden_size,
                     kv_params=config.kv_params,
                     dtype=config.dtype,
-                    rope=rope,
+                    rope=self.rope,
                     linear_cls=linear_cls,
                     devices=[layer_device],
                 ),

@@ -41,6 +41,7 @@ from ..kv_cache import (
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear, DistributedGemmConfig
 from ..norm import DistributedRMSNorm
+from ..rotary_embedding import RotaryEmbedding
 from .transformer import ReturnLogits
 
 
@@ -90,6 +91,7 @@ class DistributedTransformerBlock(Module):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
+        freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         attn_outs = self.self_attn(
@@ -97,7 +99,8 @@ class DistributedTransformerBlock(Module):
             self.input_layernorm(xs),
             signal_buffers,
             kv_collections,
-            input_row_offsets,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
@@ -145,6 +148,7 @@ class DistributedTransformer(Module):
             | FetchPagedKVCacheCollection
         ),
         devices: list[DeviceRef],
+        rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
         subgraph_layer_groups: list[list[int]] | None = None,
@@ -160,6 +164,7 @@ class DistributedTransformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
+        self.rope = rope
         self.use_subgraphs = use_subgraphs
         if subgraph_layer_groups is None:
             # If no subgraph layer groups are provided, assume that all layers
@@ -186,6 +191,8 @@ class DistributedTransformer(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
+        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
         if self.use_subgraphs:
@@ -194,6 +201,7 @@ class DistributedTransformer(Module):
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],
                 [kv_collection.type for kv_collection in kv_collections],
+                [freq.type for freq in freqs_cis],
                 [offset.type for offset in input_row_offsets_],
             ]
 
@@ -233,6 +241,7 @@ class DistributedTransformer(Module):
                                 *h,
                                 *signal_buffers,
                                 *kv_collections,
+                                *freqs_cis,
                                 *input_row_offsets_,
                                 prefix=f"layers.{idx}.",
                             )
@@ -245,7 +254,8 @@ class DistributedTransformer(Module):
                         h,
                         signal_buffers,
                         kv_collections,
-                        input_row_offsets_,
+                        freqs_cis=freqs_cis,
+                        input_row_offsets=input_row_offsets_,
                     )
         else:
             for idx, layer in enumerate(self.layers):
@@ -254,7 +264,8 @@ class DistributedTransformer(Module):
                     h,
                     signal_buffers,
                     kv_collections,
-                    input_row_offsets_,
+                    freqs_cis=freqs_cis,
+                    input_row_offsets=input_row_offsets_,
                 )
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1

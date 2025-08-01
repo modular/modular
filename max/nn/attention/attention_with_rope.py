@@ -84,6 +84,7 @@ class AttentionWithRopeV1(AttentionImpl):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -119,17 +120,17 @@ class AttentionWithRopeV1(AttentionImpl):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
         )
 
@@ -396,6 +397,7 @@ class AttentionWithRope(Module):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -452,9 +454,9 @@ class AttentionWithRope(Module):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -615,6 +617,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -642,7 +645,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -802,6 +805,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -828,9 +832,9 @@ class GPTQAttentionWithRope(AttentionWithRope):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -993,6 +997,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             Sequence[ContinuousBatchingKVCacheCollection]
             | Sequence[PagedKVCacheCollection]
         ),
+        freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
@@ -1005,11 +1010,18 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             raise TypeError(
                 "All elements in input_row_offsets must be TensorValue instances"
             )
-
+        if not all(isinstance(x, TensorValue) for x in freqs_cis):
+            raise TypeError(
+                "All elements in freqs_cis must be TensorValue instances"
+            )
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
-                    layer_idx, x[i], kv_collections[i], input_row_offsets[i]
+                    layer_idx,
+                    x[i],
+                    kv_collections[i],
+                    freqs_cis[i],
+                    input_row_offsets[i],
                 )
                 for i in range(len(self.devices))
             ],
@@ -1031,6 +1043,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -1053,7 +1066,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,

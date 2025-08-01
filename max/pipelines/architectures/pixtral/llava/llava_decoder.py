@@ -31,6 +31,7 @@ from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
 )
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class Transformer(Module):
@@ -59,6 +60,7 @@ class Transformer(Module):
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
         ),
+        rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
@@ -75,6 +77,7 @@ class Transformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
+        self.rope = rope
         self.return_logits = return_logits
 
     def _apply_logits_postprocessor(
@@ -103,12 +106,14 @@ class Transformer(Module):
         h = embeds
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
+        freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                input_row_offsets,
+                freqs_cis=freqs_cis,
+                input_row_offsets=input_row_offsets,
             )
 
         # Retrieve a variable number of tokens

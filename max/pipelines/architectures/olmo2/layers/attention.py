@@ -182,6 +182,7 @@ class Olmo2Attention(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         total_seq_len = x.shape[0]
@@ -221,9 +222,9 @@ class Olmo2Attention(Module):
 
         # Apply RoPE
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,

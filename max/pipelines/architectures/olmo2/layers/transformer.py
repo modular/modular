@@ -51,13 +51,15 @@ class Olmo2TransformerBlock(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         h = self.self_attn(
             layer_idx,
             x,
             kv_collection,
-            input_row_offsets,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
         )
         h = self.post_attention_layernorm(h)
 

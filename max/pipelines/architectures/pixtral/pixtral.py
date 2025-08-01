@@ -158,6 +158,7 @@ class Pixtral(LlavaConditionalGeneration):
             embedding=embedding_layer,
             kv_params=config.kv_params,
             kv_collection_constructor=kv_collection_cls(config.kv_params),
+            rope=rope,
             return_logits=config.return_logits,
         )
 

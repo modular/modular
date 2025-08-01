@@ -185,6 +185,7 @@ class Qwen3Attention(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -224,9 +225,9 @@ class Qwen3Attention(Module):
 
         # Apply rotary embedding.
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,

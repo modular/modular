@@ -158,6 +158,7 @@ class InternVLDecoderLayer(Module):
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedKVCacheCollection],
+        freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         """Processes input through the decoder layer.
@@ -177,7 +178,8 @@ class InternVLDecoderLayer(Module):
             self.input_layernorm(xs),
             signal_buffers,
             kv_collections,
-            input_row_offsets,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
         )
 
         # Add residual.
@@ -332,6 +334,9 @@ class InternVLLanguageModel(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
+        # Create position embeddings shared across the decoder layers.
+        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+
         # Run through decoder layers.
         for idx, layer in enumerate(self.layers):
             h = layer(
@@ -339,7 +344,8 @@ class InternVLLanguageModel(Module):
                 h,
                 signal_buffers,
                 kv_collections,
-                input_row_offsets,
+                freqs_cis=freqs_cis,
+                input_row_offsets=input_row_offsets,
             )
 
         # Get last token logits only (no variable logits support).

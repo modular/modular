@@ -104,7 +104,8 @@ class Idefics3LanguageModel(Llama3):
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                input_row_offsets,
+                freqs_cis=self.rope.freqs_cis,
+                input_row_offsets=input_row_offsets,
             )
 
         last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)

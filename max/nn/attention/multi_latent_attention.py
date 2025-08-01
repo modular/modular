@@ -506,6 +506,7 @@ class LatentAttentionWithRope(Module, Shardable):
         layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: PagedKVCacheCollection,
+        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
@@ -546,17 +547,17 @@ class LatentAttentionWithRope(Module, Shardable):
 
         # Apply rope.
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,
             xq_rope,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=True,
         )
 
@@ -592,6 +593,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedKVCacheCollection],
+        freqs_cis: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
@@ -610,7 +612,8 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
                     layer_idx,
                     xs[i],
                     kv_collections[i],
-                    input_row_offsets[i],
+                    freqs_cis=freqs_cis,
+                    input_row_offsets=input_row_offsets[i],
                 )
                 for i in range(len(self.devices))
             ],

@@ -52,6 +52,7 @@ class TextModel(Layer):
     layers: list[CrossAttentionDecoderLayer | SelfAttentionDecoderLayer]
     norm: RMSNormV1
     cross_attention_layers: list[int]
+    rope: RotaryEmbedding
 
     def __call__(
         self,
@@ -86,6 +87,7 @@ class TextModel(Layer):
             *vision_kv_cache_inputs
         )
 
+        freqs_cis = self.rope.freqs_cis
         for decoder_layer in self.layers:
             # For text-only path we should skip cross attention layers.
             # We expect cross_attention_states to be zeroes if it's a text-only path.
@@ -103,7 +105,10 @@ class TextModel(Layer):
                 )
             else:
                 hidden_states = decoder_layer(
-                    hidden_states, text_kv_collection, hidden_input_row_offsets
+                    hidden_states,
+                    text_kv_collection,
+                    freqs_cis=freqs_cis,
+                    input_row_offsets=hidden_input_row_offsets,
                 )
 
         assert hidden_states.shape == before_attention_blocks_shape
@@ -474,6 +479,7 @@ def instantiate_language_model(
         ),
         layers=layers,
         cross_attention_layers=cross_attention_layers,
+        rope=rotary_embedding,
         # TODO: Verify if these values passed are even correct.
     )
 
