@@ -21,7 +21,12 @@ def get_errno() -> Int:
     Returns:
         The current libc errno.
     """
-    return Int(external_call["__errno_location", UnsafePointer[c_int]]()[])
+
+    @parameter
+    if CompilationTarget.is_macos():
+        return Int(external_call["__error", UnsafePointer[c_int]]()[])
+    else:
+        return Int(external_call["__errno_location", UnsafePointer[c_int]]()[])
 
 
 def get_errno_message(var errno: Int = -1) -> String:
