@@ -210,7 +210,6 @@ def mlp_output(
         if n_gpus <= 1:
             graph_output = mlp(graph_input)
         else:
-            assert isinstance(mlp, WrapModuleForSubgraph)
             distributed_inputs = _distribute_value(graph_input, devices)
             mlp_outputs = [
                 mlp_shard(x)
@@ -223,6 +222,7 @@ def mlp_output(
                     mlp_shards[i].down_proj(output)
                     for i, output in enumerate(graph_output)
                 ]
+                graph_output = mlp_allreduce(graph_output, graph_signal_buffers)
 
         if isinstance(graph_output, list):
             graph.output(*graph_output)
