@@ -424,7 +424,7 @@ struct Span[
             ```
 
             When the compiler supports conditional methods, then a simple
-            `repr(my_list)` will be enough.
+            `repr(my_span)` will be enough.
         """
         return self.__str__()
 
