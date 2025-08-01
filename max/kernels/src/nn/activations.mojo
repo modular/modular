@@ -231,6 +231,7 @@ fn gelu_approximate[
 # leaky_relu
 # ===----------------------------------------------------------------------=== #
 
+
 @always_inline
 fn leaky_relu[
     dtype: DType, simd_width: Int
