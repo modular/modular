@@ -150,6 +150,7 @@ pkg_files(
                 "//KGEN/tools/mojo-repl-entry-point",
                 "//KGEN/tools/mojo-test-executor",
                 "@llvm-project//lldb:lldb-argdumper",
+                "@llvm-project//llvm:llvm-symbolizer",
             ],
         ),
         ("mojo-compiler-only", []),

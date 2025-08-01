@@ -2479,6 +2479,14 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
   return success();
 }
 
+static ErrorTreeOrSuccess interpretGetStackTrace(ExternalCallOp op,
+                                                 ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  // TODO: Support printing stack trace in interpeter
+  state.mapResults(IntegerAttr::get(op.getResultTypes().front(), 0));
+  return success();
+}
+
 /// FIXME(#26342): We shouldn't implement interpreter support for external_call,
 /// this bakes assumptions about the functions. This is a temporary workaround
 /// because of the fact that the gpu path does not use the dedicated pop memory
@@ -2504,6 +2512,8 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
     return interpretFree(*this, expandedOperands, state);
   if (callee == "write")
     return interpreterWrite(*this, expandedOperands, state);
+  if (callee == "KGEN_CompilerRT_GetStackTrace")
+    return interpretGetStackTrace(*this, expandedOperands, state);
 
   return ErrorTree(
       getLoc(),
