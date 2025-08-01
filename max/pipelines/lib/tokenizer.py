@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Optional, TypeVar, Union, cast
+from typing import Any, Optional, TypeVar, Union
 
 import numpy as np
 from max.interfaces import (
@@ -30,10 +30,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from PIL import Image
 from transformers import (
     AutoProcessor,
@@ -92,18 +89,11 @@ class PreTrainedPipelineTokenizer(
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                " PreTrainedTokenGeneratorTokenizer"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        templated_message = self.delegate.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -215,18 +205,11 @@ class TextTokenizer(
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
         }
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages, tokenize=False, tools=tools, **chat_template_options
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                f" TextTokenizer({self.model_path})"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        templated_message = self.delegate.apply_chat_template(
+            messages, tokenize=False, tools=tools, **chat_template_options
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -325,8 +308,7 @@ class TextTokenizer(
         return eos_token_ids, eos_sequences
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
-        """Create a new TextContext object, leveraging necessary information like
-        cache_seq_id and prompt from TextGenerationRequest."""
+        """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
         # Encode Prompt / Messages
         prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
@@ -373,7 +355,6 @@ class TextTokenizer(
             model_name=request.model_name,
             lora_name=request.lora_name,
         )
-        context.assign_to_cache(request.index)
         return context
 
     @property
@@ -484,27 +465,11 @@ class TextAndVisionTokenizer(
         # TODO: Refactor this.
         if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             messages = self._wrap_str_message_content(messages)
-        try:
-            templated_message = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception as e:
-            msg = "apply_chat_template failed for TextAndVisionTokenizer"
-            logger.warning(msg)
-            logger.warning(str(e))
-            prompt = []
-            for message in messages:
-                if isinstance(message["content"], str):
-                    prompt.append(message["content"])
-                elif isinstance(message["content"], list):
-                    for content in message["content"]:
-                        if content["type"] == "text":
-                            if "text" in content:
-                                prompt.append(content["text"])
-                            else:
-                                prompt.append(content["content"])
-            return "\n".join(prompt)
+        templated_message = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -549,8 +514,7 @@ class TextAndVisionTokenizer(
     async def new_context(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
-        """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TextGenerationRequest."""
+        """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True
         if request.prompt is not None:
@@ -656,7 +620,6 @@ class TextAndVisionTokenizer(
             else self.max_length,
             json_schema=json_schema,
         )
-        context.assign_to_cache(request.index)
         return context
 
 

@@ -38,6 +38,17 @@ latest nightly version of `mojo` (the CLI compiler) by default:
     pixi add modular
     ```
 
+    Lastly enter the environment shell for `mojo` to be available and
+be sure it is installed correctly:
+
+    ```bash
+    pixi shell
+    ```
+
+    ```bash
+    mojo --version
+    ```
+
 Now you're ready to start developing.
 
 ### Dev container
@@ -72,6 +83,24 @@ To run the tests for the standard library, you can run:
 ```bash
 ./bazelw test //mojo/stdlib/test/...
 ```
+
+## Testing only a subset of the standard library
+
+You can run all of the tests within a specific subdirectory by simply
+specifying the subdirectory and using `/...`. For example:
+
+```bash
+./bazelw test //mojo/stdlib/test/math/...
+```
+
+A convenience script exists for executing standard library tests within the mojo
+directory:
+
+```bash
+pixi run tests ./stdlib/test/bit
+```
+
+will automatically execute the equivalent bazelw command
 
 ## Formatting changes
 

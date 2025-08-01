@@ -15,6 +15,7 @@ modular_py_library(
         requirement("gguf"),
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
+        requirement("jinja2"),
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),

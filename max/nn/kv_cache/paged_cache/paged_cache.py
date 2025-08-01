@@ -644,7 +644,7 @@ class PagedKVCacheManager(KVCacheManager):
         allowing it to be reused when a new sequence is claimed.
         """
         # Get the sequence ID from the request ID for internal use
-        if request_id not in self.request_to_seq_id:
+        if request_id not in self._request_to_seq_id:
             raise ValueError(
                 f"Attempted to release request ID {request_id} but it is not claimed"
             )

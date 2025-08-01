@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
+from collections.string.string_slice import _to_string_list
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -53,10 +54,14 @@ alias CUDA_NVML_LIBRARY = _Global[
 fn _init_dylib() -> _OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
-        _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        _check_error(
+            dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        )
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](String("CUDA NVML library not found: ", e))
+        return abort[_OwnedDLHandle](
+            String("CUDA NVML library initialization failed: ", e)
+        )
 
 
 @always_inline
@@ -89,7 +94,7 @@ struct DriverVersion(Copyable, Movable, StringableRaising):
         return Int(self._value[1])
 
     fn patch(self) raises -> Int:
-        return Int(self._value[2])
+        return Int(self._value[2]) if len(self._value) > 2 else 0
 
     fn __str__(self) raises -> String:
         return String(self.major(), ".", self.minor(), ".", self.patch())
@@ -382,11 +387,10 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = String(
-            StaticString(unsafe_from_utf8_ptr=driver_version_buffer)
+        var driver_version_list = StaticString(
+            unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
-        var driver_version = DriverVersion(driver_version_list)
-        return driver_version
+        return DriverVersion(_to_string_list(driver_version_list))
 
     fn _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()

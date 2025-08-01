@@ -28,6 +28,7 @@ from gpu.sync import (
     schedule_group_barrier,
 )
 from layout import IntTuple, Layout, LayoutTensor
+from layout.layout import blocked_product
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     ThreadScope,
@@ -439,28 +440,51 @@ fn gemm_kernel_amd[
         alias inner_block_cols = k_tile_size // simd_width
         alias inner_block_rows = inner_block_size // inner_block_cols
 
-        alias num_k_tiles_block = BK // k_tile_size
-        alias outer_block_size = num_k_tiles_block * inner_block_size
-        alias outer_block_count = config.num_threads() // outer_block_size
+        alias base_layout = Layout.row_major(inner_block_rows, inner_block_cols)
 
-        return Layout(
-            IntTuple(
-                IntTuple(inner_block_rows, Int(outer_block_count)),
-                IntTuple(inner_block_cols, Int(BK // k_tile_size)),
-            ),
-            IntTuple(
-                IntTuple(inner_block_cols, Int(outer_block_size)),
-                IntTuple(1, inner_block_size),
-            ),
+        alias num_repeats_col = BK // k_tile_size
+        alias outer_block_size = num_repeats_col * inner_block_size
+        alias num_repeats_row = config.num_threads() // outer_block_size
+
+        alias tiler_layout = Layout.row_major(
+            num_repeats_row,
+            num_repeats_col,
         )
+        return blocked_product(base_layout, tiler_layout)
 
     # Helper function for shared memory layout
     @parameter
     fn get_smem_layout[block_rows: Int]() -> Layout:
-        return Layout(
-            IntTuple(block_rows, IntTuple(k_tile_size, Int(BK // k_tile_size))),
-            IntTuple(k_tile_size, IntTuple(1, block_rows * k_tile_size)),
-        )
+        # Shared memory layout
+        #
+        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows×k_tile_size tiles
+        # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
+        # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
+        #
+        # Resulting shape: block_rows×(k_tile_size × num_repeats) = block_rows×BK tensor
+        # Where BK = k_tile_size × num_repeats, k_tile_size = MMA_K × k_group_size
+        #
+        # This creates num_repeats blocks of block_rows×k_tile_size arranged horizontally:
+        # Within each k_tile_size-column block, elements are consecutive (stride 1)
+        # Between blocks: stride = block_rows × k_tile_size
+        #
+        # ASCII diagram for block_rows=64, k_tile_size=32, BK=64 (showing first 2 of 2 blocks):
+        # ┌─────────────────────────────────────────────────────────────────────────┐
+        # │         Block 0 (64×32)             │         Block 1 (64×32)           │
+        # ├─────────────────────────────────────┼───────────────────────────────────┤
+        # │   0    1    2  ...   30   31        │ 2048 2049 2050 ... 2078 2079      │
+        # │  32   33   34  ...   62   63        │ 2080 2081 2082 ... 2110 2111      │
+        # │  64   65   66  ...   94   95        │ 2112 2113 2114 ... 2142 2143      │
+        # │  96   97   98  ...  126  127        │ 2144 2145 2146 ... 2174 2175      │
+        # │ ...                                 │  ...                              │
+        # │2016 2017 2018  ... 2046 2047        │ 4064 4065 4066 ... 4094 4095      │
+        # └─────────────────────────────────────────────────────────────────────────┘
+        # stride between blocks = block_rows × k_tile_size = 64 × 32 = 2048
+
+        alias base_layout = Layout.row_major(block_rows, k_tile_size)
+        alias num_repeats = BK // k_tile_size
+        alias tiler_layout = Layout.row_major(1, num_repeats)
+        return blocked_product(base_layout, tiler_layout, coalesce_output=True)
 
     # AMD TensorCore operator for matrix multiplication
     alias amd_mma = AMD_MMA[

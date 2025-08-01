@@ -22,20 +22,18 @@ import zmq
 from max.interfaces import (
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
 )
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import traced
@@ -235,9 +233,6 @@ class DecodeScheduler(Scheduler):
                 if not self.paged_manager.contains(request_id):
                     self.paged_manager.external_claim(request_id)
 
-                # Ensure request_context is unassigned from cache
-                request_context.unassign_from_cache()
-
                 # TODO: E2EOPT-269
 
                 # Prefetch memory for Context Encoding eagerly, this only needs to be
@@ -390,8 +385,7 @@ class DecodeScheduler(Scheduler):
         """
         for request_id, response in responses.items():
             if response.is_done:
-                # Release from pipeline and active batch.
-                self.pipeline.release(self.active_batch[request_id])
+                self.pipeline.release(request_id)
                 del self.active_batch[request_id]
 
     @traced
@@ -402,7 +396,7 @@ class DecodeScheduler(Scheduler):
             num_steps: Number of tokens to generate for this batch.
         """
         responses = self.pipeline.next_token(
-            self.active_batch, num_steps=num_steps
+            TextGenerationInputs(self.active_batch, num_steps=num_steps)
         )
 
         self._handle_terminated_responses(responses)

@@ -1613,8 +1613,6 @@ struct CPython(Defaultable, Movable):
         pass
 
     fn destroy(mut self):
-        print("CPython destroy")
-        print("Number of remaining refs:", self.total_ref_count[])
         # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
         self.lib.call["Py_FinalizeEx"]()
         self.lib.close()

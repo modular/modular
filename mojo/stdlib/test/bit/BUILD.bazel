@@ -1,0 +1,22 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_DISABLED_ASSERTIONS = [
+    "test_bit.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

@@ -146,11 +146,11 @@ fn flash_attention[
 
     var ctx = context.get_device_context()
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flash_attention",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         return flash_attention[
             use_score_mod=use_score_mod,
@@ -173,7 +173,7 @@ fn flash_attention[
 fn get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
-    alias sm_count = ctx.device_info.sm_count
+    alias sm_count = ctx.default_device_info.sm_count
     # TODO: This is dumb, make it more granular as a follow up
     if num_keys > 512 and group <= 8:
         return min(
@@ -274,11 +274,11 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flash_attention",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         # TODO: This helps differentiate between CE/TG. Not batch-specific.
         #       We'll just implement a flag on the cache object which is true
@@ -300,8 +300,8 @@ fn flash_attention[
         # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
-        alias is_sm90or100 = (ctx.device_info is H100) or (ctx.device_info is B200)
-        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
+        alias is_sm90or100 = (ctx.default_device_info is H100) or (ctx.default_device_info is B200)
+        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.default_device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
         alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -384,7 +384,7 @@ fn flash_attention_dispatch[
     alias group = config.num_heads // kv_num_heads
 
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
-    alias is_shared_kv = ctx.device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
+    alias is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
     constrained[depth == q.shape.get[rank - 1]()]()
     constrained[num_heads == q.shape.get[rank - 2]()]()
@@ -403,8 +403,8 @@ fn flash_attention_dispatch[
 
     @parameter
     if _is_flash_attention_applicable:
-        alias is_sm90 = ctx.device_info is H100
-        alias is_sm100 = ctx.device_info is B200
+        alias is_sm90 = ctx.default_device_info is H100
+        alias is_sm100 = ctx.default_device_info is B200
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
@@ -659,7 +659,7 @@ fn flash_attention_dispatch[
                         shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             (
-                                ctx.device_info.shared_memory_per_multiprocessor
+                                ctx.default_device_info.shared_memory_per_multiprocessor
                                 - 4096
                             ) if has_nvidia_gpu_accelerator() else 0
                         ),
@@ -781,7 +781,7 @@ fn flash_attention_dispatch[
                         block_dim=(num_threads, 1, 1),
                         shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            ctx.device_info.shared_memory_per_multiprocessor
+                            ctx.default_device_info.shared_memory_per_multiprocessor
                             - 4096 if has_nvidia_gpu_accelerator() else 0
                         ),
                     )
@@ -904,8 +904,8 @@ fn flash_attention[
     # H and D are always known.
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
-    alias is_sm90or100 = (ctx.device_info is H100) or (ctx.device_info is B200)
-    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
+    alias is_sm90or100 = (ctx.default_device_info is H100) or (ctx.default_device_info is B200)
+    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.default_device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.dtype in (DType.float16, DType.bfloat16)

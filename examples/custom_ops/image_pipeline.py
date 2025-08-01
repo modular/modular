@@ -17,13 +17,7 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from PIL import Image
 
 

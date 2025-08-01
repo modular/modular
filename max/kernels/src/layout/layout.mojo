@@ -1358,7 +1358,11 @@ fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
 
 # If there is a 0-shape mode in layout_b, then the corresponding mode in
 # layout_a is taken as is without adding any additional tiling modes.
-fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
+fn blocked_product(
+    layout_a: Layout,
+    layout_b: Layout,
+    coalesce_output: Bool = False,
+) -> Layout:
     """Creates a blocked layout by combining two layouts.
 
     This function creates a hierarchical blocked layout by combining a base layout
@@ -1371,6 +1375,7 @@ fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
     Args:
         layout_a: The base layout to be blocked.
         layout_b: The block layout defining the structure within each block.
+        coalesce_output: Whether to coalesce the output layout. Default is False.
 
     Returns:
         A new layout representing the blocked structure
@@ -1409,7 +1414,11 @@ fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
     var lp = logical_product(layout_a, layout_b)
     # ((a_0, tile_0), (a_1, tile_1), ...)
-    return zip_modes(lp[0], lp[1])
+    var zipped = zip_modes(lp[0], lp[1])
+    if coalesce_output:
+        return coalesce(zipped, keep_rank=True)
+    else:
+        return zipped
 
 
 fn tile_to_shape(

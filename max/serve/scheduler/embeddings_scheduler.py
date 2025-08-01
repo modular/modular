@@ -17,13 +17,14 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-from max.interfaces import EmbeddingsOutput, SchedulerResult
-from max.pipelines.core import (
+from max.interfaces import (
     EmbeddingsGenerator,
-    TextContext,
+    EmbeddingsOutput,
+    SchedulerResult,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
+from max.pipelines.core import TextContext
 from max.profiler import traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import Scheduler

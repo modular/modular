@@ -14,8 +14,9 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import accelerator_count
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
@@ -28,7 +29,7 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
     "input,repeats", [([1, 2, 3], 2), ([[1, 2], [3, 4]], 3)]
 )
 def test_repeat_interleave(
-    session,  # noqa: ANN001
+    session: InferenceSession,
     input: TensorType,
     repeats: int,
 ) -> None:
@@ -47,6 +48,7 @@ def test_repeat_interleave(
 
     model = session.load(graph)
     result = model.execute()[0]
+    assert isinstance(result, Tensor)
 
     np.testing.assert_equal(result.to_numpy(), expected)
 
@@ -67,10 +69,7 @@ def test_repeat_interleave(
     ],
 )
 def test_repeat_interleave_vector(
-    session,  # noqa: ANN001
-    input: TensorType,
-    repeats: list[int],
-    axis: int,
+    session: InferenceSession, input: TensorType, repeats: list[int], axis: int
 ) -> None:
     with Graph(
         "repeat_interleave_vector",
@@ -99,5 +98,6 @@ def test_repeat_interleave_vector(
 
     model = session.load(graph)
     result = model.execute()[0]
+    assert isinstance(result, Tensor)
 
     np.testing.assert_equal(result.to_numpy(), expected)

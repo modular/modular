@@ -467,6 +467,18 @@ fn test_blocked_product() raises:
     )
     assert_equal(bp1, reference_bp1)
 
+    alias bp2 = blocked_product(
+        Layout.row_major(128, 8), Layout.row_major(1, 4)
+    )
+    assert_equal(String(bp2), "(((128, 1), (8, 4)):((8, 0), (1, 1024)))")
+
+    alias bp3 = blocked_product(
+        Layout.row_major(128, 8),
+        Layout.row_major(1, 4),
+        coalesce_output=True,
+    )
+    assert_equal(String(bp3), "((128, (8, 4)):(8, (1, 1024)))")
+
 
 fn test_tile_to_shape() raises:
     print("== test_tile_to_shape")

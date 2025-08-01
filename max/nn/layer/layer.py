@@ -39,6 +39,7 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from typing_extensions import Self
 
 from .._identity import IdentitySet
 
@@ -65,15 +66,14 @@ class Shardable(Protocol):
         """
         ...
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Shardable:
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Self]:
         """Creates a sharded view of this object for a specific device.
 
         Args:
-            shard_idx: The index of the shard (0 to num_devices-1).
-            device: The device where this shard should reside.
+            device: The devices where this shard should reside.
 
         Returns:
-            A sharded instance of this object.
+            A sequence of sharded instances of this object.
         """
         ...
 
@@ -491,14 +491,30 @@ def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
 
 
 def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
-    tensor = Tensor.from_dlpack(value)
-    if not tensor._aligned(align):
-        raise ValueError(
-            f"Found unaligned weight '{name}' (expected alignment={align})."
-            "If you are using a Safetensor checkpoint, it is recommended that "
-            "you copy the weight to correct the alignment, or pass "
-            "`weight_alignment=1` to `Module.load_state_dict()`."
-        )
+    # Fast path for ndarray.
+    # The use of Tensor.from_dlpack always copies if the numpy array is not
+    # writeable, which is very common for weight values.
+    #
+    # This logic special cases the two code paths that potentially could copy
+    # and performs the alignment check manually.
+    if isinstance(value, np.ndarray):
+        data = value.ctypes.data
+        if data % align == 0:
+            return
+    elif isinstance(value, Tensor):
+        if value._aligned(align):
+            return
+    else:
+        tensor = Tensor.from_dlpack(value)
+        if tensor._aligned(align):
+            return
+
+    raise ValueError(
+        f"Found unaligned weight '{name}' (expected alignment={align})."
+        "If you are using a Safetensor checkpoint, it is recommended that "
+        "you copy the weight to correct the alignment, or pass "
+        "`weight_alignment=1` to `Module.load_state_dict()`."
+    )
 
 
 def _validate_weight_value(

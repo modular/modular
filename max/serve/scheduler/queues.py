@@ -24,9 +24,9 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Generic, Optional, TypeVar
 
 import zmq
-from max.interfaces import InputContext, PipelineTask
-from max.pipelines.core.serialization import (
-    SharedMemoryEncoder,
+from max.interfaces import (
+    InputContext,
+    PipelineTask,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -66,25 +66,20 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         # Create Queues
         self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
             zmq_ctx,
-            request_zmq_endpoint,
-            serialize=SharedMemoryEncoder(),
+            zmq_endpoint=request_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(use_shared_memory=True),
         )
 
-        # TODO: Fix Pickle Deserialization for AUDIO_GENERATION
-        if pipeline_task == PipelineTask.AUDIO_GENERATION:
-            self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
-                zmq_ctx,
-                response_zmq_endpoint,
-            )
-        else:
-            self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
-                zmq_ctx,
-                response_zmq_endpoint,
-                deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
-            )
+        self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
+            zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
+        )
 
         self.cancel_push_socket = ZmqPushSocket[list[str]](
-            zmq_ctx, cancel_zmq_endpoint, serialize=msgpack_numpy_encoder()
+            zmq_ctx,
+            zmq_endpoint=cancel_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
         )
 
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}

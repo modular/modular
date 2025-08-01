@@ -23,9 +23,8 @@ from typing import Union
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelineTask, PipelineTokenizer
+from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines.core import PipelinesFactory
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
@@ -41,10 +40,7 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler import (
-    PrefillRequest,
-    PrefillResponse,
-)
+from max.serve.scheduler import PrefillRequest, PrefillResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config

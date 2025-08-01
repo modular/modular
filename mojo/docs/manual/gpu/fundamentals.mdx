@@ -677,10 +677,37 @@ information on grid and thread block dimensions.
 
 :::note
 
-Mojo currently doesn't typecheck the arguments to the compiled kernel function.
-This means that you can encounter obscure errors if the ordering, types, or
-argument count doesn't match. We're working to add more robust typechecking
-soon.
+The current implementation of `enqueue_function()` doesn't typecheck the
+arguments to the compiled kernel function, which can lead to obscure run-time
+errors if the argument ordering, types, or count doesn't match the kernel
+function's definition.
+
+For compile-time typechecking, you can use the
+[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
+and
+[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+methods.
+
+Here's the typechecked equivalent of the `scalar_add()` kernel compilation and
+enqueuing shown above:
+
+```mojo
+scalar_add_kernel = ctx.compile_function_checked[scalar_add, scalar_add]()
+
+ctx.enqueue_function_checked(
+    scalar_add_kernel,
+    device_buffer,
+    num_elements,
+    Float32(20.0),
+    grid_dim=1,
+    block_dim=num_elements,
+)
+```
+
+Note that `compile_function_checked()` currently requires the kernel function to
+be provided *twice* as parameters. This requirement will be removed in a future
+API update, when typechecking will become the default behavior for both
+`compile_function()` and `enqueue_function()`.
 
 :::
 

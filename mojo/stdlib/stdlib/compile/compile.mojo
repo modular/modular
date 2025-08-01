@@ -41,7 +41,7 @@ print(info)
 from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
-from sys.info import _current_target, _TargetType
+from sys.info import _current_target, _TargetType, CompilationTarget
 
 from .reflection import get_linkage_name
 
@@ -210,8 +210,10 @@ fn compile_info[
     /,
     *,
     emission_kind: StaticString = "asm",
-    compile_options: StaticString = "",
     target: _TargetType = _current_target(),
+    compile_options: StaticString = CompilationTarget[
+        target
+    ].default_compile_options(),
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     """Compiles a function and returns detailed compilation information.
 
@@ -229,9 +231,9 @@ fn compile_info[
             - "llvm": Unoptimized LLVM IR.
             - "llvm-opt": Optimized LLVM IR.
             - "object": Object code.
-        compile_options: Additional compiler flags and options as a string.
         target: The target architecture to compile for. Defaults to current
             architecture.
+        compile_options: Additional compiler flags and options as a string.
 
     Returns:
         A `CompiledFunctionInfo` struct containing:

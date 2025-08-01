@@ -389,10 +389,22 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
         vision_graph, vision_model_state_dict = self._build_vision_graph(
             idefics3_config, vision_model_weights_dict
         )
+        after_build = time.perf_counter()
+
+        logger.info(
+            f"Building vision graph took {after_build - before:.6f} seconds"
+        )
+
+        before_compile = time.perf_counter()
         vision_model = session.load(
             vision_graph, weights_registry=vision_model_state_dict
         )
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling vision model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling vision model took {after - before:.6f} seconds"
         )
@@ -403,10 +415,22 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type:
         language_graph, language_model_state_dict = self._build_language_graph(
             idefics3_config, llm_weights_dict
         )
+        after_build = time.perf_counter()
+
+        logger.info(
+            f"Building language graph took {after_build - before:.6f} seconds"
+        )
+
+        before_compile = time.perf_counter()
         language_model = session.load(
             language_graph, weights_registry=language_model_state_dict
         )
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling language model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling language model took {after - before:.6f} seconds"
         )

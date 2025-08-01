@@ -47,7 +47,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         sampling_params: Parameters controlling the token sampling strategy
         min_tokens: Minimum number of new tokens to generate.
         _status: Current generation status (active, finished, etc)
-        _cache_seq_id: ID of KV cache slot assigned to this context
         _size: Current allocated size of token array
         _start_idx: Start index of current generation window
         _active_idx: Current position in token sequence
@@ -77,7 +76,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
     _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
-    _cache_seq_id: int | None = msgspec.field(default=None)
     _size: int = msgspec.field(default=-1)
     _start_idx: int = msgspec.field(default=0)
     _active_idx: int = msgspec.field(default=-1)
@@ -495,7 +493,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.unassign_from_cache()
         self._start_idx = 0
         self._committed_idx = 0
 
@@ -532,62 +529,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """Compute the max number of steps we can execute for a given context
         without exceeding the max_seq_len."""
         return max_seq_len - (self.current_length - self.active_length)
-
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assigns this context to a cache slot.
-
-        The cache slot is used to store and retrieve KV-cache entries for this context
-        during token generation.
-
-        Args:
-            cache_seq_id: The ID of the cache slot to assign this context to.
-
-        Raises:
-            RuntimeError: If this context is already assigned to a cache slot.
-        """
-        if self._cache_seq_id is not None:
-            raise RuntimeError("Context is already assigned to a cache slot")
-        self._cache_seq_id = cache_seq_id
-
-    def unassign_from_cache(self) -> None:
-        """Unassigns this context from its current cache slot.
-
-        This clears the cache_seq_id, allowing the cache slot to be reused by other contexts.
-        Should be called when the context is no longer actively generating tokens.
-        """
-        self._cache_seq_id = None
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Returns whether this context is currently assigned to a cache slot.
-
-        The cache assignment status indicates whether this context can currently
-        access KV-cache entries for token generation.
-
-        Returns:
-            bool: True if assigned to a cache slot, False otherwise.
-        """
-        return self._cache_seq_id is not None
-
-    @property
-    def cache_seq_id(self) -> int:
-        """Gets the ID of the cache slot this context is assigned to.
-
-        The cache_seq_id is used to look up KV-cache entries for this context
-        during token generation.
-
-        Returns:
-            int: The cache slot ID.
-
-        Raises:
-            ValueError: If this context is not currently assigned to a cache slot.
-        """
-        if self._cache_seq_id is None:
-            raise ValueError(
-                "TextContext is not currently assigned to cache slot."
-            )
-
-        return self._cache_seq_id
 
     @property
     def is_ce(self) -> bool:

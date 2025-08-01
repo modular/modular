@@ -20,11 +20,11 @@ from memory import Span
 ```
 """
 
+from sys import alignof
 from sys.info import simdwidthof
 
 from collections._index_normalization import normalize_index
 from memory import Pointer
-from memory.unsafe_pointer import _default_alignment
 
 
 @fieldwise_init
@@ -34,7 +34,7 @@ struct _SpanIter[
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[T](),
+    alignment: Int = alignof[T](),
 ](Copyable, Movable):
     """Iterator for Span.
 
@@ -67,8 +67,9 @@ struct _SpanIter[
     fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
+            var curr = self.index
             self.index += 1
-            return self.src[self.index - 1]
+            return self.src[curr]
         else:
             self.index -= 1
             return self.src[self.index]
@@ -82,7 +83,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[T](),
+    alignment: Int = alignof[T](),
 ](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
     """A non-owning view of contiguous data.
 

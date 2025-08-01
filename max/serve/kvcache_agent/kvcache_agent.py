@@ -13,6 +13,7 @@
 
 import concurrent.futures
 import logging
+import pickle
 import queue
 import threading
 from collections.abc import Iterator
@@ -215,8 +216,13 @@ class KVCacheAgentServer:
             config: Configuration for the server.
         """
         self.config = config
+        # This remains the only use of pickle in the current codebase.
+        # As the KVCacheChangeMessage contains Protobuf Enum's it cannot be
+        # serialized by msgspec/msgpack.
         self._kv_cache_events_pull_socket = ZmqPullSocket[KVCacheChangeMessage](
-            zmq_ctx, kv_cache_events_zmq_endpoint
+            zmq_ctx,
+            zmq_endpoint=kv_cache_events_zmq_endpoint,
+            deserialize=pickle.loads,
         )
         self.server = grpc.server(
             concurrent.futures.ThreadPoolExecutor(

@@ -128,21 +128,3 @@ class KVCacheAwareContext(Protocol):
         """Compute the max number of steps we can execute for a given context
         without exceeding the max_seq_len."""
         ...
-
-    @property
-    def cache_seq_id(self) -> int:
-        """Returns the cache slot assigned to the context, raising an error if not assigned."""
-        ...
-
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assigns the context to a cache slot."""
-        ...
-
-    def unassign_from_cache(self) -> None:
-        """Unassigns the context from a cache slot."""
-        ...
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Returns True if input is assigned to a cache slot, False otherwise."""
-        ...

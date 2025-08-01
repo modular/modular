@@ -142,8 +142,9 @@ class ZmqPushSocket(Generic[T]):
     def __init__(
         self,
         zmq_ctx: zmq.Context,
+        *,
+        serialize: Callable[[Any], bytes],
         zmq_endpoint: Optional[str] = None,
-        serialize: Callable[[Any], bytes] = pickle.dumps,
     ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint
@@ -216,8 +217,9 @@ class ZmqPullSocket(Generic[T]):
     def __init__(
         self,
         zmq_ctx: zmq.Context,
+        *,
+        deserialize: Callable[[Any], Any],
         zmq_endpoint: Optional[str] = None,
-        deserialize=pickle.loads,  # noqa: ANN001
     ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint

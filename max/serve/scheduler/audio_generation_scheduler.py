@@ -27,11 +27,14 @@ import zmq
 from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
+    AudioGenerator,
     AudioGeneratorOutput,
     SchedulerResult,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import AudioGenerator, TTSContext, msgpack_numpy_decoder
+from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
@@ -218,8 +221,11 @@ class AudioGenerationScheduler(Scheduler):
         )
         self.response_q = ZmqPushSocket[
             dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ](zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint)
-
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
+            serialize=msgpack_numpy_encoder(),
+        )
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
@@ -229,9 +235,6 @@ class AudioGenerationScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: deque[tuple[str, TTSContext]] = deque()
         self.decode_reqs: dict[str, TTSContext] = {}
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_queue_size_tg)
-        )
         self.paged_manager = paged_manager
 
         if self.scheduler_config.enable_chunked_prefill:
@@ -249,7 +252,6 @@ class AudioGenerationScheduler(Scheduler):
         while True:
             try:
                 req_id, req_data = self.request_q.get_nowait()
-                req_data.unassign_from_cache()
                 self.pending_reqs.append((req_id, req_data))
             except queue.Empty:
                 break
@@ -271,7 +273,6 @@ class AudioGenerationScheduler(Scheduler):
             # Release from cache
             req_data = batch.reqs[req_id]
             self.pipeline.release(req_data)
-            self.available_cache_indices.add(req_data.cache_seq_id)
             batch.num_terminated += 1
 
             # Remove from active batch
@@ -289,7 +290,6 @@ class AudioGenerationScheduler(Scheduler):
                     continue
                 req_data = self.decode_reqs[req_id]
                 self.pipeline.release(req_data)
-                self.available_cache_indices.add(req_data.cache_seq_id)
                 del self.decode_reqs[req_id]
 
                 self.response_q.put_nowait(
@@ -373,7 +373,6 @@ class AudioGenerationScheduler(Scheduler):
             and (input_len < max_input_len)
         ):
             req_id, req_data = self.pending_reqs.popleft()
-            req_data.assign_to_cache(self.available_cache_indices.pop())
             # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.prefetch(req_data, num_steps=1):
                 raise RuntimeError("Ran out of KV cache")
