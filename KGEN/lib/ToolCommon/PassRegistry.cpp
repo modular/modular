@@ -71,8 +71,6 @@ void KGEN::registerDefaultKGENPasses() {
   DebugInfo::registerDebugInfoStrip();
 
   KGEN::MOGGPreElab::registerAnnotateKernels();
-  KGEN::MOGGPreElab::registerMOGGPreElabPipeline();
-  KGEN::MOGGPreElab::registerOutlineKernels();
   KGEN::MOGGPreElab::registerVerifyKernels();
   KGEN::MOGGPreElab::registerDumpKernels();
 

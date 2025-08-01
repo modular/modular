@@ -196,19 +196,6 @@ static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 // An ArrayAttr of of the encoded IOSpec value for all kernel arguments.
 static constexpr StringLiteral kMOGGArgsIOSpecs = "mogg.args_io_specs";
 
-// Fusion interface implementation details.
-static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
-static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
-static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
-static constexpr StringLiteral kMOGGElementwiseOutputLambda =
-    "_elementwise_output_lambda";
-static constexpr StringLiteral kMOGGFusionBodyOutputLambda =
-    "fusionBodyOutputLambda";
-
-// Mark a function as the outlined body of an elementwise kernel.
-// During InlineLambdas those functions can be CSE.
-static constexpr StringLiteral OUTLINED_ELEMW_ATTR = "mogg.outlined_elemw";
-
 inline bool isExecuteFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGExecuteFunctionLabel);
 }
