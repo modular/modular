@@ -1,0 +1,62 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan, NVIDIA-GPU, AMD-GPU
+
+
+fn main():
+    var x = List[Int]()
+
+    print(x[10000000000])
+
+
+# RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
+
+# RUN: %mojo-build-no-debug-no-assert %s --debug-level none -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O3-NONE %s
+
+# RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O0-FULL %s
+
+# RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level none -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O0-NONE %s
+
+# RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-STACK-TRACE-ASAN %s
+
+# RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
+# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=0 %t 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-NO-STACK-TRACE-ASAN %s
+
+# O3-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}
+# O3-FULL: #{{.*}} stdlib::builtin::_startup::__wrap_and_execute_main[fn() -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stack_trace_terminated::main()" {{.*}}stdlib/builtin/_startup.mojo:{{.*}}:{{.*}}
+
+# O3-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
+# O3-NONE: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O3-NONE: #{{.*}} main
+
+# O0-FULL: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
+# O0-FULL: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O0-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}
+# O0-FULL: #{{.*}} stdlib::builtin::_startup::__wrap_and_execute_main[fn() -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stack_trace_terminated::main()" {{.*}}stdlib/builtin/_startup.mojo
+
+# O0-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
+# O0-NONE: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O0-NONE: #{{.*}} stack_trace_terminated::main() stack_trace_terminated.mojo:{{.*}}:{{.*}}
+# O0-NONE: #{{.*}} stdlib::builtin::_startup::__wrap_and_execute_main[fn() -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stack_trace_terminated::main()" stack_trace_terminated.mojo:{{.*}}:{{.*}}
+# O0-NONE: #{{.*}} main
+
+# O0-FULL-STACK-TRACE-ASAN: PrintStackTrace
+# O0-FULL-STACK-TRACE-ASAN: AddressSanitizer: SEGV on unknown address
+
+# O0-FULL-NO-STACK-TRACE-ASAN-NOT: PrintStackTrace
+# O0-FULL-NO-STACK-TRACE-ASAN: AddressSanitizer: SEGV on unknown address
