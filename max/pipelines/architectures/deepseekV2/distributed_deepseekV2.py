@@ -58,14 +58,6 @@ class DistributedDeepseekV2(DistributedTransformer):
             mscale=config.rope_scaling["mscale"],
             mscale_all_dim=config.rope_scaling["mscale_all_dim"],
         )
-        rope = DeepseekYarnRotaryEmbedding(
-            config.qk_rope_head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-            device=config.devices[0],
-        )
 
         distributed_norm = functools.partial(
             DistributedRMSNorm,
@@ -80,7 +72,14 @@ class DistributedDeepseekV2(DistributedTransformer):
             DistributedTransformerBlock(
                 devices=config.devices,
                 attention=DistributedLatentAttentionWithRope(
-                    rope=rope,
+                    rope=DeepseekYarnRotaryEmbedding(
+                        config.qk_rope_head_dim,
+                        n_heads=config.num_attention_heads,
+                        theta=config.rope_theta,
+                        max_seq_len=config.max_position_embeddings,
+                        scaling_params=scaling_params,
+                        device=config.devices[0],
+                    ),
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
@@ -127,6 +126,15 @@ class DistributedDeepseekV2(DistributedTransformer):
                 config.kv_params
             ),
             devices=config.devices,
+            use_subgraphs=True,
+            subgraph_layer_groups=[
+                [
+                    i
+                    for i in range(
+                        config.first_k_dense_replace, config.num_hidden_layers
+                    )
+                ]
+            ],
         )
 
     def _get_mlp(self, config: DeepseekV2Config, i: int) -> Shardable:

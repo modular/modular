@@ -147,6 +147,7 @@ class DistributedTransformer(Module):
         devices: list[DeviceRef],
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
+        subgraph_layer_groups: list[list[int]] | None = None,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -160,6 +161,11 @@ class DistributedTransformer(Module):
         self.return_logits = return_logits
         self.devices = devices
         self.use_subgraphs = use_subgraphs
+        if subgraph_layer_groups is None:
+            # If no subgraph layer groups are provided, assume that all layers
+            # are in a single group.
+            subgraph_layer_groups = [[i for i in range(len(layers))]]
+        self.subgraph_layer_groups = subgraph_layer_groups
         if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
                 "DistributedTransformer does not support variable logits."
@@ -190,29 +196,57 @@ class DistributedTransformer(Module):
                 [kv_collection.type for kv_collection in kv_collections],
                 [offset.type for offset in input_row_offsets_],
             ]
-            subgraph_layer = self.layers[0]
-            subgraph_weight_prefix = "layers.0."
 
-            assert isinstance(subgraph_layer, DistributedTransformerBlock)
-            subgraph = subgraph_layer.build_subgraph(
-                "dist_transformer_block",
-                subgraph_input_types,
-                subgraph_weight_prefix,
-            )
-
-            for idx in range(len(self.layers)):
-                h = [
-                    x.tensor
-                    for x in ops.call(
-                        subgraph,
-                        ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                        *h,
-                        *signal_buffers,
-                        *kv_collections,
-                        *input_row_offsets_,
-                        prefix=f"layers.{idx}.",
+            # First, we need to build the subgraphs for each layer group.
+            subgraphs = []
+            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
+                assert len(layer_group) > 0, (
+                    "Subgraph layer groups must contain at least one layer"
+                )
+                subgraph_layer = self.layers[layer_group[0]]
+                assert isinstance(
+                    subgraph_layer, DistributedTransformerBlock
+                ), "Subgraph layer must be a DistributedTransformerBlock"
+                subgraphs.append(
+                    subgraph_layer.build_subgraph(
+                        f"dist_transformer_block_{group_idx}",
+                        subgraph_input_types,
+                        f"layers.{layer_group[0]}.",
                     )
-                ]
+                )
+
+            # Then, we need to call the subgraphs for each layer group.
+            for idx, layer in enumerate(self.layers):
+                has_subgraph = False
+                for group_idx, layer_group in enumerate(
+                    self.subgraph_layer_groups
+                ):
+                    if idx in layer_group:
+                        has_subgraph = True
+                        h = [
+                            x.tensor
+                            for x in ops.call(
+                                subgraphs[group_idx],
+                                ops.constant(
+                                    idx, DType.uint32, device=DeviceRef.CPU()
+                                ),
+                                *h,
+                                *signal_buffers,
+                                *kv_collections,
+                                *input_row_offsets_,
+                                prefix=f"layers.{idx}.",
+                            )
+                        ]
+                        break
+                if not has_subgraph:
+                    # If no subgraph was found, call the layer directly.
+                    h = layer(
+                        ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                        h,
+                        signal_buffers,
+                        kv_collections,
+                        input_row_offsets_,
+                    )
         else:
             for idx, layer in enumerate(self.layers):
                 h = layer(
