@@ -96,6 +96,15 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
                  *traitDeclParent, traitDeclParent->getLoc())) &&
              "builtins should not fail body resolution.");
 
+    for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
+      for (auto decl : decls) {
+        assert(
+            succeeded(
+                shared.declResolver->resolveSignature(*decl, decl->getLoc())) &&
+            "builtin trait nested decls should not fail signature resolution");
+      }
+    }
+
     TraitDeclOp traitParent =
         dyn_cast_or_null<TraitDeclOp>(traitDeclParent->getIfOperation());
     FnOp fnOp = getFnOpNamed(traitParent, fnName);
@@ -392,8 +401,7 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
                                                 parents, immediateParents);
   DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
   populateTrait(traitDecl, existingFns);
-  shared.declResolver->addParentDeclsToTrait(closureTrait, traitDecl,
-                                             existingFns);
+  shared.declResolver->addParentDeclsToTrait(closureTrait, traitDecl);
   return std::pair<TraitDeclOp, ASTDecl *>(closureTrait, &traitDecl);
 }
 
@@ -606,6 +614,10 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
       auto fnOp = dyn_cast_or_null<FnOp>(method->getIfOperation());
       if (!fnOp)
         continue;
+
+      assert(succeeded(shared.declResolver->resolveSignature(
+                 *method, method->getLoc())) &&
+             "builtin trait nested decls should not fail signature resolution");
       FnOp implementation = populateTraitFn(fnOp);
       nameToImpl.insert({fnOp.getSourceName().value(), implementation});
     }

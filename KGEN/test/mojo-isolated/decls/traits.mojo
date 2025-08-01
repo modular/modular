@@ -551,7 +551,8 @@ trait ChildTraitSameSig(ParentTraitSameSig):
     fn foo(self):
         ...
 
-    # CHECK-NOT: foo
+    # CHECK: foo
+    # CHECK-SAME: disabled
 
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather

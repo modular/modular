@@ -2994,42 +2994,30 @@ static void replaceTraitAliasSelfTypes(AliasDeclOp alias,
                          replacer.replace(alias.getParamDecl().getType())));
 }
 
-void DeclResolver::addParentDeclsToTrait(
-    TraitDeclOp traitOp, ASTDecl &traitDecl,
-    DenseSet<std::pair<StringAttr, StringAttr>> &existingFns) {
-  // Get our Self type, which will be a reference to the T parameter on this
-  // trait.
-  ASTType traitSelfType = traitDecl.getTypeDeclSelf();
+void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
+                                         ASTDecl &traitDecl) {
 
   // Since we lazily resolve nested decls the inheritedFrom attribute may or may
   // not already be set. In cases where that attribute isn't set the decl will
   // have a different parent trait decl op than the passed in op.
-  auto isInherited = [&](ASTDecl &nestedDecl, ASTDecl &parentDecl) {
-    if (auto aliasOp =
-            dyn_cast_if_present<AliasDeclOp>(nestedDecl.getIfOperation())) {
-      if (aliasOp.getInheritedFrom())
-        return true;
+  auto isInherited = [&](auto nestedOp, ASTDecl &parentDecl) {
+    if (nestedOp.getInheritedFrom())
+      return true;
 
-      auto parentTraitOp = cast<TraitDeclOp>(aliasOp->getParentOp());
-      return getFullyResolvedSymbolRef(parentTraitOp) !=
-             parentDecl.getSymbolRef();
-    }
-    assert(false && "Dealing with unexpected decl type in isInherited lambda");
+    auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
+    return getFullyResolvedSymbolRef(parentTraitOp) !=
+           parentDecl.getSymbolRef();
   };
 
   // Now just pull in the functions in the bodies of all parents.
-  Block &body = *traitOp.getBody();
   for (SymbolRefAttr parentOrSelf : traitOp.getCanonicalTrait().getSymbols()) {
     ASTDecl &parentOrSelfDecl = getDeclForTypeSymbol(parentOrSelf);
     if (&parentOrSelfDecl == &traitDecl)
       continue;
-    SymbolRefAttr parent = parentOrSelf;
     auto &parentDecl = parentOrSelfDecl;
 
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       continue;
-
-    ASTType parentSelfType = parentDecl.getTypeDeclSelf();
 
     // Inherit function members, which we can override without worry because
     // they are all just declarations.
@@ -3038,32 +3026,21 @@ void DeclResolver::addParentDeclsToTrait(
         continue;
       if (isa_and_nonnull<FnOp>(declsInParent.front()->getIfOperation())) {
         for (ASTDecl *decl : declsInParent) {
-          if (failed(resolveBody(*decl, traitDecl.getLoc())))
-            continue;
           auto func = cast<FnOp>(decl->getIfOperation());
-          if (func.getInheritedFrom())
-            continue;
-          // Ensure that a function with the same name and signature hasn't
-          // already been declared.
-          if (!existingFns.insert({name, func.getSymNameAttr()}).second)
-            continue;
-          func = func.clone();
 
-          // We copied down the function from a base trait to a derived trait,
-          // and its type (e.g. self arguments, but not limited to them) will
-          // refer to the T parameter from the base trait.  That will have a
-          // metatype from the base trait which we need to update to our correct
-          // Self type.
-          replaceTraitMethodSelfTypes(func, PValue(parentSelfType).get(),
-                                      PValue(traitSelfType).get());
+          if (isInherited(func, parentDecl))
+            continue;
 
-          // Mark the function as inherited so that conformance checking won't
-          // give duplicate errors if it is not provided.
-          func.setInheritedFromAttr(parent);
-          body.push_back(func);
-          ASTDecl &clonedDecl =
-              addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
-          finalizeFuncSignature(func, clonedDecl);
+          // For some reason source name attr isn't set during the initial
+          // identifier parse of fn ops. We need to have it set on func right
+          // now so we can find the corresponding decl for it in the parent
+          // trait decl when we want to signature resolve it.
+          //
+          // TODO: Should we just set sourceNameAttr during parseDefFnStmt?
+          func.setSourceNameAttr(name);
+
+          addDecl(func, decl->getLoc(), name, &traitDecl, LexerCursor(),
+                  LexerCursor(), -1);
         }
       } else if (auto parentAliasDecl = dyn_cast<AliasDeclOp>(
                      declsInParent.front()->getIfOperation())) {
@@ -3071,7 +3048,7 @@ void DeclResolver::addParentDeclsToTrait(
                "Can't have two aliases with same name.");
         auto &declInParent = *declsInParent.front();
 
-        if (isInherited(declInParent, parentDecl))
+        if (isInherited(parentAliasDecl, parentDecl))
           continue;
 
         ArrayRef<ASTDecl *> overrides = traitDecl.lookupInCurrentScope(name);
@@ -3132,26 +3109,175 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(traitDecl))
     return failure();
 
-  // Resolve functions in the body here so that we can diagnose them.
-  // Deduplicate inherited functions based on their name and mangled name, since
-  // the mangled name contains the required information for distinguishing
-  // overload candidates.
-  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty())
-      continue;
-    if (isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
-      for (ASTDecl *decl : decls) {
-        auto func = cast_or_null<FnOp>(decl->getIfOperation());
-        if (failed(resolveBody(*decl, decl->getLoc())))
-          return failure();
+  addParentDeclsToTrait(traitOp, traitDecl);
 
-        existingFns.insert({name, func.getSymNameAttr()});
-      }
+  return success();
+}
+
+/// Handles signature resolving inherited function decls in traits. In such
+/// cases the passed in ASTDecl will be a child of the actual trait we're
+/// working on, while the function op it contains is actually from the parent
+/// trait we're inheriting from.
+///
+/// This logic was originally invoked during trait body resolution -- in an
+/// effort to make the resolution of child declarations of traits lazier we've
+/// moved it here.
+///
+/// The majority of the logic is largely the same as the less lazy version
+/// except for some of the initial op and decl lookups.
+LogicalResult
+DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
+                                        ASTDecl &childTraitFnDecl) {
+  assert(isa<TraitDeclOp>(inheritedFnOp->getParentOp()) &&
+         "Expected synthetic function decl's parent to be a trait");
+
+  auto childTraitDecl = childTraitFnDecl.getParentDecl();
+  // This is the actual child trait of the decl.
+  TraitDeclOp childTraitDeclOp =
+      cast<TraitDeclOp>(childTraitDecl->getIfOperation());
+
+  // And this is the parent trait of the function we're inheriting from.
+  TraitDeclOp parentTraitDeclOp =
+      cast<TraitDeclOp>(inheritedFnOp->getParentOp());
+
+  SymbolRefAttr parentTraitRef = getFullyResolvedSymbolRef(parentTraitDeclOp);
+
+  ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
+  auto functionName =
+      dyn_cast<ASTDeclInterface>(inheritedFnOp.getOperation()).getDeclName();
+
+  auto parentOverloadDecls = parentTraitDecl.lookupInCurrentScope(functionName);
+
+  ASTDecl *inheritedFnDecl = nullptr;
+  for (auto &overloadDecl : parentOverloadDecls) {
+    if (inheritedFnOp.getOperation() == overloadDecl->getIfOperation()) {
+      inheritedFnDecl = overloadDecl;
+      if (failed(resolveSignature(*overloadDecl, overloadDecl->getLoc())))
+        return failure();
     }
   }
 
-  addParentDeclsToTrait(traitOp, traitDecl, existingFns);
+  assert(inheritedFnDecl &&
+         "Couldn't find the decl for inheritedFnOp in the parent trait.");
+
+  auto parentFnSymName = inheritedFnOp.getSymNameAttr();
+
+  DenseSet<StringAttr> existingFns;
+  auto childFnDecls = childTraitDecl->lookupInCurrentScope(functionName);
+
+  bool markDisabled = false;
+  // Signature resolve all corresponding overloads in the child trait decl.
+  for (auto &childOverload : childFnDecls) {
+    auto actualParentTraitRef = getFullyResolvedSymbolRef(
+        cast<TraitDeclOp>(childOverload->getIfOperation()->getParentOp()));
+
+    // Skip processing any inherited members to avoid cycles.
+    if (actualParentTraitRef != getFullyResolvedSymbolRef(childTraitDeclOp))
+      continue;
+
+    if (failed(resolveSignature(*childOverload, childOverload->getLoc())))
+      return failure();
+
+    auto childFnSymName =
+        cast<FnOp>(childOverload->getIfOperation()).getSymNameAttr();
+
+    // We've found that the child trait implements an overload with equivalent
+    // signature. At this point we don't really care about this decl anymore.
+    //
+    // In such cases we'd really like to be able to just delete the decl we had
+    // created at this point since nothing will ever actually make use of it (as
+    // the child already has a definition).
+    //
+    // Unfortunately this isn't really possible without making it easy to hit UB
+    // specifically around iterator invalidation.
+    //
+    // A very common sort of pattern across the parser is:
+    //
+    // for (auto& [name, decls] : scope.getDeclsInScope()) {
+    //   for (auto& decl : decls)
+    //     resolveSignature(decl, decl.getLoc());
+    // }
+    //
+    // For decls such as the one we're currently dealing with this code would
+    // bottom out here in this function and to properly remove childTraitFnDecl
+    // from its parent scope we'd have to reach into one of the sub entries of
+    // ASTDecl::declsInScope which in turn would cause issues with the second
+    // for loop in the example above.
+    if (parentFnSymName == childFnSymName) {
+      markDisabled = true;
+      break;
+    }
+  }
+
+  // We need to make sure that the decl for the function we're inherting is now
+  // fully resolved.
+  if (failed(resolveBody(*inheritedFnDecl, inheritedFnDecl->getLoc())))
+    return failure();
+
+  auto parentTraitSelfType = parentTraitDecl.getTypeDeclSelf();
+  auto childTraitSelfType = childTraitDecl->getTypeDeclSelf();
+
+  // Clone the function over but leave an empty body.
+  //
+  // This is necessary to avoid errors around type mismatches between trait self
+  // types, to make this concrete consider:
+  //
+  //
+  // trait Foo:
+  //   fn foo(self) -> Int:
+  //     ...
+  //
+  // trait Bar(Foo):
+  //   fn bar(self) -> Int:
+  //     return self.foo() * 2
+  //
+  // trait Baz(Bar):
+  //   ...
+  //
+  // If we just naively cloned the full body of Bar.bar into Baz the lit.call to
+  // foo would be expecting an argument of type Bar rather than Baz.
+  //
+  // Since we're only ever dealing with inherited trait methods in this function
+  // and structs get to see a flat list of all their parent trait methods we'll
+  // still be able to appropriately pick up the parent trait method with the
+  // actual defaulted implementation.
+  auto clonedFunc = inheritedFnOp.cloneWithoutRegions();
+  Block *entryBlock = clonedFunc.addEntryBlock();
+  OpBuilder::atBlockEnd(entryBlock).create<UnreachableOp>(clonedFunc.getLoc());
+
+  // In this case the child trait has an override for a method defined in the
+  // parent trait. In these sorts of cases we need to 'deactivate' the decl we
+  // had created earlier we do this by creating an empty body for the function
+  // and marking it so that overload resolution will never pick it.
+  if (markDisabled) {
+    // We set this attribute and use it during overload resolution to skip
+    // declarations like this.
+    clonedFunc->setAttr("disabled", UnitAttr::get(clonedFunc->getContext()));
+
+    // Append parent trait name to the function name
+    auto parentTraitName = parentTraitDeclOp.getSymNameAttr();
+    auto sourceName = clonedFunc.getSymNameAttr();
+    // We need to make sure we won't have a symbol that will conflict with the
+    // child's override.
+    auto newName = StringAttr::get(clonedFunc->getContext(),
+                                   parentTraitName.getValue() +
+                                       "::" + sourceName.getValue());
+    clonedFunc.setSymNameAttr(newName);
+  }
+
+  replaceTraitMethodSelfTypes(clonedFunc, PValue(parentTraitSelfType).get(),
+                              PValue(childTraitSelfType).get());
+  clonedFunc.setInheritedFromAttr(parentTraitRef);
+
+  childTraitDeclOp.getBody()->push_back(clonedFunc);
+  childTraitFnDecl.setIRValue(clonedFunc.getOperation());
+  childTraitFnDecl.resolvedness = DeclResolvedness::body;
+
+  // Clear the function body and replace with just kgen.unreachable
+  // since we don't need to preserve the actual implementation
+  clonedFunc.getBody()->clear();
+  OpBuilder::atBlockEnd(clonedFunc.getBody())
+      .create<UnreachableOp>(clonedFunc.getLoc());
 
   return success();
 }

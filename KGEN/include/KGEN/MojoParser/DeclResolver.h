@@ -242,9 +242,7 @@ public:
                                    SmallVector<SymbolRefAttr> &parentTraits,
                                    DenseSet<SymbolRefAttr> &immediateParents);
   // Populate the trait with methods it inherits from parents.
-  void addParentDeclsToTrait(
-      TraitDeclOp traitOp, ASTDecl &traitDecl,
-      DenseSet<std::pair<StringAttr, StringAttr>> &existingFns);
+  void addParentDeclsToTrait(TraitDeclOp traitOp, ASTDecl &traitDecl);
 
   /// Remove the Decl registered under the oldName and re-register it under a
   /// new name.
@@ -260,6 +258,7 @@ private:
   LogicalResult resolveSignature(FnOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(FnOp op, Lexer &lexer, ASTDecl &decl);
   void resolveSyntheticBody(FnOp op, ASTDecl &decl);
+  LogicalResult resolveSyntheticSignature(FnOp op, ASTDecl &decl);
   LogicalResult resolveSyntheticSignature(AliasDeclOp op, ASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);

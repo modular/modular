@@ -37,6 +37,14 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Helper function to check if a function declaration has the "disabled"
+/// attribute
+static bool isDisabledFunction(ASTDecl *decl) {
+  if (auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation()))
+    return fnOp->hasAttr("disabled");
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // CallSyntax
 //===----------------------------------------------------------------------===//
@@ -805,7 +813,14 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
       return result;
 
     assert(result.fnDecls.empty() && "Already have entries");
-    result.fnDecls.assign(resultDecls.begin(), resultDecls.end());
+
+    // Filter out disabled functions to avoid multiple definition conflicts
+    SmallVector<ASTDecl *> filteredDecls;
+    for (ASTDecl *decl : resultDecls) {
+      if (!isDisabledFunction(decl)) {
+        result.fnDecls.push_back(decl);
+      }
+    }
   }
 
   // If the struct has a nonmaterializable target (e.g. "IntLiteral" will have
@@ -829,7 +844,13 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
         if (!isa<FnOp>(resultDecls[0]->getIfOperation()))
           // FIXME: This seems wrong. why aren't we emitting an error??
           return result;
-        result.fnDecls.append(resultDecls.begin(), resultDecls.end());
+
+        // Filter out disabled functions to avoid multiple definition conflicts
+        SmallVector<ASTDecl *> filteredDecls;
+        for (ASTDecl *decl : resultDecls) {
+          if (!isDisabledFunction(decl))
+            result.fnDecls.push_back(decl);
+        }
       }
     }
   }
