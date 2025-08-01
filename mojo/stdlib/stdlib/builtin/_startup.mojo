@@ -80,6 +80,7 @@ fn __wrap_and_execute_raising_main[
     try:
         main_func()
     except e:
+        print(String(e.get_stack_trace()))
         print("Unhandled exception caught during execution:", e)
         return 1
 
