@@ -49,7 +49,9 @@ def main():
     assert_equal(empty_components, simple_parent)
 
     print("error handling for non-existent paths")
-    with assert_raises(contains="realpath failed to resolve: 2"):
+    with assert_raises(
+        contains="realpath failed to resolve: no such file or directory"
+    ):
         _ = realpath("does-not-exist")
 
     print("test root directory behavior")

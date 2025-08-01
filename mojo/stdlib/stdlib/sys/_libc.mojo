@@ -18,7 +18,7 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t
+from sys.ffi import c_char, c_int, c_size_t, get_errno_message
 
 
 # ===-----------------------------------------------------------------------===#
@@ -219,15 +219,6 @@ fn dlsym[
     result_type
 ]:
     return external_call["dlsym", UnsafePointer[result_type]](handle, name)
-
-
-fn get_errno() -> Int:
-    """Get the current libc errno.
-
-    Returns:
-        The current libc errno.
-    """
-    return Int(external_call["__errno_location", UnsafePointer[c_int]]()[])
 
 
 fn realpath(

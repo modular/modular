@@ -23,7 +23,7 @@ from os.path import isdir
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
 from sys import CompilationTarget, external_call
-from sys.ffi import c_char, get_errno, MAX_PATH
+from sys.ffi import c_char, get_errno_message, MAX_PATH
 from sys._libc import realpath as libc_realpath
 from collections.string.string_slice import _unsafe_strlen
 
@@ -292,7 +292,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
         ptr + String.REF_COUNT_SIZE,
     )
     if not returned_path_ptr:
-        raise Error("realpath failed to resolve: ", get_errno())
+        raise Error("realpath failed to resolve: ", get_errno_message())
 
     # Caller is responsible for freeing the pointer, safe to store in String.
     var string = String()
