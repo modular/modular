@@ -647,7 +647,7 @@ def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:  # noq
 class LinearV1(Layer):
     """A unified linear layer that delegates to either regular or quantized implementation.
 
-    .. deprecated::
+    .. deprecated:: 25.5
         Use :obj:`Linear` instead.
     """
 
@@ -720,7 +720,7 @@ class LinearV1(Layer):
 class QLinearV1(LinearV1):
     """A quantized fully connected layer.
 
-    .. deprecated::
+    .. deprecated:: 25.5
         Use :obj:`Linear` instead.
     """
 
@@ -779,7 +779,7 @@ class QLinearV1(LinearV1):
 class GPTQLinearV1(QLinearV1):
     """A :obj:`Linear` layer for GPTQ encoding.
 
-    .. deprecated::
+    .. deprecated:: 25.5
         Use :obj:`GPTQLinear` instead.
     """
 
@@ -1005,7 +1005,7 @@ class MLPV1(Layer):
     Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
     Uses SiLU activation function.
 
-    .. deprecated::
+    .. deprecated:: 25.5
         Use :obj:`MLP` instead.
     """
 
