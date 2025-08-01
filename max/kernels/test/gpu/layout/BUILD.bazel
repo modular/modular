@@ -81,6 +81,7 @@ _FILECHECK_TESTS = [
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:kv_cache",
+            "@mojo//:layout",
             "@mojo//:linalg",
             "@mojo//:nn",
             "@mojo//:quantization",
