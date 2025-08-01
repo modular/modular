@@ -73,33 +73,41 @@ fn abs[T: Absable](value: T) -> T:
 # ===----------------------------------------------------------------------=== #
 
 
-fn divmod(numerator: Int, denominator: Int) -> Tuple[Int, Int]:
-    """Performs integer division and returns the quotient and the remainder.
-
-    Currently supported only for integers. Support for more standard library
-    types like Int8, Int16... is planned.
-
-    This method calls `a.__divmod__(b)`, thus, the actual implementation of
-    divmod should go in the `__divmod__` method of the struct of `a`.
-
-    Args:
-        numerator: The dividend.
-        denominator: The divisor.
-
-    Returns:
-        A `Tuple` containing the quotient and the remainder.
+trait DivModable(Copyable, Movable):
     """
-    return numerator.__divmod__(denominator)
+    The `DivModable` trait describes a type that defines division and
+    modulo operations returning both quotient and remainder.
+
+    Types that conform to `DivModable` will work with the builtin `divmod` function,
+    which will return the same type as the inputs.
+
+    For example:
+    ```mojo
+    @fieldwise_init
+    struct Bytes(DivModable):
+        var size: Int
+
+        fn __divmod__(self, other: Self) -> Tuple[Self, Self]:
+            var quotient_int = self.size // other.size
+            var remainder_int = self.size % other.size
+            return (Bytes(quotient_int), Bytes(remainder_int))
+    ```
+    """
+
+    fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
+        """Performs division and returns the quotient and the remainder.
+
+        Returns:
+            A `Tuple` containing the quotient and the remainder.
+        """
+        ...
 
 
-fn divmod(numerator: UInt, denominator: UInt) -> Tuple[UInt, UInt]:
-    """Performs integer division and returns the quotient and the remainder.
+fn divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
+    """Performs division and returns the quotient and the remainder.
 
-    Currently supported only for integers. Support for more standard library
-    types like Int8, Int16... is planned.
-
-    This method calls `a.__divmod__(b)`, thus, the actual implementation of
-    divmod should go in the `__divmod__` method of the struct of `a`.
+    Parameters:
+        T: A type conforming to the `DivModable` trait.
 
     Args:
         numerator: The dividend.

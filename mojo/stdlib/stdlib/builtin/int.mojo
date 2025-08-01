@@ -26,7 +26,7 @@ from sys import bitwidthof
 from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
-from builtin.math import Absable, Powable
+from builtin.math import Absable, DivModable, Powable
 from python import (
     Python,
     PythonObject,
@@ -217,6 +217,7 @@ struct Int(
     Copyable,
     Defaultable,
     DevicePassable,
+    DivModable,
     ExplicitlyCopyable,
     Floorable,
     Hashable,
