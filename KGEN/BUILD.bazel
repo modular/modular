@@ -933,6 +933,7 @@ modular_shared_library(
         "//Support:Profiling",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:llvm-symbolizer",
     ],
 )
 

@@ -7,6 +7,8 @@
 #include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/Signals.h"
 #include <cstdarg>
 #include <thread>
 
@@ -91,4 +93,45 @@ COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_SetArgV(int argc,
   argVList.argStrings.resize(argc);
   for (int i = 0; i < argc; ++i)
     argVList.args[i] = argVList.argStrings[i] = argv[i];
+}
+
+//===----------------------------------------------------------------------===//
+// Stack trace
+//===----------------------------------------------------------------------===//
+
+namespace {
+std::string getStackTrace(unsigned depth = 0, unsigned dropFirst = 0) {
+  std::string stacktrace;
+  llvm::raw_string_ostream os(stacktrace);
+  llvm::sys::PrintStackTrace(os, depth);
+  return stacktrace;
+}
+
+// Return true if we should collect stack trace. Assume that no need to collect
+// stack trace if `envVar` is not set or is set to '0' or 'false' (for
+// performance, check first char only)
+bool isStackTraceEnabled(const char *envVar) {
+  auto enableStackTrace = llvm::sys::Process::GetEnv(envVar).value_or("");
+  return !enableStackTrace.empty() && enableStackTrace[0] != '0' &&
+         enableStackTrace[0] != 'f' && enableStackTrace[0] != 'F';
+}
+} // namespace
+
+COMPILERRT_EXPORT
+COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
+  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH"))
+    return;
+  llvm::sys::PrintStackTraceOnErrorSignal("", false);
+}
+
+COMPILERRT_EXPORT
+COMPILERRT_VISIBILITY_EXPORT int KGEN_CompilerRT_GetStackTrace(char **strings,
+                                                               unsigned depth) {
+  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR"))
+    return 0;
+  std::string stacktrace = getStackTrace(depth);
+  const size_t len = stacktrace.length();
+  *strings = (char *)malloc(len);
+  memcpy(*strings, stacktrace.c_str(), len);
+  return len;
 }
