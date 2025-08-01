@@ -135,6 +135,10 @@ mutation.
 
 - Python interop changes:
 
+  - Mojo methods can now take `py_self: UnsafePointer[Self]` instead of the raw
+    `py_self: PythonObject`, elimintating the downcasting boilerplate required
+    in the common case.
+
   - Mojo functions can now natively accept
     keyword arguments from Python using `OwnedKwargsDict[PythonObject]` as the
     last parameter. This enables direct calling from Python with keyword
