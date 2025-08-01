@@ -718,10 +718,11 @@ public:
       return failure();
 
     if (!libs.empty()) {
-      // Filter out bitcode files that are not for the target triple.
+      // Filter out bitcode files that are not for the target triple. The data
+      // layout may be different e.g. for functions intended to be called from
+      // PTX.
       llvm::erase_if(libs, [&](const std::unique_ptr<llvm::Module> &lib) {
-        return lib->getTargetTriple() != llvmModule.getTargetTriple() ||
-               lib->getDataLayout() != llvmModule.getDataLayout();
+        return lib->getTargetTriple() != llvmModule.getTargetTriple();
       });
       if (!libs.empty())
         if (failed(linkFiles(llvmModule, std::move(libs))))
@@ -828,8 +829,9 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
   // Lambda to link a loaded module, handling target triple check and linking
   auto linkModule =
       [&](std::unique_ptr<llvm::Module> libModule) -> ErrorOrSuccess {
-    if (libModule->getTargetTriple() != llvmModule.getTargetTriple() ||
-        libModule->getDataLayout() != llvmModule.getDataLayout())
+    // Only check target triple for external bitcode libraries, the data layout
+    // may be different e.g. for functions intended to be called from PTX.
+    if (libModule->getTargetTriple() != llvmModule.getTargetTriple())
       return success();
 
     bool err = linker.linkInModule(
