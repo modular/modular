@@ -29,19 +29,28 @@ trait Named:
 
 
 trait NamedAnimal(Animal, Named):
-    ...
+    fn emit_name_and_sound(self):
+        ...
 
 
 @fieldwise_init
-struct Parrot(Bird, Copyable, Movable):
+struct Parrot(Bird, Copyable, Movable, NamedAnimal):
     fn make_sound(self):
         print("Squawk!")
 
     fn fly(self):
         print("Flap flap!")
 
+    fn get_name(self) -> String:
+        return "Parrot"
+
+    fn emit_name_and_sound(self):
+        print("The", self.get_name(), "says ", end="")
+        self.make_sound()
+
 
 def main():
     parrot = Parrot()
     parrot.make_sound()
     parrot.fly()
+    parrot.emit_name_and_sound()

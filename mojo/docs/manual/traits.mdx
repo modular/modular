@@ -225,11 +225,11 @@ trait DuckTrait(Quackable, Flyable):
 ```
 
 The difference is that using the `trait` keyword defines a new, named
-trait. For a struct to *explicitly* conform to this trait, you need to include
+trait. For a struct t conform to this trait, you need to *explicitly* include
 it in the struct's signature. On the other hand, the `DuckLike` alias represents
 a composition of two separate traits, `Quackable` and `Flyable`, and anything
-that conforms to those two traits conforms to `DuckLike`. For example, our
-earlier `FlyingDuck` type:
+that conforms to those two traits conforms to `DuckLike`. For example, consider
+the `FlyingDuck` type shown above:
 
 ```mojo
 struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
@@ -237,16 +237,10 @@ struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
 ```
 
 Because `FlyingDuck` conforms to both `Quackable` and `Flyable`, it also
-conforms to the `DuckLike` trait composition. But it *doesn't* explicitly
+conforms to the `DuckLike` trait composition. But it *doesn't*
 conform to `DuckTrait`, since it doesn't include `DuckTrait` in its list of
 traits.
 
-Currently this distinction doesn't make much difference, because Mojo supports
-[implicit trait conformance](#implicit-trait-conformance), which means that
-`FlyingDuck` is treated as if it conforms to `DuckTrait`, since it meets all of
-the requirements. However, implicit conformance is due to be phased out in the
-future, so we recommend replacing empty traits like `DuckTrait` with more
-flexible trait compositions.
 
 ## Trait inheritance
 
@@ -280,12 +274,13 @@ trait Named:
         ...
 
 trait NamedAnimal(Animal, Named):
-    # ...
+    fn emit_name_and_sound(self):
+        ...
 ```
 
 Inheritance is useful when you're creating a new trait that adds its own
 requirements. If you simply want to express the union of two or more traits,
-you can use a simple trait composition instead:
+you should use a simple trait composition instead:
 
 ```mojo
 alias NamedAnimal = Animal & Named
@@ -334,35 +329,33 @@ struct Thing(MassProducible):
 var thing = factory[Thing]()
 ```
 
-Note that [`@register_passable("trivial")`](/mojo/manual/decorators/register-passable#register_passabletrivial)
-types have restrictions on their lifecycle methods: they can't define copy or
-move constructors, because they don't require any custom logic.
+### Register-passable traits
 
-For the purpose of trait conformance, the compiler treats trivial types as
-copyable and movable.
+A trait can be declared with either the
+[`@register_passable`](/mojo/manual/decorators/register-passable)
+decorator or the
+[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable#register_passabletrivial)
+decorator. These decorators add requirements for conforming structs:
 
-## Implicit trait conformance
+- If the trait is declared as `@register_passable`, every struct that conforms
+  to the trait must be either `@register_passable` or
+  `@register_passable("trivial")`.
 
-Mojo currently supports *implicit* trait conformance, but this will be
-deprecated in a future release.
+- If the trait is declared as `@register_passable("trivial")`, every struct that
+  conforms to the trait must be
+  struct must be `@register_passable("trivial")`, too.
 
-Implicit conformance means that if a type implements
-all of the methods required for a trait, it's treated as conforming to the
-trait, even if it doesn't explicitly include the trait in its declaration:
+For the purpose of trait conformance, a trait or struct that's defined with
+`@register_passable` should automatically conform to the `Movable` trait, and a
+trait or struct that's defined with `@register_passable("trivial")` should
+automatically conform to the `Copyable` and `Movable` traits.
 
-```mojo
-struct RubberDucky:
-    fn quack(self):
-        print("Squeak!")
+:::note
 
-make_it_quack(RubberDucky())
-```
+In some cases, the compiler may not track these automatic conformances
+correctly. If you run into an issue, add the traits to your struct explicitly.
 
-Implicit conformance can be convenient, but supporting it prevents us from
-adding future trait features like default function implementations.
-
-We strongly recommend using explicit trait conformance for all new code and
-phasing out dependence on implicit trait conformance.
+:::
 
 ## Built-in traits
 
