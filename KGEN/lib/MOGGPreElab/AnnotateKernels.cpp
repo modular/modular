@@ -25,6 +25,7 @@ namespace M::KGEN::MOGGPreElab {
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr llvm::StringLiteral kUpdateViewFuncName = "update_input_view";
+static constexpr llvm::StringLiteral kElementwiseFuncName = "elementwise";
 
 static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor_internal",
                                                          "io_spec", "IOSpec"};
@@ -496,6 +497,9 @@ struct ExtensibilityAPIStructInfo {
   // Whether the operation is marked as a view kernel.
   bool isViewKernel = false;
 
+  // Whether the operation is marked as an elementwise kernel.
+  bool isElementwiseKernel = false;
+
   // The name of the operation this struct is registered to
   StringAttr registrationName{};
 };
@@ -810,6 +814,9 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
 
+  if (registrationInfo.isElementwiseKernel)
+    func->setAttr(kMOGGElementwiseKernel, UnitAttr::get(func->getContext()));
+
   SmallVector<std::pair<size_t, IOSpec>> ioSpecs;
   auto result = processIOSpecs(func);
   if (!result)
@@ -916,6 +923,12 @@ public:
                                              builder)))
             return WalkResult::interrupt();
           updateViewOp = func;
+        } else if (func.getSourceName() == kElementwiseFuncName) {
+          if (failed(processStructFuncCommon(
+                  structDeclOp, registrationInfo, func,
+                  kMOGGElementwiseFunctionLabel, builder)))
+            return WalkResult::interrupt();
+          registrationInfo.isElementwiseKernel = true;
         }
       }
 

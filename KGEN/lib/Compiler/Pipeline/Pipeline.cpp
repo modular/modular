@@ -62,12 +62,6 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   pm.addPass(createOutlineClosuresNew(OutlineClosuresNewOptions{
       options.debugLevel != CompilationOptions::kNoDebug}));
 
-  // Slice MOGG compute & shape functions out of base kernels.
-  MOGGPreElab::MOGGPreElabPipelineOptions moggOpts;
-  moggOpts.debugBuild =
-      options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug;
-  pm.addPass(MOGGPreElab::createMOGGPreElabPipeline(moggOpts));
-
   if (options.optimizationLevel >= 2)
     pm.addPass(createRemoveUnusedParams());
 
