@@ -12,8 +12,14 @@ from max._core.engine import PrintStyle
 from max.driver import Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn import Allreduce, ShardingStrategy, Signals
+from max.graph import (
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+)
+from max.nn import Allreduce, Signals
 from max.nn.moe import MoE
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
@@ -133,7 +139,10 @@ def generate_max_outputs(
         assert isinstance(graph.inputs[0], TensorValue)
         inputs = _distribute_value(graph.inputs[0], devices)
         signal_buffers = [inp.buffer for inp in graph.inputs[1:]]
-        outputs = [tp_moe_shard(inputs) for tp_moe_shard in tp_moe_shards]
+        outputs = [
+            tp_moe_shard(input)
+            for tp_moe_shard, input in zip(tp_moe_shards, inputs)
+        ]
         outputs = allreduce(outputs, signal_buffers)
         graph.output(*outputs)
 
@@ -157,7 +166,7 @@ def test_mix_of_experts(
         expert_weights,
         shared_expert_weights,
         torch_dtype,
-        "cuda",
+        torch.device("cuda"),
     )
 
     max_output = generate_max_outputs(
