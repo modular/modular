@@ -85,7 +85,7 @@ fn test_naive_blockwise_fp8_matmul[
     alias static_c_shape = DimList(m.dim, n.dim)
 
     alias static_a_scale_shape = DimList(
-        m.dim // BLOCK_SCALE_M, k.dim // BLOCK_SCALE_K
+        k.dim // BLOCK_SCALE_K, m.dim // BLOCK_SCALE_M
     )
     alias static_b_scale_shape = DimList(
         n.dim // BLOCK_SCALE_N, k.dim // BLOCK_SCALE_K
@@ -99,7 +99,7 @@ fn test_naive_blockwise_fp8_matmul[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
     var dynamic_a_scale_shape = DimList(
-        m.value // BLOCK_SCALE_M, k.value // BLOCK_SCALE_K
+        k.value // BLOCK_SCALE_K, m.value // BLOCK_SCALE_M
     )
     var dynamic_b_scale_shape = DimList(
         n.value // BLOCK_SCALE_N, k.value // BLOCK_SCALE_K
@@ -153,7 +153,7 @@ fn test_naive_blockwise_fp8_matmul[
             var res: Float32 = 0.0
             for _k in range(K):
                 var a_scale = a_scale_host.tensor[
-                    _m // BLOCK_SCALE_M, _k // BLOCK_SCALE_K
+                    _k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M
                 ]
                 var b_scale = b_scale_host.tensor[
                     _n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K
@@ -222,7 +222,7 @@ fn main() raises:
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=transpose_b,
-            ](ctx, handle, dynamic(128), static[128](), static[128]())
+            ](ctx, handle, dynamic(120), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,

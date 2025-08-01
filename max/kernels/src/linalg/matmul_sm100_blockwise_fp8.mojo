@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+from logger import Logger
 from collections import OptionalReg
 from sys import sizeof, alignof
-from math import ceildiv
+from math import ceildiv, gcd
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
+from gpu.id import warp_id as get_warp_id
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -45,15 +45,23 @@ from .utils import elementwise_epilogue_type
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn matmul_sm100_fallback_kernel[
+@__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    accum_type: DType,
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    a_scales_tile_layout: Layout,
     a_desc_layout: Layout,
     b_desc_layout: Layout,
+    a_scales_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -63,25 +71,65 @@ fn matmul_sm100_fallback_kernel[
     num_threads: UInt = 128,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_scales_tma_op: TMATensorTile[
+        accum_type, a_scales_tile_layout, a_scales_desc_layout
+    ],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
+    constrained[transpose_b, "Only support transposed B"]()
+    constrained[num_threads == 128]()
+    constrained[
+        accum_type == DType.float32, "Only support float32 for accumulator"
+    ]()
+
+    alias N = c.layout.shape[1].value()
+    alias K = a_layout.shape[1].value()
+
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]  # BM
-    alias MMA_N = mma_shape[1]  # BN
-    alias MMA_K = mma_shape[2]  # 16
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
     alias num_m_mmas = BM // MMA_M
     alias num_n_mmas = BN // MMA_N
     alias num_k_mmas = BK // MMA_K
 
-    # we don't do the whole mma_shape_A vibes, rather, we directly declare it
-    # tile_layout_k_major is cutlass equiv of tile_to_mma_shape
-    # and sA_layout gets computed directly, by hand
+    constrained[N % BN == 0, "N must be divisible by BN"]()
+    constrained[
+        BN <= BK or gcd(BN, BK) == BN - BK,
+        "BN <= BK or gcd(BN, BK) == BN - BK",
+    ]()
+
+    # make sure A and B scales are compatible
+    alias b_scales_n = b_scales_layout.shape[0].value()
+    alias b_scales_k = b_scales_layout.shape[1].value()
+    alias a_scales_k = a_scales_layout.shape[0].value()
+
+    constrained[
+        N % b_scales_n == 0 and K % b_scales_k == 0 and K % a_scales_k == 0,
+        "N and K must be divisible by b_scales.shape[0] and b_scales.shape[1]",
+    ]()
+
+    alias B_SCALING_BLOCK_N = N // b_scales_n
+    alias B_SCALING_BLOCK_K = K // b_scales_k
+    alias A_SCALING_BLOCK = K // a_scales_k
+    constrained[
+        BK == B_SCALING_BLOCK_K == B_SCALING_BLOCK_N == A_SCALING_BLOCK,
+        "Only support SCALING SIZE of 128! got:"
+        + String(BK)
+        + " "
+        + String(B_SCALING_BLOCK_K)
+        + " "
+        + String(B_SCALING_BLOCK_N)
+        + " "
+        + String(A_SCALING_BLOCK),
+    ]()
+
     alias a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
@@ -90,6 +138,8 @@ fn matmul_sm100_fallback_kernel[
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
+
+    alias a_scales_smem_layout = Layout.row_major(1, BM)
 
     a_smem = rebind[
         UnsafePointer[
@@ -104,7 +154,6 @@ fn matmul_sm100_fallback_kernel[
         ]()
     )
 
-    # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
@@ -119,36 +168,45 @@ fn matmul_sm100_fallback_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
+    alias a_scales_smem_tile_t = LayoutTensor[
+        accum_type,
+        a_scales_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
 
     alias a_size = a_smem_layout.size()
     alias b_size = b_smem_layout.size()
+    alias a_scales_size = a_scales_smem_layout.size()
 
     constrained[
         ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * sizeof[b_type]()) % 128) == 0, "preserve alignment"
+    ]()
+    constrained[
+        ((a_scales_size * sizeof[accum_type]()) % 16) == 0, "preserve alignment"
+    ]()
+
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[accum_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
     var b_smem_tile = b_smem_tile_t(b_smem)
+    var a_scales_smem_tile = a_scales_smem_tile_t(a_scales_smem)
 
-    # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
     var ptr_tmem_addr = (
-        (b_smem + b_size)
+        (a_scales_smem + a_scales_size)
         .bitcast[UInt32]()
         .static_alignment_cast[alignment=16]()
     )
 
-    alias accum_type = get_accum_type[a_type]()
-
-    alias c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag = SIMD[
-        accum_type, c_frag_size
-    ]()  # array of accumulator elements
-
     alias a_expected_bytes = a_size * sizeof[a_type]()
     alias b_expected_bytes = b_size * sizeof[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    alias a_scales_expected_bytes = a_scales_size * sizeof[accum_type]()
+    alias expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
     tma_mbar = (
         (ptr_tmem_addr + 2)
@@ -164,22 +222,19 @@ fn matmul_sm100_fallback_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
+    var warp_id = get_warp_id()
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
 
-    # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, max_tmem_cols)
 
-    # Ensure all threads sees initialized mbarrier and
-    # tensor memory allocation
     barrier()
 
     tmem_addr = ptr_tmem_addr[0]
 
-    # Create MmaOpSM100_SS instance to handle MMA operations
     var mma_op = MmaOpSM100_SS[
         c_type,
         a_type,
@@ -193,37 +248,54 @@ fn matmul_sm100_fallback_kernel[
         transpose_b=transpose_b,
     ]()
 
-    for i in range(num_iters):
-        # so only one thread per CTA does the copy
+    # final results accumulator regs for C
+    alias c_frag_size = MMA_M * MMA_N // num_threads
+    var c_frag = SIMD[accum_type, c_frag_size]()
+
+    # temporary accumulators for TMEM loads
+    alias total_repeat = BN // 8
+    alias repeat = 1  # a higher repeat will probably get us better performance, but it will increase register pressure
+    alias temp_cfrags_size = 4 * repeat
+
+    constrained[
+        total_repeat % repeat == 0, "total_repeat must be divisible by repeat"
+    ]()
+    var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
+
+    for k_iter in range(num_iters):
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.y * BM),
+                (UInt(k_iter) * BK, block_idx.y * BM),
             )
+
+            a_scales_tma_op.async_copy(
+                a_scales_smem_tile,
+                tma_mbar[0],
+                (block_idx.y * BM, UInt(k_iter)),
+            )
+
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
+                (UInt(k_iter) * BK, block_idx.x * BN) if transpose_b else (
                     block_idx.x * BN,
-                    UInt(i) * BK,
+                    UInt(k_iter) * BK,
                 ),
             )
 
-        # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1
 
-        # now we do the mma, again only one thread issues the instruction
         if elect_one_thread:
-            # Use MmaOpSM100_SS to perform the MMA operation
             mma_op.mma(
                 a_smem_tile,
                 b_smem_tile,
                 tmem_addr,
-                init_c=(i == 0),  # Initialize C on first iteration
+                init_c=(True),  # Initialize C on first iteration
             )
 
             mma_op.commit(mma_mbar)
@@ -231,17 +303,58 @@ fn matmul_sm100_fallback_kernel[
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
-    # eventually all of c has been accumulated, so we load it from tmem_addr into c_frag registers using tcgen05_ld
-    c_frag = tcgen05_ld[
-        datapaths=16,
-        bits=256,
-        repeat = BN // 8,
-        dtype=accum_type,
-        pack=False,
-        width=c_frag_size,
-    ](tmem_addr)
+        @parameter
+        for ld_iter in range(total_repeat // repeat):
+            c_frag_temp = tcgen05_ld[
+                datapaths=16,
+                bits=256,
+                repeat=repeat,
+                dtype=accum_type,
+                pack=False,
+                width=temp_cfrags_size,
+            ](tmem_addr + ld_iter * 8 * repeat)
+            tcgen05_load_wait()  # wait for the load to finish
 
-    tcgen05_load_wait()  # wait for the load to finish
+            var b_scale: Scalar[accum_type]
+
+            @parameter
+            if BN != BK:
+                var global_n = block_idx.x * BN
+
+                var begin_n = min(BN, BK - global_n % BK)
+                alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
+
+                var idx0 = global_n // BK
+                var next_n = begin_n if begin_n < end_n else BN
+
+                if ld_iter < (next_n // 8):
+                    b_scale = rebind[Scalar[accum_type]](b_scales[idx0, k_iter])
+                else:
+                    b_scale = rebind[Scalar[accum_type]](
+                        b_scales[idx0 + 1, k_iter]
+                    )
+
+            else:
+                b_scale = rebind[Scalar[accum_type]](
+                    b_scales[block_idx.x, k_iter]
+                )
+
+            var m_offset = (warp_id * 16) + (lane_id() // 4)
+
+            # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
+            @parameter
+            for j in range(temp_cfrags_size // 2):
+                var local_m = m_offset + (j % 2) * 8
+                var a_scale = a_scales_smem_tile[0, local_m]
+
+                var scale = a_scale * b_scale
+
+                c_frag[ld_iter * temp_cfrags_size + 2 * j] += c_frag_temp[
+                    2 * j
+                ] * rebind[Scalar[accum_type]](scale)
+                c_frag[ld_iter * temp_cfrags_size + 2 * j + 1] += c_frag_temp[
+                    2 * j + 1
+                ] * rebind[Scalar[accum_type]](scale)
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
@@ -256,7 +369,6 @@ fn matmul_sm100_fallback_kernel[
     alias c_coord_type = __type_of(ctile_coords)
 
     var M = c.dim[0]()
-    alias N = c.layout.shape[1].value()
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -318,13 +430,16 @@ fn matmul_sm100_fallback_kernel[
                             ](c_mn)
 
 
-fn matmul_sm100_fallback[
+fn matmul_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    accum_type: DType,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -336,6 +451,8 @@ fn matmul_sm100_fallback[
     c: LayoutTensor[c_type, c_layout, *_, **_],
     a: LayoutTensor[a_type, a_layout, *_, **_],
     b: LayoutTensor[b_type, b_layout, *_, **_],
+    a_scales: LayoutTensor[accum_type, a_scales_layout, *_, **_],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
     constrained[
@@ -352,7 +469,49 @@ fn matmul_sm100_fallback[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
+    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+
+    var M = c.dim(0)
+    var N = c.dim(1)
+    var K = a.dim(1)
+
+    var a_scales_1 = a_scales.dim(1)
+    debug_assert(a_scales_1 == M, "a_scales.dim(0) must be equal to M")
+
+    var a_scales_0 = a_scales.dim(0)
+    debug_assert(
+        K % a_scales_0 == 0 and (K // a_scales_0) == BK,
+        (
+            "K must be divisible by a_scales.dim(1) and BK must be equal to K"
+            " // a_scales.dim(1)"
+        ),
+    )
+
+    var b_scales_0 = b_scales.dim(0)
+    var b_scales_1 = b_scales.dim(1)
+    debug_assert(
+        (N % b_scales_0 == 0 and (N // b_scales_0) == BK)
+        and (K % b_scales_1 == 0 and (K // b_scales_1) == BK),
+        (
+            "N must be divisible by b_scales.dim(0) and BK must be equal to N"
+            " // b_scales.dim(0) and K must be divisible by b_scales.dim(1) and"
+            " BK must be equal to K // b_scales.dim(1)"
+        ),
+    )
+
+    var logger = Logger()
+    logger.info(
+        "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
+        " 128)"
+    )
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
+    logger.info(
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]"
+    )
+    logger.info(
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]"
+    )
+
     a_tma_op = create_tma_tile[
         a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
     ](ctx, a)
@@ -364,19 +523,30 @@ fn matmul_sm100_fallback[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
+
+    alias smem_use = (
+        BM * sizeof[a_type]() + BN * sizeof[b_type]()
+    ) * BK + 24 + sizeof[accum_type]() * BM
 
     alias block_dim = 128
 
-    alias kernel = matmul_sm100_fallback_kernel[
+    alias kernel = matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
         b_type,
         c_type,
+        accum_type,
+        __type_of(a).layout,
+        __type_of(b).layout,
+        __type_of(c).layout,
+        __type_of(a_scales).layout,
+        __type_of(b_scales).layout,
         __type_of(a_tma_op).layout,
         __type_of(b_tma_op).layout,
-        __type_of(c).layout,
+        __type_of(a_scales_tma_op).layout,
         __type_of(a_tma_op).desc_layout,
         __type_of(b_tma_op).desc_layout,
+        __type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -386,14 +556,12 @@ fn matmul_sm100_fallback[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    var K = a.dim[1]()
-
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,
+        a_scales_tma_op,
+        b_scales,
         ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

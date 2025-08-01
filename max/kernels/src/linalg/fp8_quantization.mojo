@@ -358,17 +358,17 @@ fn naive_blockwise_scaled_fp8_matmul[
     var a_scales = from_ndbuffer_row_major(a_scales_device)
     var b_scales = from_ndbuffer_row_major(b_scales_device)
 
-    var M = c_device.dim[0]()
-    var N = c_device.dim[1]()
-    var K = a_device.dim[1]()
+    var M = c_device.dim(0)
+    var N = c_device.dim(1)
+    var K = a_device.dim(1)
 
     logger.info("Executing Naive Blockwise Scaled FP8 GEMM")
     logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
     logger.info(
-        "A Scales Shape: [", a_scales.dim[0](), ", ", a_scales.dim[1](), "]"
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]"
     )
     logger.info(
-        "B Scales Shape: [", b_scales.dim[0](), ", ", b_scales.dim[1](), "]"
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]"
     )
 
     alias kernel = naive_blockwise_scaled_fp8_matmul_kernel[
@@ -424,9 +424,9 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    var K = a.dim[1]()
+    var M = c.dim(0)
+    var N = c.dim(1)
+    var K = a.dim(1)
 
     var x = global_idx.x
     var y = global_idx.y
@@ -434,12 +434,12 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     if x >= M or y >= N:
         return
 
-    var a_scale_0 = a_scales.dim[0]()
-    var a_scale_1 = a_scales.dim[1]()
-    var b_scale_0 = b_scales.dim[0]()
-    var b_scale_1 = b_scales.dim[1]()
-    var MAT_A_ROWS_SCALE_SIZE = M // a_scale_0
-    var MAT_A_COLS_SCALE_SIZE = K // a_scale_1
+    var a_scale_0 = a_scales.dim(0)
+    var a_scale_1 = a_scales.dim(1)
+    var b_scale_0 = b_scales.dim(0)
+    var b_scale_1 = b_scales.dim(1)
+    var MAT_A_ROWS_SCALE_SIZE = K // a_scale_0
+    var MAT_A_COLS_SCALE_SIZE = M // a_scale_1
     var MAT_B_ROWS_SCALE_SIZE = (
         N // b_scale_0 if transpose_b else K // b_scale_0
     )
@@ -451,7 +451,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     for k in range(K):
         var a_val = rebind[Scalar[a_type]](a[x, k]).cast[s_type]()
         var a_scale_factor = rebind[Scalar[s_type]](
-            a_scales[x // MAT_A_ROWS_SCALE_SIZE, k // MAT_A_COLS_SCALE_SIZE]
+            a_scales[k // MAT_A_ROWS_SCALE_SIZE, x // MAT_A_COLS_SCALE_SIZE]
         )
 
         var b_val: Scalar[s_type]

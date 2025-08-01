@@ -18,6 +18,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tma_mma_sm100.mojo": ["//:b200_gpu"],
     "test_tma_pair_mma_sm100.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_fallback.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_blockwise_fp8.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_0.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_1.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_2.mojo": ["//:b200_gpu"],
