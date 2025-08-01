@@ -497,6 +497,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               [&](auto op) {
                 // If this is a synthetic decl, resolve it specially.
                 if (decl.getCursor().isInvalid()) {
+                  if constexpr (std::is_same_v<FnOp, decltype(op)>) {
+                    if (failed(resolveSyntheticSignature(op, decl)))
+                      decl.setErroneous();
+                    return;
+                  }
                   if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
                     if (failed(resolveSyntheticSignature(op, decl)))
                       decl.setErroneous();
@@ -753,6 +758,11 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
   // Erase unresolved operations from source.
   if (eraseUnparsedDecls) {
     for (ASTDecl *decl : parsedDeclList) {
+      // During trait body resolution we create decls that point to parent
+      // trait decl's FnOps. In order to avoid double frees later on in this
+      // loop bail early if we come across such a decl.
+      if (decl->getCursor().isInvalid())
+        continue;
       if (decl->resolvedness == DeclResolvedness::unparsed &&
           !decl->loadedFromBytecode)
         if (Operation *op = decl->getIfOperation()) {

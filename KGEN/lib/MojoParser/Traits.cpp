@@ -123,6 +123,15 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (failed(shared.declResolver->resolveBody(traitDecl, structDecl.getLoc())))
     return failure();
 
+  // Make sure we've to at least signature resolve all the decls in the trait.
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (auto &decl : decls) {
+      if (failed(
+              shared.getDeclResolver().resolveSignature(*decl, decl->getLoc())))
+        return failure();
+    }
+  }
+
   if (traitDeclOp.isRegisterPassable() && !structDeclOp.isRegisterPassable()) {
     diag = shared.emitError(structDecl.getLoc(),
                             "a struct must be register passable in order to "
