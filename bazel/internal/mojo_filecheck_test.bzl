@@ -2,7 +2,7 @@
 
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "get_default_exec_properties", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 
 def mojo_filecheck_test(
         name,
@@ -83,7 +83,7 @@ def mojo_filecheck_test(
             "//bazel/internal:asan-suppressions.txt",
             "//bazel/internal:lsan-suppressions.txt",
         ],
-        env = env | GPU_TEST_ENV | {
+        env = env | GPU_TEST_ENV | get_default_test_env(exec_properties) | {
             "BINARY": "$(location :{}.binary)".format(name),
             "EXPECT_CRASH": "1" if expect_crash else "0",
             "EXPECT_FAIL": "1" if expect_fail else "0",

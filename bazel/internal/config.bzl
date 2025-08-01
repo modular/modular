@@ -1,6 +1,7 @@
 """Private bazel configuration used internally by rules and macros."""
 
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
+load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")  # buildifier: disable=bzl-visibility
 
 GPU_TEST_ENV = {
     "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),suppressions=$(execpath //bazel/internal:asan-suppressions.txt)",
@@ -69,6 +70,17 @@ def get_default_exec_properties(tags, target_compatible_with):
         exec_properties["test.resources:gpu-4"] = "0.01"
 
     return exec_properties
+
+def get_default_test_env(exec_properties):
+    gpu_memory_limit = float(exec_properties.get("test.resources:gpu-memory", DEFAULT_GPU_MEMORY))
+    return select({
+        "@//:has_gpu": {
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "true",
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "{}".format(int(gpu_memory_limit * 1073741824.0)),
+            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "100",
+        },
+        "//conditions:default": {},
+    })
 
 def env_for_available_tools(
         *,

@@ -2,7 +2,7 @@
 
 load("@aspect_rules_py//py:defs.bzl", aspect_py_test = "py_test")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
 
 _HEADER_PATH_ADDITIONS = """
@@ -257,7 +257,8 @@ EOF
         "LIT_PRESERVES_TMP": "1",
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
-    } | GPU_TEST_ENV
+    } | GPU_TEST_ENV | get_default_test_env(exec_properties)
+
     extra_data = [
         "//bazel/internal:asan-suppressions.txt",
         "//bazel/internal:lsan-suppressions.txt",
