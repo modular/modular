@@ -35,6 +35,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     var unfused_intermediate_h = HostNDBuffer[dtype, rank](shape)
     var result_unfused_h = HostNDBuffer[dtype, rank](shape)
     var result_fused_h = HostNDBuffer[dtype, rank](shape)
+    var residual_fused_output_h = HostNDBuffer[dtype, rank](shape)
     var gamma1_h = HostNDBuffer[dtype, 1](Index(cols))
     var gamma2_h = HostNDBuffer[dtype, 1](Index(cols))
 
@@ -51,6 +52,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     var result_fused_buf = result_fused_h.tensor
     var result_unfused_buf = result_unfused_h.tensor
     var unfused_intermediate_buf = unfused_intermediate_h.tensor
+    var residual_fused_output_buf = residual_fused_output_h.tensor
     var epsilon1 = Scalar[dtype](0.001)
     var epsilon2 = Scalar[dtype](0.002)
     var weight_offset1 = Scalar[dtype](0.0)
@@ -65,6 +67,13 @@ fn run_rms_norm_fused_residual_add_gpu[
     ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
+    @parameter
+    @always_inline
+    fn residual_input_fn[
+        width: Int, _rank: Int
+    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
+        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+
     @always_inline
     @__copy_capture(result_fused_buf)
     @parameter
@@ -73,9 +82,23 @@ fn run_rms_norm_fused_residual_add_gpu[
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         result_fused_buf.store[width=width, alignment=alignment](idx, val)
 
+    @always_inline
+    @__copy_capture(residual_fused_output_buf)
+    @parameter
+    fn fused_residual_output_fn[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        residual_fused_output_buf.store[width=width, alignment=alignment](
+            idx, val
+        )
+
     # Call fused kernel
     rms_norm_fused_residual_add_cpu[
-        input_fn, fused_output_fn, multiply_before_cast=True
+        input_fn,
+        residual_input_fn,
+        fused_output_fn,
+        fused_residual_output_fn,
+        multiply_before_cast=True,
     ](
         shape,
         gamma1,
@@ -112,8 +135,10 @@ fn run_rms_norm_fused_residual_add_gpu[
         var result_val = unfused_intermediate_buf.load[width=width](
             rebind[IndexList[rank]](idx)
         )
+
+        var residual_add_val = residual_val + result_val
         unfused_intermediate_buf.store[width=width](
-            rebind[IndexList[rank]](idx), residual_val + result_val
+            rebind[IndexList[rank]](idx), residual_add_val
         )
 
     elementwise[sum_fn, simdwidthof[dtype](), target="cpu"](
@@ -150,6 +175,11 @@ fn run_rms_norm_fused_residual_add_gpu[
         assert_almost_equal(
             result_fused_h.tensor.data[i],
             result_unfused_h.tensor.data[i],
+            rtol=rtol,
+        )
+        assert_almost_equal(
+            residual_fused_output_h.tensor.data[i],
+            unfused_intermediate_h.tensor.data[i],
             rtol=rtol,
         )
 

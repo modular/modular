@@ -763,6 +763,7 @@ fn layer_norm_shape[
     return input.get_shape()
 
 
+@always_inline
 fn _rms_norm_warp_tiling_subkernel[
     dtype: DType,
     simd_width: Int,
@@ -853,6 +854,7 @@ fn rms_norm_gpu_warp_tiling[
             output_fn[simd_width, align](row, idx, norm_val)
 
 
+@always_inline
 fn _rms_norm_gpu_block_subkernel[
     dtype: DType, //,
     simd_width: Int,
@@ -1252,7 +1254,13 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
+    residual_input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_residual_fn: fn[width: Int, alignment: Int] (
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1295,7 +1303,9 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             num_cols,
         )
 
-        norm1_val += vec_data
+        if idx < num_cols:
+            norm1_val += residual_input_fn[simd_width](row, idx)
+            output_residual_fn[simd_width, align](row, idx, norm1_val)
 
         var norm2_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -1320,7 +1330,13 @@ fn rms_norm_fused_residual_add_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
+    residual_input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_residual_fn: fn[width: Int, alignment: Int] (
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1347,9 +1363,12 @@ fn rms_norm_fused_residual_add_gpu_block[
         fn stage1_output_fn[
             width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, width]):
-            residual_val = input_fn[width](row, col)
+            residual_val = residual_input_fn[width](row, col)
+            var residual_add_val = residual_val + val
+            output_residual_fn[width, alignment](row, col, residual_add_val)
+
             shared_mem.store[width=width, alignment=alignment](
-                col, val + residual_val
+                col, residual_add_val
             )
 
         _rms_norm_gpu_block_subkernel[
@@ -1385,6 +1404,12 @@ fn rms_norm_fused_residual_add_gpu[
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    residual_input_fn: fn[width: Int, rank: Int] (
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    output_residual_fn: fn[width: Int, alignment: Int] (
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
     output_fn: fn[width: Int, alignment: Int] (
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
@@ -1422,6 +1447,16 @@ fn rms_norm_fused_residual_add_gpu[
 
     @parameter
     @always_inline
+    fn output_residual_fn_2d[
+        simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
+        # Translate given 2d index back to original Nd tensor
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_residual_fn[simd_width, alignment](indices.canonicalize(), val)
+
+    @parameter
+    @always_inline
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
@@ -1429,6 +1464,16 @@ fn rms_norm_fused_residual_add_gpu[
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    fn residual_input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+        # Translate given 2d index back to original Nd tensor
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return residual_input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -1449,7 +1494,9 @@ fn rms_norm_fused_residual_add_gpu[
                     simd_width,
                     max_warps_per_block,
                     input_fn_2d,
+                    residual_input_fn_2d,
                     output_fn_2d,
+                    output_residual_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
             ](
@@ -1474,7 +1521,9 @@ fn rms_norm_fused_residual_add_gpu[
                     simd_width,
                     max_warps_per_block,
                     input_fn_2d,
+                    residual_input_fn_2d,
                     output_fn_2d,
+                    output_residual_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
             ](
@@ -1502,7 +1551,9 @@ fn rms_norm_fused_residual_add_gpu[
                 1,
                 max_warps_per_block,
                 input_fn_2d,
+                residual_input_fn_2d,
                 output_fn_2d,
+                output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
         ](
@@ -1529,8 +1580,14 @@ fn rms_norm_fused_residual_add_cpu[
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    residual_input_fn: fn[width: Int, rank: Int] (
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_0_fn: fn[width: Int, alignment: Int] (
         idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_residual_fn: fn[width: Int, alignment: Int] (
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
     multiply_before_cast: Bool = True,
@@ -1556,9 +1613,12 @@ fn rms_norm_fused_residual_add_cpu[
     fn intermediate_output_fn[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var residual_val = input_0_fn[width](idx)
+        var residual_val = residual_input_fn[width](idx)
+
+        var residual_add_val = val + residual_val
+        output_residual_fn[width, alignment](idx, residual_add_val)
         intermediate_buffer.store[width=width, alignment=alignment](
-            idx, val + residual_val
+            idx, residual_add_val
         )
 
     rms_norm_cpu[
@@ -1637,7 +1697,13 @@ fn _rms_norm_fused_residual_add_impl[
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    input_1_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn: fn[width: Int, alignment: Int] (
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing -> None,
+    output_residual_fn: fn[width: Int, alignment: Int] (
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -1679,7 +1745,11 @@ fn _rms_norm_fused_residual_add_impl[
     @parameter
     if is_gpu[target]():
         rms_norm_fused_residual_add_gpu[
-            input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
+            input_0_fn,
+            input_1_fn,
+            output_residual_fn,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
         ](
             shape,
             gamma1,
@@ -1693,6 +1763,8 @@ fn _rms_norm_fused_residual_add_impl[
     else:
         rms_norm_fused_residual_add_cpu[
             input_0_fn,
+            input_1_fn,
+            output_residual_fn,
             output_fn,
             multiply_before_cast=multiply_before_cast,
         ](
@@ -1714,8 +1786,14 @@ fn rms_norm_fused_residual_add[
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    input_1_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
     output_0_fn: fn[width: Int, rank: Int, alignment: Int] (
         idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_residual_fn: fn[width: Int, rank: Int, alignment: Int] (
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
     target: StaticString = "cpu",
@@ -1739,6 +1817,13 @@ fn rms_norm_fused_residual_add[
 
     @always_inline
     @parameter
+    fn output_residual_fn_wrapper[
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        output_residual_fn[width, rank, alignment](idx, val)
+
+    @always_inline
+    @parameter
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
@@ -1750,7 +1835,9 @@ fn rms_norm_fused_residual_add[
             dtype,
             rank,
             input_0_fn,
+            input_1_fn,
             output_fn_wrapper,
+            output_residual_fn_wrapper,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
