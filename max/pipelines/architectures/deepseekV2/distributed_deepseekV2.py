@@ -16,20 +16,21 @@ from __future__ import annotations
 
 import functools
 
+from max.graph import ShardingStrategy
 from max.nn import (
+    MLP,
     ColumnParallelLinear,
-    DistributedMLP,
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    Module,
+    Shardable,
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
     DistributedLatentAttentionWithRope,
 )
 from max.nn.kv_cache import FetchPagedKVCacheCollection
-from max.nn.moe import DistributedTPMoE
+from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -57,14 +58,6 @@ class DistributedDeepseekV2(DistributedTransformer):
             mscale=config.rope_scaling["mscale"],
             mscale_all_dim=config.rope_scaling["mscale_all_dim"],
         )
-        rope = DeepseekYarnRotaryEmbedding(
-            config.qk_rope_head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-            device=config.devices[0],
-        )
 
         distributed_norm = functools.partial(
             DistributedRMSNorm,
@@ -79,7 +72,14 @@ class DistributedDeepseekV2(DistributedTransformer):
             DistributedTransformerBlock(
                 devices=config.devices,
                 attention=DistributedLatentAttentionWithRope(
-                    rope=rope,
+                    rope=DeepseekYarnRotaryEmbedding(
+                        config.qk_rope_head_dim,
+                        n_heads=config.num_attention_heads,
+                        theta=config.rope_theta,
+                        max_seq_len=config.max_position_embeddings,
+                        scaling_params=scaling_params,
+                        device=config.devices[0],
+                    ),
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
@@ -126,9 +126,18 @@ class DistributedDeepseekV2(DistributedTransformer):
                 config.kv_params
             ),
             devices=config.devices,
+            use_subgraphs=True,
+            subgraph_layer_groups=[
+                [
+                    i
+                    for i in range(
+                        config.first_k_dense_replace, config.num_hidden_layers
+                    )
+                ]
+            ],
         )
 
-    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:
+    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Shardable:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
 
@@ -137,14 +146,14 @@ class DistributedDeepseekV2(DistributedTransformer):
             i: Layer index
 
         Returns:
-            Either a MoE or MLP module depending on the layer index and config
+            List of MLP shards or MoE modules depending on the layer index and config
         """
         if (
             config.n_routed_experts is not None
             and i >= config.first_k_dense_replace
             and i % config.moe_layer_freq == 0
         ):
-            return DistributedTPMoE(
+            moe = MoE(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.n_routed_experts,
@@ -156,11 +165,19 @@ class DistributedDeepseekV2(DistributedTransformer):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
             )
+            moe.sharding_strategy = ShardingStrategy.tensor_parallel(
+                len(config.devices)
+            )
+            return moe
         else:
-            return DistributedMLP(
+            mlp = MLP(
                 dtype=config.dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
             )
+            mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                len(config.devices)
+            )
+            return mlp

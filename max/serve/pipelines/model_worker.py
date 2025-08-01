@@ -131,7 +131,7 @@ class ModelWorker:
             pipeline_role = pipeline_config.pipeline_role
 
             if (
-                not pipeline_role.needs_dispatcher_client()
+                not pipeline_role.uses_dispatch_service()
                 and dispatcher_factory is not None
             ):
                 logger.info(
@@ -140,7 +140,7 @@ class ModelWorker:
                 dispatcher_factory = None
 
             dispatcher_client = None
-            if pipeline_role.needs_dispatcher_client():
+            if pipeline_role.uses_dispatch_service():
                 if dispatcher_factory is None:
                     raise ValueError(
                         f"Dispatcher factory is required for {pipeline_role} but was not provided"
@@ -291,13 +291,12 @@ async def start_model_worker(
         unhealthy_poll_s=200e-3,
     )
 
-    use_heartbeat = settings.use_heartbeat
-    if not use_heartbeat:
+    if not settings.use_heartbeat:
         engine_queue.use_process_healthcheck(worker)
 
     # before progressing, observe the worker process to be healthy or dead
     dt = asyncio.create_task(monitor.until_dead())
-    if use_heartbeat:
+    if settings.use_heartbeat:
         ht = asyncio.create_task(monitor.until_healthy())
     else:
         ht = asyncio.create_task(monitor.until_started())
@@ -346,7 +345,7 @@ async def start_model_worker(
     logger.debug("Model worker task is alive and healthy")
 
     try:
-        if use_heartbeat:
+        if settings.use_heartbeat:
             worker_task = asyncio.create_task(monitor.shutdown_if_unhealthy())
         else:
             worker_task = asyncio.create_task(monitor.shutdown_if_dead())

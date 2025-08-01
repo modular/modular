@@ -22,10 +22,10 @@ from typing import Generic, TypeVar, Union
 
 import zmq
 from max.interfaces import (
+    Pipeline,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -158,7 +158,10 @@ class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
-        pipeline: TokenGenerator,
+        pipeline: Pipeline[
+            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationOutput,
+        ],
         *,
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
@@ -746,7 +749,7 @@ class TokenGenerationScheduler(Scheduler):
         batch_to_execute = sch_output.batch_inputs
 
         # execute the batch
-        batch_responses = self.pipeline.next_token(
+        batch_responses = self.pipeline.execute(
             TextGenerationInputs(
                 batch_to_execute, num_steps=sch_output.num_steps
             )
@@ -769,7 +772,7 @@ class TokenGenerationScheduler(Scheduler):
 
         METRICS.batch_size(len(batch_to_execute))
         # execute the batch
-        batch_responses = self.pipeline.next_token(
+        batch_responses = self.pipeline.execute(
             TextGenerationInputs(batch_to_execute, sch_output.num_steps)
         )
         # remove terminated requests from the batch
@@ -792,7 +795,10 @@ class TokenGenerationScheduler(Scheduler):
 def load_text_generation_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
-    pipeline: TokenGenerator,
+    pipeline: Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ],
     pipeline_config: PipelineConfig,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.

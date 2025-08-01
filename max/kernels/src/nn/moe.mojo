@@ -49,7 +49,7 @@ fn moe_create_indices_kernel[
         mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.uint32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
         mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
@@ -202,7 +202,7 @@ fn moe_create_indices[
     token_expert_order: LayoutTensor[mut=True, DType.uint32, **_],
     expert_start_indices: LayoutTensor[mut=True, DType.uint32, **_],
     restore_token_order: LayoutTensor[mut=True, DType.uint32, **_],
-    expert_ids: LayoutTensor[mut=True, DType.uint32, **_],
+    expert_ids: LayoutTensor[mut=True, DType.int32, **_],
     expert_usage_stats: LayoutTensor[mut=True, DType.uint32, **_],
     topk_ids: LayoutTensor[input_type, **_],
     context: DeviceContextPtr,

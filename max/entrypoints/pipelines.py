@@ -133,14 +133,14 @@ def common_server_options(func):  # noqa: ANN001
         default=0,
         help="Simulate fake-perf with failure percentage",
     )
+    @click.option("--port", type=int, help="Port to run the server on.")
     @click.option(
-        "--experimental-enable-kvcache-agent",
+        "--headless",
         is_flag=True,
         show_default=True,
         default=False,
-        help="Experimental: Enable KV Cache Agent support.",
+        help="Run only the dispatcher service and model worker without the API server.",
     )
-    @click.option("--port", type=int, help="Port to run the server on.")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -163,8 +163,8 @@ def cli_serve(
     profile_serve: bool,
     model_name: str | None,
     sim_failure: int,
-    experimental_enable_kvcache_agent: bool,
     port: int,
+    headless: bool,
     task: str,
     task_arg: tuple[str, ...],
     **config_kwargs: Any,
@@ -175,7 +175,10 @@ def cli_serve(
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
-    from max.entrypoints.cli import serve_pipeline
+    from max.entrypoints.cli import (
+        serve_api_server_and_model_worker,
+        serve_model_worker,
+    )
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
     from max.pipelines import AudioGenerationConfig, PipelineConfig
@@ -192,15 +195,21 @@ def cli_serve(
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
-    serve_pipeline(
-        pipeline_config=pipeline_config,
-        profile=profile_serve,
-        model_name=model_name,
-        failure_percentage=failure_percentage,
-        experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
-        port=port,
-        pipeline_task=PipelineTask(task),
-    )
+
+    if headless:
+        serve_model_worker(
+            pipeline_config=pipeline_config,
+            pipeline_task=PipelineTask(task),
+        )
+    else:
+        serve_api_server_and_model_worker(
+            pipeline_config=pipeline_config,
+            profile=profile_serve,
+            model_name=model_name,
+            failure_percentage=failure_percentage,
+            port=port,
+            pipeline_task=PipelineTask(task),
+        )
 
 
 @main.command(name="generate", cls=WithLazyPipelineOptions)

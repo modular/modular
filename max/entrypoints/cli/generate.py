@@ -23,10 +23,10 @@ from typing import Optional
 
 import requests
 from max.interfaces import (
+    Pipeline,
     PipelineTokenizer,
     TextGenerationInputs,
     TextGenerationRequest,
-    TokenGenerator,
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
@@ -38,7 +38,7 @@ MODEL_NAME = "model"
 
 
 async def stream_text_to_console(
-    pipeline: TokenGenerator,
+    pipeline: Pipeline,
     tokenizer: PipelineTokenizer,
     prompt: str,
     images: Optional[list[bytes]],
@@ -69,7 +69,7 @@ async def stream_text_to_console(
         first_token = True
         generate_again = True
         while generate_again:
-            responses = pipeline.next_token(
+            responses = pipeline.execute(
                 TextGenerationInputs(pipeline_request, num_steps=num_steps)
             )
 
@@ -113,7 +113,7 @@ def generate_text_for_pipeline(
     # Run timed run & print results.
     with TextGenerationMetrics(print_report=True) as metrics:
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-        assert isinstance(pipeline, TokenGenerator)
+        assert isinstance(pipeline, Pipeline)
         if image_urls:
             logger.info("Downloading images")
             images = [requests.get(url).content for url in image_urls]

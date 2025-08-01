@@ -14,6 +14,8 @@ def mojo_library(
         docs_base_path = "",
         testonly = False,
         visibility = ["//visibility:public"],
+        additional_compiler_inputs = [],
+        copts = [],
         tags = []):
     _upstream_mojo_library(
         name = name,
@@ -23,6 +25,8 @@ def mojo_library(
         visibility = visibility,
         testonly = testonly,
         tags = tags,
+        additional_compiler_inputs = additional_compiler_inputs,
+        copts = copts,
     )
 
     mojo_doc(

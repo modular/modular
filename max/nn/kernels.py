@@ -1617,6 +1617,70 @@ def swish_glu(
     )[0].tensor
 
 
+def kv_cache_ragged_radd(
+    kv_params: KVCacheParams,
+    a: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    input_row_offsets: TensorValue,
+    batch_offset: TensorValue,
+    layer_idx: int,
+) -> None:
+    """This function adds a tensor to a slice of the KVCache, sliced on the batch dimension.
+
+    This expects that the requests which should be sliced out are contiguous and
+    in the front of the tensor, and we're only adding to the last requests in the batch
+    Args:
+        a: The tensor to add to the KVCache.
+        kv_collection: The KVCache collection to add to.
+        input_row_offsets: The offsets of the input tensor.
+        batch_offset: The batch to start applying the r-add to.
+        layer_idx: The layer index to add to.
+    """
+
+    if a.rank != 2:
+        msg = f"Expected a to have rank 2 but got {a.rank}"
+        raise ValueError(msg)
+
+    if input_row_offsets.rank != 1:
+        msg = f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        msg = f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    if kv_params.page_size is None:
+        msg = "Expected kv_params.page_size to be set"
+        raise ValueError(msg)
+
+    # slice input_row_offests to the batch offset
+    input_row_offsets = ops.slice_tensor(
+        input_row_offsets,
+        [(slice(batch_offset, None), Dim("input_row_offsets_slice_len"))],
+    )
+
+    op_name = (
+        f"mo.kv_cache.ragged.{kv_params.cache_strategy.kernel_substring()}.radd"
+    )
+    parameters: dict[str, int | str | DType | bool] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+    ops.inplace_custom(
+        op_name,
+        device=input_row_offsets.device,
+        values=[
+            a,
+            kv_collection,
+            input_row_offsets,
+            batch_offset,
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+
 def rms_norm_key_cache(
     kv_params: KVCacheParams,
     kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
@@ -1750,7 +1814,7 @@ def moe_create_indices(
                 device=topk_ids.device,
             ),  # restore_token_order
             TensorType(
-                dtype=DType.uint32,
+                dtype=DType.int32,
                 shape=[num_local_experts],
                 device=topk_ids.device,
             ),  # expert_ids

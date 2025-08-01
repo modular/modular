@@ -18,7 +18,7 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t
+from sys.ffi import c_char, c_int, c_size_t, get_errno_message
 
 
 # ===-----------------------------------------------------------------------===#
@@ -219,3 +219,32 @@ fn dlsym[
     result_type
 ]:
     return external_call["dlsym", UnsafePointer[result_type]](handle, name)
+
+
+fn realpath(
+    path: UnsafePointer[c_char],
+    resolved_path: UnsafePointer[c_char] = UnsafePointer[c_char](),
+) raises -> UnsafePointer[c_char]:
+    """Expands all symbolic links and resolves references to /./, /../ and extra
+    '/' characters in the null-terminated string named by path to produce a
+    canonicalized absolute pathname.  The resulting pathname is stored as a
+    null-terminated string, up to a maximum of PATH_MAX bytes, in the buffer
+    pointed to by resolved_path.  The resulting path will have no symbolic link,
+    /./ or /../ components.
+
+    If resolved_path is a NULL pointer, then realpath() uses malloc(3) to
+    allocate a buffer of up to PATH_MAX bytes to hold the resolved pathname, and
+    returns a pointer to this buffer. The caller is responsible for deallocating
+    the buffer in this scenario.
+
+    Args:
+        path: The path to resolve.
+        resolved_path: The buffer to store the resolved path. If this is a NULL
+            pointer then libc will allocate a buffer of up to PATH_MAX bytes to
+            hold the resolved pathname. The caller is responsible for
+            deallocating the buffer in this scenario.
+
+    Returns:
+        A pointer to the resolved path.
+    """
+    return external_call["realpath", UnsafePointer[c_char]](path, resolved_path)

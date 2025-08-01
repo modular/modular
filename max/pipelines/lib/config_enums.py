@@ -61,7 +61,7 @@ class PipelineRole(str, Enum):
     PrefillOnly = "prefill_only"
     DecodeOnly = "decode_only"
 
-    def needs_dispatcher_client(self) -> bool:
+    def uses_dispatch_service(self) -> bool:
         """Whether the scheduler needs a dispatcher client to be started.
 
         The dispatcher is a message routing system that enables communication between

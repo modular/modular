@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import logging
 import uuid
@@ -18,7 +19,7 @@ from dataclasses import dataclass
 from typing import Union
 
 from max._core import nixl
-from max.interfaces import TextGenerationInputs, TokenGenerator
+from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -56,7 +57,10 @@ class PrefillSchedulerConfig:
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TokenGenerator,
+        pipeline: Pipeline[
+            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationOutput,
+        ],
         scheduler_config: PrefillSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
@@ -222,7 +226,7 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         inputs = TextGenerationInputs(batch=self.active_batch, num_steps=1)
-        _ = self.pipeline.next_token(inputs)
+        _ = self.pipeline.execute(inputs)
 
         # Send completed requests to decode queue.
         # TODO: E2EOPT-275 Handle chunked requests.
@@ -280,7 +284,10 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: TokenGenerator,
+    pipeline: Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ],
     pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
 ) -> PrefillScheduler:

@@ -83,10 +83,8 @@ class MAXModelConfig(MAXModelConfigBase):
     quantization_encoding: Optional[SupportedEncoding] = None
     """Weight encoding type."""
 
-    # TODO: Rename to make it clear that this option supports bidirectional
-    # casting.
-    allow_safetensors_weights_float32_to_bfloat16_cast: bool = False
-    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed."""
+    allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = False
+    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
@@ -161,13 +159,13 @@ class MAXModelConfig(MAXModelConfigBase):
         2. Parse the weight path(s) and initialize the _weights_repo_id
         """
 
-        # Validate that --quantzation-encoding is given when --allow-safetensors-weights-float32-to-bfloat16-cast is True
+        # Validate that --quantzation-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
         if (
-            self.allow_safetensors_weights_float32_to_bfloat16_cast
+            self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
             and self.quantization_encoding is None
         ):
             raise ValueError(
-                "--quantization-encoding must be provided when --allow-safetensors-weights-float32-to-bfloat16-cast is enabled"
+                "--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled"
             )
 
         # validate that the pipeline and tensor parallel degrees are set.
@@ -424,8 +422,8 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If the dtype casting is not allowed.
         """
-        assert self.allow_safetensors_weights_float32_to_bfloat16_cast, (
-            "allow_safetensors_weights_float32_to_bfloat16_cast must be set to True"
+        assert self.allow_safetensors_weights_fp32_bf6_bidirectional_cast, (
+            "allow_safetensors_weights_fp32_bf6_bidirectional_cast must be set to True"
         )
 
         if from_encoding == to_encoding:
@@ -474,17 +472,17 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
 
             if file_encoding:
-                if self.allow_safetensors_weights_float32_to_bfloat16_cast:
+                if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
                     self._validate_and_resolve_dtype_casting(
                         from_encoding=self.quantization_encoding,
                         to_encoding=file_encoding,
                     )
-                # For cases where they do not match but with allow_safetensors_weights_float32_to_bfloat16_cast set to False, we raise an error.
+                # For cases where they do not match but with allow_safetensors_weights_fp32_bf6_bidirectional_cast set to False, we raise an error.
                 elif file_encoding != self.quantization_encoding:
                     msg = f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
                     raise ValueError(msg)
         else:
-            if self.allow_safetensors_weights_float32_to_bfloat16_cast:
+            if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
                 # Check if the repo only has one quantization_encoding.
                 supported_encodings = (
                     self.huggingface_weight_repo.supported_encodings
@@ -829,7 +827,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
-            "allow_safetensors_weights_float32_to_bfloat16_cast": "Specify whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed.",
+            "allow_safetensors_weights_fp32_bf6_bidirectional_cast": "Specify whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models.",
             "huggingface_model_revision": "Branch or Git revision of Hugging Face model repository to use.",
             "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",

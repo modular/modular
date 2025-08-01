@@ -367,9 +367,10 @@ fn _mixed_precision_output_fusion_hook_impl[
     # DType and rank after casting/view fusion.
     rank: Int,
     dst_dtype: DType,
-    # DType and shape before casting/view fusion.
+    # DType, shape and strides before casting/view fusion.
     src_rank: Int,
     src_shape: DimList,
+    src_strides: DimList,
     src_dtype: DType,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[dst_dtype, rank],
@@ -389,7 +390,7 @@ fn _mixed_precision_output_fusion_hook_impl[
 
     alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
-        strides=static_spec.strides,
+        strides=src_strides,
         alignment=static_spec.alignment,
         address_space=static_spec.address_space,
         exclusive=static_spec.exclusive,

@@ -13,6 +13,8 @@
 # mypy: disable-error-code="import-not-found"
 """Speculative Decoding Text Generation Pipeline"""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -31,10 +33,10 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
@@ -128,7 +130,10 @@ class SpeculativeDecodingMetrics:
 
 
 class SpeculativeDecodingTextGenerationPipeline(
-    TokenGenerator[Union[TextContext, TextAndVisionContext]]
+    Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ]
 ):
     """Generalized token generator pipeline with speculative decoding."""
 
@@ -626,7 +631,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         return first_rejected_tokens, recovered_tokens, bonus_tokens
 
     @traced
-    def next_token(
+    def execute(
         self,
         inputs: TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
     ) -> dict[RequestID, TextGenerationOutput]:

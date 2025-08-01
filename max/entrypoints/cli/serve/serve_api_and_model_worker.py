@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Utilities for serving cli."""
+"""Utilities for serving api server with model worker."""
 
 import logging
 import signal
@@ -61,26 +61,21 @@ def sigint_handler(sig, frame) -> None:  # noqa: ANN001
     raise KeyboardInterrupt("SIGINT received")
 
 
-def serve_pipeline(
+def serve_api_server_and_model_worker(
     pipeline_config: PipelineConfig,
     profile: bool = False,
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
-    experimental_enable_kvcache_agent: bool = False,
     port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _server_instance
 
     # Initialize settings
-    settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
+    settings = Settings()
 
     if port is not None:
         settings.port = port
-
-    settings.experimental_enable_kvcache_agent = (
-        experimental_enable_kvcache_agent
-    )
 
     override_architecture: Optional[str] = None
     # TODO: This is a workaround to support embeddings generation until the

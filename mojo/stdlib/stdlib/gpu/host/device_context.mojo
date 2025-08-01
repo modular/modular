@@ -56,7 +56,6 @@ from gpu.host.compile import (
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
-
 from utils import Variant
 from utils._serialize import _serialize_elements
 
@@ -4626,6 +4625,29 @@ struct DeviceContext(Copyable, Movable):
             "DeviceContext is not supported on GPUs",
         ]()
         return _DeviceContextScope(self)
+
+    fn set_as_current(self) raises:
+        """For use with libraries that require a specific GPU context to be
+        active. Sets the current device to the one associated with this
+        DeviceContext.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+        var ctx = DeviceContext(device_id=1)
+        ctx.set_as_current()
+        ```
+
+        Raises:
+            If there's an error setting the current device.
+        """
+
+        _checked(
+            external_call["AsyncRT_DeviceContext_setAsCurrent", _CharPtr](
+                self._handle,
+            )
+        )
 
     @always_inline
     fn execution_time[

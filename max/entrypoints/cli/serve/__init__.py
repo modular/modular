@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .serve_api_and_model_worker import serve_api_server_and_model_worker
+from .serve_model_worker import serve_model_worker
 
-def main():
-    print("hello, magic!")
+__all__ = ["serve_api_server_and_model_worker", "serve_model_worker"]

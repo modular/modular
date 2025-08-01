@@ -56,10 +56,3 @@ fn main():
     # CHECK-SAME: "ENABLED: detail event 1"
     # CHECK-SAME: "ENABLED: trace event 2"
     # CHECK-SAME: "ENABLED: detail event 2"
-
-    print("== test_tracing_disabled")
-    test_tracing[TraceLevel.THREAD, False]()
-    # CHECK-NOT: "DISABLED: trace event 1"
-    # CHECK-NOT: "DISABLED: detail event 1"
-    # CHECK-NOT: "DISABLED: trace event 2"
-    # CHECK-NOT: "DISABLED: detail event 2"

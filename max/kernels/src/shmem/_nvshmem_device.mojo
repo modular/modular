@@ -11,13 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
+
+@extern("nvshmem_int_p")
+fn nvshmem_int_p(destination: UnsafePointer[c_int], mype: c_int, peer: c_int):
+    ...
 
 
-def zero() -> PythonObject:
-    torch = Python.import_module("torch")
-    return torch.zeros(1)
+@extern("nvshmem_int_g")
+fn nvshmem_int_g(destination: UnsafePointer[c_int], mype: c_int, peer: c_int):
+    ...
 
 
-def main():
-    print(zero())
+@extern("nvshmem_barrier_all")
+fn nvshmem_barrier_all():
+    ...
+
+
+@extern("nvshmem_my_pe")
+fn nvshmem_my_pe() -> c_int:
+    ...
+
+
+@extern("nvshmem_n_pes")
+fn nvshmem_n_pes() -> c_int:
+    ...

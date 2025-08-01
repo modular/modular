@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from typing import TypeVar
+
 import zmq
-from max.interfaces import AudioGenerator, EmbeddingsGenerator, TokenGenerator
+from max.interfaces import AudioGenerator, EmbeddingsGenerator, Pipeline
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineRole
 from max.serve.config import Settings
@@ -40,9 +42,11 @@ __all__ = [
     "load_scheduler",
 ]
 
+T = TypeVar("T")
+
 
 def load_scheduler(
-    pipeline: TokenGenerator | EmbeddingsGenerator | AudioGenerator,
+    pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator,
     zmq_ctx: zmq.Context,
     pipeline_config: PipelineConfig,
     settings: Settings,
@@ -95,7 +99,7 @@ def load_scheduler(
             paged_manager=paged_manager,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
-        assert isinstance(pipeline, TokenGenerator)
+        assert isinstance(pipeline, Pipeline)
         return load_text_generation_scheduler(
             zmq_ctx,
             settings,
@@ -103,7 +107,7 @@ def load_scheduler(
             pipeline_config,
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
-        assert isinstance(pipeline, TokenGenerator)
+        assert isinstance(pipeline, Pipeline)
         if dispatcher_client is None:
             raise ValueError(
                 "Dispatcher client is required for decode scheduler"
@@ -116,7 +120,7 @@ def load_scheduler(
             dispatcher_client=dispatcher_client,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-        assert isinstance(pipeline, TokenGenerator)
+        assert isinstance(pipeline, Pipeline)
         if dispatcher_client is None:
             raise ValueError(
                 "Dispatcher client is required for prefill scheduler"

@@ -52,10 +52,11 @@ from max.graph.weights import (
 from max.interfaces import (
     InputContext,
     LogProbabilities,
+    Pipeline,
+    PipelineOutputsDict,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenGenerator,
 )
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -491,7 +492,7 @@ class KVCacheMixin(Protocol):
 
 
 def get_paged_manager(
-    pipeline: TokenGenerator[T],
+    pipeline: Pipeline,
 ) -> Optional[PagedKVCacheManager]:
     if (
         hasattr(pipeline, "_pipeline_model")
@@ -517,7 +518,9 @@ class BatchInfo:
     """Number of steps to do in the pipeline"""
 
 
-class TextGenerationPipeline(TokenGenerator[T]):
+class TextGenerationPipeline(
+    Pipeline[TextGenerationInputs[T], TextGenerationOutput]
+):
     """Generalized token generator pipeline."""
 
     def __init__(
@@ -967,10 +970,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 f.flush()  # Refer to MAXSERV-893
 
     @traced
-    def next_token(
+    def execute(
         self,
         inputs: TextGenerationInputs[T],
-    ) -> dict[RequestID, TextGenerationOutput]:
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
