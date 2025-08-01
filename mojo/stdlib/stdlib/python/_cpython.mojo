@@ -1317,8 +1317,6 @@ struct CPython(Defaultable, Movable):
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
-    var total_ref_count: UnsafePointer[Int]
-    """The total reference count of all Python objects."""
     var init_error: StringSlice[StaticConstantOrigin]
     """An error message if initialization failed."""
 
@@ -1471,8 +1469,6 @@ struct CPython(Defaultable, Movable):
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
 
-        self.total_ref_count = UnsafePointer[Int].alloc(1)
-
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
@@ -1616,7 +1612,6 @@ struct CPython(Defaultable, Movable):
         # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
         self.lib.call["Py_FinalizeEx"]()
         self.lib.close()
-        self.total_ref_count.free()
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
@@ -1753,11 +1748,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
-        var r = self._PyRun_String(
-            str.unsafe_cstr_ptr(), start, globals, locals
-        )
-        self._inc_total_rc()
-        return r
+        return self._PyRun_String(str.unsafe_cstr_ptr(), start, globals, locals)
 
     fn Py_CompileString(
         self,
@@ -1773,13 +1764,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
-        var r = self._Py_CompileString(
+        return self._Py_CompileString(
             str.unsafe_cstr_ptr(),
             filename.unsafe_cstr_ptr(),
             start,
         )
-        self._inc_total_rc()
-        return r
 
     fn PyEval_EvalCode(
         self,
@@ -1795,20 +1784,12 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
         """
-        var r = self._PyEval_EvalCode(co, globals, locals)
-        self._inc_total_rc()
-        return r
+        return self._PyEval_EvalCode(co, globals, locals)
 
     # ===-------------------------------------------------------------------===#
     # Reference Counting
     # ref: https://docs.python.org/3/c-api/refcounting.html
     # ===-------------------------------------------------------------------===#
-
-    fn _inc_total_rc(self):
-        self.total_ref_count[] += 1
-
-    fn _dec_total_rc(self):
-        self.total_ref_count[] -= 1
 
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
@@ -1820,7 +1801,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_XINCREF
         """
         self._Py_IncRef(ptr)
-        self._inc_total_rc()
 
     fn Py_DecRef(self, ptr: PyObjectPtr):
         """Release a strong reference to the object `ptr` points to.
@@ -1832,7 +1812,6 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_XDECREF
         """
         self._Py_DecRef(ptr)
-        self._dec_total_rc()
 
     # This function assumes a specific way PyObjectPtr is implemented, namely
     # that the refcount has offset 0 in that structure. That generally doesn't
@@ -1928,9 +1907,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
         """
-        var r = self._PyErr_GetRaisedException()
-        self._inc_total_rc()
-        return r
+        return self._PyErr_GetRaisedException()
 
     # TODO: fix the signature to take the type, value, and traceback as args
     fn PyErr_Fetch(self) -> PyObjectPtr:
@@ -1952,9 +1929,7 @@ struct CPython(Defaultable, Movable):
             UnsafePointer(to=traceback),
         )
 
-        var r = value
-        self._inc_total_rc()
-        return r
+        return value
 
     # ===-------------------------------------------------------------------===#
     # Initialization, Finalization, and Threads
@@ -2012,9 +1987,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
-        var r = self._PyImport_ImportModule(name.unsafe_cstr_ptr())
-        self._inc_total_rc()
-        return r
+        return self._PyImport_ImportModule(name.unsafe_cstr_ptr())
 
     fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
         """Return the module object corresponding to a module name.
@@ -2056,9 +2029,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
-        var r = self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
-        self._inc_total_rc()
-        return r
+        return self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
 
     fn PyObject_SetAttrString(
         self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
@@ -2079,9 +2050,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_Str
         """
-        var r = self._PyObject_Str(obj)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_Str(obj)
 
     fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
         """Compute and return the hash value of an object `obj`.
@@ -2109,9 +2078,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_Type
         """
-        var r = self._PyObject_Type(obj)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_Type(obj)
 
     fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
         """Return the length of object `obj`.
@@ -2132,9 +2099,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem
         """
-        var r = self._PyObject_GetItem(obj, key)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_GetItem(obj, key)
 
     fn PyObject_SetItem(
         self, obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
@@ -2157,9 +2122,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter
         """
-        var r = self._PyObject_GetIter(obj)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_GetIter(obj)
 
     # ===-------------------------------------------------------------------===#
     # Call Protocol
@@ -2180,9 +2143,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/call.html#c.PyObject_Call
         """
-        var r = self._PyObject_Call(callable, args, kwargs)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_Call(callable, args, kwargs)
 
     fn PyObject_CallObject(
         self,
@@ -2197,9 +2158,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject
         """
-        var r = self._PyObject_CallObject(callable, args)
-        self._inc_total_rc()
-        return r
+        return self._PyObject_CallObject(callable, args)
 
     # ===-------------------------------------------------------------------===#
     # Number Protocol
@@ -2216,9 +2175,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
         """
-        var r = self._PyNumber_Long(obj)
-        self._inc_total_rc()
-        return r
+        return self._PyNumber_Long(obj)
 
     fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Returns the `o` converted to a float object on success, or `NULL` on
@@ -2229,9 +2186,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/number.html#c.PyNumber_Float
         """
-        var r = self._PyNumber_Float(obj)
-        self._inc_total_rc()
-        return r
+        return self._PyNumber_Float(obj)
 
     # ===-------------------------------------------------------------------===#
     # Iterator Protocol
@@ -2258,10 +2213,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/iter.html#c.PyIter_Next
         """
-        var r = self._PyIter_Next(obj)
-        if r:
-            self._inc_total_rc()
-        return r
+        return self._PyIter_Next(obj)
 
     # ===-------------------------------------------------------------------===#
     # Concrete Objects Layer
@@ -2285,9 +2237,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_GenericAlloc
         """
-        var r = self._PyType_GenericAlloc(type, nitems)
-        self._inc_total_rc()
-        return r
+        return self._PyType_GenericAlloc(type, nitems)
 
     fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
         """Return the type's name.
@@ -2302,9 +2252,7 @@ struct CPython(Defaultable, Movable):
             return self.PyObject_GetAttrString(
                 rebind[PyObjectPtr](type), "__name__"
             )
-        var r = self._PyType_GetName(type)
-        self._inc_total_rc()
-        return r
+        return self._PyType_GetName(type)
 
     fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
         """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
@@ -2314,9 +2262,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
         """
-        var r = self._PyType_FromSpec(spec)
-        self._inc_total_rc()
-        return r
+        return self._PyType_FromSpec(spec)
 
     # ===-------------------------------------------------------------------===#
     # The None Object
@@ -2345,9 +2291,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
         """
-        var r = self._PyLong_FromSsize_t(value)
-        self._inc_total_rc()
-        return r
+        return self._PyLong_FromSsize_t(value)
 
     fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
         """Return a new `PyLongObject` object from a C `size_t`, or `NULL` on
@@ -2358,9 +2302,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
         """
-        var r = self._PyLong_FromSize_t(value)
-        self._inc_total_rc()
-        return r
+        return self._PyLong_FromSize_t(value)
 
     fn PyLong_AsSsize_t(self, pylong: PyObjectPtr) -> Py_ssize_t:
         """Return a C `Py_ssize_t` representation of `pylong`.
@@ -2389,9 +2331,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
         """
-        var r = self._PyBool_FromLong(value)
-        self._inc_total_rc()
-        return r
+        return self._PyBool_FromLong(value)
 
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
@@ -2406,9 +2346,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble
         """
-        var r = self._PyFloat_FromDouble(value)
-        self._inc_total_rc()
-        return r
+        return self._PyFloat_FromDouble(value)
 
     fn PyFloat_AsDouble(self, pyfloat: PyObjectPtr) -> c_double:
         """Return a C double representation of the contents of `pyfloat`.
@@ -2436,13 +2374,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
         """
-        var r = self._PyUnicode_DecodeUTF8(
+        return self._PyUnicode_DecodeUTF8(
             s.unsafe_ptr().bitcast[c_char](),
             Py_ssize_t(s.byte_length()),
             "strict".unsafe_cstr_ptr(),
         )
-        self._inc_total_rc()
-        return r
 
     # TODO: fix signature to take unicode and size as args
     fn PyUnicode_AsUTF8AndSize(
@@ -2474,9 +2410,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New
         """
-        var r = self._PyTuple_New(length)
-        self._inc_total_rc()
-        return r
+        return self._PyTuple_New(length)
 
     fn PyTuple_GetItem(
         self,
@@ -2507,7 +2441,6 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem
         """
-        self._dec_total_rc()
         return self._PyTuple_SetItem(tuple, pos, value)
 
     # ===-------------------------------------------------------------------===#
@@ -2524,9 +2457,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/list.html#c.PyList_New
         """
-        var r = self._PyList_New(length)
-        self._inc_total_rc()
-        return r
+        return self._PyList_New(length)
 
     fn PyList_GetItem(
         self,
@@ -2556,7 +2487,6 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/list.html#c.PyList_SetItem
         """
-        self._dec_total_rc()
         return self._PyList_SetItem(list, index, value)
 
     # ===-------------------------------------------------------------------===#
@@ -2580,9 +2510,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_New
         """
-        var r = self._PyDict_New()
-        self._inc_total_rc()
-        return r
+        return self._PyDict_New()
 
     fn PyDict_SetItem(
         self,
@@ -2640,9 +2568,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/set.html#c.PySet_New
         """
-        var r = self._PySet_New(iterable)
-        self._inc_total_rc()
-        return r
+        return self._PySet_New(iterable)
 
     fn PySet_Add(self, set: PyObjectPtr, key: PyObjectPtr) -> c_int:
         """Add `key` to a `set` instance.
@@ -2738,9 +2664,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/slice.html#c.PySlice_New
         """
-        var r = self._PySlice_New(start, stop, step)
-        self._inc_total_rc()
-        return r
+        return self._PySlice_New(start, stop, step)
 
     # ===-------------------------------------------------------------------===#
     # Capsules
@@ -2761,9 +2685,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        var r = self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
-        self._inc_total_rc()
-        return r
+        return self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
 
     fn PyCapsule_GetPointer(
         self,
