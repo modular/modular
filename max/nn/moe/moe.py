@@ -177,26 +177,10 @@ class MoE(Module, Shardable):
                 strategy.num_devices
             )
             if self.has_shared_experts:
-                self.shared_experts.gate_proj.sharding_strategy = (
-                    ShardingStrategy.rowwise(strategy.num_devices)
-                )
-                self.shared_experts.up_proj.sharding_strategy = (
-                    ShardingStrategy.rowwise(strategy.num_devices)
-                )
-                self.shared_experts.down_proj.sharding_strategy = (
-                    ShardingStrategy.columnwise(strategy.num_devices)
-                )
+                self.shared_experts.sharding_strategy = strategy
 
             for expert in self.experts:
-                expert.gate_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    strategy.num_devices
-                )
-                expert.up_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    strategy.num_devices
-                )
-                expert.down_proj.sharding_strategy = (
-                    ShardingStrategy.columnwise(strategy.num_devices)
-                )
+                expert.sharding_strategy = strategy
         else:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for MoE"
