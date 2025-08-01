@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .dispatcher_factory import DispatcherFactory
-from .dispatcher_transport import TransportMessage
+from .serve_api_and_model_worker import serve_api_server_and_model_worker
+from .serve_model_worker import serve_model_worker
 
-__all__ = ["DispatcherFactory", "TransportMessage"]
+__all__ = ["serve_api_server_and_model_worker", "serve_model_worker"]

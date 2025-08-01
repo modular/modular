@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Utilities for serving cli."""
+"""Utilities for serving api server with model worker."""
 
 import logging
 import signal
@@ -61,7 +61,7 @@ def sigint_handler(sig, frame) -> None:  # noqa: ANN001
     raise KeyboardInterrupt("SIGINT received")
 
 
-def serve_pipeline(
+def serve_api_server_and_model_worker(
     pipeline_config: PipelineConfig,
     profile: bool = False,
     model_name: Union[str, None] = None,
@@ -72,7 +72,7 @@ def serve_pipeline(
     global _server_instance
 
     # Initialize settings
-    settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
+    settings = Settings()
 
     if port is not None:
         settings.port = port
