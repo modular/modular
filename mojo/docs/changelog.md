@@ -25,6 +25,10 @@ what we publish.
 
 ### Standard library changes
 
+- Added `os.path.realpath` to resolve symbolic links to an absolute path and
+  remove relative path components (`.`, `..`, etc.). Behaves the same as the
+  Python equivalent function.
+
 ### Tooling changes
 
 ### ❌ Removed

@@ -99,6 +99,7 @@ from io.write import (
     STACK_BUFFER_BYTES,
 )
 from io.write import _WriteBufferStack
+from collections.string.string_slice import _unsafe_strlen
 
 
 # ===----------------------------------------------------------------------=== #

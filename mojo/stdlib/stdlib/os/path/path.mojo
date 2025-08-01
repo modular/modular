@@ -22,8 +22,10 @@ from os.path import isdir
 
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget
-
+from sys import CompilationTarget, external_call
+from sys.ffi import c_char, get_errno, MAX_PATH
+from sys._libc import realpath as libc_realpath
+from collections.string.string_slice import _unsafe_strlen
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -234,6 +236,75 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return head
+
+
+# ===----------------------------------------------------------------------=== #
+# realpath
+# ===----------------------------------------------------------------------=== #
+
+
+fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+    """Expands all symbolic links and resolves references to /./, /../ and extra
+    '/' characters in the null-terminated string named by path to produce a
+    canonicalized absolute pathname.The resulting path will have no symbolic
+    link, /./ or /../ components.
+
+    Args:
+        path: The path to resolve.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Raises:
+       - Read or search permission was denied for a component of the path
+       prefix.
+
+       - path is NULL.
+
+       - An I/O error occurred while reading from the filesystem.
+
+       - Too many symbolic links were encountered in translating the pathname.
+
+       - A component of a pathname exceeded NAME_MAX characters, or an entire
+       pathname exceeded PATH_MAX characters.
+
+       - The named file does not exist.
+
+       - Out of memory.
+
+       - A component of the path prefix is not a directory.
+
+    Returns:
+        A String of the resolved path.
+    """
+    # Leave room for initializing the refcount into the header.
+    alias capacity = MAX_PATH + String.REF_COUNT_SIZE
+    var ptr = UnsafePointer[c_char].alloc(capacity)
+
+    # Initialize the Atomic refcount into the header.
+    __get_address_as_uninit_lvalue(
+        ptr.bitcast[Atomic[DType.index]]().address
+    ) = Atomic[DType.index](1)
+
+    # Offset the pointer to after the refcount.
+    var returned_path_ptr = libc_realpath(
+        path.__fspath__().unsafe_ptr().bitcast[c_char](),
+        ptr + String.REF_COUNT_SIZE,
+    )
+    if not returned_path_ptr:
+        raise Error("realpath failed to resolve: ", get_errno())
+
+    # Caller is responsible for freeing the pointer, safe to store in String.
+    var string = String()
+    # Store the already offset pointer, pointing the the first char.
+    var byte_ptr = returned_path_ptr.bitcast[Byte]()
+    string._ptr_or_data = byte_ptr
+    string._len_or_data = _unsafe_strlen(byte_ptr)
+    # capacity >> 3 can only be lower, so will realloc safely if required
+    string._capacity_or_data = capacity >> 3
+    string._set_ref_counted()
+
+    return string
 
 
 # ===----------------------------------------------------------------------=== #
