@@ -259,6 +259,18 @@ def test_merge():
     assert_equal(b, [0, 5, 10])
 
 
+def test_span_to_string():
+    var l = [1, 2, 3]
+    var s = Span(l)[:2]
+    assert_equal(s.__str__(), "[1, 2]")
+
+
+def test_span_repr():
+    var l = [1, 2, 3]
+    var s = Span(l)[:2]
+    assert_equal(s.__repr__(), "[1, 2]")
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -274,3 +286,5 @@ def main():
     test_reversed()
     test_swap_elements()
     test_merge()
+    test_span_to_string()
+    test_span_repr()
