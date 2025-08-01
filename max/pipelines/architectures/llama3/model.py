@@ -488,6 +488,9 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
         logger.info("Building and compiling model...")
         before = time.perf_counter()
         graph = self._build_graph(self.weights, self.adapter, session)
+        after_build = time.perf_counter()
+
+        logger.info(f"Building graph took {after_build - before:.6f} seconds")
 
         # Debug: Check for potential weight registry issues before loading
         logger.debug(
@@ -519,8 +522,14 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
                     "[DEBUG] This will cause 'Weight not in weights registry' error"
                 )
 
+        before_compile = time.perf_counter()
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )

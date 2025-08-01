@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
+from io.io import _printf
 from gpu.host import DeviceContext
 
 

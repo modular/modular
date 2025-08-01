@@ -21,7 +21,6 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from builtin.io import _printf
 from builtin.sort import _quicksort
 from gpu import (
     WARP_SIZE,
@@ -301,7 +300,7 @@ fn _top_k_cpu[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = idxs.data + i
+                        var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, __origin_of(idxs)](
                                 ptr=ptr, length=num_equal

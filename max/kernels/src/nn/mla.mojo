@@ -65,7 +65,6 @@ from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from memory import stack_allocation
-from memory.pointer import AddressSpace as _AddressSpace
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
@@ -160,11 +159,11 @@ fn flare_mla_decoding[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_decoding",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -302,7 +301,7 @@ fn flare_mla_decoding_dispatch[
     constrained[num_heads == q.shape.get[rank - 2]()]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
-    alias has_enough_smem = ctx.device_info is A100 or ctx.device_info is H100
+    alias has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
     constrained[
         depth == q.shape.get[rank - 1]() == 576,
@@ -406,7 +405,7 @@ fn flare_mla_decoding_dispatch[
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            ctx.device_info.shared_memory_per_multiprocessor - 4096
+            ctx.default_device_info.shared_memory_per_multiprocessor - 4096
         ),
     )
 
@@ -1187,11 +1186,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int
 
@@ -1295,11 +1294,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int = q.dim[0]()
 
@@ -2677,8 +2676,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[type, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         launch_shape, context

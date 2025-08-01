@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "config",
     srcs = ["config.py"],
-    visibility = ["//visibility:public"],
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
@@ -15,17 +14,23 @@ modular_py_library(
 modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
-    visibility = ["//visibility:public"],
-    deps = [],
 )
 
 modular_py_library(
     name = "serve",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "process_control.py",
+            "config.py",
+            "debug.py",
+        ],
+    ),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
     deps = [
+        ":config",
         ":debug",
+        ":process_control",
         "//SDK/lib/API/python/max/serve/mocks",
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/recordreplay",

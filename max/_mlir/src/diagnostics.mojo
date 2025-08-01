@@ -15,12 +15,7 @@
 from collections.optional import Optional
 
 
-from utils.variant import Variant
-
 import ._c
-import ._c.Diagnostics
-import ._c.IR
-from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
 
 
@@ -183,7 +178,7 @@ struct ErrorCapturingDiagnosticHandler:
     fn __exit__(mut self, error: Error) raises -> Bool:
         self.handler.unsafe_take().detach()
         self.handler = None
-        raise "MLIR Diagnostic: {}\nError: {}".format(self.error, error)
+        raise Error("MLIR Diagnostic: ", self.error, "\nError: ", error)
 
     @staticmethod
     fn set_error(diagnostic: Diagnostic, mut error: String) -> Bool:

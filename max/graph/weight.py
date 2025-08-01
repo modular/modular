@@ -13,22 +13,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
-import numpy.typing as npt
 from max._core import Value as _Value
 from max._core.dialects import mo
-from max._core_types.driver import DLPackArray
 from max.dtype import DType
 
 from . import graph, ops
 from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
-
-DLPackCompatible = Union[DLPackArray, npt.NDArray]
 
 
 def _compute_shard_range(
@@ -193,6 +190,30 @@ def stacked_qkv_sharding_strategy(
     return ops.concat([q_shard, k_shard, v_shard], axis=0)
 
 
+def tensor_parallel_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Shards a :obj:`Module` across multiple devices using tensor parallel.
+    This strategy is designed for :obj:`Module` that has multiple weights,
+    for which a single weight sharding strategy is not sufficient.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion of the weight
+        for the i-th device.
+    """
+
+    raise NotImplementedError(
+        "tensor_parallel_sharding_strategy is a placeholder and should not be called directly. "
+        "Modules are expected to implement their own tensor parallel sharding strategy."
+    )
+    return weight
+
+
 @dataclass(frozen=True)
 class ShardingStrategy:
     """Specifies how a :obj:`Weight` should be sharded across multiple devices.
@@ -254,6 +275,11 @@ class ShardingStrategy:
         if isinstance(self.shard, partial):
             return self.shard.func is stacked_qkv_sharding_strategy
         return self.shard is stacked_qkv_sharding_strategy
+
+    @property
+    def is_tensor_parallel(self) -> bool:
+        """Whether the sharding strategy is tensor parallel."""
+        return self.shard is tensor_parallel_sharding_strategy
 
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
@@ -356,6 +382,25 @@ class ShardingStrategy:
             head_dim=head_dim,
         )
         return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
+
+    @staticmethod
+    def tensor_parallel(num_devices: int) -> ShardingStrategy:
+        """Creates a tensor parallel sharding strategy.
+
+        This strategy is designed for Module that has multiple weights, for
+        which a single weight sharding strategy is not sufficient. This strategy
+        is a placeholder and should not be called directly. Modules are expected
+        to implement their own tensor parallel sharding strategy.
+
+        Args:
+            num_devices: The number of devices to shard the Module across.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for tensor parallel sharding.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices, shard=tensor_parallel_sharding_strategy
+        )
 
 
 @dataclass
@@ -488,18 +533,17 @@ class Weight(TensorValue):
         self._device = DeviceRef.CPU()
         self._sharding_strategy = _ShardingStrategyContainer(self, strategy)
 
-    def shard(self, shard_idx: int, device: DeviceRef) -> Weight:
-        """Gets a specific shard from the Weight.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Weight]:
+        """Creates sharded views of this Weight across multiple devices.
 
-        This `Weight` must have `sharding_strategy` defined. The shard object
-        returned is also a `Weight` object, but cannot be sharded further.
+        This `Weight` must have `sharding_strategy` defined. The shard objects
+        returned are also `Weight` objects, but cannot be sharded further.
 
         Args:
-            shard_idx: int value of the shard.
-            device: device to place the shard.
+            devices: Iterable of devices to place the shards on.
 
         Returns:
-            The sharded weight.
+            List of sharded weights, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
@@ -509,22 +553,27 @@ class Weight(TensorValue):
             raise ValueError(
                 f"Weight {self.name} was already sharded. Use __getitem__ instead."
             )
-        weight = Weight(
-            name=f"{self.name}[{shard_idx}]",
-            dtype=self._dtype,
-            shape=self._shape,
-            device=device,
-            quantization_encoding=self.quantization_encoding,
-            align=self.align,
-        )
 
-        # Copy the sharding strategy container directly to preserve the original host_weight
-        # reference. Using the property setter would create a new container with this shard
-        # as the host_weight, causing infinite recursion when the shard tries to compute
-        # its shape by calling the sharding function on itself.
-        weight._sharding_strategy = self._sharding_strategy
-        weight.shard_idx = shard_idx
-        return weight
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            weight = Weight(
+                name=f"{self.name}[{shard_idx}]",
+                dtype=self._dtype,
+                shape=self._shape,
+                device=device,
+                quantization_encoding=self.quantization_encoding,
+                align=self.align,
+            )
+
+            # Copy the sharding strategy container directly to preserve the original host_weight
+            # reference. Using the property setter would create a new container with this shard
+            # as the host_weight, causing infinite recursion when the shard tries to compute
+            # its shape by calling the sharding function on itself.
+            weight._sharding_strategy = self._sharding_strategy
+            weight.shard_idx = shard_idx
+            shards.append(weight)
+
+        return shards
 
 
 def _add_weight_to_graph(weight: Weight):
@@ -538,4 +587,10 @@ def _add_weight_to_graph(weight: Weight):
     # If the weight doesn't exist on the graph, `Graph.add_weight` will
     # return a new `TensorValue`. Otherwise, this will return the existing
     # `TensorValue`.
-    return current_graph.add_weight(weight)
+    return current_graph.add_weight(
+        weight,
+        # Don't force the weight to be on host if it has an alias.
+        # We expect these external constants to already be resident on the
+        # device.
+        force_initial_weight_on_host=not weight._has_alias,
+    )

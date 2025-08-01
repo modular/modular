@@ -56,3 +56,26 @@ def test_error_handling() -> None:
 
     with pytest.raises(Exception):
         mojo_module.MojoPair(42, "not_a_number")
+
+
+def test_keyword_arguments():
+    """Test that keyword arguments work in __init__ methods."""
+    # Test basic keyword arguments
+    pair = mojo_module.MojoPair(first=42, second=10)
+    assert pair.get_first() == 42
+    assert pair.get_second() == 10
+
+    # Test mixed positional and keyword arguments
+    pair2 = mojo_module.MojoPair(100, second=200)
+    assert pair2.get_first() == 100
+    assert pair2.get_second() == 200
+
+    # Test keyword-only arguments (all as kwargs)
+    pair3 = mojo_module.MojoPair(second=999, first=888)
+    assert pair3.get_first() == 888
+    assert pair3.get_second() == 999
+
+    # Test no keyword arguments
+    pair4 = mojo_module.MojoPair(100, 200)
+    assert pair4.get_first() == 100
+    assert pair4.get_second() == 200

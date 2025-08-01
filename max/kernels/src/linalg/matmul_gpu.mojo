@@ -14,14 +14,10 @@ from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import (
     alignof,
-    bitwidthof,
     env_get_bool,
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    is_defined,
-    llvm_intrinsic,
     simdwidthof,
 )
 from sys import sizeof
@@ -29,34 +25,20 @@ from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
-    WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
     global_idx,
-    lane_id,
     thread_idx,
 )
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import get_gpu_target
-from gpu.host.info import A100, H100
+from gpu.host.info import A100, H100, B200
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
-    copy_from_nd_buffer,
-    distribute,
     from_ndbuffer_row_major,
-    vectorize,
 )
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-    _swizzle_signature,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_sram_to_local,
-)
-from linalg.matmul_tile_scheduler import MatmulSchedule
 from logger import Logger
 from memory import bitcast, stack_allocation
 
@@ -71,15 +53,11 @@ from ._multistage_gemm_gpu import (
 )
 from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
-from .matmul_sm90 import (
-    hopper_matmul_tma_wgmma,
-    warp_specialize_gemm_with_multicasting,
-)
 from .matmul_vendor import matmul as matmul_vendor
 from .matmul_dispatch_sm90 import matmul_dispatch_sm90
+from .matmul_sm100 import matmul_sm100_fallback
 from .utils import (
     GemmShape,
-    apply_epilogue,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
@@ -89,40 +67,6 @@ from .utils_gpu import (
     _bk_base,
     select_config,
 )
-
-
-@always_inline
-fn __nvvm_ldg_f4[
-    dtype: DType
-](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, 4]:
-    # Load a register variable from global state space via non-coherent cache.
-
-    alias alignment = Int32(alignof[SIMD[dtype, 4]]())
-
-    @parameter
-    if dtype is DType.float32:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
-            ](x.bitcast[Float32](), alignment)
-        )
-    elif dtype is DType.bfloat16:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
-                SIMD[DType.bfloat16, 4],
-            ](x.bitcast[BFloat16](), alignment)
-        )
-    elif dtype is DType.float16:
-        return bitcast[dtype, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
-                SIMD[DType.float16, 4],
-            ](x.bitcast[Float16](), alignment)
-        )
-    else:
-        constrained[False, "Unhandled DType"]()
-        return 0
 
 
 fn matmul_kernel[
@@ -194,11 +138,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
+            a_val = a[Int(row), Int(offset + localCol)] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < m else 0.0
+            a_val = a[Int(row), Int(offset + localCol)] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -206,11 +150,11 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
+            b_val = b[Int(offset + localRow), Int(col)] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < n else 0.0
+            b_val = b[Int(offset + localRow), Int(col)] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -255,8 +199,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = global_idx.x
-    var y = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
     if x >= m or y >= n:
         return
@@ -467,7 +411,9 @@ fn _matmul_gpu[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
-        ctx.device_info is H100 and n % 8 == 0 and a_type is DType.bfloat16
+        ctx.default_device_info is H100
+        and n % 8 == 0
+        and a_type is DType.bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
@@ -496,8 +442,39 @@ fn _matmul_gpu[
             _trace_description=_trace_description,
         ](c, a, b, ctx)
 
+    alias use_experimental_kernels = Bool(
+        env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+    )
+
+    alias bf16_or_fp16 = (DType.bfloat16, DType.float16)
+    alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
+
     @parameter
-    if ctx.device_info > H100:
+    if (
+        ctx.default_device_info is B200
+        and use_experimental_kernels
+        and transpose_b
+        and (
+            a_type in bf16_or_fp16
+            and b_type in bf16_or_fp16
+            and c_type in bf16_or_fp16_fp32
+        )
+    ):
+        var a_layout_tensor = from_ndbuffer_row_major(a)
+        var b_layout_tensor = from_ndbuffer_row_major(b)
+        var c_layout_tensor = from_ndbuffer_row_major(c)
+        alias umma_shape = Index(64, 128, 16)
+        alias BK = 64
+        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+        return matmul_sm100_fallback[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+        ](c_layout_tensor, a_layout_tensor, b_layout_tensor, ctx)
+
+    @parameter
+    if ctx.default_device_info > H100:
         return _matmul_sm100[
             c_type,
             a_type,
@@ -510,12 +487,8 @@ fn _matmul_gpu[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
-    alias use_A100_kernels_on_H100 = env_get_int[
-        "USE_EXPERIMENTAL_KERNELS", 0
-    ]()
-
     @parameter
-    if ctx.device_info is H100 and not use_A100_kernels_on_H100:
+    if ctx.default_device_info is H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -895,9 +868,7 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            alias use_A100_kernels = ctx.device_info is A100 or (
-                ctx.device_info is H100 and use_A100_kernels_on_H100 != 0
-            )
+            alias use_A100_kernels = ctx.default_device_info is A100
 
             @parameter
             if (
@@ -1271,7 +1242,7 @@ fn multistage_gemm[
             )
             alias work_space_type = config.split_k_reduction_type
             var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-                runtime_config.num_k_partitions * M * N
+                Int(runtime_config.num_k_partitions * M * N)
             )
             var work_space = NDBuffer[work_space_type, 3](
                 work_space_data._unsafe_ptr(),

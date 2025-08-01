@@ -42,41 +42,35 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
-from collections.string.string import (
-    _calc_format_buffer_size,
-    _calc_initial_buffer_size,
-)
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
-from os import abort
 from sys import (
     CompilationTarget,
-    PrefetchOptions,
     _RegisterPackType,
     alignof,
     bitwidthof,
     is_amd_gpu,
     is_big_endian,
+    is_compile_time,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    prefetch,
     simdwidthof,
     sizeof,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer
+from sys.intrinsics import _type_is_eq
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
-from builtin.io import _snprintf
 from builtin.math import Powable
 from documentation import doc_private
-from memory import Span, bitcast, memcpy
-from python import PythonConvertible, PythonObject, Python
+from memory import bitcast, memcpy
+from python import ConvertibleToPython, PythonObject, Python
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -90,9 +84,7 @@ from utils.numerics import min_or_neg_inf as _min_or_neg_inf
 from utils.numerics import nan as _nan
 
 from .dtype import (
-    _get_dtype_printf_format,
     _integral_type_of,
-    _scientific_notation_digits,
     _uint_type_of_width,
     _unsigned_integral_type_of,
 )
@@ -255,6 +247,7 @@ struct SIMD[dtype: DType, size: Int](
     Boolable,
     CeilDivable,
     Ceilable,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     DevicePassable,
@@ -264,7 +257,6 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Movable,
     Powable,
-    PythonConvertible,
     Representable,
     Roundable,
     Sized,
@@ -338,7 +330,6 @@ struct SIMD[dtype: DType, size: Int](
     """Returns the minimum (lowest) finite value of SIMD value."""
 
     alias _Mask = SIMD[DType.bool, size]
-    alias _default_alignment = alignof[Scalar[dtype]]() if is_gpu() else 1
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -473,6 +464,9 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The object to get the float point representation of.
         """
+
+        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
+        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline
@@ -488,6 +482,8 @@ struct SIMD[dtype: DType, size: Int](
         Raises:
             If the type does not have a float point representation.
         """
+        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
+        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
 
     # TODO(MSTDL-1587): Remove the dummy parameter.
@@ -510,7 +506,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_floating_point():
-            var cpy = Python().cpython()
+            ref cpy = Python().cpython()
             var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we
@@ -560,6 +556,11 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The bool value.
         """
+        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
+        constrained[
+            _type_is_eq[__type_of(self), Self](),
+            "Target type doesn't support conversion from `Bool`",
+        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
@@ -2321,18 +2322,24 @@ struct SIMD[dtype: DType, size: Int](
             "output width must be a positive integer less than simd size",
         ]()
 
+        @always_inline
         @parameter
-        if output_width == 1:
-            return self[offset]
-
-        @parameter
-        if offset % simdwidthof[dtype]():
-            var res = SIMD[dtype, output_width]()
+        fn slice_body() -> SIMD[dtype, output_width]:
+            var tmp = SIMD[dtype, output_width]()
 
             @parameter
             for i in range(output_width):
-                res[i] = self[i + offset]
-            return res
+                tmp[i] = self[i + offset]
+            return tmp
+
+        @parameter
+        if output_width == 1:
+            return self[offset]
+        elif offset % simdwidthof[dtype]():
+            return slice_body()
+
+        if is_compile_time():
+            return slice_body()
 
         return llvm_intrinsic[
             "llvm.vector.extract",

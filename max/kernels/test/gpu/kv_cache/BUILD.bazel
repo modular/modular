@@ -6,6 +6,9 @@ load("//bazel:api.bzl", "mojo_test")
         size = "large",
         srcs = [src],
         enable_assertions = src != "test_kv_cache_ragged_matmul.mojo",  # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"],
         deps = [

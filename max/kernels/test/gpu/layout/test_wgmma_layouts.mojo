@@ -101,8 +101,8 @@ fn wgmma_tf32_tf32_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.tensor_float32,
-            b_type = DType.tensor_float32,
+            a_type = DType.float32,
+            b_type = DType.float32,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()

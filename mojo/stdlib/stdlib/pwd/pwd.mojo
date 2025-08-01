@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget
 
 # ===----------------------------------------------------------------------=== #
 # Passwd
@@ -97,11 +97,12 @@ fn getpwuid(uid: Int) raises -> Passwd:
         only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _getpw_macos(UInt32(uid))
     else:
         return _getpw_linux(UInt32(uid))
@@ -128,11 +129,12 @@ fn getpwnam(var name: String) raises -> Passwd:
         only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _getpw_macos(name)
     else:
         return _getpw_linux(name)

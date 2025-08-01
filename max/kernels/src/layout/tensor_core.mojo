@@ -49,7 +49,6 @@ from collections import OptionalReg
 from math import align_down
 from sys import (
     has_nvidia_gpu_accelerator,
-    is_amd_gpu,
     is_nvidia_gpu,
     simdwidthof,
     sizeof,
@@ -788,7 +787,7 @@ struct TensorCore[
         @parameter
         for i in range(num_frags):
             var mma_tile = warp_tile.tile[M, K * k_group_size](
-                i, mma_tile_coord_k
+                i, Int(mma_tile_coord_k)
             )
             var a = load_to_simd(self.load_a[swizzle](mma_tile))
             fragments[i, 0] = rebind[frag_type](a)
@@ -817,7 +816,7 @@ struct TensorCore[
         for i in range(num_frags):
             var mma_tile = warp_tile.tile[shape[0], warp_tile.shape[1]()](i, 0)
             fragments[i, 0] = rebind[frag_type](
-                _load_matrix_frag[swizzle](mma_tile, swizzle_offset)
+                _load_matrix_frag[swizzle](mma_tile, Int(swizzle_offset))
             )
 
     @always_inline
@@ -895,7 +894,7 @@ struct TensorCore[
             @parameter
             for i in range(num_frags):
                 var mma_tile = warp_tile.tile[N, K * k_group_size](
-                    i, mma_tile_coord_k
+                    i, Int(mma_tile_coord_k)
                 )
                 var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
@@ -904,7 +903,7 @@ struct TensorCore[
             @parameter
             for i in range(num_frags):
                 var mma_tile = warp_tile.tile[K * k_group_size, N](
-                    mma_tile_coord_k, i
+                    Int(mma_tile_coord_k), i
                 )
                 var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
@@ -942,7 +941,7 @@ struct TensorCore[
                         2 * shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
                     var vec = _load_matrix_frag[swizzle=swizzle](
-                        mma_tile, swizzle_offset
+                        mma_tile, Int(swizzle_offset)
                     )
                     fragments[i, 0] = rebind[frag_type](
                         SIMD[warp_tile.dtype, 2](vec[0], vec[2])
@@ -968,7 +967,7 @@ struct TensorCore[
                     ](i // 2, 0)
                     var vec = _load_matrix_frag[
                         swizzle=swizzle, x4_row_major=True
-                    ](mma_tile, swizzle_offset)
+                    ](mma_tile, Int(swizzle_offset))
                     var high_low = vec.split()
                     fragments[i, 0] = rebind[frag_type](high_low[0])
                     fragments[i + 1, 0] = rebind[frag_type](high_low[1])
@@ -981,7 +980,7 @@ struct TensorCore[
                 @parameter
                 for i in range(num_frags):
                     var mma_tile = warp_tile.tile[shape[2], shape[1]](
-                        mma_tile_coord_k, i
+                        Int(mma_tile_coord_k), i
                     )
                     var frag = mma_tile.distribute[Layout.col_major(4, 8)](
                         lane_id()
@@ -997,7 +996,7 @@ struct TensorCore[
                 @parameter
                 for i in range(num_frags):
                     var mma_tile = warp_tile.tile[shape[2], shape[1]](
-                        mma_tile_coord_k, i
+                        Int(mma_tile_coord_k), i
                     )
                     var frags = mma_tile.vectorize[4, 1]().distribute[
                         Layout.col_major(4, 8)
@@ -1012,7 +1011,7 @@ struct TensorCore[
                 constrained[self.supported_half]()
 
                 var mma_tile = warp_tile.tile[shape[2], warp_tile.shape[1]()](
-                    mma_tile_coord_k, 0
+                    Int(mma_tile_coord_k), 0
                 )
 
                 # This is a hack to get correct result for small warp tile.
@@ -1037,7 +1036,7 @@ struct TensorCore[
                         )
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
-                        ](mma_tile_shifted, swizzle_offset)
+                        ](mma_tile_shifted, Int(swizzle_offset))
                         var high_low = vec.split()
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
@@ -1138,10 +1137,10 @@ struct TensorCore[
         # Every contiguous 128 ints stores a 64x16 repacked tile
         var mma_tile = warp_tile.tile[
             1, (repack_tile[0] * repack_tile[1]) // pack_factor
-        ](0, mma_tile_coord_k)
+        ](0, Int(mma_tile_coord_k))
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[0, thread_idx.x % WARP_SIZE]
+            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % WARP_SIZE)]
         )
 
         @parameter

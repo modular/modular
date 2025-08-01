@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "modular_py_library")
 
 exports_files([
     "validate_lit_features.py",
+    "lit_shim.py",
 ])
 
 modular_py_library(

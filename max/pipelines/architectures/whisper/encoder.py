@@ -17,13 +17,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import (
-    Conv1DV1,
-    EmbeddingV1,
-    LayerNormV1,
-    LinearV1,
-    Sequential,
-)
+from max.nn import Conv1DV1, EmbeddingV1, LayerNormV1, LinearV1, Sequential
 from max.nn.layer import Layer
 
 

@@ -29,14 +29,17 @@ _KNOWN_FEATURES = {
     "tsan",
     "ubsan",
     "x86_64-linux",
-    "NVIDIA-GPU",
-    "AMD-GPU",
-    "A100-GPU",
-    "A10-GPU",
-    "H100-GPU",
-    "B200-GPU",
-    "MI300X-GPU",
     "ASSERTIONS",
+}
+
+_GPU_FEATURES = {
+    "A10-GPU",
+    "A100-GPU",
+    "AMD-GPU",
+    "B200-GPU",
+    "H100-GPU",
+    "MI300X-GPU",
+    "NVIDIA-GPU",
 }
 
 _FEATURES_BY_PREFIX = {
@@ -62,7 +65,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _get_unsupported_features(root: str, contents: str) -> set[str]:
+def _get_unsupported_features(
+    root: str, contents: str, include_gpu_features: bool
+) -> set[str]:
     features = _RE.findall(contents)
     if not features:
         return set()
@@ -78,9 +83,11 @@ def _get_unsupported_features(root: str, contents: str) -> set[str]:
         )
     used_features.discard("")  # Empty spaces from split
 
-    return (
-        used_features - _KNOWN_FEATURES - _FEATURES_BY_PREFIX.get(root, set())
-    )
+    valid_features = _KNOWN_FEATURES | _FEATURES_BY_PREFIX.get(root, set())
+    if include_gpu_features:
+        valid_features |= _GPU_FEATURES
+
+    return used_features - valid_features
 
 
 def _has_run_command(contents: str) -> bool:
@@ -88,6 +95,7 @@ def _has_run_command(contents: str) -> bool:
 
 
 def _main(root: str, files: list[str]) -> None:
+    include_gpu_features = os.environ["RUNS_ON_GPU"] == "True"
     errors = []
     for file in files:
         path = os.path.join(root, file)
@@ -99,7 +107,9 @@ def _main(root: str, files: list[str]) -> None:
                 f"error: {path} does not have any RUN commands, exclude it from the lit_tests or add commands"
             )
 
-        if invalid_features := _get_unsupported_features(root, contents):
+        if invalid_features := _get_unsupported_features(
+            root, contents, include_gpu_features
+        ):
             errors.append(
                 f"error: {path} contains invalid lit features:"
                 f" {', '.join(sorted(invalid_features))}"

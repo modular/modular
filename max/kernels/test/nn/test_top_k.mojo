@@ -37,7 +37,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
         self,
     ) -> NDBuffer[dtype, rank, MutableAnyOrigin]:
         return NDBuffer[dtype, rank](
-            rebind[UnsafePointer[Scalar[dtype]]](self.storage.data), self.shape
+            rebind[UnsafePointer[Scalar[dtype]]](self.storage.unsafe_ptr()),
+            self.shape,
         )
 
 

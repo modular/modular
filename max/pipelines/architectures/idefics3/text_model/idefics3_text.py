@@ -16,11 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, ops
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )

@@ -22,17 +22,15 @@ from typing import Generic, TypeVar, Union
 
 import zmq
 from max.interfaces import (
-    EngineResult,
+    SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
-)
-from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import (
-    TextAndVisionContext,
-    TextContext,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
+from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
@@ -181,7 +179,7 @@ class TokenGenerationScheduler(Scheduler):
             ),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, EngineResult[TextGenerationOutput]]
+            dict[str, SchedulerResult[TextGenerationOutput]]
         ](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
@@ -201,9 +199,6 @@ class TokenGenerationScheduler(Scheduler):
         self.active_batch: dict[
             str, Union[TextContext, TextAndVisionContext]
         ] = {}
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_tg)
-        )
 
         # Optional reference to the paged kv cache manager.
         # Note that the paged manager is shared with the model worker thread.
@@ -305,19 +300,10 @@ class TokenGenerationScheduler(Scheduler):
                 break
 
             req_id, data = self.pending_reqs.popleft()
-            # Unfortunately, when we create a new context we set the cache_seq_id
-            # to be the req idx in tokenizer.py. We probably should not do
-            # this. (TODO: E2EOPT-138)
-            #
-            # We want to ignore the existing cache_seq_id, UNLESS this request
-            # is a partially encoded request due to chunked prefill.
+            # Claim the cache slot for the request if it's a new request.
             if data.start_idx == 0:
-                data.unassign_from_cache()
-            # Lets assign a new cache slot to this request if it doesn't have one yet.
-            if not data.is_assigned_to_cache:
-                data.assign_to_cache(self.available_cache_indices.pop())
                 if self.paged_manager is not None:
-                    self.paged_manager.external_claim([data.cache_seq_id])
+                    self.paged_manager.external_claim(req_id)
 
             orig_prompt_length = data.active_length
             num_steps = 1
@@ -361,8 +347,7 @@ class TokenGenerationScheduler(Scheduler):
         self, req_id: str, data: Union[TextContext, TextAndVisionContext]
     ) -> None:
         """Resets a request and returns it to the request queue"""
-        self.available_cache_indices.add(data.cache_seq_id)
-        self.pipeline.release(data)
+        self.pipeline.release(data.request_id)
         data.reset()
         self.pending_reqs.appendleft((req_id, data))
 
@@ -701,9 +686,7 @@ class TokenGenerationScheduler(Scheduler):
         for request_id, response in batch_responses.items():
             if response.is_done:
                 # Release from cache
-                cache_id = batch_executed[request_id].cache_seq_id
-                self.pipeline.release(batch_executed[request_id])
-                self.available_cache_indices.add(cache_id)
+                self.pipeline.release(request_id)
                 del batch_executed[request_id]
 
                 # Remove from active batch
@@ -736,13 +719,12 @@ class TokenGenerationScheduler(Scheduler):
             for req_id in req_ids:
                 if req_id not in self.active_batch:
                     continue
-                self.pipeline.release(self.active_batch[req_id])
-                self.available_cache_indices.add(
-                    self.active_batch[req_id].cache_seq_id
-                )
+                self.pipeline.release(req_id)
                 del self.active_batch[req_id]
 
-                self.response_q.put_nowait({req_id: EngineResult.cancelled()})
+                self.response_q.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
     @traced
     def _stream_responses_to_frontend(
@@ -751,12 +733,12 @@ class TokenGenerationScheduler(Scheduler):
         if not batch_responses:
             return
 
-        responses: dict[str, EngineResult[TextGenerationOutput]] = {}
+        responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
         for request_id, response in batch_responses.items():
             if response.is_done:
-                responses[request_id] = EngineResult.complete(response)
+                responses[request_id] = SchedulerResult.complete(response)
             else:
-                responses[request_id] = EngineResult.active(response)
+                responses[request_id] = SchedulerResult.active(response)
 
         self.response_q.put_nowait(responses)
 
@@ -765,7 +747,9 @@ class TokenGenerationScheduler(Scheduler):
 
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute, num_steps=sch_output.num_steps
+            TextGenerationInputs(
+                batch_to_execute, num_steps=sch_output.num_steps
+            )
         )
         # put the unfinished request back into the queue, and delete its responses
         if self.scheduler_config.enable_chunked_prefill:
@@ -786,7 +770,7 @@ class TokenGenerationScheduler(Scheduler):
         METRICS.batch_size(len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute, num_steps=sch_output.num_steps
+            TextGenerationInputs(batch_to_execute, sch_output.num_steps)
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)

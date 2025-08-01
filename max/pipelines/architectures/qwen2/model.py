@@ -19,11 +19,7 @@ from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Model

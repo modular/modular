@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Dict, Optional
+from collections import Optional
 from collections.string._utf8 import _is_valid_utf8
 from collections.string.string_slice import _split
-from memory import stack_allocation
 from os import abort
 from pathlib import _dir_of_current_file
-from random import random_si64, seed
+from random import seed
 from sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -45,7 +44,7 @@ fn make_string[
 
         @parameter
         if length > 0:
-            var items = f.read_bytes(length)
+            var items = f.read_bytes(Int(length))
             i = 0
             while length > len(items):
                 items.append(items[i])
@@ -117,7 +116,7 @@ fn bench_string_split[
             res = _split[has_maxsplit=False](items, sequence.value(), -1)
         else:
             res = _split[has_maxsplit=False](items, None, -1)
-        keep(res.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -162,7 +161,7 @@ fn bench_string_splitlines[
     @parameter
     fn call_fn() raises:
         var res = items.splitlines()
-        keep(res.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))

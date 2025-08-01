@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 mojo_library(
     name = "linalg",
     srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
     deps = [
         "@mojo//:internal_utils",
         "@mojo//:layout",

@@ -16,7 +16,6 @@ from math import iota
 from sys import is_nvidia_gpu
 
 from buffer import DimList, NDBuffer
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
 from utils.index import IndexList
 

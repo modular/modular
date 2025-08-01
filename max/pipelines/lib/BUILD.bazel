@@ -22,7 +22,6 @@ modular_py_library(
         requirement("llguidance"),
         requirement("numpy"),
         requirement("pillow"),
-        requirement("torch"),
         requirement("transformers"),
     ],
 )

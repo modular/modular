@@ -13,6 +13,7 @@
 """Test value printing and debug print options."""
 
 import platform
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -20,12 +21,20 @@ import torch
 from max.driver import Tensor, accelerator_count
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.engine import InferenceSession, Model
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+)
 
 
 @pytest.fixture(scope="module")
-def compiled_model(session):  # noqa: ANN001
-    def print_input(x):  # noqa: ANN001
+def compiled_model(session: InferenceSession) -> Model:
+    def print_input(x: TensorValue) -> TensorValue:
         x.print("test_x_value")
         return x
 
@@ -38,8 +47,8 @@ def compiled_model(session):  # noqa: ANN001
 
 
 @pytest.fixture(scope="module")
-def compiled_buffer_model(session):  # noqa: ANN001
-    def print_input(x):  # noqa: ANN001
+def compiled_buffer_model(session: InferenceSession):
+    def print_input(x: BufferValue) -> BufferValue:
         x.print("test_x_value")
         return x
 
@@ -51,7 +60,7 @@ def compiled_buffer_model(session):  # noqa: ANN001
     return session.load(g)
 
 
-def test_debug_print_options(session, tmp_path) -> None:  # noqa: ANN001
+def test_debug_print_options(session: InferenceSession, tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="Invalid debug print style"):
         session.set_debug_print_options("NOTVALID")
 
@@ -61,7 +70,7 @@ def test_debug_print_options(session, tmp_path) -> None:  # noqa: ANN001
     session.set_debug_print_options("FULL")
     session.set_debug_print_options("FULL", precision=5)
     with pytest.raises(TypeError, match="precision must be an int"):
-        session.set_debug_print_options("FULL", precision=5.0)
+        session.set_debug_print_options("FULL", precision=5.0)  # type: ignore[arg-type]
 
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
     session.set_debug_print_options("BINARY", output_directory=str(tmp_path))
@@ -69,7 +78,11 @@ def test_debug_print_options(session, tmp_path) -> None:  # noqa: ANN001
         session.set_debug_print_options("BINARY")
 
 
-def test_debug_print_compact(compiled_model, session, capfd) -> None:  # noqa: ANN001
+def test_debug_print_compact(
+    compiled_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -83,7 +96,11 @@ def test_debug_print_compact(compiled_model, session, capfd) -> None:  # noqa: A
     )
 
 
-def test_debug_print_buffer(compiled_buffer_model, session, capfd) -> None:  # noqa: ANN001
+def test_debug_print_buffer(
+    compiled_buffer_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_buffer_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -97,7 +114,11 @@ def test_debug_print_buffer(compiled_buffer_model, session, capfd) -> None:  # n
     )
 
 
-def test_debug_print_full(compiled_model, session, capfd) -> None:  # noqa: ANN001
+def test_debug_print_full(
+    compiled_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+) -> None:
     session.set_debug_print_options("FULL", 2)
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -128,7 +149,11 @@ def test_debug_print_full(compiled_model, session, capfd) -> None:  # noqa: ANN0
     )
 
 
-def test_debug_print_none(compiled_model, session, capfd) -> None:  # noqa: ANN001
+def test_debug_print_none(
+    compiled_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+) -> None:
     session.set_debug_print_options("NONE")
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -139,7 +164,12 @@ def test_debug_print_none(compiled_model, session, capfd) -> None:  # noqa: ANN0
     assert "test_x_value" not in captured.out
 
 
-def test_debug_print_binary(compiled_model, session, capfd, tmp_path) -> None:  # noqa: ANN001
+def test_debug_print_binary(
+    compiled_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+    tmp_path: Path,
+) -> None:
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
     input = np.full([20], 1.1234567, np.float32)
     _ = compiled_model.execute(
@@ -153,10 +183,10 @@ def test_debug_print_binary(compiled_model, session, capfd, tmp_path) -> None:  
 
 
 def test_debug_print_binary_max(
-    compiled_model,  # noqa: ANN001
-    session,  # noqa: ANN001
-    capfd,  # noqa: ANN001
-    tmp_path,  # noqa: ANN001
+    compiled_model: Model,
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+    tmp_path: Path,
 ) -> None:
     session.set_debug_print_options(
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
@@ -178,8 +208,10 @@ def test_debug_print_binary_max(
     platform.machine() in ["arm64", "aarch64"],
     reason="BF16 is not supported on ARM CPU architecture",
 )
-def test_debug_print_binary_max_bf16(session, capfd, tmp_path) -> None:  # noqa: ANN001
-    def print_input(x):  # noqa: ANN001
+def test_debug_print_binary_max_bf16(
+    session: InferenceSession, capfd: pytest.CaptureFixture, tmp_path: Path
+) -> None:
+    def print_input(x: TensorValue) -> TensorValue:
         x.print("test_x_value")
         return x
 
@@ -216,14 +248,14 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path) -> None:  # noqa:
 )
 @pytest.mark.parametrize("shape", [(), (5,), (2, 3), (2, 3, 4)])
 def test_debug_print_binary_max_bf16_shapes(
-    session,  # noqa: ANN001
-    capfd,  # noqa: ANN001
-    tmp_path,  # noqa: ANN001
-    shape,  # noqa: ANN001
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,
+    tmp_path: Path,
+    shape: tuple[int, ...],
 ) -> None:
     """Test bfloat16 tensor loading with various shapes including scalar"""
 
-    def print_input(x):  # noqa: ANN001
+    def print_input(x: TensorValue) -> TensorValue:
         x.print("test_x_value")
         return x
 
@@ -277,7 +309,9 @@ def test_debug_print_binary_max_bf16_shapes(
 
 
 @pytest.mark.parametrize("dtype", list(DType))
-def test_save_load_all_dtypes(session, tmp_path, dtype) -> None:  # noqa: ANN001
+def test_save_load_all_dtypes(
+    session: InferenceSession, tmp_path: Path, dtype: DType
+) -> None:
     """Verify round-trip save/load works for all supported DType values."""
     # Skip unsupported configurations.
     if dtype.is_half() and platform.machine() in ["arm64", "aarch64"]:
@@ -290,7 +324,7 @@ def test_save_load_all_dtypes(session, tmp_path, dtype) -> None:  # noqa: ANN001
         pytest.skip("F8 types are not supported by dlpack")
 
     # Create test graph.
-    def print_input(x):  # noqa: ANN001
+    def print_input(x: TensorValue) -> TensorValue:
         x.print("test_x_value")
         return x
 

@@ -51,7 +51,7 @@ specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
 
 ```mojo title="🔥 Mojo"
-@@fieldwise_init
+@fieldwise_init
 struct Duck(Copyable, Movable):
     fn quack(self):
         print("Quack")
@@ -315,7 +315,7 @@ the `Defaultable` and `Movable` traits in comments for reference:
 #     fn __init__(out self): ...
 
 # trait Movable
-#     fn __moveinit__(out self, owned existing: Self): ...
+#     fn __moveinit__(out self, var existing: Self): ...
 
 alias MassProducible = Defaultable & Movable
 
@@ -328,7 +328,7 @@ struct Thing(MassProducible):
     fn __init__(out self):
         self.id = 0
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, var existing: Self):
         self.id = existing.id
 
 var thing = factory[Thing]()

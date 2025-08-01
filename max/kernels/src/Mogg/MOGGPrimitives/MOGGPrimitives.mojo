@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call
-from collections import OptionalReg
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from memory import memcpy
-from memory.memory import _malloc as _malloc_cpu
 from nn.concat import concat
 from register import *
 from runtime.asyncrt import DeviceContextPtr

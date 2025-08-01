@@ -4,7 +4,8 @@ sidebar_position: 2
 description: Using LayoutTensor to manipulate multidimensional data.
 ---
 
-A `LayoutTensor` provides a view of multi-dimensional data stored in a linear
+A [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/)
+provides a view of multi-dimensional data stored in a linear
 array. `LayoutTensor` abstracts the logical organization of multi-dimensional
 data from its actual arrangement in memory. You can generate new tensor "views"
 of the same data without copying the underlying data.
@@ -25,7 +26,8 @@ CPU-based algorithms.
 
 A `LayoutTensor` consists of three main properties:
 
-* A [layout](/mojo/manual/), defining how the elements are laid out in memory.
+* A [layout](/mojo/manual/layout/layouts), defining how the elements are
+  laid out in memory.
 * A `DType`, defining the data type stored in the tensor.
 * A pointer to memory where the data is stored.
 

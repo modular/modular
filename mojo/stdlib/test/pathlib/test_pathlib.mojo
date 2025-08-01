@@ -13,7 +13,7 @@
 
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import os_is_windows
+from sys import CompilationTarget
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
@@ -96,14 +96,14 @@ def test_read_write_bytes():
 
 fn get_user_path() -> Path:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return Path("C:") / "Users" / "user"
     return Path("/home/user")
 
 
 fn get_current_home() -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return os.env.getenv("USERPROFILE")
     return os.env.getenv("HOME")
 
@@ -112,7 +112,7 @@ def set_home(path: Path):
     path_str = String(path)
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         _ = os.env.setenv("USERPROFILE", path_str)
     else:
         _ = os.env.setenv("HOME", path_str)

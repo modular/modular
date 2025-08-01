@@ -16,12 +16,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
-from max.interfaces import AudioGenerationResponse
+from max.interfaces import AudioGenerationResponse, AudioGenerator
 from max.nn import ReturnLogits
-from max.pipelines.core import (
-    AudioGenerator,
-    TTSContext,
-)
+from max.pipelines.core import TTSContext
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

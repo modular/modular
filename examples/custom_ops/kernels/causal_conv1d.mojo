@@ -20,24 +20,16 @@ Improved performance compared to naive implementation
 """
 
 
-from algorithm import parallelize_over_rows
 from compiler import register
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext
 from gpu.id import block_idx
-from gpu.memory import AddressSpace
-from gpu.sync import barrier
 from layout import Layout, LayoutTensor
-from layout.math import max, sum
-from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.math import max
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
 from math import exp, ceildiv
 
 from utils import Index
-from utils.index import IndexList
-from python import Python, PythonObject
-from os import abort
-from sys import argv
 
 
 @register("causal_conv1d_cpu")

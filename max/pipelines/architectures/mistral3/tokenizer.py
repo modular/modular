@@ -19,10 +19,7 @@ import json
 import logging
 
 import huggingface_hub
-from max.pipelines.lib import (
-    TextTokenizer,
-    try_to_load_from_cache,
-)
+from max.pipelines.lib import TextTokenizer, try_to_load_from_cache
 from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")

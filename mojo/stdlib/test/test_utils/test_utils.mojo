@@ -19,31 +19,31 @@ from builtin.simd import _simd_apply
 @always_inline
 fn libm_call[
     dtype: DType,
-    simd_width: Int,
+    width: Int, //,
     fn_fp32: StaticString,
     fn_fp64: StaticString,
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     @always_inline("nodebug")
     @parameter
     fn _float32_dispatch[
         input_type: DType, result_type: DType
-    ](arg: SIMD[input_type, 1]) -> SIMD[result_type, 1]:
-        return external_call[fn_fp32, SIMD[result_type, 1]](arg)
+    ](arg: Scalar[input_type]) -> Scalar[result_type]:
+        return external_call[fn_fp32, Scalar[result_type]](arg)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         input_type: DType, result_type: DType
-    ](arg: SIMD[input_type, 1]) -> SIMD[result_type, 1]:
-        return external_call[fn_fp64, SIMD[result_type, 1]](arg)
+    ](arg: Scalar[input_type]) -> Scalar[result_type]:
+        return external_call[fn_fp64, Scalar[result_type]](arg)
 
     constrained[
-        dtype.is_floating_point(), "input dtype must be floating point"
+        dtype in [DType.float32, DType.float64],
+        "input dtype must be float32 or float64",
     ]()
 
     @parameter
-    if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, simd_width](arg)
-    return _simd_apply[_float32_dispatch, DType.float32, simd_width](
-        arg.cast[DType.float32]()
-    ).cast[dtype]()
+    if dtype is DType.float32:
+        return _simd_apply[_float32_dispatch, dtype, width](arg)
+    else:
+        return _simd_apply[_float64_dispatch, dtype, width](arg)

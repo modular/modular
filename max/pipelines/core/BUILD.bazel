@@ -7,7 +7,6 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/interfaces",
         requirement("numpy"),
-        requirement("torch"),
         requirement("msgspec"),
     ],
 )

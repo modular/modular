@@ -16,7 +16,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping, Sequence, Set
 from os import PathLike
-from typing import Any, Optional
+from typing import Optional
 
 import numpy.typing as npt
 from max._core.safetensors import SafeTensor, safe_open
@@ -31,18 +31,35 @@ from .weights import WeightData, Weights
 
 
 class SafetensorWeights(Weights):
-    """Helper for loading weights into a graph.
+    """Implementation for loading weights from safetensors files.
 
-    A weight (`max.graph.Weight`) is tensors in a graph which are backed by an
-    external buffer or mmap. Generally weights are used to avoid recompiling
-    the graph when new weights are used (like from finetuning). For large-enough
-    constants, it might be worth using weights for fast compilation times but
-    the graph may be less optimized.
+    SafetensorWeights provides a secure and efficient way to load model weights
+    from safetensors format files. Safetensors is designed by Hugging Face for
+    safe serialization that prevents arbitrary code execution and supports
+    memory-mapped loading for fast access.
 
-    `Weight` classes can be used to help with graph weight allocation and
-    naming. This protocol defines getter methods `__getattr__` and `__getitem__`
-    to assist with defining names. For example, `weights.a.b[1].c.allocate(...)`
-    creates a weight with the name "a.b.1.c".
+    .. code-block:: python
+
+        from pathlib import Path
+        from max.graph.weights import SafetensorWeights
+        from max.dtype import DType
+
+        # Load weights from safetensors files
+        weight_files = [Path("model.safetensors")]
+        weights = SafetensorWeights(weight_files)
+
+        # Check if a weight exists
+        if weights.model.embeddings.weight.exists():
+            # Allocate the embedding weight
+            embedding_weight = weights.model.embeddings.weight.allocate(
+                dtype=DType.float32,
+                device=DeviceRef.CPU()
+            )
+
+        # Access weights with hierarchical naming
+        attn_weight = weights.transformer.layers[0].attention.weight.allocate(
+            dtype=DType.float16
+        )
     """
 
     _filepaths: Sequence[PathLike]
@@ -146,21 +163,6 @@ class SafetensorWeights(Weights):
 
         self._st_weight_map[self._prefix] = tensor
         return tensor
-
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        tensor = self._load_tensor()
-        if tensor.dtype == DType.bfloat16:
-            np_array = tensor.view(DType.float16).to_numpy()
-        elif tensor.dtype in [DType.float8_e4m3fn, DType.float8_e5m2]:
-            np_array = tensor.view(DType.uint8).to_numpy()
-        else:
-            np_array = tensor.to_numpy()
-        return np_array
 
     def data(self) -> WeightData:
         tensor = self._load_tensor()

@@ -18,11 +18,7 @@ from typing import Optional
 
 import numpy as np
 import pytest
-from conftest import (
-    broadcast_shapes,
-    broadcastable_tensor_types,
-    tensor_types,
-)
+from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType

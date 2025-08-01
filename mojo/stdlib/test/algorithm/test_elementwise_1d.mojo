@@ -18,12 +18,10 @@ from algorithm import elementwise
 from buffer import NDBuffer
 
 from utils.index import IndexList
+from testing import assert_almost_equal
 
 
-# CHECK-LABEL: test_elementwise_1d
 def test_elementwise_1d():
-    print("== test_elementwise_1d")
-
     alias num_elements = 64
     var ptr = UnsafePointer[Float32].alloc(num_elements)
 
@@ -42,8 +40,7 @@ def test_elementwise_1d():
 
     elementwise[func, simdwidthof[DType.float32]()](IndexList[1](num_elements))
 
-    # CHECK: 2.051446{{[0-9]+}}
-    print(vector[0])
+    assert_almost_equal(vector[0], 2.051446)
 
     ptr.free()
 

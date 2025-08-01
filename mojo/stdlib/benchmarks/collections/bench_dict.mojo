@@ -13,12 +13,10 @@
 
 from collections.dict import DictEntry
 from hashlib import Hasher
-from math import ceil
 from random.random import random_si64, seed
 from sys import sizeof
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-from bit import next_power_of_two
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -46,7 +44,7 @@ fn bench_dict_init(mut b: Bencher) raises:
     fn call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
-            keep(d._entries.data)
+            keep(d._entries.unsafe_ptr())
             keep(d._index.data)
 
     b.iter[call_fn]()

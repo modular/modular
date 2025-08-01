@@ -14,8 +14,13 @@
 
 
 from algorithm import elementwise
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import (
+    UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
@@ -23,15 +28,13 @@ from utils.index import IndexList
 
 fn fold[
     dtype: DType,
-    input_dim: DimList,
-    output_dim: DimList, //,
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
     padding: Tuple[Int, Int],
     target: StaticString,
 ](
-    input: NDBuffer[dtype, 3, MutableAnyOrigin, input_dim],
-    output: NDBuffer[dtype, 4, MutableAnyOrigin, output_dim],
+    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
@@ -40,8 +43,6 @@ fn fold[
 
     Parameters:
         dtype: The data type for the input and output.
-        input_dim: The static shape of the input NDBuffer.
-        output_dim: The static shape of the output NDBuffer.
         stride: Stride of the sliding blocks.
         dilation: Dilation of the sliding blocks.
         padding: 0-paddings to be added on both sides of the inputs.
@@ -55,26 +56,25 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    if padding[0] < 0 or padding[1] < 0:
-        raise Error("Padding must be non-negative.")
+    constrained[stride[0] > 0 and stride[1] > 0, "Stride must be positive"]()
+    constrained[
+        dilation[0] > 0 and dilation[1] > 0, "Dilation must be positive"
+    ]()
+    constrained[
+        padding[0] >= 0 and padding[1] >= 0, "Padding must be non-negative"
+    ]()
 
-    if stride[0] <= 0 or stride[1] <= 0:
-        raise Error("Stride must be positive.")
-
-    if dilation[0] <= 0 or dilation[1] <= 0:
-        raise Error("Dilation must be positive.")
-
-    var N = output.dim[0]()
-    var C = output.dim[1]()
-    var H = output.dim[2]()
-    var W = output.dim[3]()
+    var N = output.dim(0)
+    var C = output.dim(1)
+    var H = output.dim(2)
+    var W = output.dim(3)
 
     if output_size[0] != H or output_size[1] != W:
         raise Error("Output tensor size[2:] must be equal to output_size.")
 
     var channels_col = C * kernel_size[0] * kernel_size[1]
 
-    if input.dim[1]() != channels_col:
+    if input.dim(1) != channels_col:
         raise Error(
             "Input tensor channels must be equal to C * prod(kernel_size)."
         )
@@ -86,7 +86,7 @@ fn fold[
         W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
     ) // stride[1] + 1
 
-    var num_blocks = input.dim[2]()
+    var num_blocks = input.dim(2)
 
     var expected_blocks = height_col * width_col
 
@@ -155,9 +155,9 @@ fn fold[
                     # Load and accumulate
                     output_val += input[
                         batch, channel_offset + kernel_offset, patch_offset
-                    ]
+                    ][0]
 
-        output.store(idx, output_val)
+        output[idx[0], idx[1], idx[2], idx[3]] = output_val
 
     var dispatch_shape = IndexList[4](N, C, H, W)
     elementwise[
@@ -169,16 +169,16 @@ fn fold[
 
 
 fn fold_shape[
-    dtype: DType, input_dim: DimList
+    dtype: DType
 ](
-    input: NDBuffer[dtype, 3, MutableAnyOrigin, input_dim],
+    input: LayoutTensor[dtype, **_],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
 ) raises -> IndexList[4]:
     """Returns the shape of the output tensor of the fold operation."""
     var output_shape = IndexList[4]()
-    output_shape[0] = input.dim[0]()
-    output_shape[1] = input.dim[1]() // (kernel_size[0] * kernel_size[1])
+    output_shape[0] = input.dim(0)
+    output_shape[1] = input.dim(1) // (kernel_size[0] * kernel_size[1])
     output_shape[2] = output_size[0]
     output_shape[3] = output_size[1]
     return output_shape

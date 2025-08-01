@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 # This is only imported internally if gguf is available
 import gguf  # type: ignore
@@ -71,6 +71,49 @@ _TO_QUANTIZED_GGML_DTYPES = {
 
 
 class GGUFWeights(Weights):
+    """Implementation for loading weights from GGUF (GPT-Generated Unified Format) files.
+
+    ``GGUFWeights`` provides an interface to load model weights from GGUF files,
+    which are optimized for quantized large language models. GGUF is the
+    successor to GGML format and is commonly used in the ``llama.cpp`` ecosystem
+    for efficient storage and loading of quantized models.
+
+    .. code-block:: python
+
+        from pathlib import Path
+        from max.graph.weights import GGUFWeights
+        from max.dtype import DType
+        from max.graph.quantization import QuantizationEncoding
+
+        # Load weights from GGUF file
+        gguf_path = Path("model-q4_k.gguf")
+        weights = GGUFWeights(gguf_path)
+
+        # Check if a weight exists
+        if weights.model.layers[0].attention.wq.exists():
+            # Allocate quantized attention weight
+            wq_weight = weights.model.layers[0].attention.wq.allocate(
+                dtype=DType.uint8,  # GGUF quantized weights use uint8
+                device=DeviceRef.CPU()
+            )
+
+        # Access weight data with quantization info
+        weight_data = weights.model.layers[0].attention.wq.data()
+        print(f"Quantization: {weight_data.quantization_encoding}")
+        print(f"Shape: {weight_data.shape}")
+
+        # Allocate with quantization validation
+        ffn_weight = weights.model.layers[0].feed_forward.w1.allocate(
+            quantization_encoding=QuantizationEncoding.Q4_K,
+            device=DeviceRef.GPU(0)
+        )
+
+        # Iterate through all weights in a layer
+        for name, weight in weights.model.layers[0].items():
+            if weight.exists():
+                print(f"Found weight: {name}")
+    """
+
     _reader: gguf.GGUFReader
     _tensors: dict[str, gguf.ReaderTensor]
     _prefix: str
@@ -134,14 +177,6 @@ class GGUFWeights(Weights):
 
     def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
-
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the numpy tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        return self._raw_tensor().data
 
     def data(self) -> WeightData:
         tensor = self._raw_tensor()

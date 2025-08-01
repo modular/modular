@@ -18,7 +18,6 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from collections.abc import Sequence
 from typing import Any, Optional
 
 import msgspec
@@ -37,7 +36,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     Configuration:
         request_id: A unique identifier for this sequence.
-        prompt: The input prompt as either a string or sequence of token IDs
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
         eos_token_ids: Set of token IDs that indicate end of sequence
@@ -49,7 +47,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         sampling_params: Parameters controlling the token sampling strategy
         min_tokens: Minimum number of new tokens to generate.
         _status: Current generation status (active, finished, etc)
-        _cache_seq_id: ID of KV cache slot assigned to this context
         _size: Current allocated size of token array
         _start_idx: Start index of current generation window
         _active_idx: Current position in token sequence
@@ -64,7 +61,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """
 
     request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
-    prompt: str | Sequence[int]
     max_length: int
     tokens: np.ndarray
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
@@ -76,12 +72,10 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     sampling_params: SamplingParams = msgspec.field(
         default_factory=SamplingParams
     )
-    streaming: bool = msgspec.field(default=False)
     model_name: str = msgspec.field(default="")
     lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
     _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
-    _cache_seq_id: int | None = msgspec.field(default=None)
     _size: int = msgspec.field(default=-1)
     _start_idx: int = msgspec.field(default=0)
     _active_idx: int = msgspec.field(default=-1)
@@ -499,7 +493,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.unassign_from_cache()
         self._start_idx = 0
         self._committed_idx = 0
 
@@ -537,62 +530,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         without exceeding the max_seq_len."""
         return max_seq_len - (self.current_length - self.active_length)
 
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assigns this context to a cache slot.
-
-        The cache slot is used to store and retrieve KV-cache entries for this context
-        during token generation.
-
-        Args:
-            cache_seq_id: The ID of the cache slot to assign this context to.
-
-        Raises:
-            RuntimeError: If this context is already assigned to a cache slot.
-        """
-        if self._cache_seq_id is not None:
-            raise RuntimeError("Context is already assigned to a cache slot")
-        self._cache_seq_id = cache_seq_id
-
-    def unassign_from_cache(self) -> None:
-        """Unassigns this context from its current cache slot.
-
-        This clears the cache_seq_id, allowing the cache slot to be reused by other contexts.
-        Should be called when the context is no longer actively generating tokens.
-        """
-        self._cache_seq_id = None
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Returns whether this context is currently assigned to a cache slot.
-
-        The cache assignment status indicates whether this context can currently
-        access KV-cache entries for token generation.
-
-        Returns:
-            bool: True if assigned to a cache slot, False otherwise.
-        """
-        return self._cache_seq_id is not None
-
-    @property
-    def cache_seq_id(self) -> int:
-        """Gets the ID of the cache slot this context is assigned to.
-
-        The cache_seq_id is used to look up KV-cache entries for this context
-        during token generation.
-
-        Returns:
-            int: The cache slot ID.
-
-        Raises:
-            ValueError: If this context is not currently assigned to a cache slot.
-        """
-        if self._cache_seq_id is None:
-            raise ValueError(
-                "TextContext is not currently assigned to cache slot."
-            )
-
-        return self._cache_seq_id
-
     @property
     def is_ce(self) -> bool:
         """Returns whether this context is in context encoding (CE) mode.
@@ -604,11 +541,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             bool: True if in CE mode (active_length > 1), False otherwise.
         """
         return self.active_length > 1
-
-    @property
-    def is_streaming(self) -> bool:
-        """Returns True if the context is a streaming context, False otherwise."""
-        return self.streaming
 
     @property
     def is_initial_prompt(self) -> bool:
@@ -679,6 +611,7 @@ class TTSContext(TextContext):
 
     Configuration:
         audio_prompt_tokens: Array of input audio prompt tokens used for voice cloning
+        streaming: Whether the request is streaming the audio to client
         _speech_token_size: Size of the speech token buffer, defaults to SPEECH_TOKEN_audio_chunk_size
         _speech_token_end_idx: Index marking the end of valid speech tokens
         _speech_tokens: Buffer containing the generated speech tokens
@@ -695,6 +628,8 @@ class TTSContext(TextContext):
     # For silence detection.
     audio_buffer: np.ndarray | None = msgspec.field(default=None)
     prev_samples_beyond_offset: int = msgspec.field(default=0)
+
+    streaming: bool = msgspec.field(default=False)
 
     # Fields for tracking the state of speech token or audio generation.
     _speech_token_size: int = msgspec.field(
@@ -786,7 +721,9 @@ class TTSContext(TextContext):
     ) -> tuple[np.ndarray, int]:
         """Returns a chunk of the next unseen speech tokens.
 
-        Calling this function will update the index of the last seen token.
+        Calling this function will *not* update the index of the last seen
+        token. This must be done by calling `set_decoded_index` after the chunk
+        is processed.
 
         Args:
             audio_chunk_size: The number of speech tokens to return.

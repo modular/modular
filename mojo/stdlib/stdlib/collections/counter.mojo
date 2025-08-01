@@ -638,7 +638,7 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
             count: The count of the value in the Counter.
         """
         self._value = value
-        self._count = count
+        self._count = Int(count)
 
     fn copy(self) -> Self:
         """Explicitly construct a copy of self.

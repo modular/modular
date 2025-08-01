@@ -11,126 +11,138 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import operator
+from collections.abc import Sequence
 
 import numpy as np
 import pytest
 from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, StaticDim, TensorType
+from max.graph import DeviceRef, Graph, StaticDim, TensorType, TensorValue
+from test_common.graph_utils import are_all_tensors_sequence
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
+PARAMS = [
+    # x[1:]
+    (
+        TensorType(DType.float32, shape=["dim0"], device=device_ref),
+        (slice(1, None),),
+    ),
+    (
+        TensorType(DType.float32, shape=["dim0", "dim1"], device=device_ref),
+        (slice(1, None),),
+    ),
+    # x[:-1]
+    (
+        TensorType(DType.float32, shape=["dim0"], device=device_ref),
+        (slice(None, -1)),
+    ),
+    # x[-1:]
+    (
+        TensorType(DType.float32, shape=["dim0"], device=device_ref),
+        (slice(-1, None)),
+    ),
+    # x[::2]
+    (
+        TensorType(DType.float32, shape=["dim0"], device=device_ref),
+        (slice(None, None, 2),),
+    ),
+    # x[::-1]
+    # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+    # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
+    # x[:, None, :]
+    (
+        TensorType(DType.float32, shape=["dim0", "dim1"], device=device_ref),
+        (slice(None), None, slice(None)),
+    ),
+    # x[..., None]
+    (
+        TensorType(DType.float32, shape=["dim0", "dim1"], device=device_ref),
+        (Ellipsis, None),
+    ),
+    # x[..., 1]
+    (
+        TensorType(
+            DType.float32,
+            shape=["dim0", "dim1", "dim2"],
+            device=device_ref,
+        ),
+        (Ellipsis, 1),
+    ),
+    # x[Ellipsis, 1:]
+    (
+        TensorType(DType.float32, shape=["dim0", "dim1"], device=device_ref),
+        (Ellipsis, slice(1, None)),
+    ),
+    # x[1, ..., ::-1]
+    # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+    # (
+    #     TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+    #     (1, Ellipsis, slice(None, None, -1)),
+    # ),
+    # x[:, -1]
+    (
+        TensorType(
+            DType.float32,
+            shape=["dim0", "dim1", "dim2"],
+            device=device_ref,
+        ),
+        (slice(None), -1),
+    ),
+]
 
-@pytest.mark.parametrize(
-    ("tensor_type", "indices"),
-    [
-        # x[1:]
-        (
-            TensorType(DType.float32, shape=["dim0"], device=device_ref),
-            (slice(1, None),),
-        ),
-        (
-            TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=device_ref
-            ),
-            (slice(1, None),),
-        ),
-        # x[:-1]
-        (
-            TensorType(DType.float32, shape=["dim0"], device=device_ref),
-            (slice(None, -1)),
-        ),
-        # x[-1:]
-        (
-            TensorType(DType.float32, shape=["dim0"], device=device_ref),
-            (slice(-1, None)),
-        ),
-        # x[::2]
-        (
-            TensorType(DType.float32, shape=["dim0"], device=device_ref),
-            (slice(None, None, 2),),
-        ),
-        # x[::-1]
-        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-        # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
-        # x[:, None, :]
-        (
-            TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=device_ref
-            ),
-            (slice(None), None, slice(None)),
-        ),
-        # x[..., None]
-        (
-            TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=device_ref
-            ),
-            (Ellipsis, None),
-        ),
-        # x[..., 1]
-        (
-            TensorType(
-                DType.float32,
-                shape=["dim0", "dim1", "dim2"],
-                device=device_ref,
-            ),
-            (Ellipsis, 1),
-        ),
-        # x[Ellipsis, 1:]
-        (
-            TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=device_ref
-            ),
-            (Ellipsis, slice(1, None)),
-        ),
-        # x[1, ..., ::-1]
-        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-        # (
-        #     TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
-        #     (1, Ellipsis, slice(None, None, -1)),
-        # ),
-        # x[:, -1]
-        (
-            TensorType(
-                DType.float32,
-                shape=["dim0", "dim1", "dim2"],
-                device=device_ref,
-            ),
-            (slice(None), -1),
-        ),
-    ],
-)
+
+@pytest.fixture(scope="module")
+def input_arrays() -> list[np.ndarray]:
+    inputs = []
+    for tensor_type, _ in PARAMS:
+        input_shape = [
+            idx * 3 + 7 if not isinstance(dim, StaticDim) else dim.dim
+            for idx, dim in enumerate(tensor_type.shape)
+        ]
+        input_array = np.random.randn(*input_shape).astype(
+            tensor_type.dtype.to_numpy()
+        )
+        inputs.append(input_array)
+    return inputs
+
+
+@pytest.fixture(scope="module")
+def graph_outputs(
+    session: InferenceSession, input_arrays: list[np.ndarray]
+) -> Sequence[Tensor]:
+    with Graph(
+        "slice",
+        input_types=[t[0] for t in PARAMS],
+        output_types=[t[0] for t in PARAMS],
+    ) as graph:
+        outputs = []
+        for i, (_, indices) in enumerate(PARAMS):
+            x: TensorValue = graph.inputs[i].tensor
+            outputs.append(x[indices])
+        graph.output(*outputs)
+
+    # Execute the graph.
+    model = session.load(graph)
+    results = model.execute(
+        *[Tensor.from_numpy(a).to(model.input_devices[0]) for a in input_arrays]
+    )
+    assert are_all_tensors_sequence(results)
+    return results
+
+
+@pytest.mark.parametrize(("tensor_type", "indices"), PARAMS)
 def test_slice_numpy(
-    session: InferenceSession, tensor_type: TensorType, indices: tuple[slice]
+    graph_outputs: list[Tensor],
+    input_arrays: list[np.ndarray],
+    tensor_type: TensorType,
+    indices: tuple[slice],
 ) -> None:
     """Tests end-to-end slice lowering and execution."""
-    graph = Graph(
-        "slice",
-        forward=operator.itemgetter(indices),
-        input_types=[tensor_type],
-    )
-
-    # Compile and execute the slice graph.
-    model = session.load(graph)
-
-    # Compute a random input with shape compatible with tensor_type.
-    input_shape = [
-        idx * 3 + 7 if not isinstance(dim, StaticDim) else dim.dim
-        for idx, dim in enumerate(tensor_type.shape)
-    ]
-    input_array = np.random.randn(*input_shape).astype(
-        tensor_type.dtype.to_numpy()
-    )
-
-    # Run the slice graph.
-    out = model.execute(
-        Tensor.from_numpy(input_array).to(model.input_devices[0])
-    )
-    assert isinstance(out[0], Tensor)
-    sliced = out[0].to_numpy()
+    i = PARAMS.index((tensor_type, indices))
+    actual = graph_outputs[i].to_numpy()
 
     # Verify that the max.graph slicing matches NumPy.
-    expected = input_array[indices]
-    np.testing.assert_array_equal(sliced, expected)
+    expected = input_arrays[i][indices]
+    np.testing.assert_array_equal(actual, expected)

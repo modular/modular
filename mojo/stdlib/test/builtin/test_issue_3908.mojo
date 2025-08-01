@@ -14,7 +14,7 @@
 
 import sys
 
-from builtin.io import _fdopen
+from io.io import _fdopen
 from testing import testing
 
 

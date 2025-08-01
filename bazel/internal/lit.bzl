@@ -25,8 +25,8 @@ def _lit_test(name, srcs, args = None, data = None, deps = None, **kwargs):
     deps = deps or []
     aspect_py_test(
         name = name,
-        srcs = [Label("@llvm-project//llvm:lit")],
-        main = Label("@llvm-project//llvm:utils/lit/lit.py"),
+        srcs = [Label("@llvm-project//llvm:lit"), "//bazel/internal/llvm-lit:lit_shim.py"],
+        main = Label("//bazel/internal/llvm-lit:lit_shim.py"),
         args = args + ["-v"] + ["$(execpath %s)" % src for src in srcs],
         data = data + srcs,
         deps = deps + [Label("@llvm-project//llvm:lit")],
@@ -258,10 +258,6 @@ EOF
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
     } | GPU_TEST_ENV
-    if "MODULAR_CRASH_REPORTING_ENABLED" not in env and \
-       "MODULAR_CRASH_REPORTING_HANDLER_PATH" not in (env | default_env):
-        default_env["MODULAR_CRASH_REPORTING_ENABLED"] = "false"
-
     extra_data = [
         "//bazel/internal:asan-suppressions.txt",
         "//bazel/internal:lsan-suppressions.txt",
@@ -306,7 +302,7 @@ EOF
         srcs = ["//bazel/internal/llvm-lit:validate_lit_features.py"],
         main = "//bazel/internal/llvm-lit:validate_lit_features.py",
         args = [native.package_name()] + srcs,
-        env = default_env,
+        env = default_env | {"RUNS_ON_GPU": str("gpu" in tags)},
         toolchains = [
             "//bazel/internal:current_gpu_toolchain",
         ],

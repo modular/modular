@@ -17,14 +17,7 @@ from conftest import static_axes, tensor_types
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Dim,
-    Graph,
-    Shape,
-    TensorType,
-    ops,
-)
+from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, ops
 from max.graph.ops.irfft import Normalization
 
 input_types = st.shared(

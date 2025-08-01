@@ -50,7 +50,7 @@ from rich.progress import (
 )
 from utils import pretty_exception_handler
 
-CONSOLE = Console()
+CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
 LINE = "\n" + 80 * "-"
 
@@ -80,7 +80,7 @@ def configure_logging(
         logging.basicConfig(format="%(message)s", handlers=[debug_handler])
     else:
         logging.basicConfig(format="%(levelname)s: %(message)s")
-        CONSOLE = Console(force_terminal=False, color_system=None)
+        CONSOLE = Console(width=80, force_terminal=False, color_system=None)
 
     log_level = (
         logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
@@ -192,8 +192,8 @@ class KbenchCache:
 
     def clear(self) -> None:
         """Remove cache file if it exists."""
+        logging.debug(f"Removing kbench-cache: {self.path}")
         if self.path.exists():
-            logging.debug(f"Removing kbench-cache: {self.path}")
             subprocess.run(["rm", str(self.path)])
 
     def load(self) -> None:
@@ -442,8 +442,8 @@ class Spec:
         try:
             logging.info(f"Loading yaml [{file}]" + LINE)
             return Spec.loads(file.read_text())
-        except Exception:
-            raise ValueError(f"Could not load spec from {file}")  # noqa: B904
+        except Exception as e:
+            raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
 
     @staticmethod
     def load_yaml_list(yaml_path_list: list[str]) -> Spec:
@@ -1579,17 +1579,21 @@ def cli(
     elif tune:
         mode = KBENCH_MODE.TUNE
 
-    if not force:
-        check_gpu_clock()
-
     obj_cache = KbenchCache()
-
     # check kbench_cache and load it if exists:
     if clear_cache:
         obj_cache.clear()
-
     if cached:
         obj_cache.load()
+
+    if not len(files) and not len(files):
+        logging.debug(
+            "Nothing more to do without parameter or shape YAML provided!"
+        )
+        return True
+
+    if not force:
+        check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()

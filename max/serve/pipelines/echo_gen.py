@@ -18,20 +18,20 @@ from typing import Union, cast
 import numpy as np
 from max.interfaces import (
     GenerationStatus,
+    PipelineTokenizer,
+    RequestID,
+    TextGenerationInputs,
     TextGenerationOutput,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
     TokenGenerator,
 )
-from max.pipelines.core import (
-    PipelineTokenizer,
-    TextContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
-)
+from max.pipelines.core import TextContext
 
 
 @dataclass
 class EchoPipelineTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
 ):
     """Echo tokenizer that creates TextContext instances.
 
@@ -66,9 +66,7 @@ class EchoPipelineTokenizer(
             # Already a sequence of integers
             return np.array(list(prompt), dtype=np.int32)
 
-    async def decode(
-        self, context: TextContext, encoded: np.ndarray, **kwargs
-    ) -> str:
+    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.
@@ -85,7 +83,7 @@ class EchoPipelineTokenizer(
             # Fallback for non-ASCII values
             return "".join(str(int(token_id)) for token_id in encoded)
 
-    async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Creates a new TextContext for echo generation."""
 
         # Extract prompt from request
@@ -97,7 +95,7 @@ class EchoPipelineTokenizer(
                 [
                     str(message["content"])
                     for message in cast(
-                        list[TokenGeneratorRequestMessage], request.messages
+                        list[TextGenerationRequestMessage], request.messages
                     )
                 ]
             )
@@ -117,8 +115,7 @@ class EchoPipelineTokenizer(
 
         # Create TextContext manually
         context = TextContext(
-            request_id=request.id,
-            prompt=prompt,
+            request_id=request.request_id,
             max_length=max_length,
             tokens=encoded_prompt,
             eos_token_ids={self.eos},  # Set containing the EOS token
@@ -126,9 +123,6 @@ class EchoPipelineTokenizer(
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
         )
-
-        # Assign to cache if needed
-        context.assign_to_cache(request.index)
 
         return context
 
@@ -142,11 +136,12 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
         self._echo_indices: dict[str, int] = {}
 
     def next_token(
-        self, batch: dict[str, TextContext], num_steps: int = 1
-    ) -> dict[str, TextGenerationOutput]:
+        self,
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
         responses = {}
 
-        for request_id, context in batch.items():
+        for request_id, context in inputs.batch.items():
             if request_id not in responses:
                 responses[request_id] = TextGenerationOutput(
                     request_id=request_id,
@@ -159,7 +154,7 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
             if request_id not in self._echo_indices:
                 self._echo_indices[request_id] = 0
 
-            for step in range(num_steps):  # noqa: B007
+            for step in range(inputs.num_steps):  # noqa: B007
                 echo_idx = self._echo_indices[request_id]
                 prompt_tokens = context.prompt_tokens
 
@@ -192,10 +187,8 @@ class EchoTokenGenerator(TokenGenerator[TextContext]):
 
         return responses
 
-    def release(self, context: TextContext) -> None:
-        """Clean up any state associated with the context."""
-        # Note: We can't easily map context back to request_id here,
-        # so we'll rely on the scheduler to clean up properly.
-        # In practice, this is fine since the echo indices will be cleaned
-        # up when contexts complete normally.
-        pass
+    def release(self, request_id: RequestID) -> None:
+        """Clean up any state associated with the request."""
+        # Clean up the echo index for this request if it exists
+        if request_id in self._echo_indices:
+            del self._echo_indices[request_id]

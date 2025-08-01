@@ -81,7 +81,6 @@ struct cudnnSoftmaxMode_t(Writable):
     alias CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
     alias CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -145,7 +144,6 @@ struct cudnnReduceTensorIndices_t(Writable):
     alias CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
     alias CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -339,7 +337,6 @@ struct cudnnReduceTensorOp_t(Writable):
     alias CUDNN_REDUCE_TENSOR_NORM2 = Self(7)
     alias CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS = Self(8)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -446,7 +443,6 @@ struct cudnnDeterminism_t(Writable):
     alias CUDNN_NON_DETERMINISTIC = Self(0)
     alias CUDNN_DETERMINISTIC = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -507,7 +503,6 @@ struct cudnnStatus_t(Writable):
     alias CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(13)
     alias CUDNN_STATUS_VERSION_MISMATCH = Self(14)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -576,7 +571,6 @@ struct cudnnCTCLossAlgo_t(Writable):
     alias CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
     alias CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -643,7 +637,6 @@ struct cudnnTensorFormat_t(Writable):
     alias CUDNN_TENSOR_NHWC = Self(1)
     alias CUDNN_TENSOR_NCHW_VECT_C = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -811,7 +804,6 @@ struct cudnnNormAlgo_t(Writable):
     alias CUDNN_NORM_ALGO_STANDARD = Self(0)
     alias CUDNN_NORM_ALGO_PERSIST = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -858,7 +850,6 @@ struct cudnnOpTensorOp_t(Writable):
     alias CUDNN_OP_TENSOR_SQRT = Self(4)
     alias CUDNN_OP_TENSOR_NOT = Self(5)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1159,7 +1150,6 @@ struct cudnnActivationMode_t(Writable):
     alias CUDNN_ACTIVATION_IDENTITY = Self(5)
     alias CUDNN_ACTIVATION_SWISH = Self(6)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1245,7 +1235,6 @@ struct cudnnConvolutionBwdDataAlgo_t(Writable):
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED = Self(5)
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT = Self(6)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1346,7 +1335,6 @@ struct cudnnSamplerType_t(Writable):
     var _value: Int8
     alias CUDNN_SAMPLER_BILINEAR = Self(0)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1414,7 +1402,6 @@ struct cudnnNormMode_t(Writable):
     alias CUDNN_NORM_PER_ACTIVATION = Self(0)
     alias CUDNN_NORM_PER_CHANNEL = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1532,7 +1519,6 @@ struct cudnnNormOps_t(Writable):
     alias CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
     alias CUDNN_NORM_OPS_NORM_ADD_ACTIVATION = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1610,7 +1596,6 @@ struct cudnnSoftmaxAlgorithm_t(Writable):
     alias CUDNN_SOFTMAX_ACCURATE = Self(1)
     alias CUDNN_SOFTMAX_LOG = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1700,7 +1685,6 @@ struct cudnnBatchNormOps_t(Writable):
     alias CUDNN_BATCHNORM_OPS_BN_ACTIVATION = Self(1)
     alias CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1752,7 +1736,6 @@ struct cudnnConvolutionFwdAlgo_t(Writable):
     alias CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED = Self(7)
     alias CUDNN_CONVOLUTION_FWD_ALGO_COUNT = Self(8)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1998,7 +1981,6 @@ struct cudnnLRNMode_t(Writable):
     var _value: Int8
     alias CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2124,7 +2106,6 @@ struct cudnnFoldingDirection_t(Writable):
     alias CUDNN_TRANSFORM_FOLD = Self(0)
     alias CUDNN_TRANSFORM_UNFOLD = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2189,7 +2170,6 @@ struct cudnnErrQueryMode_t(Writable):
     alias CUDNN_ERRQUERY_NONBLOCKING = Self(1)
     alias CUDNN_ERRQUERY_BLOCKING = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2350,7 +2330,6 @@ struct cudnnBatchNormMode_t(Writable):
     alias CUDNN_BATCHNORM_SPATIAL = Self(1)
     alias CUDNN_BATCHNORM_SPATIAL_PERSISTENT = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2441,7 +2420,6 @@ struct cudnnSeverity_t(Writable):
     alias CUDNN_SEV_WARNING = Self(2)
     alias CUDNN_SEV_INFO = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2493,7 +2471,6 @@ struct cudnnMathType_t(Writable):
     alias CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION = Self(2)
     alias CUDNN_FMA_MATH = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2540,7 +2517,6 @@ struct cudnnNanPropagation_t(Writable):
     alias CUDNN_NOT_PROPAGATE_NAN = Self(0)
     alias CUDNN_PROPAGATE_NAN = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2589,7 +2565,6 @@ struct cudnnRNNAlgo_t(Writable):
     alias CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H = Self(3)
     alias CUDNN_RNN_ALGO_COUNT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2729,7 +2704,6 @@ struct cudnnDataType_t(Writable):
     alias CUDNN_DATA_FP8_E5M2 = Self(13)
     alias CUDNN_DATA_FAST_FLOAT_FOR_FP8 = Self(14)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2920,7 +2894,6 @@ struct cudnnIndicesType_t(Writable):
     alias CUDNN_16BIT_INDICES = Self(2)
     alias CUDNN_8BIT_INDICES = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -3210,7 +3183,6 @@ struct cudnnConvolutionBwdFilterAlgo_t(Writable):
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING = Self(6)
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT = Self(7)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -3367,7 +3339,6 @@ struct cudnnPoolingMode_t(Writable):
     alias CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING = Self(2)
     alias CUDNN_POOLING_MAX_DETERMINISTIC = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -3466,7 +3437,6 @@ struct cudnnDivNormMode_t(Writable):
     var _value: Int8
     alias CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

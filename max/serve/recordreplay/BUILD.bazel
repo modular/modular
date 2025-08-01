@@ -11,5 +11,6 @@ modular_py_library(
         requirement("msgspec"),
         requirement("scipy"),
         requirement("taskgroup"),
+        requirement("typing-extensions"),
     ],
 )

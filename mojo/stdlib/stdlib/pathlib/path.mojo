@@ -16,12 +16,12 @@
 import os
 from hashlib.hasher import Hasher
 from os import PathLike, listdir, stat_result
-from sys import external_call, os_is_windows
+from sys import CompilationTarget, external_call
 from sys.ffi import c_char
 
-from builtin._location import __call_location, _SourceLocation
+from builtin._location import __call_location
 
-alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
+alias DIR_SEPARATOR = "\\" if CompilationTarget.is_windows() else "/"
 
 
 fn cwd() raises -> Path:

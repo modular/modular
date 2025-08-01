@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import os_is_macos
+from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -256,7 +256,7 @@ def test_shapes[
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
     @parameter
-    if b_packed and os_is_macos():
+    if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[

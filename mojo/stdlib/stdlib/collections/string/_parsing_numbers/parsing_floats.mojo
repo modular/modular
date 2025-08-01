@@ -22,14 +22,10 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-import random
-import sys
 from collections import InlineArray
-from math import ceil, log10
 
 import bit
 import memory
-from testing import assert_equal
 
 from .constants import (
     CONTAINER_SIZE,

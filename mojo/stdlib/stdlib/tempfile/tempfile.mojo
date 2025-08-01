@@ -20,11 +20,11 @@ from tempfile import gettempdir
 """
 
 import os
-import sys
 from pathlib import Path
+from sys import CompilationTarget
 
 from memory import Span
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 
@@ -44,7 +44,9 @@ fn _candidate_tempdir_list() -> List[String]:
     """Generate a list of candidate temporary directories which
     _get_default_tempdir will try."""
 
-    constrained[not sys.os_is_windows(), "windows not supported yet"]()
+    constrained[
+        not CompilationTarget.is_windows(), "windows not supported yet"
+    ]()
 
     var dirlist = List[String]()
     var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")

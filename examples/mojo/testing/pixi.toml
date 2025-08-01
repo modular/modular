@@ -11,4 +11,4 @@ main = "mojo run src/example.mojo"
 test = "mojo test -I src test"
 
 [dependencies]
-max = "~=24.6"
+mojo = "*"

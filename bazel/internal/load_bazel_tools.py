@@ -242,10 +242,3 @@ if import_paths:
     llvm_config.with_environment(
         "MODULAR_MOJO_MAX_IMPORT_PATH", ",".join(sorted(set(import_paths)))
     )
-
-# Write xml output to Bazel's expected location
-if xml_output := os.getenv("XML_OUTPUT_FILE"):
-    lit_opts = os.environ.get("LIT_OPTS", "")
-    lit_opts = f"{lit_opts} --xunit-xml-output {xml_output}".strip()
-    os.environ["LIT_OPTS"] = lit_opts
-    llvm_config.with_environment("LIT_OPTS", lit_opts)

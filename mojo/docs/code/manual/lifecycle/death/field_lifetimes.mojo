@@ -18,7 +18,7 @@ struct Balloons:
     var count: Int
 
 
-fn consume(owned arg: String):
+fn consume(var arg: String):
     pass
 
 

@@ -24,7 +24,7 @@ from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
-from gpu.memory import AddressSpace, external_memory, tma_store_fence
+from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
 from gpu.sync import named_barrier
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -416,7 +416,7 @@ fn tma_umma_warp_specialized_gemm_kernel[
         # UMMA (tensor memory) → registers → shared memory → global memory
         #           c_frag                   c_smem_tile      c_tma_op
         if elect_one_warp and thread_idx.x < BN // TMA_BN:
-            tma_store_fence()
+            fence_async_view_proxy()
 
             var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
 

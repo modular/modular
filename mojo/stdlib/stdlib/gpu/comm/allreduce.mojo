@@ -39,12 +39,11 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys import alignof, simdwidthof, sizeof
 from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
-from builtin.device_passable import DevicePassable
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -182,9 +181,11 @@ fn _can_enable_p2p_impl(ctxs: List[DeviceContext]) raises -> Bool:
                 ctxs[i].enable_peer_access(ctxs[j])
                 ctxs[j].enable_peer_access(ctxs[i])
             except e:
-                # Temporary workaround to skip
-                # `CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED`
-                continue
+                # Only ignore the benign "already enabled" error
+                if "PEER_ACCESS_ALREADY_ENABLED" in String(e):
+                    continue
+                # Any other error means P2P cannot be established
+                return False
 
     return True
 
@@ -207,10 +208,14 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     # found and p2p is not present and 2 to indicate that the cache is found and
     # that p2p is present.
     var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
-    if found:
-        return found == p2p_available
 
+    # Always try to enable P2P, even if we have a cached result
+    # This ensures new GPU pairs get enabled when moving from 2 to 4 GPUs
     var res = _can_enable_p2p_impl(ctxs)
+
+    # Only use cache if we haven't established P2P is available
+    if found and not res:
+        return found == p2p_available
     var ok = p2p_available if res else p2p_not_available
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_name),

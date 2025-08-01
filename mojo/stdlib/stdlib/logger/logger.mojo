@@ -40,7 +40,7 @@ stdout). Messages below the configured level will be silently ignored.
 import sys
 from os import abort
 from sys.param_env import env_get_string
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL

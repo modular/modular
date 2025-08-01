@@ -14,28 +14,28 @@
 import os
 from os.env import getenv, setenv
 from os.path import expanduser, join
-from sys.info import os_is_windows
+from sys.info import CompilationTarget
 
 from testing import assert_equal
 
 
 fn get_user_path() -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return join("C:", "Users", "user")
     return "/home/user"
 
 
 fn get_current_home() -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return getenv("USERPROFILE")
     return getenv("HOME")
 
 
 def set_home(path: String):
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         _ = os.env.setenv("USERPROFILE", path)
     else:
         _ = os.env.setenv("HOME", path)

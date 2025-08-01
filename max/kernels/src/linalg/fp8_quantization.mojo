@@ -11,30 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
+from logger import Logger
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simdwidthof
 from sys.info import _is_sm_9x_or_newer
-
-import gpu.warp as warp
+from stdlib.bit import log2_floor
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+from gpu import WARP_SIZE, block_idx, thread_idx
 import gpu.block
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
-from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
-from memory import stack_allocation
 from runtime.tracing import trace_arg
-
+from utils.numerics import get_accum_type
 from utils.index import IndexList
 from utils.numerics import max_finite, min_finite
+from .utils import elementwise_epilogue_type
+from gpu import global_idx
+from utils.index import Index
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, LayoutTensor
+
 
 ########################################################
 # Static scaled fp8 quantization
@@ -88,8 +91,7 @@ fn quantize_static_scaled_fp8[
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()
         out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
 
-    alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[in_dtype, target=compile_target]()
+    alias target_simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
         IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context
@@ -128,7 +130,7 @@ fn quantize_dynamic_scaled_fp8[
     ]() if group_size_or_per_token == -1 else group_size_or_per_token
     alias n_groups = input.shape.get[1]() // group_size
     alias simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
-    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
@@ -173,12 +175,12 @@ fn quantize_fp8_kernel[
     var thread_max = Scalar[in_type](0)
 
     var tid = thread_idx.x
-    var row = block_idx.x
-    var group_idx = block_idx.y
+    var row = Int(block_idx.x)
+    var group_idx = Int(block_idx.y)
 
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
-            var idx = i * simd_width + group_idx * group_size
+            var idx: Int = i * simd_width + group_idx * group_size
             input_vec = input.load[width=simd_width](row, idx)
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
@@ -195,7 +197,7 @@ fn quantize_fp8_kernel[
             scales.store[width=1](IndexList[2](row, group_idx), scale_factor)
 
         for i in range(tid, group_size // simd_width, num_threads):
-            var idx = i * simd_width + group_idx * group_size
+            var idx: Int = i * simd_width + group_idx * group_size
 
             @parameter
             if use_warp_tiling:
@@ -311,3 +313,167 @@ fn matmul_dynamic_scaled_fp8[
         elementwise_lambda_fn=scaled_output_fn,
         _trace_description=_trace_string,
     ](c_dummy, a, b, Optional[DeviceContext](ctx))
+
+
+fn naive_blockwise_scaled_fp8_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_type: DType,
+    c_shape: DimList,
+    a_shape: DimList,
+    b_shape: DimList,
+    a_scale_shape: DimList,
+    b_scale_shape: DimList, //,
+    *,
+    BLOCK_DIM: Int = 16,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
+](
+    c_device: NDBuffer[c_type, 2, _, c_shape],
+    a_device: NDBuffer[a_type, 2, _, a_shape],
+    b_device: NDBuffer[b_type, 2, _, b_shape],
+    a_scales_device: NDBuffer[scales_type, 2, _, a_scale_shape],
+    b_scales_device: NDBuffer[scales_type, 2, _, b_scale_shape],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        (
+            "Only float8_e4m3fn is supported for input dtype for blockwise"
+            " scaled fp8 matmul"
+        ),
+    ]()
+
+    constrained[
+        s_type == DType.float32,
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    var logger = Logger()
+    var a = from_ndbuffer_row_major(a_device)
+    var b = from_ndbuffer_row_major(b_device)
+    var c = from_ndbuffer_row_major(c_device)
+    var a_scales = from_ndbuffer_row_major(a_scales_device)
+    var b_scales = from_ndbuffer_row_major(b_scales_device)
+
+    var M = c_device.dim[0]()
+    var N = c_device.dim[1]()
+    var K = a_device.dim[1]()
+
+    logger.info("Executing Naive Blockwise Scaled FP8 GEMM")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
+    logger.info(
+        "A Scales Shape: [", a_scales.dim[0](), ", ", a_scales.dim[1](), "]"
+    )
+    logger.info(
+        "B Scales Shape: [", b_scales.dim[0](), ", ", b_scales.dim[1](), "]"
+    )
+
+    alias kernel = naive_blockwise_scaled_fp8_matmul_kernel[
+        c_type,
+        a_type,
+        b_type,
+        scales_type,
+        s_type,
+        __type_of(a).layout,
+        __type_of(b).layout,
+        __type_of(c).layout,
+        __type_of(a_scales).layout,
+        __type_of(b_scales).layout,
+        BLOCK_DIM,
+        transpose_b,
+        elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
+
+
+fn naive_blockwise_scaled_fp8_matmul_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_type: DType,
+    s_type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    a_scale_layout: Layout,
+    b_scale_layout: Layout,
+    BLOCK_DIM: Int,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+):
+    constrained[
+        s_type == DType.float32,
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
+
+    var x = global_idx.x
+    var y = global_idx.y
+
+    if x >= M or y >= N:
+        return
+
+    var a_scale_0 = a_scales.dim[0]()
+    var a_scale_1 = a_scales.dim[1]()
+    var b_scale_0 = b_scales.dim[0]()
+    var b_scale_1 = b_scales.dim[1]()
+    var MAT_A_ROWS_SCALE_SIZE = M // a_scale_0
+    var MAT_A_COLS_SCALE_SIZE = K // a_scale_1
+    var MAT_B_ROWS_SCALE_SIZE = (
+        N // b_scale_0 if transpose_b else K // b_scale_0
+    )
+    var MAT_B_COLS_SCALE_SIZE = (
+        K // b_scale_1 if transpose_b else N // b_scale_1
+    )
+
+    var accum = Scalar[s_type](0)
+    for k in range(K):
+        var a_val = rebind[Scalar[a_type]](a[x, k]).cast[s_type]()
+        var a_scale_factor = rebind[Scalar[s_type]](
+            a_scales[x // MAT_A_ROWS_SCALE_SIZE, k // MAT_A_COLS_SCALE_SIZE]
+        )
+
+        var b_val: Scalar[s_type]
+        var b_scale_factor: Scalar[s_type]
+
+        @parameter
+        if transpose_b:
+            b_val = rebind[Scalar[b_type]](b[y, k]).cast[s_type]()
+            b_scale_factor = rebind[Scalar[s_type]](
+                b_scales[y // MAT_B_ROWS_SCALE_SIZE, k // MAT_B_COLS_SCALE_SIZE]
+            )
+        else:
+            b_val = rebind[Scalar[b_type]](b[k, y]).cast[s_type]()
+            b_scale_factor = rebind[Scalar[s_type]](
+                b_scales[k // MAT_B_ROWS_SCALE_SIZE, y // MAT_B_COLS_SCALE_SIZE]
+            )
+
+        accum += a_val * b_val * a_scale_factor * b_scale_factor
+
+    @parameter
+    if elementwise_lambda_fn:
+        alias elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
+    else:
+        c[x, y] = accum.cast[c_type]()

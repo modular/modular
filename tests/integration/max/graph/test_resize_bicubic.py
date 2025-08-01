@@ -80,7 +80,7 @@ def torchvision_bicubic_resize_nchw(
     ],
 )
 def test_resize_bicubic_execution(
-    session,  # noqa: ANN001
+    session: InferenceSession,
     device: DeviceRef,
     input_shape: Sequence[int],
     output_shape: Sequence[int],

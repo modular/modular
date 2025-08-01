@@ -21,7 +21,6 @@ from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
-import torch
 from huggingface_hub import constants as hf_hub_constants
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -40,6 +39,14 @@ from .registry import PIPELINE_REGISTRY
 from .weight_path_parser import WeightPathParser
 
 logger = logging.getLogger("max.pipelines")
+
+
+# Encodings that can be casted to/from each other.
+# We currently only support float32 <-> bfloat16 weight type casting.
+_ALLOWED_CAST_ENCODINGS = {
+    SupportedEncoding.float32,
+    SupportedEncoding.bfloat16,
+}
 
 
 @dataclass
@@ -76,8 +83,10 @@ class MAXModelConfig(MAXModelConfigBase):
     quantization_encoding: Optional[SupportedEncoding] = None
     """Weight encoding type."""
 
+    # TODO: Rename to make it clear that this option supports bidirectional
+    # casting.
     allow_safetensors_weights_float32_to_bfloat16_cast: bool = False
-    """Whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed."""
+    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
@@ -421,14 +430,13 @@ class MAXModelConfig(MAXModelConfigBase):
 
         if from_encoding == to_encoding:
             return
-        # We currently only support float32 to bfloat16 weight type casting.
-        elif (
-            from_encoding != SupportedEncoding.float32
-            and to_encoding != SupportedEncoding.bfloat16
+        elif not (
+            from_encoding in _ALLOWED_CAST_ENCODINGS
+            and to_encoding in _ALLOWED_CAST_ENCODINGS
         ):
             raise ValueError(
                 f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{self.default_device_spec}'. "
-                f"We only support float32 to bfloat16 weight type casting."
+                f"We only support float32 <-> bfloat16 weight type casting."
             )
 
         if not to_encoding.supported_on(device_spec=self.default_device_spec):
@@ -485,10 +493,9 @@ class MAXModelConfig(MAXModelConfigBase):
                 for supported_encoding in supported_encodings:
                     from_encoding = supported_encoding
 
-                    # We currently only support float32 to bfloat16 weight type casting.
-                    if (
-                        from_encoding != SupportedEncoding.float32
-                        or to_encoding != SupportedEncoding.bfloat16
+                    if not (
+                        from_encoding in _ALLOWED_CAST_ENCODINGS
+                        and to_encoding in _ALLOWED_CAST_ENCODINGS
                     ):
                         continue
 
@@ -732,7 +739,10 @@ class MAXModelConfig(MAXModelConfigBase):
         if self.quantization_encoding == SupportedEncoding.gptq:
             hf_quant_config = self.huggingface_config.quantization_config
 
-            if self.huggingface_config.torch_dtype != torch.float16:
+            # This is a bit hacky, but seems like we need it for now.
+            # This warning is for the MAX pipeline to alert users about a GPTQ format we don't support yet.
+            # Instead of running our GPTQ pipeline on this unsupported format and outputting gibberish, we exit early with a clear error message.
+            if str(self.huggingface_config.torch_dtype) != "torch.float16":
                 raise ValueError(
                     "bfloat16 scales are not supported for GPTQ-quantized models."
                 )

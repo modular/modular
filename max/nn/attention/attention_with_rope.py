@@ -27,6 +27,7 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     Weight,
+    _OpaqueValue,
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -401,7 +402,13 @@ class AttentionWithRope(Module):
         total_seq_len = x.shape[0]
 
         if self.float8_config:
-            assert isinstance(kv_collection, PagedKVCacheCollection)
+            # TODO(GEX-2452): Find a cleaner way to write assertions like this
+            # or improve the subgraph code so that it can preserve the Python
+            # classes which wrap our opaque types.
+            assert isinstance(kv_collection, PagedKVCacheCollection) or (
+                isinstance(kv_collection, _OpaqueValue)
+                and kv_collection.type.name == "PagedKVCacheCollection"
+            )
 
             x_scales: TensorValue
             weight_scale = self.qkv_weight_scale
@@ -422,7 +429,7 @@ class AttentionWithRope(Module):
                 wqkv=self.wqkv,
                 bias=self.wqkv_bias,
                 input_row_offsets=input_row_offsets,
-                kv_collection=kv_collection,
+                kv_collection=kv_collection,  # type: ignore
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 input_scale=x_scales.to(x.device),
@@ -936,6 +943,15 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
 
         self.list_of_attentions = []
 
+        # Shard weights once for all devices
+        if self.stacked_qkv:
+            qkv_proj_shards = self.qkv_proj.shard(self.devices)
+        else:
+            q_proj_shards = self.q_proj.shard(self.devices)
+            k_proj_shards = self.k_proj.shard(self.devices)
+            v_proj_shards = self.v_proj.shard(self.devices)
+        o_proj_shards = self.o_proj.shard(self.devices)
+
         for n, device in enumerate(self.devices):
             # Calculate the number of heads for this device
             head_start, head_end = _compute_shard_range(
@@ -959,13 +975,13 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                 clip_qkv=clip_qkv,
             )
             if self.stacked_qkv:
-                layer.qkv_proj = self.qkv_proj.shard(n, device)
+                layer.qkv_proj = qkv_proj_shards[n]
             else:
-                layer.q_proj = self.q_proj.shard(n, device)
-                layer.k_proj = self.k_proj.shard(n, device)
-                layer.v_proj = self.v_proj.shard(n, device)
+                layer.q_proj = q_proj_shards[n]
+                layer.k_proj = k_proj_shards[n]
+                layer.v_proj = v_proj_shards[n]
 
-            layer.o_proj = self.o_proj.shard(n, device)
+            layer.o_proj = o_proj_shards[n]
             self.list_of_attentions.append(layer)
 
     def __call__(  # type: ignore[override]

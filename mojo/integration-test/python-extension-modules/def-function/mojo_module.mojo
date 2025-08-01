@@ -15,6 +15,7 @@ from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
+from collections import OwnedKwargsDict
 
 
 @export
@@ -46,6 +47,10 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_function[takes_two]("takes_two")
         b.def_function[takes_three]("takes_three")
 
+        # kwargs test functions
+        b.def_function[sum_kwargs_ints]("sum_kwargs_ints")
+        b.def_function[sum_pos_arg_and_kwargs]("sum_pos_arg_and_kwargs")
+
         return b.finalize()
     except e:
         return abort[PythonObject](
@@ -57,7 +62,7 @@ fn PyInit_mojo_module() -> PythonObject:
 fn takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
-        raise String("`s` must be 'just a python string'")
+        raise Error("`s` must be 'just a python string'")
 
     return PythonObject("just another python string")
 
@@ -65,7 +70,7 @@ fn takes_zero_raises_returns() raises -> PythonObject:
 @export
 fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("input must be 'foo'")
+        raise Error("input must be 'foo'")
     return a
 
 
@@ -74,7 +79,7 @@ fn takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("first input must be 'foo'")
+        raise Error("first input must be 'foo'")
     return a + b
 
 
@@ -83,7 +88,7 @@ fn takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("first input must be 'foo'")
+        raise Error("first input must be 'foo'")
     return a + b + c
 
 
@@ -125,7 +130,7 @@ fn takes_three_returns(
 fn takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
-        raise String("`s` must be 'just a python string'")
+        raise Error("`s` must be 'just a python string'")
 
     _ = Python().eval(
         "setattr(sys.modules['test_module'], 's', 'Hark! A mojo function"
@@ -136,14 +141,14 @@ fn takes_zero_raises() raises:
 @export
 fn takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
 @export
 fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
@@ -152,7 +157,7 @@ fn takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj + obj2
 
 
@@ -186,3 +191,29 @@ fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
         takes_three_raises(list_obj, obj, obj2)
     except e:
         abort(String("Unexpected Python error: ", e))
+
+
+# ===----------------------------------------------------------------------=== #
+# Kwargs Test Functions
+# ===----------------------------------------------------------------------=== #
+
+
+@export
+fn sum_kwargs_ints(
+    kwargs: OwnedKwargsDict[PythonObject],
+) raises -> PythonObject:
+    """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
+    """
+    var total = 0
+    for entry in kwargs.items():
+        var value = entry.value
+        total += Int(value)
+
+    return PythonObject(total)
+
+
+@export
+fn sum_pos_arg_and_kwargs(
+    arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+) raises -> PythonObject:
+    return PythonObject(Int(arg1) + Int(sum_kwargs_ints(kwargs)))

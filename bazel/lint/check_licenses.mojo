@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from pathlib import Path, cwd
-from os import listdir
+from pathlib import Path
 from collections import Set
 from subprocess import run
 

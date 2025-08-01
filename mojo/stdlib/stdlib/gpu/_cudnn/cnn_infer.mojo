@@ -21,7 +21,6 @@ from sys.ffi import _Global, _OwnedDLHandle
 from utils import StaticTuple
 
 from .infer import (
-    # Types
     cudnnMathType_t,
     cudnnDeterminism_t,
     cudnnTensorTransformStruct,
@@ -30,23 +29,7 @@ from .infer import (
     cudnnStatus_t,
     cudnnConvolutionBwdDataAlgo_t,
     cudnnDataType_t,
-    cudnnNanPropagation_t,
-    cudnnOpTensorOp_t,
-    cudnnReduceTensorOp_t,
-    cudnnReduceTensorIndices_t,
-    cudnnIndicesType_t,
-    cudnnConvolutionBwdFilterAlgo_t,
-    cudnnOpTensorStruct,
-    cudnnReduceTensorStruct,
     cudnnContext,
-    cudnnPoolingStruct,
-    cudnnActivationDescriptor_t,
-    cudnnPoolingMode_t,
-    cudnnLRNMode_t,
-    cudnnDivNormMode_t,
-    cudnnErrQueryMode_t,
-    # Functions needed by downstream code
-    cudnnDestroyFilterDescriptor,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -384,7 +367,6 @@ struct cudnnFusedOpsConstParamLabel_t(Writable):
     alias CUDNN_PARAM_BN_DSCALE_PLACEHOLDER = Self(37)
     alias CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -513,7 +495,6 @@ struct cudnnReorderType_t(Writable):
     alias CUDNN_DEFAULT_REORDER = Self(0)
     alias CUDNN_NO_REORDER = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -660,7 +641,6 @@ struct cudnnFusedOps_t(Writable):
     alias CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK = Self(5)
     alias CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -736,7 +716,6 @@ struct cudnnFusedOpsPointerPlaceHolder_t(Writable):
     alias CUDNN_PTR_ELEM_ALIGNED = Self(1)
     alias CUDNN_PTR_16B_ALIGNED = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -874,7 +853,6 @@ struct cudnnFusedOpsVariantParamLabel_t(Writable):
     alias CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
     alias CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1363,7 +1341,6 @@ struct cudnnConvolutionMode_t(Writable):
     alias CUDNN_CONVOLUTION = Self(0)
     alias CUDNN_CROSS_CORRELATION = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

@@ -55,8 +55,7 @@ def test_exp_float64():
 def exp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    var eval = libm_call[dtype, simd_width, "expf", "exp"](arg)
-    return eval
+    return libm_call["expf", "exp"](arg)
 
 
 def test_exp_libm[dtype: DType]():

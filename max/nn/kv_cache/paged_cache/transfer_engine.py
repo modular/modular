@@ -16,12 +16,13 @@
 from __future__ import annotations
 
 import logging
+import random
+import socket
 import time
 from collections import defaultdict
 from uuid import uuid4
 
 import msgspec
-import torch
 from max._core import nixl
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
@@ -29,15 +30,34 @@ from max.driver.tensor import Tensor
 logger = logging.getLogger("max.pipelines")
 
 
-def _enable_ucx_logging() -> None:
-    import os
+def available_port(
+    start_port: int = 8000, end_port: int = 9000, max_attempts: int = 100
+) -> int:
+    """
+    Find an available TCP port in the given range.
 
-    os.environ["UCX_LOG_LEVEL"] = "debug"
+    Args:
+        start_port (int): The lower bound of the port range (inclusive).
+        end_port (int): The upper bound of the port range (inclusive).
+        max_attempts (int): Maximum number of attempts to find a free port.
 
+    Returns:
+        int: An available port number.
 
-def _get_tensor_base_addr(tensor: Tensor) -> int:
-    """Get the base address of a tensor."""
-    return torch.from_dlpack(tensor).data_ptr()
+    Raises:
+        RuntimeError: If no available port is found after max_attempts.
+    """
+    for _ in range(max_attempts):
+        port = random.randint(start_port, end_port)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            # Set SO_REUSEADDR to avoid TIME_WAIT issues
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError("No available port found in the specified range.")
 
 
 class KVTransferEngineMetadata(
@@ -110,13 +130,10 @@ class KVTransferEngine:
         self,
         name: str,
         tensor: Tensor,
-        total_num_pages: int,
         *,
-        listen_port: int = 8040,
+        total_num_pages: int,
+        listen_port: int,
     ) -> None:
-        # Comment out the below to enable UCX logging
-        # _enable_ucx_logging()
-
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
@@ -185,7 +202,7 @@ class KVTransferEngine:
         self.memory_type = (
             nixl.MemoryType.DRAM if device.is_host else nixl.MemoryType.VRAM
         )
-        self.base_addr = _get_tensor_base_addr(self.tensor)
+        self.base_addr = self.tensor._data_ptr()
         num_bytes = self.tensor.num_elements * self.tensor.dtype.size_in_bytes
         self.reg_dlist = nixl.RegistrationDescriptorList(
             type=self.memory_type,

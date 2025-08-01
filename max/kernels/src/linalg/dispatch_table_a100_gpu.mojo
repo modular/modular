@@ -15,9 +15,6 @@ from utils import IndexList
 
 from .utils_gpu import (
     MatmulConfig,
-    MatmulKernels,
-    _bk_base,
-    select_config,
 )
 
 

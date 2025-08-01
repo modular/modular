@@ -178,6 +178,18 @@ class MultiheadAttention(Module):
         self.device_modules = []
         sharded_num_heads = self.num_heads // len(self.devices)
 
+        # Shard weights once for all devices
+        if self.stacked_qkv:
+            qkv_proj_shards = self.qkv_proj.shard(self.devices)
+            qkv_proj_bias_shards = []
+            if self.qkv_has_bias:
+                qkv_proj_bias_shards = self.qkv_proj_bias.shard(self.devices)
+        else:
+            q_proj_shards = self.q_proj.shard(self.devices)
+            k_proj_shards = self.k_proj.shard(self.devices)
+            v_proj_shards = self.v_proj.shard(self.devices)
+        o_proj_shards = self.o_proj.shard(self.devices)
+
         for n, device in enumerate(self.devices):
             # Create a module instance for this device
             module = self._create_device_module(
@@ -192,17 +204,17 @@ class MultiheadAttention(Module):
                 stacked_qkv=self.stacked_qkv,
             )
 
-            # Shard weights to this device
+            # Assign sharded weights to this device
             if self.stacked_qkv:
-                module.qkv_proj = self.qkv_proj.shard(n, device)
-                if self.qkv_has_bias:
-                    module.qkv_proj_bias = self.qkv_proj_bias.shard(n, device)
+                module.qkv_proj = qkv_proj_shards[n]
+                if qkv_proj_bias_shards:
+                    module.qkv_proj_bias = qkv_proj_bias_shards[n]
             else:
-                module.q_proj = self.q_proj.shard(n, device)
-                module.k_proj = self.k_proj.shard(n, device)
-                module.v_proj = self.v_proj.shard(n, device)
+                module.q_proj = q_proj_shards[n]
+                module.k_proj = k_proj_shards[n]
+                module.v_proj = v_proj_shards[n]
 
-            module.o_proj = self.o_proj.shard(n, device)
+            module.o_proj = o_proj_shards[n]
             self.device_modules.append(module)
 
     def _create_device_module(self, **kwargs) -> MultiheadAttention:

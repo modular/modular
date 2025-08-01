@@ -17,7 +17,7 @@ from sys.info import is_nvidia_gpu, simdwidthof
 import gpu.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
-from builtin.io import _printf
+from io.io import _printf
 from gpu import (
     WARP_SIZE,
     barrier,

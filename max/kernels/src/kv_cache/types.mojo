@@ -234,10 +234,11 @@ struct ContinuousBatchingKVCache[
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
         debug_assert(
-            head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
+            UInt(head_idx) < Self.kv_params.num_heads,
+            "KVCache head_idx out of range",
         )
         debug_assert(
-            head_dim_idx < Self.kv_params.head_size,
+            UInt(head_dim_idx) < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
         debug_assert(
@@ -446,13 +447,13 @@ struct PagedKVCache[
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
         debug_assert(
-            head_idx < Self.kv_params.num_heads,
+            UInt(head_idx) < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
         debug_assert(
-            head_dim_idx < Self.kv_params.head_size,
+            UInt(head_dim_idx) < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
 
@@ -465,11 +466,11 @@ struct PagedKVCache[
 
         debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
         debug_assert(
-            lut_block_index < self.page_size,
+            lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
             lut_block_index,
-            " with page size ",
-            self.page_size,
+            " with num_blocks ",
+            self.blocks.dim[0](),
         )
         block_idx = Int(self.lookup_table[bs, lut_block_index])
         return Index(block_idx, tok_in_block_idx, head_idx, head_dim_idx)

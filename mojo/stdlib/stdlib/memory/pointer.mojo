@@ -19,7 +19,6 @@ from memory import Pointer
 ```
 """
 
-from sys import is_nvidia_gpu
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -67,7 +66,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
-        """The True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Returns:
           True if the two address spaces are equal and False otherwise.
@@ -76,7 +75,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __eq__(self, other: AddressSpace) -> Bool:
-        """The True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Returns:
           True if the two address spaces are equal and False otherwise.
@@ -85,7 +84,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
@@ -97,7 +96,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __ne__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
@@ -109,7 +108,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -121,7 +120,7 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __is__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -133,25 +132,25 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
     @always_inline("nodebug")
     fn __isnot__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
     @always_inline("nodebug")
     fn __isnot__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
@@ -214,7 +213,7 @@ struct AddressSpace(
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -226,7 +225,7 @@ struct AddressSpace(
 
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
@@ -238,25 +237,25 @@ struct AddressSpace(
 
     @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() == other.value()
 
     @always_inline("nodebug")
     fn __isnot__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
@@ -271,8 +270,7 @@ struct AddressSpace(
 
     @always_inline("nodebug")
     fn write_to[W: Writer](self, mut writer: W):
-        """
-        Formats the address space to the provided Writer.
+        """Formats the address space to the provided Writer.
 
         Parameters:
             W: A type conforming to the Writable trait.
@@ -366,20 +364,6 @@ struct Pointer[
             to: The value to construct a pointer to.
         """
         self = Self(_mlir_value=__get_mvalue_as_litref(to))
-
-    @staticmethod
-    @always_inline("nodebug")
-    @deprecated("Use Pointer(to=...) constructor instead.")
-    fn address_of(ref [origin, address_space]value: type) -> Self:
-        """Constructs a Pointer from a reference to a value.
-
-        Args:
-            value: The value to get the address of.
-
-        Returns:
-            The result Pointer.
-        """
-        return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
     fn copy(self) -> Self:
         """Constructs a copy from another Pointer.

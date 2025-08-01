@@ -1,0 +1,59 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_asyncrt.mojo",
+    "test_locks.mojo",
+]
+
+_LIT_TESTS = [
+    "test_tracing.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS,
+    )
+]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

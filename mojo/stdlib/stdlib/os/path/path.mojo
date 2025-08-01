@@ -22,7 +22,7 @@ from os.path import isdir
 
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import CompilationTarget, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget
 
 
 from .. import PathLike
@@ -42,14 +42,15 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 fn _constrain_unix():
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
 
 @always_inline
 fn _get_stat_st_mode(var path: String) raises -> Int:
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
@@ -60,7 +61,7 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 @always_inline
 fn _get_lstat_st_mode(var path: String) raises -> Int:
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
@@ -75,7 +76,7 @@ fn _get_lstat_st_mode(var path: String) raises -> Int:
 
 fn _user_home_path(path: String) -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return getenv("USERPROFILE")
     else:
         var user_end = path.find(sep, 1)
@@ -126,7 +127,7 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     var path_split = fspath.split(os.sep, 1)
     # If there is a properly formatted separator, return expanded fspath.
     if len(path_split) == 2:
-        return os.path.join(userhome, path_split[1])
+        return os.path.join(userhome, String(path_split[1]))
     # Path was a single `~` character, return home path
     return userhome
 
@@ -499,7 +500,7 @@ fn split_extension[
     """
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return _split_extension(path.__fspath__(), "\\", "/", ".")
     return _split_extension(path.__fspath__(), sep, "", ".")
 

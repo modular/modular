@@ -19,7 +19,8 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from utils import IndexList, StaticTuple
+from utils import IndexList
+from builtin.variadics import Variadic
 
 # ===-----------------------------------------------------------------------===#
 # Dim
@@ -666,8 +667,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
         return VariadicList[Dim](
             __mlir_op.`pop.variadic.splat`[
-                numElements = length.value,
-                _type = __mlir_type[`!kgen.variadic<`, Dim, `>`],
+                numElements = length.value, _type = Variadic[Dim]
             ](Dim())
         )
 

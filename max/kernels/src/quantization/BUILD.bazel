@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 mojo_library(
     name = "quantization",
     srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
     deps = [
         "@mojo//:linalg",
         "@mojo//:stdlib",

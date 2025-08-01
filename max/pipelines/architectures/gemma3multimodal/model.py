@@ -20,14 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheParams,
-)
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.nn.kv_cache import KVCacheParams
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")

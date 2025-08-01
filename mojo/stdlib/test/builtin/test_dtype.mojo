@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
 from sys import sizeof
 
 from testing import assert_equal, assert_false, assert_true
@@ -46,7 +45,6 @@ alias float_dtypes = [
     DType.bfloat16,
     DType.float16,
     DType.float32,
-    DType.tensor_float32,
     DType.float64,
 ]
 

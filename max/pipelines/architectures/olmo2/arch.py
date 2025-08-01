@@ -21,9 +21,7 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3 import (
-    weight_adapters as llama3_weight_adapters,
-)
+from ..llama3 import weight_adapters as llama3_weight_adapters
 from . import weight_adapters
 from .model import Olmo2Model
 

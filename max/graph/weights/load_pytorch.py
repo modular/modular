@@ -75,6 +75,43 @@ class WeightUnpickler(pickle.Unpickler):
 
 
 class PytorchWeights:
+    """Implementation for loading weights from PyTorch checkpoint files.
+
+    ``PytorchWeights`` provides an interface to load model weights from PyTorch
+    checkpoint files (.bin or .pt format). These files contain serialized
+    PyTorch tensors using Python's pickle protocol, making them widely compatible
+    with the PyTorch ecosystem.
+
+    .. code-block:: python
+
+        from pathlib import Path
+        from max.graph.weights import PytorchWeights
+        from max.dtype import DType
+
+        # Load weights from PyTorch checkpoint
+        checkpoint_path = Path("pytorch_model.bin")
+        weights = PytorchWeights(checkpoint_path)
+
+        # Check if a weight exists before allocation
+        if weights.model.decoder.layers[0].self_attn.q_proj.weight.exists():
+            # Allocate the attention weight
+            q_weight = weights.model.decoder.layers[0].self_attn.q_proj.weight.allocate(
+                dtype=DType.float32,
+                device=DeviceRef.CPU()
+            )
+
+        # Access weight properties
+        if weights.embeddings.weight.exists():
+            print(f"Embedding shape: {weights.embeddings.weight.shape}")
+            print(f"Embedding dtype: {weights.embeddings.weight.dtype}")
+
+        # Allocate with validation
+        embedding_weight = weights.embeddings.weight.allocate(
+            dtype=DType.float16,
+            shape=(50257, 768)  # Validate expected shape
+        )
+    """
+
     _filepath: PathLike
     _tensor_infos: dict[str, Any]
     _prefix: str
@@ -148,20 +185,6 @@ class PytorchWeights:
 
     def __getitem__(self, idx: int | str) -> PytorchWeights:
         return self.__getattr__(str(idx))
-
-    def raw_tensor(self) -> npt.NDArray[Any]:
-        """Returns the tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        if self._prefix not in self._tensor_infos:
-            raise KeyError(
-                f"Could not find weight named {self._prefix}. Please check that"
-                " the name is correct."
-            )
-
-        return self._tensor_infos[self._prefix]
 
     def data(self) -> WeightData:
         tensor_info = self._tensor_infos[self._prefix]

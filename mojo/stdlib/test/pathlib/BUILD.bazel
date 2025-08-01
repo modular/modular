@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = [src],  # NOTE: some tests attempt to read their source files
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

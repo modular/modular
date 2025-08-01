@@ -42,6 +42,9 @@ _H100_TESTS = [
 mojo_test(
     name = "test_multistage_gemm_q.mojo.test",
     srcs = ["test_multistage_gemm_q.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     tags = ["gpu"],
     # FIXME: KERN-1377 and move this into the glob above
     target_compatible_with = ["//:nvidia_gpu"],

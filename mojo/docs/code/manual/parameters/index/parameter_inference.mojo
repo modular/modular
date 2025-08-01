@@ -34,7 +34,7 @@ struct Two[Type: Writable & Copyable & Movable]:
     var val1: Type
     var val2: Type
 
-    fn __init__(out self, owned one: One[Type], owned another: One[Type]):
+    fn __init__(out self, var one: One[Type], var another: One[Type]):
         self.val1 = one.value
         self.val2 = another.value
         print(String(self.val1), String(self.val2))

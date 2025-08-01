@@ -26,26 +26,20 @@ from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.causal_conv1d import CausalConv1Dgpu, CausalConv1Dcpu
 from kernels.top_k import TopK
 from math import iota
-from memory import AddressSpace
 from random import rand
 from sys import (
     argv,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
-    sizeof,
 )
 from gpu.host import DeviceContext, DeviceBuffer
 from tensor_internal import (
     Input,
-    InputTensor,
     IOSpec,
     ManagedTensorSlice,
-    MutableInput,
     Output,
-    OutputTensor,
     StaticTensorSpec,
 )
-from utils import IndexList
 
 
 # Wrap a ManagedTensorSlice and DeviceBuffer as an owning Tensor

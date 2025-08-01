@@ -14,11 +14,11 @@
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
-from pathlib import DIR_SEPARATOR, Path
+from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
 
-from .info import is_64bit, os_is_linux, os_is_macos, os_is_windows
+from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq
 
 # ===-----------------------------------------------------------------------===#
@@ -76,10 +76,12 @@ fn _c_long_dtype() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
     @parameter
-    if is_64bit() and (os_is_macos() or os_is_linux()):
+    if is_64bit() and (
+        CompilationTarget.is_macos() or CompilationTarget.is_linux()
+    ):
         # LP64
         return DType.int64
-    elif is_64bit() and os_is_windows():
+    elif is_64bit() and CompilationTarget.is_windows():
         # LLP64
         return DType.int32
     else:
@@ -91,7 +93,11 @@ fn _c_long_long_dtype() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
     @parameter
-    if is_64bit() and (os_is_macos() or os_is_linux() or os_is_windows()):
+    if is_64bit() and (
+        CompilationTarget.is_macos()
+        or CompilationTarget.is_linux()
+        or CompilationTarget.is_windows()
+    ):
         # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
         # model.
         return DType.int64
@@ -116,7 +122,7 @@ struct RTLD:
     alias LOCAL = 4
     """Make symbols not available for symbol resolution of subsequently loaded
     libraries."""
-    alias GLOBAL = 256 if os_is_linux() else 8
+    alias GLOBAL = 256 if CompilationTarget.is_linux() else 8
     """Make symbols available for symbol resolution of subsequently loaded
     libraries."""
 
@@ -205,7 +211,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
     @staticmethod
     fn _dlopen(file: UnsafePointer[c_char], flags: Int) raises -> DLHandle:
         @parameter
-        if not os_is_windows():
+        if not CompilationTarget.is_windows():
             var handle = dlopen(file, flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
@@ -239,7 +245,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
             `True` if the symbol exists.
         """
         constrained[
-            not os_is_windows(),
+            not CompilationTarget.is_windows(),
             "Checking dynamic library symbol is not supported on Windows",
         ]()
 
@@ -257,7 +263,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         """
 
         @parameter
-        if not os_is_windows():
+        if not CompilationTarget.is_windows():
             _ = dlclose(self.handle)
             self.handle = OpaquePointer()
 
@@ -369,7 +375,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         debug_assert(self.handle, "Dylib handle is null")
 
         @parameter
-        if os_is_windows():
+        if CompilationTarget.is_windows():
             return abort[UnsafePointer[result_type]](
                 "get_symbol isn't supported on windows"
             )

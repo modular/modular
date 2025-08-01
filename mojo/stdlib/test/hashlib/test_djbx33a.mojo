@@ -11,13 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import pop_count
 from hashlib._djbx33a import DJBX33A
-from hashlib.hasher import Hasher
-from testing import assert_equal, assert_not_equal, assert_true
-from memory import memset_zero, UnsafePointer
+from testing import assert_equal, assert_true
+from memory import memset_zero
 from test_utils import (
-    dif_bits,
     gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,

@@ -52,6 +52,8 @@ from max.graph.weights import (
 from max.interfaces import (
     InputContext,
     LogProbabilities,
+    RequestID,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenGenerator,
 )
@@ -489,7 +491,7 @@ class KVCacheMixin(Protocol):
 
 
 def get_paged_manager(
-    pipeline: TokenGenerator,
+    pipeline: TokenGenerator[T],
 ) -> Optional[PagedKVCacheManager]:
     if (
         hasattr(pipeline, "_pipeline_model")
@@ -658,7 +660,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -711,11 +713,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     context.jump_ahead(token)
 
             # Claim cache rows for context.
-            if not self._pipeline_model.kv_manager.contains(
-                context.cache_seq_id
-            ):
+            if not self._pipeline_model.kv_manager.contains(context.request_id):
                 self._pipeline_model.kv_manager.external_claim(
-                    [context.cache_seq_id]
+                    context.request_id
                 )
 
             # Update num_steps.
@@ -750,7 +750,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def _build_token_frequency_csr(
-        self, batch: list[T], padding_size: int, include_prompt: bool = False
+        self,
+        batch: list[T],
+        padding_size: int,
+        include_prompt: bool = False,
     ) -> FrequencyData:
         """Build a CSR matrix of token frequency in the batch.
         The original matrix is (batch_size, vocab_size), where each element is
@@ -817,7 +820,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ),
         )
 
-    def _check_need_penalties(self, batch: list[T]) -> None:
+    def _check_need_penalties(
+        self,
+        batch: list[T],
+    ) -> None:
         """Check if the batch has penalties, but do_penalties is False."""
         for context in batch:
             if (
@@ -963,21 +969,20 @@ class TextGenerationPipeline(TokenGenerator[T]):
     @traced
     def next_token(
         self,
-        batch: dict[str, T],
-        num_steps: int,
-    ) -> dict[str, TextGenerationOutput]:
+        inputs: TextGenerationInputs[T],
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
 
-        batch = self._maybe_sort_loras(batch)
+        batch = self._maybe_sort_loras(inputs.batch)
         if self.batch_info_output_fname is not None:
-            self._record_batch_info(batch.values(), num_steps)
+            self._record_batch_info(inputs.batch.values(), inputs.num_steps)
 
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
+        context_batch = list(inputs.batch.values())
 
         # # Get extra compute parameters for each input.
         batch_top_n = [context.log_probabilities for context in context_batch]
@@ -988,7 +993,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask = self.prepare_batch(
-            context_batch, num_steps
+            context_batch, inputs.num_steps
         )
 
         # Multistep execution loop.
@@ -1229,6 +1234,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         return res
 
-    def release(self, context: T) -> None:
+    def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(context.cache_seq_id)
+        self._pipeline_model.kv_manager.release(request_id)

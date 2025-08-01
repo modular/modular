@@ -20,9 +20,7 @@ from typing import Callable, Literal
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData
-from max.nn import (
-    ReturnLogits,
-)
+from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig

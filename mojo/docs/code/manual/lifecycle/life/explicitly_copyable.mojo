@@ -28,7 +28,7 @@ struct ExplicitCopyOnly[ElementType: ExplicitlyCopyable & Movable](
 ):
     var ptr: UnsafePointer[ElementType]
 
-    fn __init__(out self, owned elt: ElementType):
+    fn __init__(out self, var elt: ElementType):
         """Constructs a new container, storing the given value."""
         self.ptr = UnsafePointer[ElementType].alloc(1)
         self.ptr.init_pointee_move(elt^)

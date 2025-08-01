@@ -30,7 +30,6 @@ extend-exclude = [
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
   "*max/serve/schemas/openai.py", # Generated file
-  "Support/python/modular/utils/debuglib/lldbtypes.py",
   "third-party",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "utils/mblack",

@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_NO_ASAN = [
+    "test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

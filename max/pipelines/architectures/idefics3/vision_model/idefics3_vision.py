@@ -14,15 +14,8 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    ops,
-)
-from max.nn import (
-    LayerNorm,
-    Module,
-)
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn import LayerNorm, Module
 
 from ..model_config import Idefics3VisionConfig
 from .connector import Idefics3Connector

@@ -981,29 +981,37 @@ struct Deque[ElementType: Copyable & Movable](
 
 @fieldwise_init
 struct _DequeIter[
-    deque_mutability: Bool, //,
-    ElementType: Copyable & Movable,
-    deque_lifetime: Origin[deque_mutability],
+    mut: Bool, //,
+    T: Copyable & Movable,
+    origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
-        deque_mutability: Whether the reference to the deque is mutable.
-        ElementType: The type of the elements in the deque.
-        deque_lifetime: The lifetime of the Deque.
+        mut: Whether the reference to the deque is mutable.
+        T: The type of the elements in the deque.
+        origin: The lifetime of the Deque.
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias deque_type = Deque[ElementType]
+    alias Element = T
 
     var index: Int
-    var src: Pointer[Self.deque_type, deque_lifetime]
+    var src: Pointer[Deque[T], origin]
 
     fn __iter__(self) -> Self:
         return self
 
-    fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        @parameter
+        if forward:
+            return self.index < len(self.src[])
+        else:
+            return self.index > 0
+
+    fn __next_ref__(mut self) -> ref [origin] Self.Element:
         @parameter
         if forward:
             var idx = self.index
@@ -1013,16 +1021,5 @@ struct _DequeIter[
             self.index -= 1
             return self.src[][self.index]
 
-    fn __next__(mut self) -> ElementType:
+    fn __next__(mut self) -> Self.Element:
         return self.__next_ref__()
-
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src[]) - self.index
-        else:
-            return self.index
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0

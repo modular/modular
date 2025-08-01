@@ -85,7 +85,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                     batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
                 )
             ),
-            src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
+            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
         max_cache_len_in_batch = max(
@@ -96,13 +96,13 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
-            start_positions.data,
+            start_positions.unsafe_ptr(),
             DimList(
                 len(start_positions),
             ),
         ),
         lookup_table=NDBuffer[DType.uint32, 1](
-            lookup_table.data,
+            lookup_table.unsafe_ptr(),
             DimList(
                 len(lookup_table),
             ),
@@ -127,7 +127,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         dtype,
         rank=3,
         shape = DimList(batch_size * seq_len, num_heads, head_dim),
-    ](q_buffer.data)
+    ](q_buffer.unsafe_ptr())
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
@@ -142,7 +142,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         shape = DimList(max_seq_len, rope_dim),
         strides = DimList(head_dim, 1),
     ](
-        freqs_cis_table_buffer.data + (head_dim - rope_dim)
+        freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim)
     )  # Offset to last rope_dim elements
 
     # Create and initialize golden outputs.
@@ -152,7 +152,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         "invalid expected q out init",
     )
     expected_q_out = NDBuffer[dtype, rank=3, shape = q.shape](
-        expected_q_out_buffer.data
+        expected_q_out_buffer.unsafe_ptr()
     )
     expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
@@ -221,7 +221,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
                     cache_block_ptr,
-                    k_cache_input_buffer.data + input_offset,
+                    k_cache_input_buffer.unsafe_ptr() + input_offset,
                     head_dim - rope_dim,
                 )
 
@@ -229,7 +229,9 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                 roped_offset = head_dim - rope_dim
                 assert_almost_equal(
                     cache_block_ptr + roped_offset,
-                    expected_k_out_buffer.data + input_offset + roped_offset,
+                    expected_k_out_buffer.unsafe_ptr()
+                    + input_offset
+                    + roped_offset,
                     rope_dim,
                 )
 

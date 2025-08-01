@@ -409,7 +409,7 @@ program. The Mojo compiler doesn't care whether we add our function before or
 after `main()`, but the convention is to put `main()` at the end.
 
 ```mojo title="life.mojo"
-def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
+fn grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
     str = String()
 
@@ -610,7 +610,7 @@ code to use it.
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def grid_str(grid: Grid) -> String:
+fn grid_str(grid: Grid) -> String:
     # Create an empty String
     str = String()
 
@@ -676,7 +676,7 @@ struct Grid(Copyable, Movable):
     var cols: Int
     var data: List[List[Int]]
 
-    def grid_str(self) -> String:
+    fn grid_str(self) -> String:
         # Create an empty String
         str = String()
 
@@ -735,7 +735,7 @@ def main():
 Once again, our refactoring has improved the structure of our code, but it still
 produces the same output. You can verify that by running the program again.
 
-## 9. Implement support for the `StringableRaising` trait
+## 9. Implement support for the `Stringable` trait
 
 You can convert most Mojo types to `String` using `String(my_val)` to produce a
 `String` representation of that instance. But you'll get an error if you try to
@@ -765,22 +765,23 @@ traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. But we also need to indicate
-which trait `Grid` conforms to. In our case, it must be `StringableRaising`
-instead of `Stringable` because the compiler *always* assumes that a `def`
+which trait `Grid` conforms to. In our case, it must be `Stringable` instead of
+`StringableRaising` because we used a `fn` to define the method. If you define
+a function or method with `def`, the compiler *always* assumes that the
 function *can* raise an error. In contrast, an `fn` function is a [non-raising
-function](/mojo/manual/functions#raising-and-non-raising-functions) by
-default (you can still declare it may raise an error using the [`raises`
+function](/mojo/manual/functions#raising-and-non-raising-functions) by default
+(you can still declare it may raise an error using the [`raises`
 keyword](/mojo/manual/errors#raise-an-error)).
 
 So in `gridv1.mojo` we need to update the `Grid` declaration to indicate that
-the type conforms to `StringableRaising` and rename the `grid_str()` method to
+the type conforms to `Stringable` and rename the `grid_str()` method to
 `__str__()`:
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     ...
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         ...
 ```
 
@@ -838,12 +839,12 @@ of the built-in operators for a custom type by implementing special *dunder*
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     ...
-    def __getitem__(self, row: Int, col: Int) -> Int:
+    fn __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -866,9 +867,9 @@ indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     ...
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         ...
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
@@ -881,12 +882,12 @@ struct Grid(Copyable, Movable, StringableRaising):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
 
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         # Create an empty String
         str = String()
 
@@ -902,10 +903,10 @@ struct Grid(Copyable, Movable, StringableRaising):
                 str += "\n"     # Add a newline between rows, but not at the end
         return str
 
-    def __getitem__(self, row: Int, col: Int) -> Int:
+    fn __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -930,10 +931,10 @@ function. We indicate that a method is a static method by using the
 import random
 
 @fieldwise_init
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     ...
     @staticmethod
-    def random(rows: Int, cols: Int) -> Self:
+    fn random(rows: Int, cols: Int) -> Self:
         # Seed the random number generator using the current time.
         random.seed()
 
@@ -1027,9 +1028,9 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 
 ```mojo title="gridv1.mojo"
 ...
-struct Grid(Copyable, Movable, StringableRaising):
+struct Grid(Copyable, Movable, Stringable):
     ...
-    def evolve(self) -> Self:
+    fn evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):
@@ -1195,7 +1196,7 @@ from python import Python
 import time
 
 def run_display(
-    owned grid: Grid,
+    var grid: Grid,
     window_height: Int = 600,
     window_width: Int = 600,
     background_color: String = "black",

@@ -182,7 +182,7 @@ def main():
     with DeviceContext() as ctx:
 
         @parameter
-        if ctx.device_info is H100:
+        if ctx.default_device_info is H100:
             alias M = 8192
             alias N = 6144
             alias K = 4096

@@ -22,7 +22,7 @@ from testing import assert_almost_equal
 fn tanh_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    return libm_call[dtype, simd_width, "tanhf", "tanh"](arg)
+    return libm_call["tanhf", "tanh"](arg)
 
 
 def test_tanh_tfvals_fp32():
@@ -63,7 +63,10 @@ def test_tanh_tfvals_fp32():
     var err = compare[dtype](
         y.data, tfvals_fp32.data, 4, msg="Compare Mojo vs. Tensorflow FP32"
     )
-    assert_almost_equal(err, abs_rel_err)
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
 
 
 def test_tanh_tfvals_fp64():
@@ -114,7 +117,10 @@ def test_tanh_tfvals_fp64():
     var err = compare[dtype](
         y.data, tfvals_fp64.data, 4, msg="Compare Mojo vs. Tensorflow FP64"
     )
-    assert_almost_equal(err, abs_rel_err)
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
 
 
 def test_tanh_libm[N: Int = 8192]():
@@ -144,7 +150,10 @@ def test_tanh_libm[N: Int = 8192]():
     )
 
     var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")
-    assert_almost_equal(err, abs_rel_err)
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
 
     x32.free()
     y32.free()

@@ -21,6 +21,7 @@ PINS = {
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
     "docutils": "docutils@0.20.1",
+    "editdistance": "editdistance@0.8.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
     "fastapi": "fastapi@0.115.3",
@@ -90,7 +91,6 @@ PINS = {
     "pytorch-triton-rocm": "pytorch-triton-rocm@3.3.0",
     "pyyaml": "pyyaml@6.0.2",
     "pyzmq": "pyzmq@26.3.0",
-    "qwen-vl-utils": "qwen-vl-utils@0.0.10",
     "regex": "regex@2024.11.6",
     "requests": "requests@2.32.3",
     "responses": "responses@0.25.3",
@@ -1160,6 +1160,50 @@ def targets():
         wheel = ":_wheel_docutils@0.20.1",
     )
 
+    _editdistance_0_8_1_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_editdistance@0.8.1",
+        actual = "@pycross_lock_file_sdist_editdistance_0.8.1//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_editdistance@0.8.1",
+        sdist = ":_sdist_editdistance@0.8.1",
+        target_environment = _target,
+        deps = _editdistance_0_8_1_build_deps,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_editdistance@0.8.1",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": ":_build_editdistance@0.8.1",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_editdistance@0.8.1",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": ":_build_editdistance@0.8.1",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_macosx_11_0_arm64//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "editdistance@0.8.1",
+        wheel = ":_wheel_editdistance@0.8.1",
+    )
+
     native.alias(
         name = "_wheel_einops@0.8.0",
         actual = "@pycross_lock_file_wheel_einops_0.8.0_py3_none_any//file",
@@ -1881,6 +1925,32 @@ def targets():
         wheel = ":_wheel_hf-transfer@0.1.9",
     )
 
+    native.alias(
+        name = "_wheel_hf-xet@1.1.5",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "hf-xet@1.1.5",
+        wheel = ":_wheel_hf-xet@1.1.5",
+    )
+
     _httpcore_1_0_9_deps = [
         ":certifi@2024.7.4",
         ":h11@0.16.0",
@@ -1919,6 +1989,7 @@ def targets():
     _huggingface_hub_0_30_1_deps = [
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
+        ":hf-xet@1.1.5",
         ":packaging@24.1",
         ":pyyaml@6.0.2",
         ":requests@2.32.3",
@@ -5104,24 +5175,6 @@ def targets():
         wheel = ":_wheel_pyzmq@26.3.0",
     )
 
-    _qwen_vl_utils_0_0_10_deps = [
-        ":av@14.2.0",
-        ":packaging@24.1",
-        ":pillow@10.4.0",
-        ":requests@2.32.3",
-    ]
-
-    native.alias(
-        name = "_wheel_qwen-vl-utils@0.0.10",
-        actual = "@pycross_lock_file_wheel_qwen_vl_utils_0.0.10_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "qwen-vl-utils@0.0.10",
-        deps = _qwen_vl_utils_0_0_10_deps,
-        wheel = ":_wheel_qwen-vl-utils@0.0.10",
-    )
-
     native.alias(
         name = "_wheel_rapidfuzz@3.13.0",
         actual = select({
@@ -7499,6 +7552,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_sdist_editdistance_0.8.1",
+        urls = [
+            "https://files.pythonhosted.org/packages/d5/18/9f4f975ca87a390832b1c22478f3702fcdf739f83211e24d054b7551270d/editdistance-0.8.1.tar.gz",
+        ],
+        sha256 = "d1cdf80a5d5014b0c9126a69a42ce55a457b457f6986ff69ca98e4fe4d2d8fed",
+        downloaded_file_path = "editdistance-0.8.1.tar.gz",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_sdist_fire_0.7.0",
         urls = [
             "https://files.pythonhosted.org/packages/6b/b6/82c7e601d6d3c3278c40b7bd35e17e82aa227f050aa9f66cb7b7fce29471/fire-0.7.0.tar.gz",
@@ -9229,6 +9292,126 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b5/14/681460965c6a4a48321b07f88de2273d097fdca0491ff55db891aacbd291/editdistance-0.8.1-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "5e88efb052d45e924606c305cb833a80579dca3e8e4ff01309d50ba2c1c0bbd5",
+        downloaded_file_path = "editdistance-0.8.1-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ed/0d/abdbc8e394a9461cf2ae27c16564fadaa65f52bd242dd1582ae5e7736dc3/editdistance-0.8.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "0247e7a1e9c66ea75211a97e725366bff19a52aac2c838ed5f90025630e976dd",
+        downloaded_file_path = "editdistance-0.8.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c2/fb/2940d26ebda12efd280ae939436f17ac482930d862df9e774cb8b771ab03/editdistance-0.8.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "67d143429a49ab552411505f550a0fb4285a1d4336e096804d233ec495ac20fc",
+        downloaded_file_path = "editdistance-0.8.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b7/a3/058d823b6285c3511dc94ed80620c3fb0c18b4aaa708f70ba71f3af28436/editdistance-0.8.1-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "8cb78e125f6759398885a775f5eed07c2bb72b2f86da43e674c6b6a3335b273b",
+        downloaded_file_path = "editdistance-0.8.1-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/a0/3a/0b13c7864c93b1e9b9952bd2a33c5ef3c4fd1bf70a5fad6924789e70e5eb/editdistance-0.8.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "3778ca60aa89def9144b70e330bcec5330c7da1d69cb28c612e90b84510a1d3d",
+        downloaded_file_path = "editdistance-0.8.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/96/8a/db0fd79e8ddb9b5f86f274107c5d0a27ec4f2af88877df1f26c2c6d150cc/editdistance-0.8.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "fba945eaa0436cf40bc53d7e299dc537c7c71353379a095b7459ff4af910da33",
+        downloaded_file_path = "editdistance-0.8.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ea/2a/6b823e71cef694d6f070a1d82be2842706fa193541aab8856a8f42044cd0/editdistance-0.8.1-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "6a87839450a5987028738d061ffa5ef6a68bac2ddc68c9147a8aae9806629c7f",
+        downloaded_file_path = "editdistance-0.8.1-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/e1/31/bfb8e590f922089dc3471ed7828a6da2fc9453eba38c332efa9ee8749fd7/editdistance-0.8.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "24b5f9c9673c823d91b5973d0af8b39f883f414a55ade2b9d097138acd10f31e",
+        downloaded_file_path = "editdistance-0.8.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/a9/c7/57423942b2f847cdbbb46494568d00cd8a45500904ea026f0aad6ca01bc7/editdistance-0.8.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "c59248eabfad603f0fba47b0c263d5dc728fb01c2b6b50fb6ca187cec547fdb3",
+        downloaded_file_path = "editdistance-0.8.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/1c/87/2625cfae8b83c68bf19b0db93350f15f114d92b5c592a6dbfedb8c8e2344/editdistance-0.8.1-cp39-cp39-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "dbe0cbc15466e9b7fbf73e34bdcae11cb0c2acd09a60ef4740f2172f9aa5e751",
+        downloaded_file_path = "editdistance-0.8.1-cp39-cp39-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/2e/94/b3f68b42fe96ee86e5deaf375bffda0a33d0aea3c183e12648b329e70e11/editdistance-0.8.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "bc5f0c7f12a3a3bf2d129e2900deaaa5e47203ef61918343ddc4b6c03e50f089",
+        downloaded_file_path = "editdistance-0.8.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_editdistance_0.8.1_cp39_cp39_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/8f/b1/c8634e2dddb7ea14d99b9e7a3988124b2da08a33343eb9290d908451a3de/editdistance-0.8.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "98572c662fd7d425ff24acb8197ad4be7849558a48aebbc60012090bfda4dce9",
+        downloaded_file_path = "editdistance-0.8.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_einops_0.8.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/44/5a/f0b9ad6c0a9017e62d4735daaeb11ba3b6c009d69a26141b258cd37b5588/einops-0.8.0-py3-none-any.whl",
@@ -10575,6 +10758,36 @@ def repositories():
         ],
         sha256 = "cdca9bfb89e6f8f281890cc61a8aff2d3cecaff7e1a4d275574d96ca70098557",
         downloaded_file_path = "hf_transfer-0.1.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/de/5f/2c78e28f309396e71ec8e4e9304a6483dcbc36172b5cea8f291994163425/hf_xet-1.1.5-cp37-abi3-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "9fa6e3ee5d61912c4a113e0708eaaef987047616465ac7aa30f7121a48fc1af8",
+        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/6d/2f/6cad7b5fe86b7652579346cb7f85156c11761df26435651cbba89376cd2c/hf_xet-1.1.5-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "fc874b5c843e642f45fd85cda1ce599e123308ad2901ead23d3510a47ff506d1",
+        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_hf_xet_1.1.5_cp37_abi3_manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d0/54/0fcf2b619720a26fbb6cc941e89f2472a522cd963a776c089b189559447f/hf_xet-1.1.5-cp37-abi3-manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "dbba1660e5d810bd0ea77c511a99e9242d920790d0e63c0e4673ed36c4022d18",
+        downloaded_file_path = "hf_xet-1.1.5-cp37-abi3-manylinux_2_28_aarch64.whl",
     )
 
     maybe(
@@ -15445,16 +15658,6 @@ def repositories():
         ],
         sha256 = "5e17cc198dc50a25a0f245e6b1e56f692df2acec3ccae82d1f60c34bfb72bbec",
         downloaded_file_path = "pyzmq-26.3.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_qwen_vl_utils_0.0.10_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/9e/f2/b489f9077bd410f44400d056ad7b0246ee3c516bf9d65b362ea35a57ce1c/qwen_vl_utils-0.0.10-py3-none-any.whl",
-        ],
-        sha256 = "a31d170f1e8c511f79b6bbf5cd77d7e8f7c9b1d68db102be140843fa57b46a0a",
-        downloaded_file_path = "qwen_vl_utils-0.0.10-py3-none-any.whl",
     )
 
     maybe(

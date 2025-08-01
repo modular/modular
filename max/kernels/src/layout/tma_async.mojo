@@ -58,7 +58,6 @@ from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_arrive_expect_tx_relaxed,
     mbarrier_init,
-    mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from memory.pointer import _GPUAddressSpace
@@ -526,6 +525,19 @@ struct PipelineState[num_stages: Int](Copyable, Defaultable, Movable):
             if self._index == num_stages:
                 self._index = 0
                 self._phase ^= 1
+
+    @always_inline
+    fn next(mut self) -> Self:
+        """Advance the pipeline state to the next stage and return the new state.
+
+        This function is used to move to the next buffer in a multi-buffer
+        pipeline, implementing circular buffer semantics.
+
+        Returns:
+            The new pipeline state after advancing to the next stage.
+        """
+        self.step()
+        return self
 
 
 # TMATensorTile is created on the host with specific memory and tile sizes.

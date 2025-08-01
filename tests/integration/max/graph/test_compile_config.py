@@ -62,7 +62,7 @@ def test_compile_config_split_k_reduction_scheme(
 
 
 def test_compile_config_use_logger(
-    capfd,  # noqa: ANN001
+    capfd: pytest.CaptureFixture,
     session: InferenceSession,
     compile_config_ops_path: Path,
 ) -> None:

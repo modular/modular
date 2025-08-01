@@ -15,15 +15,13 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    is_neoverse_n1,
-    os_is_macos,
     simdwidthof,
     sizeof,
 )
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from layout import LayoutTensor
+from layout import LayoutTensor, Layout
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList
@@ -451,6 +449,57 @@ fn get_conv2d_shape[
     )
 
 
+fn get_conv2d_shape[
+    output_layout: Layout,
+    input_layout: Layout,
+    filter_layout_param: Layout,
+    dtype: DType,
+    data_layout: Image2DLayout,
+    filter_layout: Image2DLayout,
+](
+    output: LayoutTensor[mut=True, dtype, output_layout, **_],
+    input: LayoutTensor[dtype, input_layout, **_],
+    filter: LayoutTensor[dtype, filter_layout_param, **_],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    num_groups: Int,
+) -> ConvShape[2]:
+    constrained[
+        input.rank == 4 and output.rank == 4,
+        "Input and output must be rank 4",
+    ]()
+    constrained[data_layout == Image2DLayout.NHWC]()
+    constrained[
+        (filter.rank == 4 and filter_layout == Image2DLayout.RSCF)
+        or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
+    ]()
+
+    var filter_dims: IndexList[2]
+
+    @parameter
+    if filter_layout == Image2DLayout.RSCF:
+        filter_dims = Index(filter.dim[0](), filter.dim[1]())
+    else:
+        filter_dims = Index(filter.dim[1](), filter.dim[2]())
+
+    return ConvShape[2](
+        n=input.dim[0](),
+        input_dims=Index(input.dim[1](), input.dim[2]()),
+        output_dims=Index(output.dim[1](), output.dim[2]()),
+        filter_dims=filter_dims,
+        c=input.dim[3](),
+        f=output.dim[3](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=Index(0, 0),
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
+
+
 @always_inline
 fn get_conv_tile_size[dtype: DType]() -> Int:
     # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
@@ -464,7 +513,7 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
         return 4 * KB // sizeof[dtype]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return 64 * KB // sizeof[dtype]()
 
     @parameter
@@ -639,7 +688,7 @@ fn get_direct_conv_micro_kernel_height() -> Int:
     @parameter
     if CompilationTarget.has_avx512f():
         return 6
-    elif is_neoverse_n1():
+    elif CompilationTarget.is_neoverse_n1():
         return 8
     elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 6
@@ -650,7 +699,7 @@ fn get_direct_conv_micro_kernel_width() -> Int:
     @parameter
     if CompilationTarget.has_avx512f():
         return 4
-    elif is_neoverse_n1():
+    elif CompilationTarget.is_neoverse_n1():
         return 2
     elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 4
@@ -730,7 +779,7 @@ fn get_micro_kernel_shape[
             return Index(4, 3)
 
         @parameter
-        if is_neoverse_n1():
+        if CompilationTarget.is_neoverse_n1():
             return Index(8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
@@ -742,7 +791,7 @@ fn get_micro_kernel_shape[
         @parameter
         if CompilationTarget.has_avx512f():
             return Index(6, 4)
-        elif is_neoverse_n1():
+        elif CompilationTarget.is_neoverse_n1():
             return Index(8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)

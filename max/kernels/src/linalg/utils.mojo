@@ -16,8 +16,6 @@ from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    is_neoverse_n1,
-    os_is_macos,
     simdwidthof,
     sizeof,
 )
@@ -110,6 +108,36 @@ struct GemmShape(Copyable, Movable):
             a: NDBuffer containing matrix operand A.
             b: NDBuffer containing matrix operand B.
         """
+        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
+
+    @staticmethod
+    fn get[
+        transpose_b: Bool,
+        layout_c: Layout,
+        layout_a: Layout,
+        layout_b: Layout,
+    ](
+        c: LayoutTensor[_, layout_c, _, **_],
+        a: LayoutTensor[_, layout_a, _, **_],
+        b: LayoutTensor[_, layout_b, _, **_],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: LayoutTensor with allocated output space.
+            a: LayoutTensor containing matrix operand A.
+            b: LayoutTensor containing matrix operand B.
+        """
+
+        # We only want a 2D tensor for now
+        constrained[c.rank == 2]()
+        constrained[a.rank == 2]()
+        constrained[b.rank == 2]()
+
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
     # TODO: re-enable using IndexList.
@@ -252,6 +280,31 @@ fn _get_tile_n_k[
     return tile_n_k
 
 
+@always_inline
+fn _get_tile_n_k[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    kernel_cols: Int,
+    transpose_b: Bool,
+    layout: Layout,
+](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
+    constrained[b.rank == 2]()
+    var tile_n_k: IndexList[2]
+
+    @parameter
+    if not transpose_b:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(1), b.dim(0)
+        )
+    else:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(0), b.dim(1)
+        )
+
+    return tile_n_k
+
+
 # The number of registers used for the inner kernel is:
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
 fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
@@ -271,7 +324,7 @@ fn get_matmul_kernel_shape_ARM[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
     @parameter
-    if is_neoverse_n1():
+    if CompilationTarget.is_neoverse_n1():
 
         @parameter
         if kernel_type:
@@ -526,7 +579,7 @@ fn get_pack_data_size[dtype: DType]() -> Int:
         return 4 * KB // sizeof[dtype]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
         return 64 * KB // sizeof[dtype]()
@@ -612,7 +665,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     elif CompilationTarget.has_neon():
 
         @parameter
-        if is_neoverse_n1():
+        if CompilationTarget.is_neoverse_n1():
             return (k % 4096) == 0
         else:
             return m > 32

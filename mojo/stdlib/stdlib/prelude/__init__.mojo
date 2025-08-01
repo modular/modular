@@ -51,8 +51,8 @@ from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
 from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
-from builtin.file import FileHandle, open
-from builtin.file_descriptor import FileDescriptor
+from io.file import FileHandle, open
+from io.file_descriptor import FileDescriptor
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
@@ -66,7 +66,7 @@ from builtin.int import (
     index,
 )
 from builtin.int_literal import IntLiteral
-from builtin.io import input, print
+from io.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
 from builtin.math import (
     Absable,
@@ -136,4 +136,4 @@ from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
 from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
 
-from utils import Writable, Writer
+from io import Writable, Writer

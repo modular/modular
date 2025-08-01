@@ -289,7 +289,7 @@ A Mojo type is *copyable* if one of the following is true:
   and movable.
 
 When Mojo encounters an assignment statement that doesn't use the [transfer
-sigil (`^`)](/mojo/manual/values/ownership#transfer-arguments-owned-and-), it
+sigil (`^`)](/mojo/manual/values/ownership#transfer-arguments-var-and-), it
 tries to make a copy of the right-side value by calling upon that type's copy
 constructor: the `__copyinit__()` method.
 
@@ -389,7 +389,7 @@ struct HeapArray(Copyable):
             (self.data + i).init_pointee_copy(existing.data[i])
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(owned self):
+    fn __del__(var self):
         # We must free the heap-allocated data, but
         # Mojo knows how to destroy the other fields
         for i in range(self.size):
@@ -467,7 +467,7 @@ the `Copyable` trait to your struct definition and Mojo will synthesize the
 
 Mojo also calls upon the copy constructor when a value is passed to a
 function that takes the argument as
-[`owned`](/mojo/manual/values/ownership#transfer-arguments-owned-and-)
+[`var`](/mojo/manual/values/ownership#transfer-arguments-var-and-)
 *and* when the lifetime of the given value does *not* end at that point. If the
 lifetime of the value does end there (usually indicated with the transfer
 sigil `^`), then Mojo instead invokes the move constructor.
@@ -497,7 +497,7 @@ struct ExplicitCopyOnly[ElementType: ExplicitlyCopyable & Movable](
 ):
     var ptr: UnsafePointer[ElementType]
 
-    fn __init__(out self, owned elt: ElementType):
+    fn __init__(out self, var elt: ElementType):
         """Constructs a new container, storing the given value."""
         self.ptr = UnsafePointer[ElementType].alloc(1)
         self.ptr.init_pointee_move(elt^)
@@ -592,7 +592,7 @@ The generated move constructor for `MyPet` would look like this if you wrote
 it yourself:
 
 ```mojo
-fn __moveinit__(out self, owned existing: Self):
+fn __moveinit__(out self, var existing: Self):
     self.name = existing.name^
     self.age = existing.age
 ```
@@ -615,7 +615,7 @@ A move constructor is **not required** to transfer ownership of a
 value. If a value is copyable but not movable, Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership
-transfer](/mojo/manual/values/ownership#transfer-arguments-owned-and-).
+transfer](/mojo/manual/values/ownership#transfer-arguments-var-and-).
 
 If copying a type is expensive, moving it with `__moveinit__()` is much
 more efficient. For example, if a type has heap-allocated data, `__copyinit__()`
@@ -637,18 +637,18 @@ fields, for example, since the struct's location in memory changes when it's
 moved.
 
 The `__moveinit__()` method performs a consuming move: it [transfers
-ownership](/mojo/manual/values/ownership#transfer-arguments-owned-and-) of a
+ownership](/mojo/manual/values/ownership#transfer-arguments-var-and-) of a
 value from one variable to another when the original variable's lifetime ends
 (also called a "destructive move").
 
 A critical feature of `__moveinit__()` is that it takes the incoming value as
-`owned`, meaning this method gets unique ownership of the value. Moreover,
+`var`, meaning this method gets unique ownership of the value. Moreover,
 because this is a dunder method that Mojo calls only when performing a move
 (during ownership transfer), the `existing` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
-may declare an argument as `owned`, but might receive the value as a copy if the
+may declare an argument as `var`, but might receive the value as a copy if the
 method is called without the [`^` transfer
-sigil](/mojo/manual/values/ownership#transfer-arguments-owned-and-)).
+sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
 That is, Mojo calls this move constructor *only* when the original variable's
 lifetime actually ends at the point of transfer.
 
@@ -658,9 +658,9 @@ lifetime actually ends at the point of transfer.
 To ensure your type can't be implicitly copied, you can make it "move-only" by
 making it `Movable` but not `Copyable`. A move-only type can be
 passed to other variables and passed into functions with any argument convention
-(`read`, `mut`, and `owned`)—the only catch is that you must use the `^`
+(`read`, `mut`, and `var`)—the only catch is that you must use the `^`
 transfer sigil to end the lifetime of a move-only type when assigning it to a
-new variable or when passing it as an `owned` argument. The
+new variable or when passing it as a `var` argument. The
 [`OwnedPointer`](/mojo/stdlib/memory/owned_pointer/OwnedPointer/) is an
 example of a move-only type: because it is designed to provide clear single
 ownership of a stored value, the `OwnedPointer` can be moved, but not copied.

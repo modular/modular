@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
-from max.engine import DLPackCompatible
 from max.graph import Weight
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, Weights, WeightsFormat, load_weights
+from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import InputContext
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
@@ -216,7 +216,9 @@ class LoRAModel:
                 # A minor optimization so we don't have to multiply scale
                 # by LoRA B in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
-                data.data = data.data.copy() * scale
+                data.data = (
+                    Tensor.from_dlpack(data.data).copy().to_numpy() * scale
+                )
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
                 self._lora_bias[key] = data
@@ -260,7 +262,7 @@ class LoRAManager:
         if lora_paths:
             self.load_adapters(lora_paths)
 
-        self._alias_buffers: dict[str, DLPackCompatible] = {}
+        self._alias_buffers: dict[str, DLPackArray] = {}
 
     def _name_to_slot(self, name: str):
         """
@@ -483,27 +485,33 @@ class LoRAManager:
         Returns:
             A WeightData object with the weights from the loaded LoRAs.
         """
-        weight = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
+        weight_np = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
 
         for name, lora in self._loras.items():
             if lora_weight := lora.get(key):
                 slot = self._name_to_slot(name)
 
                 if LoRAType.A.value in key:
-                    weight[slot, : lora.rank, :] = lora_weight.data
+                    weight_np[slot, : lora.rank, :] = lora_weight.data
                 elif LoRAType.B.value in key:
-                    weight[slot, :, : lora.rank] = lora_weight.data
+                    weight_np[slot, :, : lora.rank] = lora_weight.data
                 elif LoRAType.BIAS.value in key:
-                    weight[slot, :] = lora_weight.data
+                    weight_np[slot, :] = lora_weight.data
+
+        # cast from fp32 -> target dtype
+        # if target dtype is bfloat16, this technically returns a float16 np.ndarray
+        # we then view the MAX Tensor to get the correct dtype
+        weight = _cast_to_dtype(
+            Tensor.from_numpy(weight_np), DType.float32, base_weight.dtype
+        ).copy(base_weight.device.to_device())
 
         lora_weights = WeightData(
             weight,
             key,
-            DType.float32,
+            base_weight.dtype,
             base_weight.shape,
             base_weight.quantization_encoding,
         )
-        lora_weights = lora_weights.astype(base_weight.dtype)
         return lora_weights
 
     def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:

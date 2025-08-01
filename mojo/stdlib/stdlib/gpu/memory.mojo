@@ -51,7 +51,7 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import to_i16, to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
 from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
@@ -1070,12 +1070,12 @@ fn fence_proxy_tensormap_generic_sys_release():
 
 
 @always_inline
-fn tma_store_fence():
-    """Establishes a memory fence for shared memory stores in TMA operations.
+fn fence_async_view_proxy():
+    """Establishes a memory fence for shared memory view operations.
 
     This function creates a memory barrier that ensures all previous shared memory
-    stores are completed before subsequent TMA (Tensor Memory Access) store operations
-    begin. This is crucial for maintaining memory consistency in tensor operations.
+    stores are completed before subsequent shared memory view operations begin.
+    This is crucial for maintaining memory consistency.
 
     Note:
 

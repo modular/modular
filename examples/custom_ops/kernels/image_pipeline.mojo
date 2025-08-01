@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
 
-from algorithm.functional import vectorize
 from builtin.simd import SIMD
 from compiler import register
-from gpu import global_idx
-from layout import Layout, LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor, foreach
 

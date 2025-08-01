@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
+from sys import simdwidthof, sizeof
 from gpu import thread_idx
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
@@ -101,7 +101,7 @@ fn async_load_AB[
 
     @parameter
     for i in range(CLUSTER_M):
-        multicast_column_mask |= 1 << (i * CLUSTER_N)
+        multicast_column_mask |= Int(1 << (i * CLUSTER_N))
 
     var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
 
@@ -310,10 +310,10 @@ fn async_load_AB[
             ]()
 
             var a_gmem_tile = a.tile[BM, BK](
-                block_idx_m, k_iter * pipeline_stages + j
+                Int(block_idx_m), k_iter * pipeline_stages + j
             ).vectorize[1, cp_size]()
             var b_gmem_tile = b.tile[BN, BK](
-                block_idx_n, k_iter * pipeline_stages + j
+                Int(block_idx_n), k_iter * pipeline_stages + j
             ).vectorize[1, cp_size]()
 
             async_copy_with_bound_check[thread_layout, swizzle_mode](

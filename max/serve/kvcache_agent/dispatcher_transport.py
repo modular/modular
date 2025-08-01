@@ -23,7 +23,7 @@ from typing import Any, Generic, Optional, TypeVar
 
 import msgspec
 import zmq
-from max.pipelines.core import msgpack_numpy_decoder, msgpack_numpy_encoder
+from max.interfaces import msgpack_numpy_decoder, msgpack_numpy_encoder
 from max.serve.kvcache_agent.dispatcher_base import ReplyContext
 from max.serve.queue.zmq_queue import (
     ZmqDealerSocket,
@@ -46,21 +46,13 @@ class TransportMessage(
     across different transport mechanisms (ZMQ, HTTP, gRPC).
     """
 
-    message_id: str = msgspec.field()  # Unique identifier for this message
-    message_type: str = msgspec.field()  # Type of message
-    payload: Payload = msgspec.field()  # Message payload data
-    source_id: Optional[str] = msgspec.field(
-        default=None
-    )  # Identifier of the sending instance
-    destination_address: Optional[str] = msgspec.field(
-        default=None
-    )  # Target address for routing
-    correlation_id: Optional[str] = msgspec.field(
-        default=None
-    )  # ID for request-response correlation
-    is_reply: bool = msgspec.field(
-        default=False
-    )  # Whether this message is a reply to another message
+    message_id: str  # Unique identifier for this message
+    message_type: str  # Type of message
+    payload: Payload  # Message payload data
+    source_id: Optional[str] = None  # Identifier of the sending instance
+    destination_address: Optional[str] = None  # Target address for routing
+    correlation_id: Optional[str] = None  # ID for request-response correlation
+    is_reply: bool = False  # Whether this message is a reply to another message
     timestamp: float = msgspec.field(
         default_factory=time.time
     )  # Message creation timestamp
@@ -76,10 +68,8 @@ class TransportMessageEnvelope(
     transport-agnostic reply handling for request-response patterns.
     """
 
-    message: TransportMessage[Payload] = msgspec.field()  # The received message
-    reply_context: Optional[ReplyContext] = msgspec.field(
-        default=None
-    )  # Context for sending replies
+    message: TransportMessage[Payload]  # The received message
+    reply_context: Optional[ReplyContext] = None  # Context for sending replies
 
     def can_reply(self) -> bool:
         """

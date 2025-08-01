@@ -147,24 +147,34 @@ your Python with Mojo.
 
 ## Binding Mojo types
 
-All Mojo types are eligible to be bound for use from Python.
-
-:::note
-
-Types currently must implement `Movable`, `Defaultable`, and `Representable`
-to be bound for use from Python.
-
-:::
-
-This enables the type to be bound using `PythonModuleBuilder.add_type[Person]()`:
+You can bind any Mojo type for use in Python using
+[`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder/).
+For example:
 
 ```mojo
-var mb = PythonModuleBuilder("mojo_module")
-mb.add_type[Person]("Person")
+@fieldwise_init
+struct Person(Movable, Representable):
+    var name: String
+    var age: Int
+
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
+
+@export
+fn PyInit_person_module() -> PythonObject:
+    var mb = PythonModuleBuilder("person_module")
+    var person_type = mb.add_type[Person]("Person")
 ```
 
-Any Mojo type bound using a `PythonTypeBuilder` will have the resulting
-Python 'type' object be globally registered, enabling two features:
+When you call
+[`add_type()`](/mojo/stdlib/python/bindings/PythonModuleBuilder/#add_type), it
+returns a
+[`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder), which
+you can then use to bind the type constructor (see [custom
+initializers](#custom-initializers), below).
+
+Any Mojo type bound as a `PythonTypeBuilder` has the resulting Python
+'type' object globally registered, enabling two features:
 
 * Constructing Python objects that wrap Mojo values for use from Python using
   `PythonObject(alloc=Person(..))`.
@@ -179,15 +189,99 @@ Python 'type' object be globally registered, enabling two features:
 ## Binding Mojo Methods
 --> */}
 
-## Constructing Python objects in Mojo
-
 :::note
 
-Python Mojo bindings do not currently support Mojo `__init__()` methods that
-take arguments. However, a workaround is possible using free functions that
-construct new objects, shown below.
+Mojo types must implement
+[`Representable`](/mojo/stdlib/builtin/repr/Representable/) to be bound for use
+in Python. Additional traits are required for specific binding features:
+`Movable` for custom initializers (`def_py_init`), and both `Defaultable` and
+`Movable` for default initializers (`def_init_defaultable`).
 
 :::
+
+### Constructing Mojo objects in Python
+
+Mojo bindings for Python support Mojo `__init__()`
+[constructors](/mojo/manual/lifecycle/life/#constructor) so you can construct
+your Mojo type from Python. You just need to declare the Mojo constructor as a
+Python initializer using
+[`def_py_init()`](/mojo/stdlib/python/bindings/PythonTypeBuilder#def_py_init)
+when you add the type to your module. For example:
+
+```mojo
+@fieldwise_init
+struct Person(Movable, Representable):
+    var name: String
+    var age: Int
+
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
+
+    @staticmethod
+    fn py_init(
+        out self: Person, args: PythonObject, kwargs: PythonObject
+    ) raises:
+        # Validate argument count
+        if len(args) != 2:
+            raise Error("Person() takes exactly 2 arguments")
+
+        # Convert Python arguments to Mojo types
+        var name = String(args[0])
+        var age = Int(args[1])
+
+        self = Self(name, age)
+
+
+@export
+fn PyInit_person_module() -> PythonObject:
+    try:
+        var mb = PythonModuleBuilder("person_module")
+        // highlight-start
+        _ = mb.add_type[Person]("Person").def_py_init[Person.py_init]()
+        // highlight-end
+        return mb.finalize()
+    except e:
+        return abort[PythonObject](
+            String("error creating Python Mojo module:", e)
+        )
+```
+
+With this Mojo binding, you can create `Person` instances in Python:
+
+```python
+person = person_module.Person("Sarah", 32)
+print(person)
+```
+
+```output
+Person(Sarah, 32)
+```
+
+For types that support default construction, you can use the simpler
+[`def_init_defaultable()`](/mojo/stdlib/python/bindings/PythonTypeBuilder#def_init_defaultable)
+method:
+
+```mojo
+var counter_type = m.add_type[Counter]("Counter")
+counter_type.def_init_defaultable[Counter]()
+```
+
+This enables Python code to create instances without arguments:
+
+```python
+counter = counter_module.Counter()  # Creates Counter()
+```
+
+:::note "Constructor" vs "Initializer"
+
+In Python, object construction happens across both the `__new__()` and
+`__init__()` methods, so the `__init__()` method is technically just the
+attribute initializer. However, in a Mojo struct, there's no `__new__()`
+method, so we prefer to always call `__init__()` the constructor.
+
+:::
+
+### Constructing Python objects in Mojo
 
 Mojo functions called from Python don't just need to be able to accept
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) values as
@@ -251,19 +345,11 @@ only works to immutable pointers.
 
 ### `PythonObject` conversions
 
-:::note
-
-**Binding Initializers.** One current limitation is that non-default Mojo
-type `__init__()` methods cannot be bound for calling from Python. In addition
-to showing argument conversions, this example also shows how a top-level
-function can be used to construct and return instances of Mojo types to Python.
-
-:::
-
 Many Mojo types support conversion directly from equivalent Python types, via
 the [`ConvertibleFromPython`][ConvertibleFromPython] trait:
 
 ```mojo
+# Given a person, clone them and give them a different name.
 fn create_person(
     name_obj: PythonObject,
     age_obj: PythonObject
@@ -278,14 +364,13 @@ fn create_person(
 Which could be called from Python using:
 
 ```python
-person = mojo_module.create_person("John Smith", 42)
+person = mojo_module.create_person("John Smith")
 ```
 
-Passing invalid arguments would result in a type error:
+Passing invalid arguments will result in a runtime argument error:
 
 ```python
-# TODO: What is the exact error message this emits today?
-person = mojo_module.create_person([1, 2, 3], {"foo": 4})
+person = person.create_person(42)
 ```
 
 ### `PythonObject` downcasts
@@ -450,15 +535,10 @@ Mojo to be the best way to extend Python—this feature is still in early and
 active development, and there are some limitations to be aware of. These will
 be lifted over time.
 
-* **Functions taking more than 3 arguments.**
+* **Functions taking more than 6 arguments.**
   Currently `PyTypeBuilder.add_function()` and related
-  function bindings only support Mojo functions that take up to 3 `PythonObject`
-  arguments: `fn(PythonObject, PythonObject, PythonObject)`.
-
-* **Binding non-default initializers.**
-  Currently, only Mojo types that are default constructible (`Foo()`) can be
-  bound and constructed using standard object init syntax from within Python.
-  A workaround pattern is described below.
+  function bindings only support Mojo functions that take up to 6 `PythonObject`
+  arguments: `fn(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
 
 * **Keyword arguments.**
   Currently, Mojo functions callable from Python only natively support positional

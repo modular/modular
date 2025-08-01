@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, Dim
+from gpu.host import DeviceContext
 from gpu.id import block_idx, grid_dim, thread_idx
 from gpu import NamedBarrierSemaphore
 from testing import assert_equal

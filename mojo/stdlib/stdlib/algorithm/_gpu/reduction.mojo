@@ -360,7 +360,7 @@ fn reduce_launch[
 ) raises:
     alias BLOCK_SIZE = 128
     alias register_width = 32
-    alias sm_count = ctx.device_info.sm_count
+    alias sm_count = ctx.default_device_info.sm_count
 
     alias packing_factor = 1
 

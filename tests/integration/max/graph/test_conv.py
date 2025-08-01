@@ -11,12 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Callable
+
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from max.driver import accelerator_count
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.ops import conv2d
 from modular_graph_test import modular_graph_test
@@ -57,9 +63,7 @@ def torch_conv2d(
     ],
 )
 def test_conv2d(
-    session,  # noqa: ANN001
-    input_type: TensorType,
-    filter_type: TensorType,
+    session: InferenceSession, input_type: TensorType, filter_type: TensorType
 ) -> None:
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs
@@ -71,7 +75,11 @@ def test_conv2d(
         graph.output(conv)
 
         @modular_graph_test(session, graph)
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+        def test_correctness(
+            execute: Callable[[Sequence[Tensor]], Tensor],
+            inputs: Sequence[Tensor],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
             result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (

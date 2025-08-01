@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from max.driver import Tensor
 from max.graph.weights import WeightData, Weights
 
 # Maps from InternVL checkpoint names to DistributedLlama3 weight names.
@@ -129,14 +130,17 @@ def convert_internvl_vision_model_state_dict(
             # Need to reshape to: (embed_dim, 3 * patch_size * patch_size)
 
             # Get the weight array
-            weight_array = weight_data.data
+            weight_array = Tensor.from_dlpack(weight_data.data)
 
             # Get dimensions
             out_channels, in_channels, kernel_h, kernel_w = weight_array.shape
 
             # Reshape from (out_channels, in_channels, kernel_h, kernel_w)
             # to (out_channels, in_channels * kernel_h * kernel_w)
-            weight_array = weight_array.reshape(out_channels, -1)
+            weight_array = weight_array.view(
+                weight_array.dtype,
+                (out_channels, in_channels * kernel_h * kernel_w),
+            )
 
             # Create new WeightData with reshaped array
             weight_data = WeightData(

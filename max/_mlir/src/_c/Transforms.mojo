@@ -21,7 +21,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from .ffi import MLIR_func
 from .Support import *
 
 # ===-- mlir-c/Transforms.h - Helpers for C API to Core MLIR ------*- C -*-===//

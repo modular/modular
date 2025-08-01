@@ -26,7 +26,7 @@ struct Balloon(Writable):
     fn write_to[W: Writer](self, mut writer: W) -> None:
         writer.write(String("a ", self.color, " balloon"))
 
-    fn __del__(owned self):
+    fn __del__(var self):
         print("Destroyed", String(self))
 
 
@@ -172,7 +172,7 @@ struct HeapArray(Writable):
                 writer.write(", ")
         writer.write("]")
 
-    fn __del__(owned self):
+    fn __del__(var self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()
@@ -200,7 +200,7 @@ the destructors, use the `destroy_pointee()` method provided by the
 :::note
 
 You can't just call the destructor explicitly. Because `__del__()`
-takes `self` as an `owned` value, and owned arguments are copied by default,
+takes `self` as a `var` value, and `var` arguments are copied by default,
 `foo.__del__()` actually creates and destroys a *copy* of `foo`. When Mojo
 destroys a value, however, it passes in the original value as `self`, not a
 copy.
@@ -218,7 +218,7 @@ struct Balloons:
     var color: String
     var count: Int
 
-    fn __del__(owned self):
+    fn __del__(var self):
         # Mojo destroys all the fields when they're last used
         pass
 ```
@@ -308,7 +308,7 @@ it's likewise impossible to destroy an object by destroying only its fields.
 
 The consuming-move constructor and destructor face an interesting situation
 with field lifetimes, because, unlike other lifecycle methods, they both take
-an instance of their own type as an `owned` argument, which is about to be
+an instance of their own type as a `var` argument, which is about to be
 destroyed. You don't really need to worry about this detail when implementing
 these methods, but it might help you better understand field lifetimes.
 
@@ -317,9 +317,9 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, var existing: Self):
         # Initializes a new `self` by consuming the contents of `existing`
-    fn __del__(owned self):
+    fn __del__(var self):
         # Destroys all resources in `self`
 ```
 
@@ -334,8 +334,8 @@ other languages, and also implicitly a `Self` type).
 :::
 
 Both of these methods face an interesting but obscure problem: they both must
-dismantle the `existing`/`self` value that's `owned`. Normally, an `owned`
-argument's destructor is called at the end of the method—when the `owned`
+dismantle the `existing`/`self` value that's a `var`. Normally, a `var`
+argument's destructor is called at the end of the method—when the `var`
 argument goes out of scope. But this won't work for `__del__()` and
 `__moveinit__()`.
 
@@ -363,7 +363,7 @@ struct TwoStrings(Copyable, Movable):
     var str1: String
     var str2: String
 
-    fn __del__(owned self):
+    fn __del__(var self):
         self.dump()  # Self is still whole here
         # Mojo calls self.str2.__del__() since str2 isn't used anymore
 

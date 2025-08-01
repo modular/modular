@@ -16,13 +16,7 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    ShardingStrategy,
-    TensorValue,
-    Weight,
-    ops,
-)
+from max.graph import BufferValue, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.comm import Allreduce
 from max.nn.moe import MoE, MoEGate
 
@@ -158,32 +152,47 @@ class DistributedLlama4MoE(Llama4MoE):
         kwargs = kwargs.copy()
         kwargs["moe_dim"] = self.moe_dim // self.num_devices
         self.moe_layers = []
+
+        # Shard weights once for all devices
+        shared_gate_proj_weight_shards = (
+            self.shared_experts.gate_proj.weight.shard(self.devices)
+        )
+        shared_down_proj_weight_shards = (
+            self.shared_experts.down_proj.weight.shard(self.devices)
+        )
+        shared_up_proj_weight_shards = self.shared_experts.up_proj.weight.shard(
+            self.devices
+        )
+        down_weight_shards = self.down_weight.shard(self.devices)
+        gate_up_weight_shards = self.gate_up_weight.shard(self.devices)
+        gate_score_weight_shards = self.gate.gate_score.weight.shard(
+            self.devices
+        )
+
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
             layer = Llama4MoE(*args, **kwargs)
 
             layer.shared_experts.gate_proj.device = device
             layer.shared_experts.gate_proj.weight = (
-                self.shared_experts.gate_proj.weight.shard(n, device)
+                shared_gate_proj_weight_shards[n]
             )
 
             layer.shared_experts.down_proj.device = device
             layer.shared_experts.down_proj.weight = (
-                self.shared_experts.down_proj.weight.shard(n, device)
+                shared_down_proj_weight_shards[n]
             )
 
             layer.shared_experts.up_proj.device = device
-            layer.shared_experts.up_proj.weight = (
-                self.shared_experts.up_proj.weight.shard(n, device)
-            )
+            layer.shared_experts.up_proj.weight = shared_up_proj_weight_shards[
+                n
+            ]
 
-            layer.down_weight = self.down_weight.shard(n, device)
-            layer.gate_up_weight = self.gate_up_weight.shard(n, device)
+            layer.down_weight = down_weight_shards[n]
+            layer.gate_up_weight = gate_up_weight_shards[n]
 
             layer.gate.gate_score.device = device
-            layer.gate.gate_score.weight = self.gate.gate_score.weight.shard(
-                n, device
-            )
+            layer.gate.gate_score.weight = gate_score_weight_shards[n]
 
             self.moe_layers.append(layer)
 

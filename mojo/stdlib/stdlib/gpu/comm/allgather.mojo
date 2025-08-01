@@ -30,24 +30,19 @@ hardware capabilities:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import simdwidthof, sizeof
+from sys import simdwidthof
 
 from buffer import NDBuffer
 from gpu import (
-    barrier,
     block_dim,
-    block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
     WARP_SIZE,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host import get_gpu_target
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 
-from utils import IndexList, StaticTuple
+from utils import StaticTuple
 
 # Import P2P detection and synchronization from allreduce
 from .allreduce import MAX_GPUS, Signal, can_enable_p2p, _multi_gpu_barrier

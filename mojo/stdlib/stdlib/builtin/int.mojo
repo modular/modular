@@ -29,9 +29,9 @@ from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
 from python import (
     Python,
-    PythonConvertible,
     PythonObject,
     ConvertibleFromPython,
+    ConvertibleToPython,
 )
 
 from utils._select import _select_register_value as select
@@ -213,6 +213,7 @@ struct Int(
     Ceilable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Copyable,
     Defaultable,
     DevicePassable,
@@ -225,7 +226,6 @@ struct Int(
     KeyElement,
     Movable,
     Powable,
-    PythonConvertible,
     Representable,
     Roundable,
     Stringable,
@@ -405,7 +405,7 @@ struct Int(
             This follows [Python's integer literals](
             https://docs.python.org/3/reference/lexical_analysis.html#integers).
         """
-        self = atol(value, base)
+        self = atol(value, Int(base))
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

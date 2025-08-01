@@ -14,7 +14,7 @@
 from math import ceildiv
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList
+from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
 from internal_utils._utils import static, ValOrDim, dynamic
