@@ -150,4 +150,18 @@ llvm_config.add_tool_substitutions(
     ]
 )
 
+llvm_config.add_tool_substitutions(
+    [
+        ToolSubst(
+            "%mpirun",
+            "mpirun",
+            extra_args=[
+                "--allow-run-as-root",
+                "--bind-to",
+                "none",
+            ],
+        )
+    ]
+)
+
 config.substitutions.append(("%bare-mojo", mojo_exe))

@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_library(
+    name = "shmem",
+    srcs = glob(["**/*.mojo"]),
+    additional_compiler_inputs = ["@libnvshmem_device_bc"],
+    copts = [
+        "--bitcode-libs",
+        "$(location @libnvshmem_device_bc)",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
