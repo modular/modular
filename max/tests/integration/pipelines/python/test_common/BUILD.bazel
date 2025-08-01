@@ -227,7 +227,6 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//Support/python:support",
         requirement("rich"),
         requirement("scipy"),
     ],

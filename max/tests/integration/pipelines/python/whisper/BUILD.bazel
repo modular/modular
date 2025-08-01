@@ -34,7 +34,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/lib",
         "//SDK/lib/API/python/max/serve",
-        "//Support/python:support",
         requirement("huggingface-hub"),
         requirement("hypothesis"),
         requirement("pytest-asyncio"),

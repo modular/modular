@@ -56,7 +56,6 @@ modular_py_library(
             "//SDK/lib/API/python/max/nn",
             "//SDK/lib/API/python/max/pipelines/architectures",
             "//SDK/lib/API/python/max/serve",
-            "//Support/python:support",
             requirement("numpy"),
             requirement("pillow"),
             requirement("pytest-asyncio"),
