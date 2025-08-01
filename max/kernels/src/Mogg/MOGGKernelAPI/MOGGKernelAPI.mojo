@@ -849,6 +849,15 @@ struct Copy:
 @compiler.register("mo.add")
 struct Add:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return lhs + rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -863,7 +872,7 @@ struct Add:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return lhs + rhs
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -875,6 +884,15 @@ struct Add:
 @compiler.register("mo.sub")
 struct Sub:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return lhs - rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -889,7 +907,7 @@ struct Sub:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return lhs - rhs
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -901,6 +919,15 @@ struct Sub:
 @compiler.register("mo.mul")
 struct Mul:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return lhs * rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -915,7 +942,7 @@ struct Mul:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return lhs * rhs
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -927,6 +954,15 @@ struct Mul:
 @compiler.register("mo.div")
 struct Div:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return lhs / rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -941,7 +977,7 @@ struct Div:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return lhs / rhs
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -953,6 +989,15 @@ struct Div:
 @compiler.register("mo.mod")
 struct Mod:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return lhs % rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -967,7 +1012,7 @@ struct Mod:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return lhs % rhs
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -979,6 +1024,15 @@ struct Mod:
 @compiler.register("mo.equal")
 struct Equal:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[DType.bool, width]:
+        return lhs == rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -993,7 +1047,7 @@ struct Equal:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs == rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1005,6 +1059,15 @@ struct Equal:
 @compiler.register("mo.greater")
 struct Greater:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[DType.bool, width]:
+        return lhs > rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1019,7 +1082,7 @@ struct Greater:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs > rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1031,6 +1094,15 @@ struct Greater:
 @compiler.register("mo.greater_equal")
 struct GreaterEqual:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[DType.bool, width]:
+        return lhs >= rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1045,7 +1117,7 @@ struct GreaterEqual:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs >= rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1057,6 +1129,15 @@ struct GreaterEqual:
 @compiler.register("mo.not_equal")
 struct NotEqual:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[DType.bool, width]:
+        return lhs != rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1071,7 +1152,7 @@ struct NotEqual:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs != rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1083,6 +1164,16 @@ struct NotEqual:
 @compiler.register("mo.and")
 struct And:
     @staticmethod
+    fn elementwise[
+        width: Int,
+    ](
+        lhs: SIMD[DType.bool, width],
+        rhs: SIMD[DType.bool, width],
+        _idx: IndexList,
+    ) -> SIMD[DType.bool, width]:
+        return lhs & rhs
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1097,7 +1188,7 @@ struct And:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs & rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1109,31 +1200,15 @@ struct And:
 @compiler.register("mo.or")
 struct Or:
     @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
+    fn elementwise[
+        width: Int,
     ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs | rhs)
+        lhs: SIMD[DType.bool, width],
+        rhs: SIMD[DType.bool, width],
+        _idx: IndexList,
+    ) -> SIMD[DType.bool, width]:
+        return lhs | rhs
 
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
-
-@compiler.register("mo.xor")
-struct Xor:
     @staticmethod
     fn execute[
         target: StaticString,
@@ -1149,7 +1224,43 @@ struct Xor:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](lhs ^ rhs)
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
+
+        foreach[
+            func,
+            target=target,
+            _trace_name=_trace_name,
+        ](z, ctx)
+
+
+@compiler.register("mo.xor")
+struct Xor:
+    @staticmethod
+    fn elementwise[
+        width: Int,
+    ](
+        lhs: SIMD[DType.bool, width],
+        rhs: SIMD[DType.bool, width],
+        _idx: IndexList,
+    ) -> SIMD[DType.bool, width]:
+        return lhs ^ rhs
+
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
+            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
 
         foreach[
             func,
@@ -1160,6 +1271,16 @@ struct Xor:
 
 @compiler.register("mo.pow")
 struct Pow:
+    @staticmethod
+    fn elementwise[
+        dtype: DType,
+        pow_dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return _pow(lhs, rhs)
+
     @staticmethod
     fn execute[
         target: StaticString,
@@ -1175,7 +1296,7 @@ struct Pow:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = y._fused_load[width](idx)
-            return _pow(lhs, rhs)
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -1187,31 +1308,14 @@ struct Pow:
 @compiler.register("mo.max")
 struct Max:
     @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
+    fn elementwise[
+        dtype: DType,
+        width: Int,
     ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return max(lhs, rhs)
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return max(lhs, rhs)
 
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
-
-@compiler.register("mo.min")
-struct Min:
     @staticmethod
     fn execute[
         target: StaticString,
@@ -1227,7 +1331,42 @@ struct Min:
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
             var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
             var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return min(lhs, rhs)
+            return Self.elementwise(lhs, rhs, idx)
+
+        foreach[
+            func,
+            target=target,
+            _trace_name=_trace_name,
+        ](z, ctx)
+
+
+@compiler.register("mo.min")
+struct Min:
+    @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](
+        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
+    ) -> SIMD[dtype, width]:
+        return min(lhs, rhs)
+
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
+            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
+            return Self.elementwise(lhs, rhs, idx)
 
         foreach[
             func,
@@ -1244,6 +1383,14 @@ struct Min:
 @compiler.register("mo.cast")
 struct Cast:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        out_dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[out_dtype, width]:
+        return x.cast[out_dtype]()
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1253,8 +1400,8 @@ struct Cast:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var answer = x._fused_load[width](idx).cast[y.dtype]()
-            return rebind[SIMD[y.dtype, width]](answer)
+            var input = x._fused_load[width](idx)
+            return Self.elementwise[out_dtype = y.dtype](input, idx)
 
         foreach[
             func,
@@ -1266,6 +1413,13 @@ struct Cast:
 @compiler.register("mo.negative")
 struct Negative:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return -x
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1275,7 +1429,8 @@ struct Negative:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](-x._fused_load[width](idx))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1287,6 +1442,13 @@ struct Negative:
 @compiler.register("mo.relu")
 struct ReLU:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return relu(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1296,7 +1458,8 @@ struct ReLU:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](relu(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1308,6 +1471,13 @@ struct ReLU:
 @compiler.register("mo.gelu")
 struct GeLU:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return gelu(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1317,7 +1487,8 @@ struct GeLU:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](gelu(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1329,6 +1500,13 @@ struct GeLU:
 @compiler.register("mo.ceil")
 struct Ceil:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return ceil(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1338,7 +1516,8 @@ struct Ceil:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](ceil(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1350,6 +1529,13 @@ struct Ceil:
 @compiler.register("mo.floor")
 struct Floor:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return floor(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1359,9 +1545,8 @@ struct Floor:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                floor(x._fused_load[width](idx))
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1373,6 +1558,13 @@ struct Floor:
 @compiler.register("mo.tanh")
 struct Tanh:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return tanh(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1382,7 +1574,8 @@ struct Tanh:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](tanh(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1394,6 +1587,13 @@ struct Tanh:
 @compiler.register("mo.atanh")
 struct ATanh:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return atanh(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1403,9 +1603,8 @@ struct ATanh:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                atanh(x._fused_load[width](idx))
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1417,6 +1616,13 @@ struct ATanh:
 @compiler.register("mo.cos")
 struct Cos:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return cos(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1426,7 +1632,8 @@ struct Cos:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](cos(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1438,6 +1645,13 @@ struct Cos:
 @compiler.register("mo.sin")
 struct Sin:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return sin(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1447,7 +1661,8 @@ struct Sin:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](sin(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1459,6 +1674,13 @@ struct Sin:
 @compiler.register("mo.erf")
 struct Erf:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return erf(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1468,7 +1690,8 @@ struct Erf:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](erf(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1480,6 +1703,13 @@ struct Erf:
 @compiler.register("mo.exp")
 struct Exp:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return exp(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1489,7 +1719,8 @@ struct Exp:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](exp(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1501,6 +1732,13 @@ struct Exp:
 @compiler.register("mo.round")
 struct Round:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return round(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1510,9 +1748,8 @@ struct Round:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                round(x._fused_load[width](idx))
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1524,6 +1761,13 @@ struct Round:
 @compiler.register("mo.sqrt")
 struct Sqrt:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return sqrt(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1533,7 +1777,8 @@ struct Sqrt:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](sqrt(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1545,6 +1790,13 @@ struct Sqrt:
 @compiler.register("mo.isqrt")
 struct Isqrt:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return isqrt(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1554,9 +1806,8 @@ struct Isqrt:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                isqrt(x._fused_load[width](idx))
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1567,6 +1818,19 @@ struct Isqrt:
 
 @compiler.register("mo.select")
 struct Select:
+    @staticmethod
+    fn elementwise[
+        cond_dtype: DType,
+        dtype: DType,
+        width: Int,
+    ](
+        cond: SIMD[cond_dtype, width],
+        tc: SIMD[dtype, width],
+        fc: SIMD[dtype, width],
+        _idx: IndexList,
+    ) -> SIMD[dtype, width]:
+        return cond.select(tc, fc)
+
     @staticmethod
     fn execute[
         target: StaticString,
@@ -1590,7 +1854,7 @@ struct Select:
             var fc = rebind[SIMD[output.dtype, width]](
                 false_case._fused_load[width](idx)
             )
-            return cond.select(tc, fc)
+            return Self.elementwise(cond, tc, fc, idx)
 
         foreach[
             func,
@@ -1602,6 +1866,15 @@ struct Select:
 @compiler.register("mo.trunc")
 struct Trunc:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return llvm_intrinsic[
+            "llvm.trunc", __type_of(x), has_side_effect=False
+        ](x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1611,12 +1884,8 @@ struct Trunc:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var val = x._fused_load[width](idx)
-            return rebind[SIMD[y.dtype, width]](
-                llvm_intrinsic[
-                    "llvm.trunc", __type_of(val), has_side_effect=False
-                ](val)
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1628,6 +1897,13 @@ struct Trunc:
 @compiler.register("mo.log")
 struct Log:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return log(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1637,7 +1913,8 @@ struct Log:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](log(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1649,6 +1926,13 @@ struct Log:
 @compiler.register("mo.log1p")
 struct Log1p:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return log1p(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1658,9 +1942,8 @@ struct Log1p:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                log1p(x._fused_load[width](idx))
-            )
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -1672,6 +1955,13 @@ struct Log1p:
 @compiler.register("mo.is_nan")
 struct IsNan:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+        return isnan(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1682,7 +1972,7 @@ struct IsNan:
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
             return rebind[SIMD[y.dtype, width]](
-                isnan(x._fused_load[width](idx))
+                Self.elementwise(x._fused_load[width](idx), idx)
             )
 
         foreach[
@@ -1695,6 +1985,13 @@ struct IsNan:
 @compiler.register("mo.is_inf")
 struct IsInf:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+        return isinf(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1705,7 +2002,7 @@ struct IsInf:
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
             return rebind[SIMD[y.dtype, width]](
-                isinf(x._fused_load[width](idx))
+                Self.elementwise(x._fused_load[width](idx), idx)
             )
 
         foreach[
@@ -1718,6 +2015,12 @@ struct IsInf:
 @compiler.register("mo.not")
 struct Not:
     @staticmethod
+    fn elementwise[
+        width: Int,
+    ](x: SIMD[DType.bool, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+        return ~x
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1728,7 +2031,7 @@ struct Not:
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
             var val = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            return rebind[SIMD[y.dtype, width]](~val)
+            return rebind[SIMD[y.dtype, width]](Self.elementwise(val, idx))
 
         foreach[
             func,
@@ -1740,6 +2043,13 @@ struct Not:
 @compiler.register("mo.abs")
 struct Abs:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return abs(x)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -1749,7 +2059,8 @@ struct Abs:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](abs(x._fused_load[width](idx)))
+            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
+            return Self.elementwise(input, idx)
 
         foreach[
             func,
@@ -2975,6 +3286,13 @@ struct Slice:
 @compiler.register("mo.mutable.store")
 struct MutableStore:
     @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](val: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+        return val
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _trace_name: StaticString,
@@ -2989,7 +3307,7 @@ struct MutableStore:
             width: Int
         ](idx: IndexList[buffer.rank]) -> SIMD[buffer.dtype, width]:
             return rebind[SIMD[buffer.dtype, width]](
-                tensor._fused_load[width](idx)
+                Self.elementwise(tensor._fused_load[width](idx), idx)
             )
 
         @parameter
