@@ -21,13 +21,7 @@ trait Hasher:
     fn __init__(out self):
         ...
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[UInt8]):
         ...
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
