@@ -19,6 +19,9 @@ modular_py_test(
         "configs/qwen2_5vl-3b.json",
         "//SDK:max",
     ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = [

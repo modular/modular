@@ -8,6 +8,9 @@ load(
 modular_py_test(
     name = "test_vision_attention",
     srcs = ["test_vision_attention.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
@@ -28,6 +31,9 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_mlp",
     srcs = ["test_vision_mlp.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
@@ -48,6 +54,9 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_encoder_layer",
     srcs = ["test_vision_encoder_layer.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
@@ -68,6 +77,9 @@ modular_py_test(
 modular_py_test(
     name = "test_connector",
     srcs = ["test_connector.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },

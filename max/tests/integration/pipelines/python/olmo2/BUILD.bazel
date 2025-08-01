@@ -1,10 +1,4 @@
-# olmo2 tests.
-
-load(
-    "//bazel:api.bzl",
-    "modular_py_test",
-    "requirement",
-)
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "olmo2",
@@ -15,9 +9,8 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/olmo2/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/olmo2/testdata"
-        ),
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/olmo2/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.25",
     },
     exec_properties = {
         "test.resources:gpu-memory": "2",

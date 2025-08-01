@@ -37,6 +37,9 @@ modular_py_library(
             "configs/internvl-8B.json",
             "//SDK:max",
         ],
+        env = {
+            "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+        },
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },

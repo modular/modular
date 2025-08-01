@@ -25,6 +25,9 @@ modular_py_test(
     name = "attention_gpu_tests",
     timeout = "long",
     srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "18",
     },

@@ -15,9 +15,8 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/gemma3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/gemma3/testdata"
-        ),
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/gemma3/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
         "test.resources:gpu-memory": "3",

@@ -133,9 +133,13 @@ modular_py_test(
     name = "test_pipelines_cli_gpu",
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu.py"],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "0",  # TODO: Figure out why this test doesn't work when this is limited, remove gpu-1 as well
+    },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "21.25",
+        "test.resources:gpu-1": "1",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
