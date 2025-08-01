@@ -20,6 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
+from collections._index_normalization import normalize_index
 from memory import Pointer, memcpy
 
 from .optional import Optional
@@ -935,30 +936,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A reference to the element at the given index.
         """
 
-        @parameter
-        if _type_is_eq[I, UInt]():
-            var idx = UInt(idx)
-            debug_assert(
-                idx < self._len,
-                "index: ",
-                idx,
-                " is out of bounds for `List` of length: ",
-                self._len,
-            )
-            return (self._data + idx)[]
-        else:
-            var normalized_idx = Int(idx)
-            debug_assert(
-                -self._len <= normalized_idx < self._len,
-                "index: ",
-                normalized_idx,
-                " is out of bounds for `List` of length: ",
-                self._len,
-            )
-            if normalized_idx < 0:
-                normalized_idx += len(self)
+        var normalized_idx = normalize_index["List", assert_always=False](
+            idx, len(self)
+        )
 
-            return (self._data + normalized_idx)[]
+        return (self._data + normalized_idx)[]
 
     @always_inline
     fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
