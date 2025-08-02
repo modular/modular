@@ -149,29 +149,20 @@ def generate_max_outputs(
 
 
 @pytest.mark.parametrize(
-    "config_name",
-    [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
-    ],
-)
-@pytest.mark.parametrize(
     "target_size",
-    [
-        224,  # Small size (16x16 patches)
-        448,  # Medium size (32x32 patches)
-        672,  # Large size (48x48 patches)
-    ],
+    # Small (16x16 patches), Medium (32x32 patches), Large (48x48 patches)
+    [224, 448, 672],
 )
-def test_vision_patch_embed(config_name: ConfigNames, target_size: int) -> None:
+def test_vision_patch_embed(target_size: int) -> None:
     """Test patch embedding for different image resolutions."""
     torch.manual_seed(42)
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(config_name)
-    qwen2_5vl_config = loader.create_qwen2_5vl_config(config_name)
+    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
+    qwen2_5vl_config = loader.create_qwen2_5vl_config(ConfigNames.QWEN2_5VL_3B)
     embeddings_weights = get_weight_generator(
-        config_name
+        ConfigNames.QWEN2_5VL_3B
     ).generate_vision_patch_embed_weights()
 
     # Create test inputs
@@ -239,31 +230,20 @@ def test_vision_patch_embed(config_name: ConfigNames, target_size: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "config_name",
-    [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
-    ],
-)
-@pytest.mark.parametrize(
     "height,width",
-    [
-        (224, 336),  # Non-square, 16x24 patches
-        (448, 224),  # Non-square, 32x16 patches
-        (2044, 1372),  # Non-square, 146x98 patches
-    ],
+    # 16x24 patches, 32x16 patches, 146x98 patches
+    [(224, 336), (448, 224), (2044, 1372)],
 )
-def test_vision_patch_embed_non_square(
-    config_name: ConfigNames, height: int, width: int
-) -> None:
+def test_vision_patch_embed_non_square(height: int, width: int) -> None:
     """Test patch embedding for non-square images."""
     torch.manual_seed(42)
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(config_name)
-    qwen2_5vl_config = loader.create_qwen2_5vl_config(config_name)
+    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
+    qwen2_5vl_config = loader.create_qwen2_5vl_config(ConfigNames.QWEN2_5VL_3B)
     embeddings_weights = get_weight_generator(
-        config_name
+        ConfigNames.QWEN2_5VL_3B
     ).generate_vision_patch_embed_weights()
 
     # Create test inputs
@@ -329,22 +309,16 @@ def test_vision_patch_embed_non_square(
     )
 
 
-@pytest.mark.parametrize(
-    "config_name",
-    [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
-    ],
-)
-def test_vision_patch_embed_video(config_name: ConfigNames) -> None:
+def test_vision_patch_embed_video() -> None:
     """Test patch embedding for video inputs with temporal dimension."""
     torch.manual_seed(42)
 
     # Load config and generate weights
     loader = get_config_loader()
-    hf_vision_config = loader.load_hf_vision_config(config_name)
-    qwen2_5vl_config = loader.create_qwen2_5vl_config(config_name)
+    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
+    qwen2_5vl_config = loader.create_qwen2_5vl_config(ConfigNames.QWEN2_5VL_3B)
     embeddings_weights = get_weight_generator(
-        config_name
+        ConfigNames.QWEN2_5VL_3B
     ).generate_vision_patch_embed_weights()
 
     # Create test inputs for video
@@ -413,4 +387,105 @@ def test_vision_patch_embed_video(config_name: ConfigNames) -> None:
         rtol=RTOL,
         atol=ATOL,
         message="Vision patch embedding video outputs do not match",
+    )
+
+
+@pytest.mark.parametrize(
+    "image_sizes",
+    [  # Two square images of different sizes
+        [(224, 224), (448, 448)],
+        # Three images: non-square, non-square, square
+        [(224, 336), (448, 224), (672, 672)],
+        # Four images of various sizes
+        [(224, 224), (448, 672), (336, 224), (672, 448)],
+    ],
+)
+def test_vision_patch_embed_multiple_images(
+    image_sizes: list[tuple[int, int]],
+) -> None:
+    """Test patch embedding for multiple images with different sizes."""
+    torch.manual_seed(42)
+
+    # Load config and generate weights
+    loader = get_config_loader()
+    hf_vision_config = loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
+    qwen2_5vl_config = loader.create_qwen2_5vl_config(ConfigNames.QWEN2_5VL_3B)
+    embeddings_weights = get_weight_generator(
+        ConfigNames.QWEN2_5VL_3B
+    ).generate_vision_patch_embed_weights()
+
+    # Create test inputs for multiple images
+    in_channels = hf_vision_config.get("in_channels", 3)
+    temporal_patch_size = hf_vision_config["temporal_patch_size"]
+    patch_size = hf_vision_config["patch_size"]
+
+    # Calculate patches for each image and create grid_thw
+    grid_thw_list = []
+    total_seq_len = 0
+    pixel_values_list = []
+
+    for height, width in image_sizes:
+        # Calculate number of patches for this image
+        num_patches_h = height // patch_size
+        num_patches_w = width // patch_size
+        seq_len = num_patches_h * num_patches_w
+        input_dim = in_channels * temporal_patch_size * patch_size * patch_size
+
+        # Add to grid (temporal_patches=1 for images)
+        grid_thw_list.append([1, num_patches_h, num_patches_w])
+        total_seq_len += seq_len
+
+        # Generate pixel values for this image. mean and std simulate a real image.
+        image_pixel_values = torch.normal(
+            mean=1.3,
+            std=0.832,
+            size=(seq_len, input_dim),
+            dtype=torch.bfloat16,
+        )
+        pixel_values_list.append(image_pixel_values)
+
+    # Concatenate all pixel values
+    pixel_values = torch.cat(pixel_values_list, dim=0).to("cuda")
+
+    # Create grid_thw tensor [n_images, 3]
+    grid_thw = torch.tensor(grid_thw_list, dtype=torch.int64)
+
+    vision_transformer = HFQwen2_5VisionTransformer(
+        config=Qwen2_5_VLVisionConfig()
+    )
+    window_index, _ = vision_transformer.get_window_index(grid_thw)
+
+    # Generate reference output
+    torch_output = generate_torch_outputs(
+        pixel_values=pixel_values,
+        window_index=window_index,
+        hf_vision_config=hf_vision_config,
+        embeddings_weights=embeddings_weights,
+        device="cuda",
+        dtype=torch.bfloat16,
+    )
+
+    # Generate MAX output
+    max_output = generate_max_outputs(
+        pixel_values=pixel_values,
+        window_index=window_index,
+        qwen2_5vl_config=qwen2_5vl_config,
+        embeddings_weights=embeddings_weights,
+        dtype=DType.bfloat16,
+        device=Accelerator(),
+    )
+
+    # Verify output shape
+    expected_shape = (total_seq_len, hf_vision_config["hidden_size"])
+    assert max_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got {max_output.shape}"
+    )
+
+    # Compare outputs
+    assert_tensors_close(
+        torch_output,
+        max_output,
+        rtol=RTOL,
+        atol=ATOL,
+        message=f"Vision patch embedding multiple images of size {image_sizes} outputs do not match",
     )

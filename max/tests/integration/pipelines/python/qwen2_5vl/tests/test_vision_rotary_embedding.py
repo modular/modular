@@ -196,12 +196,6 @@ def generate_max_outputs(
 
 
 @pytest.mark.parametrize(
-    "config_name",
-    [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
-    ],
-)
-@pytest.mark.parametrize(
     "image_size",
     [
         224,  # Small image
@@ -209,15 +203,15 @@ def generate_max_outputs(
         672,  # Large image
     ],
 )
-def test_vision_rotary_embedding(
-    config_name: ConfigNames, image_size: int
-) -> None:
+def test_vision_rotary_embedding(image_size: int) -> None:
     """Test VisionRotaryEmbedding against PyTorch reference implementation."""
     torch.manual_seed(42)
 
     # Load config
     config_loader = get_config_loader()
-    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(config_name)
+    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(
+        ConfigNames.QWEN2_5VL_3B
+    )
     vision_config = qwen2_5vl_config["vision_config"]
 
     # Extract parameters
@@ -293,4 +287,121 @@ def test_vision_rotary_embedding(
         rtol=RTOL,
         atol=ATOL,
         message="Vision rotary embedding (sin) non-square outputs do not match",
+    )
+
+
+@pytest.mark.parametrize(
+    "image_sizes",
+    [
+        # Two square images of different sizes
+        [(224, 224), (448, 448)],
+        # Three images: non-square, non-square, square
+        [(224, 336), (448, 224), (672, 672)],
+        # Four images of various sizes
+        [(224, 224), (448, 672), (336, 224), (672, 448)],
+    ],
+)
+def test_vision_rotary_embedding_multiple_images(
+    image_sizes: list[tuple[int, int]],
+) -> None:
+    """Test VisionRotaryEmbedding with multiple images of different sizes."""
+    torch.manual_seed(42)
+
+    # Load config
+    config_loader = get_config_loader()
+    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(
+        ConfigNames.QWEN2_5VL_3B
+    )
+    vision_config = qwen2_5vl_config["vision_config"]
+
+    # Extract parameters
+    dim = vision_config["hidden_size"]
+    n_heads = vision_config["num_heads"]
+    patch_size = vision_config["patch_size"]
+    spatial_merge_size = vision_config["spatial_merge_size"]
+    theta = 10000.0
+
+    # Calculate dimensions for multiple images
+    spatial_merge_unit = spatial_merge_size * spatial_merge_size
+    grid_thw_list = []
+    total_seq_len = 0
+
+    for height, width in image_sizes:
+        # Calculate number of patches for this image
+        patches_h = height // patch_size
+        patches_w = width // patch_size
+        seq_len = patches_h * patches_w
+
+        # Add to grid (temporal_patches=1 for images)
+        grid_thw_list.append([1, patches_h, patches_w])
+        total_seq_len += seq_len
+
+    # Create grid_thw tensor [n_images, 3]
+    grid_thw = torch.tensor(grid_thw_list, dtype=torch.int64).to("cuda")
+
+    # Generate window index for multiple images
+    vision_transformer = HFQwen2_5VisionTransformer(
+        config=Qwen2_5_VLVisionConfig()
+    )
+    window_index, _ = vision_transformer.get_window_index(grid_thw)
+    window_index = window_index.to("cuda")
+
+    # Generate reference outputs using HuggingFace implementation
+    torch_cos_emb, torch_sin_emb = generate_torch_outputs(
+        dim=dim,
+        n_heads=n_heads,
+        grid_thw=grid_thw,
+        window_index=window_index,
+        spatial_merge_unit=spatial_merge_unit,
+        seq_len=total_seq_len,
+    )
+
+    # Generate MAX outputs
+    # Generate 2D position IDs for all images combined
+    pos_coords_2d, max_grid_size = max_rot_pos_emb(grid_thw, spatial_merge_size)
+    pos_ids = pos_coords_2d.to("cuda")
+
+    max_cos_emb, max_sin_emb = generate_max_outputs(
+        dim=dim,
+        n_heads=n_heads,
+        theta=theta,
+        rot_pos_ids=pos_ids,
+        window_index=window_index,
+        spatial_merge_unit=spatial_merge_unit,
+        max_grid_size=max_grid_size,
+        seq_len=total_seq_len,
+        dtype=DType.float32,
+        device=Accelerator(),
+    )
+
+    # Verify output shapes
+    expected_shape = (total_seq_len, dim // n_heads)
+    assert torch_cos_emb.shape == expected_shape, (
+        f"Expected torch cos shape {expected_shape}, got {torch_cos_emb.shape}"
+    )
+    assert torch_sin_emb.shape == expected_shape, (
+        f"Expected torch sin shape {expected_shape}, got {torch_sin_emb.shape}"
+    )
+    assert max_cos_emb.shape == expected_shape, (
+        f"Expected MAX cos shape {expected_shape}, got {max_cos_emb.shape}"
+    )
+    assert max_sin_emb.shape == expected_shape, (
+        f"Expected MAX sin shape {expected_shape}, got {max_sin_emb.shape}"
+    )
+
+    # Compare results
+    assert_tensors_close(
+        torch_cos_emb,
+        max_cos_emb,
+        rtol=RTOL,
+        atol=ATOL,
+        message="Vision rotary embedding (cos) multiple images outputs do not match",
+    )
+
+    assert_tensors_close(
+        torch_sin_emb,
+        max_sin_emb,
+        rtol=RTOL,
+        atol=ATOL,
+        message="Vision rotary embedding (sin) multiple images outputs do not match",
     )
