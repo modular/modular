@@ -59,6 +59,19 @@ alias c_long_long = Scalar[_c_long_long_dtype()]
 The C `long long` type is typically a signed 64-bit integer on commonly used
 targets today."""
 
+alias c_ulong = Scalar[_c_long_dtype[unsigned=True]()]
+"""C `unsigned long` type.
+
+The C `unsigned long` type is typically a 64-bit integer on commonly used
+targets today."""
+
+alias c_ulong_long = Scalar[_c_long_long_dtype[unsigned=True]()]
+"""C `unsigned long long` type.
+
+The C `unsigned long long` type is typically a 64-bit integer on commonly used
+targets today."""
+
+
 alias c_size_t = UInt
 """C `size_t` type."""
 
@@ -87,7 +100,7 @@ fn _get_max_path() -> Int:
         return 256
 
 
-fn _c_long_dtype() -> DType:
+fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
     @parameter
@@ -95,16 +108,16 @@ fn _c_long_dtype() -> DType:
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # LP64
-        return DType.int64
+        return DType.uint64 if unsigned else DType.int64
     elif is_64bit() and CompilationTarget.is_windows():
         # LLP64
-        return DType.int32
+        return DType.uint32 if unsigned else DType.int32
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
         return abort[DType]()
 
 
-fn _c_long_long_dtype() -> DType:
+fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
     @parameter
@@ -115,7 +128,7 @@ fn _c_long_long_dtype() -> DType:
     ):
         # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
         # model.
-        return DType.int64
+        return DType.uint64 if unsigned else DType.int64
     else:
         constrained[False, "size of C `long long` is unknown on this target"]()
         return abort[DType]()
