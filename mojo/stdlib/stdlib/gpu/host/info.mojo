@@ -782,6 +782,59 @@ alias RTX2060 = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# GTX1050
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_gtx1050_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA GTX 1050 GPU.
+
+    Returns:
+        MLIR target configuration for GTX 1050.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_61", `,
+        `features = "+ptx61,+sm_61", `,
+        `tune_cpu = "sm_61", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias GTX1050 = GPUInfo(
+    name="NVIDIA GeForce GTX 1050 Ti with Max-Q Design",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="pascal",
+    compile_options="nvptx-short-ptr=true",
+    compute=6.1,
+    version="sm_61",
+    sm_count=6,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=98304,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # MI300X
 # ===-----------------------------------------------------------------------===#
 
@@ -1201,6 +1254,8 @@ struct GPUInfo(Stringable, Writable):
         Returns:
             MLIR target configuration for the GPU.
         """
+        if self.name == "NVIDIA GeForce GTX 1050 Ti with Max-Q Design":
+            return _get_gtx1050_target()
         if self.name == "RTX2060":
             return _get_rtx2060_target()
         if self.name == "NVIDIA GeForce RTX 3090":
@@ -1786,6 +1841,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         in (
             # NVIDIA
             StaticString("cuda"),
+            StaticString("61"),
             StaticString("75"),
             StaticString("80"),
             StaticString("86"),
@@ -1813,6 +1869,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     ]()
 
     @parameter
+    if target_arch == "61":
+        return GTX1050
     if target_arch == "75":
         return RTX2060
     elif target_arch == "80":
