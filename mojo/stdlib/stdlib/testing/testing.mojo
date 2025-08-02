@@ -43,8 +43,15 @@ from python import PythonObject
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
-    return loc.prefix(String("AssertionError: ", msg))
+fn _assert_error[
+    append_message: fn[W: Writer] (mut writer: W) capturing
+](loc: _SourceLocation) -> Error:
+    @parameter
+    fn write_to[W: Writer](mut writer: W):
+        writer.write("AssertionError: ")
+        append_message(writer)
+
+    return loc._prefix[write_to]()
 
 
 @always_inline
@@ -70,7 +77,12 @@ fn assert_true[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     if not val:
-        raise _assert_error(msg, location.or_else(__call_location()))
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(msg)
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
@@ -96,7 +108,12 @@ fn assert_false[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     if val:
-        raise _assert_error(msg, location.or_else(__call_location()))
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(msg)
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
@@ -137,8 +154,8 @@ fn assert_equal[
 # more powerful traits.
 @always_inline
 fn assert_equal(
-    lhs: String,
-    rhs: String,
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
@@ -155,7 +172,11 @@ fn assert_equal(
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    if lhs != rhs:
+    # TODO(MSTDL-1071):
+    # Once Mojo supports parametric traits, implement EqualityComparable for
+    # StringSlice such that string slices with different origin types can be
+    # compared
+    if lhs != rebind[__type_of(lhs)](rhs):
         raise _assert_cmp_error["`left == right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
         )
@@ -415,8 +436,8 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_not_equal(
-    lhs: String,
-    rhs: String,
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
@@ -433,7 +454,11 @@ fn assert_not_equal(
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    if lhs == rhs:
+    # TODO(MSTDL-1071):
+    # Once Mojo supports parametric traits, implement EqualityComparable for
+    # StringSlice such that string slices with different origin types can be
+    # compared
+    if lhs == rebind[__type_of(lhs)](rhs):
         raise _assert_cmp_error["`left != right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
         )
@@ -557,16 +582,19 @@ fn assert_almost_equal[
     )
 
     if not all(almost_equal):
-        var err = String(lhs, " is not close to ", rhs)
 
         @parameter
-        if dtype.is_integral() or dtype.is_floating_point():
-            err += String(" with a diff of ", abs(lhs - rhs))
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(lhs, " is not close to ", rhs)
 
-        if msg:
-            err += String(" (", msg, ")")
+            @parameter
+            if dtype.is_integral() or dtype.is_floating_point():
+                writer.write(" with a diff of ", abs(lhs - rhs))
 
-        raise _assert_error(err, location.or_else(__call_location()))
+            if msg:
+                writer.write(" (", msg, ")")
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
@@ -638,12 +666,21 @@ fn assert_is_not[
 
 
 fn _assert_cmp_error[
-    cmp: String
-](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> String:
-    var err = cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs
-    if msg:
-        err += "\n  reason: " + msg
-    return _assert_error(err, loc)
+    cmp: StringSlice[mut=False]
+](
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
+    *,
+    msg: String,
+    loc: _SourceLocation,
+) -> Error:
+    @parameter
+    fn write_to[W: Writer](mut writer: W):
+        writer.write(cmp, " failed:\n   left: ", lhs, "\n  right: ", rhs)
+        if msg:
+            writer.write("\n  reason: ", msg)
+
+    return _assert_error[write_to](loc)
 
 
 struct assert_raises:
@@ -731,5 +768,12 @@ struct assert_raises:
             True if the error message contained the expected string.
         """
         if self.message_contains:
-            return self.message_contains.value() in String(error)
+            # FIXME: some weird origin bug that only happens for PyObjectPtr
+            # for macos 15 and ubuntu 24.04
+            @no_inline
+            @parameter
+            fn evaluate() -> Bool:
+                return self.message_contains.value() in error.as_string_slice()
+
+            return evaluate()
         return True
