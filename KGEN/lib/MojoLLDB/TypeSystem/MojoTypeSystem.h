@@ -186,7 +186,8 @@ public:
         childIsBaseClass, childIsDerefOfParent, valobj, language_flags);
   }
 
-  const llvm::fltSemantics &GetFloatTypeSemantics(size_t byteSize) override {
+  const llvm::fltSemantics &
+  GetFloatTypeSemantics(size_t byteSize, lldb::Format format) override {
     // It seems that we should return more specific types only if the target's
     // float standard differs from the host. We don't worry about that for now.
     return llvm::APFloatBase::Bogus();
