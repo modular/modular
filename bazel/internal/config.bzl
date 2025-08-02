@@ -64,9 +64,12 @@ def get_default_exec_properties(tags, target_compatible_with):
         exec_properties["test.dockerNetwork"] = "bridge"
 
     if "@//:has_multi_gpu" in gpu_constraints or "//:has_multi_gpu" in gpu_constraints:
+        exec_properties["test.resources:gpu-1"] = "0"
         exec_properties["test.resources:gpu-2"] = "0.01"
 
     if "@//:has_4_gpus" in gpu_constraints or "//:has_4_gpus" in gpu_constraints:
+        exec_properties["test.resources:gpu-1"] = "0"
+        exec_properties["test.resources:gpu-2"] = "0.01"
         exec_properties["test.resources:gpu-4"] = "0.01"
 
     return exec_properties
