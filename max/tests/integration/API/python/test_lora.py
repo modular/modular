@@ -90,7 +90,7 @@ def test_load_adapter_limit_exceeded(
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
         base_weights=mock_weights,
-        max_num_loras=2,
+        max_num_loras=1,
         max_lora_rank=16,
     )
 

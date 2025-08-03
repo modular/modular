@@ -269,15 +269,3 @@ def create_tokenizer(
         max_new_tokens=max_length,
         trust_remote_code=True,
     )
-
-
-def get_model_revision() -> str:
-    """Get the locked model revision for testing.
-
-    Returns:
-        str: Model revision from hf-repo-lock.tsv
-    """
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    return REVISION

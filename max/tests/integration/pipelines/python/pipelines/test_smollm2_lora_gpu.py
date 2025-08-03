@@ -5,197 +5,220 @@
 # ===----------------------------------------------------------------------=== #
 """Test Suite for SmolLM2 with LoRA adapters."""
 
-from typing import Any
-
 import pytest
 from max.interfaces import (
     SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )
+from max.pipelines import TextGenerationPipeline
+from max.pipelines.core.context import TextContext
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,
-    create_pipeline_base,
     create_pipeline_with_lora,
     create_test_lora_adapter,
     create_tokenizer,
 )
 
 
+def generate_tokens_from_contexts(
+    pipeline: TextGenerationPipeline, contexts: dict[str, TextContext]
+) -> dict[str, list[int]]:
+    """Generate tokens from multiple contexts using the same pipeline.
+
+    Args:
+        pipeline: The text generation pipeline to use
+        contexts: Dictionary mapping request_id to TextContext
+
+    Returns:
+        Dictionary mapping request_id to list of generated tokens
+    """
+    all_tokens: dict[str, list[int]] = {req_id: [] for req_id in contexts}
+    active_contexts = contexts.copy()
+
+    while active_contexts:
+        response = pipeline.execute(
+            TextGenerationInputs(active_contexts, num_steps=1)
+        )
+        for req_id, resp in response.items():
+            all_tokens[req_id].extend(resp.tokens)
+            if resp.is_done:
+                del active_contexts[req_id]
+
+    return all_tokens
+
+
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
 @pytest.mark.asyncio
 async def test_smollm2_with_lora_adapter() -> None:
     """Test SmolLM2 with LoRA adapter loaded."""
-    # Create test LoRA adapter and pipeline
     lora_path = create_test_lora_adapter()
-    pipeline_with_lora = create_pipeline_with_lora([lora_path])
+    pipeline = create_pipeline_with_lora([lora_path])
     tokenizer = create_tokenizer()
 
-    # Verify LoRA manager is initialized
-    assert pipeline_with_lora._pipeline_model._lora_manager is not None
-    assert len(pipeline_with_lora._pipeline_model._lora_manager._loras) == 1
-    assert lora_path in pipeline_with_lora._pipeline_model._lora_manager._loras
+    assert pipeline._pipeline_model._lora_manager is not None
+    assert len(pipeline._pipeline_model._lora_manager._loras) == 1
+    assert lora_path in pipeline._pipeline_model._lora_manager._loras
 
-    # Test generation with LoRA
-    prompt = "What is machine learning?"
-    sampling_params = SamplingParams(max_new_tokens=50, temperature=0.7)
+    prompt = "The future of AI is"
+    sampling_params = SamplingParams(
+        max_new_tokens=30,
+        temperature=0.0,
+        top_k=1,
+    )
 
-    context = await tokenizer.new_context(
+    base_context = await tokenizer.new_context(
         TextGenerationRequest(
-            request_id="test_lora",
+            request_id="base",
             index=0,
             prompt=prompt,
-            model_name=lora_path,  # Use LoRA adapter
+            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             sampling_params=sampling_params,
         )
     )
 
-    # Generate tokens
-    generated_tokens = []
-    contexts = {"test": context}
-
-    while contexts:
-        response = pipeline_with_lora.execute(
-            TextGenerationInputs(contexts, num_steps=1)
+    lora_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id="lora",
+            index=1,
+            prompt=prompt,
+            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+            lora_name=lora_path,
+            sampling_params=sampling_params,
         )
+    )
 
-        for req_id, resp in response.items():
-            generated_tokens.extend(resp.tokens)
+    base_tokens = generate_tokens_from_contexts(
+        pipeline, {"base": base_context}
+    )["base"]
+    lora_tokens = generate_tokens_from_contexts(
+        pipeline, {"lora": lora_context}
+    )["lora"]
 
-            if resp.is_done:
-                del contexts[req_id]
+    assert len(base_tokens) > 0
+    assert len(lora_tokens) > 0
+    assert len(lora_tokens) <= 30
 
-    # Verify we generated some tokens
-    assert len(generated_tokens) > 0
-    assert len(generated_tokens) <= 50
-
-    pipeline_with_lora.release(context.request_id)
+    pipeline.release(base_context.request_id)
+    pipeline.release(lora_context.request_id)
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
 @pytest.mark.asyncio
 async def test_lora_vs_base_comparison() -> None:
     """Compare outputs between base model and LoRA-adapted model."""
-    # Create test LoRA adapter and pipelines
     lora_path = create_test_lora_adapter()
-    pipeline_with_lora = create_pipeline_with_lora([lora_path])
-    pipeline_base = create_pipeline_base()
+    pipeline = create_pipeline_with_lora([lora_path])
     tokenizer = create_tokenizer()
 
     prompt = "The future of AI is"
     sampling_params = SamplingParams(
         max_new_tokens=30,
-        temperature=0.0,  # Deterministic for comparison
+        temperature=0.0,
         top_k=1,
     )
 
-    # Generate with base model
     base_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="base",
             index=0,
             prompt=prompt,
-            model_name="base",  # Don't use LoRA
+            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             sampling_params=sampling_params,
         )
     )
 
-    # Generate with LoRA model
     lora_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="lora",
-            index=0,
+            index=1,
             prompt=prompt,
-            model_name=lora_path,  # Use LoRA
+            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+            lora_name=lora_path,
             sampling_params=sampling_params,
         )
     )
 
-    base_tokens = []
-    lora_tokens = []
+    base_tokens = generate_tokens_from_contexts(
+        pipeline, {"base": base_context}
+    )["base"]
+    lora_tokens = generate_tokens_from_contexts(
+        pipeline, {"lora": lora_context}
+    )["lora"]
 
-    # Generate from base model
-    contexts = {"base": base_context}
-    while contexts:
-        response = pipeline_base.execute(
-            TextGenerationInputs(contexts, num_steps=1)
-        )
-        for req_id, resp in response.items():
-            base_tokens.extend(resp.tokens)
-            if resp.is_done:
-                del contexts[req_id]
-
-    # Generate from LoRA model
-    contexts = {"lora": lora_context}
-    while contexts:
-        response = pipeline_with_lora.execute(
-            TextGenerationInputs(contexts, num_steps=1)
-        )
-        for req_id, resp in response.items():
-            lora_tokens.extend(resp.tokens)
-            if resp.is_done:
-                del contexts[req_id]
-
-    # With a proper LoRA adapter, outputs should differ
-    # For a minimal test adapter, they might be similar but not identical
     assert len(base_tokens) > 0
     assert len(lora_tokens) > 0
 
-    # Clean up
-    pipeline_base.release(base_context.request_id)
-    pipeline_with_lora.release(lora_context.request_id)
+    pipeline.release(base_context.request_id)
+    pipeline.release(lora_context.request_id)
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
 @pytest.mark.asyncio
 async def test_multiple_lora_adapters() -> None:
     """Test loading and using multiple LoRA adapters."""
-    # Create multiple test LoRA adapters and pipeline
     lora_paths = create_multiple_test_lora_adapters(num_adapters=2)
     pipeline = create_pipeline_with_lora(lora_paths)
     tokenizer = create_tokenizer()
 
-    # Verify multiple adapters loaded
     assert pipeline._pipeline_model._lora_manager is not None
     assert len(pipeline._pipeline_model._lora_manager._loras) == len(lora_paths)
 
-    # Test generation with different adapters
-    prompts = [
-        ("What is AI?", lora_paths[0]),
-        ("Explain quantum computing", lora_paths[1]),
-        ("What is machine learning?", "base"),  # Use base model
-    ]
+    prompt = "The future of AI is"
+    sampling_params = SamplingParams(
+        max_new_tokens=20,
+        temperature=0.0,
+        top_k=1,
+    )
 
-    contexts = {}
-    for i, (prompt, model_name) in enumerate(prompts):
-        context = await tokenizer.new_context(
+    contexts = {
+        "base": await tokenizer.new_context(
             TextGenerationRequest(
-                request_id=f"req_{i}",
-                index=i,
+                request_id="base",
+                index=0,
                 prompt=prompt,
-                model_name=model_name,
-                sampling_params=SamplingParams(max_new_tokens=20),
+                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+                sampling_params=sampling_params,
             )
-        )
-        contexts[f"req_{i}"] = context
+        ),
+        "lora1": await tokenizer.new_context(
+            TextGenerationRequest(
+                request_id="lora1",
+                index=1,
+                prompt=prompt,
+                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+                lora_name=lora_paths[0],
+                sampling_params=sampling_params,
+            )
+        ),
+        "lora2": await tokenizer.new_context(
+            TextGenerationRequest(
+                request_id="lora2",
+                index=2,
+                prompt=prompt,
+                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+                lora_name=lora_paths[1],
+                sampling_params=sampling_params,
+            )
+        ),
+    }
 
-    # Generate tokens for all requests
-    results: dict[str, list[Any]] = {req_id: [] for req_id in contexts}
+    all_tokens = {
+        "base": generate_tokens_from_contexts(
+            pipeline, {"base": contexts["base"]}
+        )["base"],
+        "lora1": generate_tokens_from_contexts(
+            pipeline, {"lora1": contexts["lora1"]}
+        )["lora1"],
+        "lora2": generate_tokens_from_contexts(
+            pipeline, {"lora2": contexts["lora2"]}
+        )["lora2"],
+    }
 
-    while contexts:
-        response = pipeline.execute(TextGenerationInputs(contexts, num_steps=1))
+    for name, tokens in all_tokens.items():
+        assert len(tokens) > 0, f"No tokens generated for {name}"
+        assert len(tokens) <= 20, f"Too many tokens for {name}: {len(tokens)}"
 
-        for req_id, resp in response.items():
-            results[req_id].extend(resp.tokens)
-
-            if resp.is_done:
-                pipeline.release(req_id)
-                del contexts[req_id]
-
-    # Verify all requests generated tokens
-    for req_id, tokens in results.items():
-        assert len(tokens) > 0, f"Request ID: {req_id} produced 0 tokens."
-        assert len(tokens) <= 20, (
-            f"Request ID: {req_id} produced more than 20 tokens."
-        )
+    for context in contexts.values():
+        pipeline.release(context.request_id)

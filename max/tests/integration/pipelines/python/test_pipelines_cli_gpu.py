@@ -95,12 +95,8 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
 def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
     """Test SmolLM2 with LoRA adapter via CLI."""
-    from test_common.lora_utils import REPO_ID as LORA_REPO_ID
-    from test_common.lora_utils import get_model_revision
-
     lora_path = create_test_lora_adapter(prefix="cli_test")
-    model_path = LORA_REPO_ID
-    revision = get_model_revision()
+    model_path = REPO_ID
 
     with pytest.raises(SystemExit):
         pipelines.main(
@@ -137,15 +133,12 @@ def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
 @pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
 def test_pipelines_cli__smollm_with_multiple_loras(capsys) -> None:  # noqa: ANN001
     """Test SmolLM2 with multiple LoRA adapters via CLI."""
-    from test_common.lora_utils import REPO_ID as LORA_REPO_ID
-    from test_common.lora_utils import get_model_revision
 
     # Create multiple LoRA adapters
     lora_adapter_paths = create_multiple_test_lora_adapters(
         num_adapters=2, prefix="cli_multi_test"
     )
-    model_path = LORA_REPO_ID
-    revision = get_model_revision()
+    model_path = REPO_ID
 
     # Multiple LoRA adapters with names
     lora_paths = [
