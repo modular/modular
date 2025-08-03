@@ -384,12 +384,12 @@ class LoRAManager:
             RuntimeError: If no available slots are left.
         """
         # Reserve the last slot (max_num_loras - 1) for inactive LoRAs
-        for i, slot in enumerate(self._lora_index_to_id[:-1]):
+        for i, slot in enumerate(self._lora_index_to_id):
             if slot is None:
                 return i
 
         raise RuntimeError(
-            f"No available LoRA slots left. Current max is: {self.max_num_loras - 1}"
+            f"No available LoRA slots left. Current max is: {self.max_num_loras}"
         )
 
     def load_adapter(self, path: str) -> str | None:
@@ -626,7 +626,7 @@ class LoRAManager:
             for req_id, _ in sorted(
                 batch.items(),
                 key=lambda item: self._model_name_to_rank(
-                    getattr(item[1], "model_name")  # noqa: B009
+                    getattr(item[1], "lora_name")  # noqa: B009
                 ),
             )
         }
