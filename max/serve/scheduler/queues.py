@@ -21,12 +21,13 @@ import multiprocessing.process
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from typing import Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 import zmq
 from max.interfaces import (
-    InputContext,
+    BaseContextType,
     PipelineTask,
+    RequestID,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -35,14 +36,12 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
-ReqId = TypeVar("ReqId")
-ReqInput = TypeVar("ReqInput", bound=InputContext)
 ReqOutput = TypeVar("ReqOutput")
 
 """The sentinel used to indicate a queue is finished."""
 
 
-class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
+class EngineQueue(Generic[BaseContextType, ReqOutput]):
     """Container for managing interactions between a remote model worker process
 
     As part of its work, response_worker will verify that the remote process is
@@ -64,13 +63,15 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.context = context
 
         # Create Queues
-        self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
+        self.request_push_socket = ZmqPushSocket[
+            tuple[RequestID, BaseContextType]
+        ](
             zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             serialize=msgpack_numpy_encoder(use_shared_memory=True),
         )
 
-        self.response_pull_socket = ZmqPullSocket[dict[ReqId, ReqOutput]](
+        self.response_pull_socket = ZmqPullSocket[dict[RequestID, ReqOutput]](
             zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
@@ -82,9 +83,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             serialize=msgpack_numpy_encoder(),
         )
 
-        self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
+        self.pending_out_queues: dict[RequestID, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
-        self._proc: Optional[multiprocessing.process.BaseProcess] = None
+        self._proc: multiprocessing.process.BaseProcess | None = None
 
     def use_process_healthcheck(
         self, proc: multiprocessing.process.BaseProcess
@@ -110,7 +111,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
     @contextlib.contextmanager
     def open_channel(
-        self, req_id: ReqId, data: ReqInput
+        self, req_id: RequestID, data: BaseContextType
     ) -> Generator[asyncio.Queue, None, None]:
         """
         Context manager to open a communication channel for a specific request.
@@ -120,8 +121,8 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         the context, the queue is cleaned up from the pending output queues.
 
         Args:
-            req_id (ReqId): The unique identifier for the request.
-            data (ReqInput): The input data associated with the request.
+            req_id (RequestID): The unique identifier for the request.
+            data (BaseContextType): The input data associated with the request.
 
         Yields:
             asyncio.Queue: The queue to receive streamed results for the request.
@@ -149,7 +150,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             del self.pending_out_queues[req_id]
 
     async def stream(
-        self, req_id: ReqId, data: ReqInput
+        self, req_id: RequestID, data: BaseContextType
     ) -> AsyncGenerator[ReqOutput, None]:
         """
         Asynchronously streams results for a given request ID and input data.

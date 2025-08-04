@@ -20,13 +20,16 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional
 
 import numpy as np
 from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
+    AudioGeneratorContext,
     AudioGeneratorOutput,
+    BaseContextType,
+    LogProbabilities,
     PipelineTokenizer,
     TextGenerationRequest,
 )
@@ -59,17 +62,14 @@ class TokenGeneratorStats:
     token_gen_batch_calls: int = 0
 
 
-TokenGeneratorContext = TypeVar("TokenGeneratorContext")
-
-
-class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
+class TokenGeneratorPipeline(Generic[BaseContextType]):
     """Base class for LLM text generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
         tokenizer: PipelineTokenizer,
-        engine_queue: EngineQueue,
+        engine_queue: EngineQueue[BaseContextType, Any],
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.TokenGeneratorPipeline"
@@ -85,7 +85,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_log_probs(self, log_prob, context, skip_special_tokens):  # noqa: ANN001
+    async def _collect_log_probs(
+        self,
+        log_prob: LogProbabilities,
+        skip_special_tokens: bool,
+    ) -> tuple[list[float], list[dict[str, float]]]:
         token_log_probabilities = log_prob.token_log_probabilities
         top_log_probabilities = []
         for top_log_probs in log_prob.top_log_probabilities:
@@ -172,7 +176,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                                 token_log_probabilities,
                                 top_log_probabilities,
                             ) = await self._collect_log_probs(
-                                log_prob, context, skip_special_tokens
+                                log_prob, skip_special_tokens
                             )
                             del tracer  # collect_log_probs
 
@@ -262,7 +266,9 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
+    async def __aexit__(
+        self, exc_type: Any, exc_value: Any, traceback: Any
+    ) -> None:
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
@@ -307,9 +313,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             os.kill(os.getpid(), signal.SIGTERM)
 
 
-AudioGeneratorContext = TypeVar("AudioGeneratorContext")
-
-
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
@@ -317,7 +320,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self,
         model_name: str,
         tokenizer: PipelineTokenizer,
-        engine_queue: EngineQueue,
+        engine_queue: EngineQueue[AudioGeneratorContext, Any],
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.AudioGeneratorPipeline"
@@ -332,7 +335,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_audio_metadata(self, response, context):  # noqa: ANN001
+    async def _collect_audio_metadata(
+        self, response: AudioGeneratorOutput, context: AudioGeneratorContext
+    ) -> AudioGenerationMetadata:
         # Collect metadata about generated audio like duration, sample rate etc.
         sample_rate = getattr(response, "sample_rate", None)
         duration = getattr(response, "duration", None)
@@ -438,7 +443,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
+    async def __aexit__(
+        self, exc_type: Any, exc_value: Any, traceback: Any
+    ) -> None:
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()

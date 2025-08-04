@@ -22,11 +22,11 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable
+from typing import Any, Callable
 
 import uvloop
 import zmq
-from max.interfaces import PipelinesFactory, PipelineTask
+from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -258,7 +258,7 @@ async def start_model_worker(
         mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
     zmq_ctx = zmq.Context(io_threads=zmq_io_threads)
-    engine_queue: EngineQueue = EngineQueue(
+    engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
         mp_context,
         worker_pc=pc,
         request_zmq_endpoint=settings.request_zmq_endpoint,
