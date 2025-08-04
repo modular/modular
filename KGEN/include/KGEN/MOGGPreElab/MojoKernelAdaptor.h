@@ -135,7 +135,10 @@ struct MojoKernelOperandAdaptor {
 
   MojoKernelOperandAdaptor(std::optional<uint64_t> positionInFunction,
                            StringAttr typeName, ArrayAttr argumentSourceNames,
-                           ArrayAttr argsIoSpecs, bool isByRefResult = false);
+                           ArrayAttr argsIoSpecs, bool isByRefResult = false,
+                           bool promoteSIMDToFusedTensor = false);
+
+  static MojoKernelOperandAdaptor buildElementwiseOutputOperand();
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
@@ -311,8 +314,59 @@ struct MojoKernelFunctionAdaptor {
     }
   }
 
-  inline bool isElementwise() {
-    return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseKernel);
+  // Synthesize the execute function from an elementwise method.
+  static MojoKernelFunctionAdaptor
+  synthesizeExecuteFromElementwise(FuncOpType op) {
+    FuncOpType mojoCode = op;
+    MojoKernelFunctionAdaptor res;
+    res.mojoCode = op;
+    auto argumentTypesNames = mojoCode->template getAttrOfType<ArrayAttr>(
+        KGEN::MOGGPreElab::MOGG_ARG_TYPE_NAMES);
+    auto resultTypeNameAttr =
+        mojoCode->getAttr(KGEN::MOGGPreElab::MOGG_RESULT_TYPE_NAME);
+    auto numberOfOutputArgumentsAttr =
+        mojoCode->template getAttrOfType<IntegerAttr>(
+            KGEN::MOGGPreElab::kMOGGNumDPSOutputs);
+    auto argumentSourceNames = mojoCode->template getAttrOfType<ArrayAttr>(
+        KGEN::MOGGPreElab::MOGG_ARG_SRC_NAMES);
+    auto argsIoSpecsAttr = mojoCode->template getAttrOfType<ArrayAttr>(
+        KGEN::MOGGPreElab::kMOGGArgsIOSpecs);
+
+    uint64_t begOfInputArguments =
+        numberOfOutputArgumentsAttr ? numberOfOutputArgumentsAttr.getInt() : 0;
+    auto funcTypeGenerator = mojoCode.getFuncTypeGenerator().getBody();
+    bool resultAsArgument = false;
+    for (uint64_t i = 0; i < mojoCode.getNumArguments(); ++i) {
+      if (funcTypeGenerator.getArgConvention(i) ==
+          KGEN::ArgConvention::ByRefResult) {
+        resultAsArgument = true;
+        break;
+      }
+    }
+    bool isThrow = funcTypeGenerator.isThrows();
+    uint64_t numberOfArgumentsRelatedToByrefResult =
+        isThrow ? 2 : resultAsArgument;
+    size_t endOfInputArguments =
+        argumentTypesNames.size() - numberOfArgumentsRelatedToByrefResult;
+
+    for (size_t i = begOfInputArguments; i < endOfInputArguments; ++i) {
+      auto argTypeName = dyn_cast<StringAttr>(argumentTypesNames[i]);
+      if (i + 1 == endOfInputArguments &&
+          argTypeName ==
+              KGEN::MOGGPreElab::MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME) {
+        // The last argument of an elementwise function is the IndexList
+        // argument. Skip it for the execute function.
+        continue;
+      }
+      res.inputArguments.emplace_back(i, argTypeName, argumentSourceNames,
+                                      argsIoSpecsAttr, begOfInputArguments,
+                                      /*promoteSIMDToFusedTensor=*/true);
+    }
+
+    // Manually build the output tensor for the elementwise op.
+    res.outputArguments.push_back(
+        MojoKernelOperandAdaptor::buildElementwiseOutputOperand());
+    return res;
   }
 
   inline bool isView() {
@@ -346,6 +400,9 @@ struct MojoKernelFunctionAdaptor {
 
     return os;
   }
+
+private:
+  MojoKernelFunctionAdaptor() = default;
 };
 
 // A helper struct that provides useful information about a kernel after being
@@ -360,7 +417,11 @@ struct MojoKernelAdaptor {
   // The kernel's optional shape function.
   std::optional<MojoKernelFunctionAdaptor<FuncOpType>> shapeFunction;
 
-  MojoKernelAdaptor(StringRef structName, FuncOpType execute, FuncOpType shape)
+  // The kernel's optional elementwise function.
+  std::optional<MojoKernelFunctionAdaptor<FuncOpType>> elementwiseFunction;
+
+  MojoKernelAdaptor(StringRef structName, FuncOpType execute, FuncOpType shape,
+                    FuncOpType elementwise)
       : originalStructName(structName) {
     if (execute) {
       executeFunction.emplace(execute);
@@ -377,10 +438,28 @@ struct MojoKernelAdaptor {
                                  KGEN::MOGGPreElab::kMOGGShapeFunctionLabel)
                              .strref();
     }
+
+    if (elementwise) {
+      elementwiseFunction.emplace(elementwise);
+      registeredOpName =
+          elementwise
+              ->template getAttrOfType<StringAttr>(
+                  KGEN::MOGGPreElab::kMOGGElementwiseFunctionLabel)
+              .strref();
+      // TODO: We should always synthetize the execute signature. (GEX-2453).
+      if (!execute) {
+        // We synthetize the execute function signature from the elementwise
+        // function.
+        executeFunction = MojoKernelFunctionAdaptor<
+            FuncOpType>::synthesizeExecuteFromElementwise(elementwise);
+      }
+    }
   }
 
   /// TODO: (GEX-1994) Remove this.
   bool isCoreMOOperation() const { return registeredOpName.starts_with("mo."); }
+
+  bool isElementwise() { return elementwiseFunction.has_value(); }
 };
 
 //===----------------------------------------------------------------------===//

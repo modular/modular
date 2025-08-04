@@ -219,7 +219,8 @@ inline bool isElemwiseForeachFunc(Operation *gen) {
 inline bool isExtensibilityFunc(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
                             gen->hasAttr(kMOGGShapeFunctionLabel) ||
-                            gen->hasAttr(kMOGGUpdateViewFunctionLabel));
+                            gen->hasAttr(kMOGGUpdateViewFunctionLabel) ||
+                            gen->hasAttr(kMOGGElementwiseFunctionLabel));
 }
 
 //===----------------------------------------------------------------------===//
@@ -237,6 +238,9 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_INT_TYPE_NAME = "stdlib::Int";
 constexpr StringLiteral MOJO_INTERNAL_DPS_UINT_TYPE_NAME = "stdlib::UInt";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_BOOL_TYPE_NAME = "stdlib::Bool";
+
+constexpr StringLiteral MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME =
+    "stdlib::IndexList";
 
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME =

@@ -900,7 +900,7 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-      LIT::FnOp executeOp, updateViewOp;
+      LIT::FnOp executeOp, updateViewOp, elementwiseOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FnOp>(curOp);
         if (!func)
@@ -928,12 +928,13 @@ public:
                   structDeclOp, registrationInfo, func,
                   kMOGGElementwiseFunctionLabel, builder)))
             return WalkResult::interrupt();
+          elementwiseOp = func;
           registrationInfo.isElementwiseKernel = true;
         }
       }
 
       // Some struct verifiers
-      if (!executeOp) {
+      if (!executeOp && !elementwiseOp) {
         structDeclOp.emitError(llvm::formatv(
             "The kernel must have an entry point named {0}", kExecuteFuncName));
         return WalkResult::interrupt();
