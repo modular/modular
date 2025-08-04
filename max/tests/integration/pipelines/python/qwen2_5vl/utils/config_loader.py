@@ -52,9 +52,6 @@ class ConfigLoader:
 
         vision_config = full_config["vision_config"].copy()
         # Add missing attributes that tests expect
-        vision_config["image_size"] = (
-            448  # Default image size for InternVL, should work for Qwen2.5VL I think...
-        )
         vision_config["in_channels"] = vision_config.get("in_chans", 3)
 
         return vision_config

@@ -8,6 +8,7 @@
 
 import pytest
 import torch
+import torch.nn.functional as F
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -16,6 +17,12 @@ from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionWindowSdpaAttention,
 )
 from torch.utils.dlpack import from_dlpack
+from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
+    Qwen2_5_VLVisionConfig,
+)
+from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
+    Qwen2_5_VisionTransformerPretrainedModel as HFQwen2_5VisionTransformer,
+)
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VLVisionAttention as HFQwen2_5VLVisionAttention,
 )
@@ -24,163 +31,118 @@ from utils.config_loader import ConfigNames, get_config_loader
 from utils.weight_converter import convert_hf_to_max_weights
 from utils.weight_generator import get_weight_generator
 
+RTOL = 2e-2
+ATOL = 5e-3
 
-def generate_rot_pos_emb(
-    grid_thw: torch.Tensor,
-    spatial_merge_size: int,
-    head_dim: int,
-    theta: float = 10000.0,
-    device: torch.device = torch.device("cuda"),
+
+def generate_cu_seqlens_full_attention(grid_thw: torch.Tensor) -> torch.Tensor:
+    """Generate cu_seqlens for full attention layers following PyTorch implementation."""
+    cu_seqlens = torch.repeat_interleave(
+        grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+    ).cumsum(
+        dim=0,
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+    cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+    return cu_seqlens
+
+
+def generate_cu_seqlens_window_attention(
+    cu_window_seqlens: torch.Tensor,
 ) -> torch.Tensor:
-    """Generate rotary position embeddings based on grid dimensions.
+    """Generate cu_seqlens for window attention layers following PyTorch implementation."""
+    cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
+    cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+    return cu_window_seqlens
 
-    This function implements M-RoPE (Multimodal Rotary Position Embedding) for Qwen2.5VL,
-    handling spatial structure with temporal, height, and width dimensions.
 
-    Args:
-        grid_thw: Tensor of shape (num_grids, 3) containing (temporal, height, width) dimensions
-        spatial_merge_size: Size of spatial merging (e.g., 2 means 2x2 patches are merged)
-        head_dim: Dimension of attention heads
-        theta: Base for frequency computation
-        device: Device to create tensors on
+def generate_torch_rotary_embeddings(
+    vision_transformer: HFQwen2_5VisionTransformer,
+    grid_thw: torch.Tensor,
+    window_index: torch.Tensor,
+    spatial_merge_unit: int,
+    seq_len: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Generate rotary position embeddings using HuggingFace implementation."""
+    # Generate position embeddings using HF implementation
+    rotary_pos_emb = vision_transformer.rot_pos_emb(grid_thw)
 
-    Returns:
-        Rotary position embeddings of shape (total_patches, head_dim // 2)
-    """
-    pos_ids = []
-
-    for t, h, w in grid_thw:
-        t, h, w = int(t), int(h), int(w)
-
-        # Generate height position IDs
-        hpos_ids = torch.arange(h, device=device).unsqueeze(1).expand(-1, w)
-        hpos_ids = hpos_ids.reshape(
-            h // spatial_merge_size,
-            spatial_merge_size,
-            w // spatial_merge_size,
-            spatial_merge_size,
-        )
-        hpos_ids = hpos_ids.permute(0, 2, 1, 3)
-        hpos_ids = hpos_ids.flatten()
-
-        # Generate width position IDs
-        wpos_ids = torch.arange(w, device=device).unsqueeze(0).expand(h, -1)
-        wpos_ids = wpos_ids.reshape(
-            h // spatial_merge_size,
-            spatial_merge_size,
-            w // spatial_merge_size,
-            spatial_merge_size,
-        )
-        wpos_ids = wpos_ids.permute(0, 2, 1, 3)
-        wpos_ids = wpos_ids.flatten()
-
-        # Stack and repeat for temporal dimension
-        pos_ids.append(torch.stack([hpos_ids, wpos_ids], dim=-1).repeat(t, 1))
-
-    pos_ids = torch.cat(pos_ids, dim=0)
-
-    # Get maximum grid size
-    max_grid_size = int(grid_thw[:, 1:].max().item())
-
-    # Generate inverse frequencies
-    inv_freq = 1.0 / (
-        theta
-        ** (
-            torch.arange(
-                0,
-                head_dim // 2,
-                dtype=torch.float32,
-                device=device,
-            )
-            / (head_dim // 2)
-        )
+    # Reshape and reorder as per the specification
+    rotary_pos_emb = rotary_pos_emb.reshape(
+        seq_len // spatial_merge_unit, spatial_merge_unit, -1
     )
+    # Ensure rotary_pos_emb is on the same device as window_index
+    rotary_pos_emb = rotary_pos_emb.to(window_index.device)
+    rotary_pos_emb = rotary_pos_emb[window_index, :, :]
+    rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
+    emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
 
-    # Generate full rotary embeddings
-    t = torch.arange(max_grid_size, dtype=torch.float32, device=device)
-    rotary_pos_emb_full = torch.outer(t, inv_freq)
-
-    # The HuggingFace model expects embeddings after spatial merging
-    # Calculate the actual sequence length after merging
-    total_patches = pos_ids.shape[0]
-    seq_len_after_merge = total_patches // (spatial_merge_size**2)
-
-    # For now, generate simple sequential embeddings for the merged sequence
-    # This matches what the HuggingFace model expects
-    pos_range = torch.arange(
-        seq_len_after_merge, dtype=torch.float32, device=device
-    )
-    rotary_pos_emb = torch.outer(pos_range, inv_freq)
-
-    return rotary_pos_emb
+    return emb.cos().to(torch.bfloat16), emb.sin().to(torch.bfloat16)
 
 
 @torch.no_grad()
 def generate_torch_outputs(
-    hf_config: dict,
     input_tensor: torch.Tensor,
     vision_attention_weights: dict[str, torch.Tensor],
+    position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
-    spatial_merge_size: int = 2,
+    cu_window_seqlens: torch.Tensor,
+    hf_config: dict,
+    use_window_attention: bool = False,
 ) -> torch.Tensor:
     """Generate reference outputs using HuggingFace Qwen2.5VL implementation."""
-    # Create the HuggingFace attention layer - it expects dim and num_heads as direct arguments
-    hidden_size = hf_config["hidden_size"]
-    num_heads = hf_config["num_heads"]
-    layer = (
-        HFQwen2_5VLVisionAttention(dim=hidden_size, num_heads=num_heads)
+    # Create the HuggingFace attention layer
+    attention_layer = (
+        HFQwen2_5VLVisionAttention(
+            dim=hf_config["hidden_size"],
+            num_heads=hf_config["num_heads"],
+        )
         .to(torch.bfloat16)
         .to("cuda")
     )
 
     # Load weights using state_dict
-    layer.load_state_dict(vision_attention_weights, strict=True)
-    layer.eval()
+    attention_layer.load_state_dict(vision_attention_weights, strict=True)
+    attention_layer.eval()
 
-    # Create dummy cu_seqlens for attention
-    batch_size, seq_len, hidden_size = input_tensor.shape
-    cu_seqlens = torch.tensor(
-        [0, seq_len], dtype=torch.int32, device=input_tensor.device
-    )
+    # Generate appropriate cu_seqlens based on attention type
+    seq_len, hidden_size = input_tensor.shape
 
-    # Generate rotary embeddings using the helper function
-    head_dim = hidden_size // hf_config["num_heads"]
-    rotary_pos_emb = generate_rot_pos_emb(
-        grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
-        head_dim=head_dim,
-        theta=10000.0,
-        device=input_tensor.device,
-    ).to(torch.bfloat16)
+    if use_window_attention:
+        cu_seqlens = generate_cu_seqlens_window_attention(cu_window_seqlens)
+    else:
+        cu_seqlens = generate_cu_seqlens_full_attention(grid_thw)
 
-    # Flatten input to (seq_len, hidden_size) as HF expects
-    input_flattened = input_tensor.reshape(-1, hidden_size)
+    cu_seqlens = cu_seqlens.to(input_tensor.device)
 
+    # Create attention layer
     with torch.no_grad():
-        output = layer(
-            input_flattened,
+        output = attention_layer(
+            hidden_states=input_tensor,
             cu_seqlens=cu_seqlens,
-            rotary_pos_emb=rotary_pos_emb,
+            position_embeddings=position_embeddings,
         )
 
     return output
 
 
 def generate_max_outputs(
-    max_config: dict,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
+    position_embeddings: tuple[torch.Tensor, torch.Tensor],
+    grid_thw: torch.Tensor,
+    cu_window_seqlens: torch.Tensor,
+    qwen2_5vl_config: dict,
     dtype: DType,
     device: Device,
-    grid_thw: torch.Tensor,
-    spatial_merge_size: int = 2,
+    use_window_attention: bool = False,
 ) -> torch.Tensor:
     """Generate outputs using MAX Qwen2.5VL vision attention implementation."""
     is_gpu = isinstance(device, Accelerator)
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
 
-    vision_config = max_config["vision_config"]
+    vision_config = qwen2_5vl_config["vision_config"]
 
     # Convert HuggingFace weights to MAX format using weight converter
     max_weights = convert_hf_to_max_weights(attention_weights)
@@ -199,52 +161,49 @@ def generate_max_outputs(
     session = InferenceSession(devices=[device])
 
     # Build the graph
-    batch_size, seq_len, hidden_size = input_tensor.shape
-    input_type = TensorType(
-        dtype, [batch_size, seq_len, hidden_size], device=device_ref
-    )
+    seq_len, hidden_size = input_tensor.shape
+    input_type = TensorType(dtype, [seq_len, hidden_size], device=device_ref)
 
-    # Create consistent position embeddings matching HuggingFace implementation
-    total_seq_len = batch_size * seq_len
-    num_heads = vision_config["num_heads"]
-    head_dim = hidden_size // num_heads
+    # Generate proper attention mask based on cu_seqlens
+    if use_window_attention:
+        cu_seqlens = generate_cu_seqlens_window_attention(cu_window_seqlens)
+    else:
+        cu_seqlens = generate_cu_seqlens_full_attention(grid_thw)
 
-    # Generate rotary embeddings using the helper function
-    rotary_pos_emb = generate_rot_pos_emb(
-        grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
-        head_dim=head_dim,
-        theta=10000.0,
-        device=input_tensor.device,
-    )
-
-    # Create cos/sin embeddings by concatenating (same as HF's emb = cat(rotary_pos_emb, rotary_pos_emb))
-    emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-    dummy_cos = emb.cos().to(torch.bfloat16)
-    dummy_sin = emb.sin().to(torch.bfloat16)
-    dummy_attention_mask = torch.zeros(
-        1,
-        total_seq_len,
-        total_seq_len,
+    # Create attention mask from cu_seqlens
+    attention_mask = torch.full(
+        (1, seq_len, seq_len),
+        -10000.0,
         dtype=torch.bfloat16,
         device=input_tensor.device,
     )
 
-    cos_type = TensorType(dtype, shape=dummy_cos.shape, device=device_ref)
-    sin_type = TensorType(dtype, shape=dummy_sin.shape, device=device_ref)
-    mask_type = TensorType(
-        dtype, shape=dummy_attention_mask.shape, device=device_ref
+    # Set valid attention regions based on cu_seqlens
+    for i in range(1, len(cu_seqlens)):
+        attention_mask[
+            ...,
+            cu_seqlens[i - 1] : cu_seqlens[i],
+            cu_seqlens[i - 1] : cu_seqlens[i],
+        ] = 0.0
+
+    cos_type = TensorType(
+        dtype, shape=position_embeddings[0].shape, device=device_ref
     )
+    sin_type = TensorType(
+        dtype, shape=position_embeddings[1].shape, device=device_ref
+    )
+    mask_type = TensorType(dtype, shape=attention_mask.shape, device=device_ref)
 
     with Graph(
         "Qwen2_5VLVisionAttention",
         input_types=(input_type, cos_type, sin_type, mask_type),
     ) as graph:
         x, cos, sin, mask = graph.inputs
-        # Flatten input to (seq_len, hidden_size) for MAX
-        x_flattened = x.tensor.reshape((-1, hidden_size))
-        position_embeddings = (cos.tensor, sin.tensor)
-        output = attention(x_flattened, position_embeddings, mask.tensor)
+        output = attention(
+            x=x.tensor,
+            position_embeddings=(cos.tensor, sin.tensor),
+            attention_mask=mask.tensor,
+        )
         graph.output(output)
 
     compiled = session.load(graph, weights_registry=attention.state_dict())
@@ -252,9 +211,9 @@ def generate_max_outputs(
     # Execute the model and get the first result
     result = compiled.execute(
         Tensor.from_dlpack(input_tensor).to(device),
-        Tensor.from_dlpack(dummy_cos).to(device),
-        Tensor.from_dlpack(dummy_sin).to(device),
-        Tensor.from_dlpack(dummy_attention_mask).to(device),
+        Tensor.from_dlpack(position_embeddings[0]).to(device),
+        Tensor.from_dlpack(position_embeddings[1]).to(device),
+        Tensor.from_dlpack(attention_mask).to(device),
     )
     # Convert result back to torch tensor
     max_tensor = result[0]
@@ -262,138 +221,68 @@ def generate_max_outputs(
 
 
 @pytest.mark.parametrize(
-    "config_name",
+    "image_sizes",
     [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
+        # The quadratic attention computation (seq_len²) in the HuggingFace
+        # reference creates large intermediate tensors, so test cases are
+        # carefully sized to avoid OOM in CI.
+        [(224, 224)],
+        [(336, 224)],
+        [(224, 224), (224, 224)],
     ],
 )
-def test_vision_attention(config_name: ConfigNames) -> None:
-    """Test Qwen2.5VL vision attention against PyTorch reference."""
-    # Create test instance and load config
-    config_loader = get_config_loader()
-    weight_generator = get_weight_generator(config_name)
-
-    # Create config-specific fixtures
-    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(config_name)
-    vision_config = qwen2_5vl_config["vision_config"]
-
-    hf_config = config_loader.load_hf_vision_config(config_name)
-
-    # Create vision input tensor
-    torch.manual_seed(42)
-    # Use typical vision transformer dimensions
-    patch_size = vision_config["patch_size"]
-    image_size = vision_config["image_size"]
-    spatial_merge_size = 2  # Common value for Qwen2.5VL
-
-    # Calculate grid dimensions for a single image
-    # For a single image: temporal=1, height and width in patches
-    patches_per_side = image_size // patch_size
-    # Ensure patches_per_side is divisible by spatial_merge_size
-    patches_per_side = (
-        patches_per_side // spatial_merge_size
-    ) * spatial_merge_size
-    grid_thw = torch.tensor(
-        [[1, patches_per_side, patches_per_side]],  # [temporal, height, width]
-        dtype=torch.long,
-        device="cuda",
-    )
-
-    # Calculate sequence length after spatial merging
-    # The formula should be: (patches_per_side // spatial_merge_size)^2
-    seq_len = (patches_per_side // spatial_merge_size) ** 2
-
-    batch_size = 1
-    vision_input_tensor = torch.randn(
-        batch_size,
-        seq_len,  # sequence length after spatial merging
-        vision_config["hidden_size"],
-        dtype=torch.bfloat16,
-    ).to("cuda")
-
-    # Generate vision attention weights
-    vision_attention_weights = (
-        weight_generator.generate_vision_attention_weights()
-    )
-
-    # Generate reference output
-    torch_output = generate_torch_outputs(
-        hf_config,
-        vision_input_tensor,
-        vision_attention_weights,
-        grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
-    )
-
-    # Generate MAX output
-    max_output = generate_max_outputs(
-        max_config=qwen2_5vl_config,
-        input_tensor=vision_input_tensor,
-        attention_weights=vision_attention_weights,
-        dtype=DType.bfloat16,
-        device=Accelerator(),
-        grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
-    )
-
-    # Compare outputs using the base class method
-    assert_tensors_close(
-        torch_output,
-        max_output,
-        rtol=5e-2,
-        atol=2e-2,
-        message="Vision attention outputs do not match",
-    )
-
-
-@pytest.mark.parametrize(
-    "config_name",
-    [
-        pytest.param(ConfigNames.QWEN2_5VL_3B),
-    ],
-)
-@pytest.mark.parametrize(
-    "seq_len",
-    [
-        16,  # Small sequence (4x4 after merging, from 8x8 patches)
-        64,  # Medium sequence (8x8 after merging, from 16x16 patches)
-    ],
-)
-def test_vision_attention_variable_seq_len(
-    config_name: ConfigNames, seq_len: int
+@pytest.mark.parametrize("use_window_attention", [False, True])
+def test_vision_attention_multiple_images(
+    image_sizes: list[tuple[int, int]],
+    use_window_attention: bool,
 ) -> None:
-    """Test vision attention with different sequence lengths."""
+    """Test vision attention with multiple images of different sizes."""
     torch.manual_seed(42)
 
     # Load config and generate weights
     config_loader = get_config_loader()
-    weight_generator = get_weight_generator(config_name)
-
-    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(config_name)
-    vision_config = qwen2_5vl_config["vision_config"]
-    hf_config = config_loader.load_hf_vision_config(config_name)
-
-    # Create test input tensor with variable sequence length
-    batch_size = 1
-    spatial_merge_size = 2
-
-    # For variable sequence length tests, create appropriate grid dimensions
-    # Determine patch dimensions that result in the desired sequence length
-    # seq_len should be divisible by spatial_merge_size^2
-    patches_per_side = int((seq_len * spatial_merge_size**2) ** 0.5)
-    # Ensure patches_per_side is divisible by spatial_merge_size
-    patches_per_side = (
-        patches_per_side // spatial_merge_size
-    ) * spatial_merge_size
-    grid_thw = torch.tensor(
-        [[1, patches_per_side, patches_per_side]],  # [temporal, height, width]
-        dtype=torch.long,
-        device="cuda",
+    hf_config = config_loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
+    qwen2_5vl_config = config_loader.create_qwen2_5vl_config(
+        ConfigNames.QWEN2_5VL_3B
     )
 
+    weight_generator = get_weight_generator(ConfigNames.QWEN2_5VL_3B)
+
+    # Create config-specific fixtures
+    vision_config = qwen2_5vl_config["vision_config"]
+    patch_size = vision_config["patch_size"]
+    spatial_merge_size = vision_config["spatial_merge_size"]
+    spatial_merge_unit = spatial_merge_size * spatial_merge_size
+
+    # Calculate patches for each image and create grid_thw
+    grid_thw_list = []
+    total_seq_len = 0
+
+    for height, width in image_sizes:
+        # Calculate number of patches for this image
+        patches_h = height // patch_size
+        patches_w = width // patch_size
+        seq_len = patches_h * patches_w
+
+        # Add to grid (temporal_patches=1 for images)
+        grid_thw_list.append([1, patches_h, patches_w])
+        total_seq_len += seq_len
+
+    # Create grid_thw tensor [n_images, 3]
+    grid_thw = torch.tensor(grid_thw_list, dtype=torch.long).to("cuda")
+
+    # Generate window index using HF Vision Transformer
+    vision_transformer = HFQwen2_5VisionTransformer._from_config(
+        Qwen2_5_VLVisionConfig(**vision_config)
+    )
+    window_index, cu_window_seqlens = vision_transformer.get_window_index(
+        grid_thw
+    )
+    window_index = window_index.to("cuda")
+
+    # Create vision input tensor
     vision_input_tensor = torch.randn(
-        batch_size,
-        seq_len,
+        total_seq_len,
         vision_config["hidden_size"],
         dtype=torch.bfloat16,
     ).to("cuda")
@@ -403,37 +292,59 @@ def test_vision_attention_variable_seq_len(
         weight_generator.generate_vision_attention_weights()
     )
 
+    # Generate rotary embeddings using the helper function
+    cos_emb, sin_emb = generate_torch_rotary_embeddings(
+        vision_transformer=vision_transformer,
+        grid_thw=grid_thw,
+        window_index=window_index,
+        spatial_merge_unit=spatial_merge_unit,
+        seq_len=total_seq_len,
+    )
+
+    # Use the new position_embeddings format (cos, sin tuple) that PyTorch expects
+    position_embeddings = (cos_emb, sin_emb)
+
     # Generate reference output
     torch_output = generate_torch_outputs(
-        hf_config,
-        vision_input_tensor,
-        vision_attention_weights,
+        input_tensor=vision_input_tensor,
+        vision_attention_weights=vision_attention_weights,
+        position_embeddings=position_embeddings,
         grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
+        cu_window_seqlens=cu_window_seqlens,
+        hf_config=hf_config,
+        use_window_attention=use_window_attention,
     )
 
     # Generate MAX output
     max_output = generate_max_outputs(
-        max_config=qwen2_5vl_config,
         input_tensor=vision_input_tensor,
         attention_weights=vision_attention_weights,
+        position_embeddings=position_embeddings,
+        grid_thw=grid_thw,
+        cu_window_seqlens=cu_window_seqlens,
+        qwen2_5vl_config=qwen2_5vl_config,
         dtype=DType.bfloat16,
         device=Accelerator(),
-        grid_thw=grid_thw,
-        spatial_merge_size=spatial_merge_size,
+        use_window_attention=use_window_attention,
     )
 
     # Verify output shape
-    expected_shape = (seq_len, vision_config["hidden_size"])
+    expected_shape = (total_seq_len, vision_config["hidden_size"])
     assert max_output.shape == expected_shape, (
         f"Expected shape {expected_shape}, got {max_output.shape}"
     )
 
-    # Compare outputs
+    # Compare outputs using the base class method
+    attention_type = "window" if use_window_attention else "full"
     assert_tensors_close(
         torch_output,
         max_output,
-        rtol=2e-2,
-        atol=5e-3,
-        message=f"Vision attention outputs do not match for seq_len={seq_len}",
+        rtol=RTOL,
+        atol=ATOL,
+        message=f"Vision attention ({attention_type}) multiple images outputs do not match",
     )
+
+    # Explicit cleanup to help with memory constraints
+    del vision_transformer, vision_input_tensor, torch_output, max_output
+    del vision_attention_weights, position_embeddings, cos_emb, sin_emb
+    torch.cuda.empty_cache()

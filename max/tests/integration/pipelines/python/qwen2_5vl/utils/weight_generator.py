@@ -73,12 +73,16 @@ class WeightGenerator:
             "qkv.weight": (
                 torch.randn(3 * hidden_size, hidden_size) * QKV_PROJ_STD
             ).to(torch.bfloat16),
-            "qkv.bias": torch.zeros(3 * hidden_size, dtype=torch.bfloat16),
+            "qkv.bias": (torch.randn(3 * hidden_size) * QKV_PROJ_STD).to(
+                torch.bfloat16
+            ),
             # Output projection with bias
             "proj.weight": (
                 torch.randn(hidden_size, hidden_size) * O_PROJ_STD
             ).to(torch.bfloat16),
-            "proj.bias": torch.zeros(hidden_size, dtype=torch.bfloat16),
+            "proj.bias": (torch.randn(hidden_size) * O_PROJ_STD).to(
+                torch.bfloat16
+            ),
         }
 
         return weights

@@ -8,7 +8,7 @@ load(
 
 modular_py_test(
     name = "qwen2_5vl",
-    size = "large",
+    size = "enormous",
     srcs = glob(
         [
             "tests/test_*.py",
