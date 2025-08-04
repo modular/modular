@@ -66,5 +66,12 @@ jobs:
           fi
 
           ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
+
+          ps aux
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
+
+      - name: Debug
+        if: always()
+        run: |
+          ps aux
