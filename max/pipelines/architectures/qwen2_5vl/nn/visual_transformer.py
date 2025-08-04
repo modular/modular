@@ -213,6 +213,9 @@ class VisionWindowSdpaAttention(Module):
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads
+        self.head_dim = dim // n_heads
+        # Add explicit scaling factor like PyTorch implementation
+        self.scaling = math.sqrt(1.0 / self.head_dim)
 
         # Create Linear layers using constructor pattern
         self.qkv = Linear(
@@ -245,9 +248,10 @@ class VisionWindowSdpaAttention(Module):
 
         orig_q_dtype = q.dtype
         orig_k_dtype = k.dtype
+        q, k = ops.cast(q, DType.float32), ops.cast(k, DType.float32)
         cos, sin = (
-            ops.cast(ops.unsqueeze(cos, -2), orig_q_dtype),
-            ops.cast(ops.unsqueeze(sin, -2), orig_q_dtype),
+            ops.cast(ops.unsqueeze(cos, -2), DType.float32),
+            ops.cast(ops.unsqueeze(sin, -2), DType.float32),
         )
         q_embed = (q * cos) + (_rotate_half(q) * sin)
         k_embed = (k * cos) + (_rotate_half(k) * sin)
@@ -261,19 +265,16 @@ class VisionWindowSdpaAttention(Module):
         xk: TensorValue,
         xv: TensorValue,
         attention_mask: TensorValue,
-        dim: int,
-        n_heads: int,
+        scaling: float,
     ):
         """Computes scaled dot product attention on query, key and value tensors, using an attention mask.
         Shape of xq, xk, and xv = (n_heads, seq_len, head_dim) = (16, 14308, 80).
         """
-        head_dim = dim // n_heads
-        scale = math.sqrt(1.0 / head_dim)
         scores = xq @ ops.transpose(xk, -2, -1)
         # Note, the graph compiler currently requires the order of operands
         # to be `scores * scale` in order to pattern match the fused attention
         # operator.
-        scores = ops.softmax((scores * scale) + attention_mask)
+        scores = ops.softmax((scores * scaling) + attention_mask)
         return scores @ xv
 
     def __call__(
@@ -283,15 +284,15 @@ class VisionWindowSdpaAttention(Module):
         attention_mask: TensorValue,
     ) -> TensorValue:
         """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
-            1. LinearV1 Projections Q, K, V
-            2. Apply Rotary position embeddings on the LinearV1 Projections Q, and K
+            1. Linear Projections Q, K, V
+            2. Apply Rotary position embeddings on the Linear Projections Q, and K
             3. Scaled dot product attention
-            4. Final LinearV1 projection layer
+            4. Final Linear projection layer
 
         Args:
-            x:
-            position_embeddings:
-            attention_mask:
+            x: Input tensor of shape (seq_len, hidden_size)
+            position_embeddings: Tuple of (cos, sin) tensors for rotary embeddings
+            attention_mask: Attention mask of shape (1, seq_len, seq_len)
 
         Returns:
             The output of applying sliding window attention on input `x` using `attention_mask`.
@@ -300,11 +301,10 @@ class VisionWindowSdpaAttention(Module):
         Shapes:
             Input:
                 x: (seq_len, hidden_size)
-                position_embeddings: tuple of 2 tensors of shape ()
+                position_embeddings: tuple of 2 tensors of shape (seq_len, head_dim)
                 attention_mask: (1, seq_len, seq_len)
-            Output: tuple of:
-                - indices: (batch_size * seq_length, num_per_tok)
-                - weights: (batch_size * seq_length, num_per_tok)
+            Output:
+                - tensor: (seq_len, hidden_size)
         """
         seq_length = x.shape[0]
         qkv = (
@@ -312,7 +312,7 @@ class VisionWindowSdpaAttention(Module):
             .reshape([seq_length, 3, self.n_heads, -1])
             .permute([1, 0, 2, 3])
         )
-        # Split qkv into a tuple of tensors along the first dim: q, k, v = qkv.unbind(0)
+        # Split qkv into a tuple of tensors along the first dim: q, k, v. Equivalent to qkv.unbind(0)
         xq, xk, xv = qkv[0], qkv[1], qkv[2]
         cos, sin = position_embeddings
         xq, xk = VisionWindowSdpaAttention.apply_rotary_pos_emb_vision(
@@ -322,7 +322,7 @@ class VisionWindowSdpaAttention(Module):
         xk = xk.transpose(0, 1)
         xv = xv.transpose(0, 1)
         attn_output = VisionWindowSdpaAttention.scaled_dot_product_attention(
-            xq, xk, xv, attention_mask, self.dim, self.n_heads
+            xq, xk, xv, attention_mask, self.scaling
         )
         attn_output = attn_output.transpose(0, 1)
         attn_output = attn_output.reshape((seq_length, -1))
