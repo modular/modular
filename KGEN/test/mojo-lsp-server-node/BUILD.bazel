@@ -34,7 +34,6 @@ ts_project(
         ":node_modules/@types/mocha",
         ":node_modules/@types/node",
         ":node_modules/mocha",
-        ":node_modules/mocha-junit-reporter",
         ":node_modules/vscode-languageserver",
         ":node_modules/vscode-languageserver-protocol",
     ],

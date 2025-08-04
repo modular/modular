@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import { ChildProcess, spawn } from "child_process";
+import { once } from "events";
 import { readFile } from "fs/promises";
 import { setTimeout } from "timers/promises";
 import {
@@ -24,6 +25,7 @@ export class LanguageServer {
   constructor() {
     this.serverProcess = spawn(
       process.env["MODULAR_MOJO_MAX_LSP_SERVER_PATH"]!,
+      ["-wait-on-shutdown"],
       {
         stdio: ["pipe", "pipe", "inherit"],
       }
@@ -41,6 +43,7 @@ export class LanguageServer {
     this.connection.onClose(() => (this.alive = false));
     this.connection.onDispose(() => (this.alive = false));
     this.serverProcess.on("exit", () => (this.alive = false));
+    this.serverProcess.on("error", () => (this.alive = false));
 
     this.connection.listen();
   }
@@ -77,14 +80,12 @@ export class LanguageServer {
     assert.ok(this.alive, "server terminated early");
 
     await this.connection.sendRequest("shutdown");
+    assert.ok(this.serverProcess.kill());
+    const result = await Promise.race([once(this.serverProcess, "exit"), setTimeout(5000, 'timeout')]);
 
-    if (!this.serverProcess.kill()) return;
-
-    let exitedPromise = new Promise((resolve) =>
-      this.serverProcess.once("exit", resolve)
-    );
-    let timeout = setTimeout(5000);
-    await Promise.race([exitedPromise, timeout]);
+    if (result === 'timeout') {
+      console.error("Timed out waiting for language server to exit, did server crash?");
+    }
   }
 }
 

@@ -84,6 +84,13 @@ int main(int argc, char **argv) {
       llvm::cl::init(false),
       llvm::cl::cat(category),
   };
+  llvm::cl::opt<bool> waitOnShutdown{
+      "wait-on-shutdown",
+      llvm::cl::desc("Wait for pending requests to complete before shutting "
+                     "down the server."),
+      llvm::cl::init(false),
+      llvm::cl::cat(category),
+  };
   llvm::cl::list<std::string> includeDirs{
       "I",
       llvm::cl::desc("Append directory to the search path list used to "
@@ -114,10 +121,8 @@ int main(int argc, char **argv) {
     inputStyle = JSONStreamStyle::Delimited;
     logLevel = Logger::Level::Debug;
     prettyPrint = true;
+    waitOnShutdown = true;
   }
-
-  // Wait for the server to shutdown when testing.
-  bool waitOnShutdown = mojoTest;
 
   // Configure the logger.
   Logger::setLogLevel(logLevel);
