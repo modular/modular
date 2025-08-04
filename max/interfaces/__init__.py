@@ -7,11 +7,7 @@
 
 from typing import Callable, Union
 
-from .context import (
-    BaseContext,
-    InputContext,
-    SamplingParams,
-)
+from .context import BaseContext, BaseContextType, InputContext, SamplingParams
 from .log_probabilities import LogProbabilities
 from .pipeline import Pipeline, PipelineOutputsDict
 from .pipeline_variants import (
@@ -19,6 +15,7 @@ from .pipeline_variants import (
     AudioGenerationRequest,
     AudioGenerationResponse,
     AudioGenerator,
+    AudioGeneratorContext,
     AudioGeneratorOutput,
     EmbeddingsGenerator,
     EmbeddingsOutput,
@@ -52,8 +49,10 @@ __all__ = [
     "AudioGenerationRequest",
     "AudioGenerationResponse",
     "AudioGenerator",
+    "AudioGeneratorContext",
     "AudioGeneratorOutput",
     "BaseContext",
+    "BaseContextType",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
     "GenerationStatus",
