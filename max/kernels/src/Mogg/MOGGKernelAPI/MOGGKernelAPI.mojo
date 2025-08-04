@@ -862,29 +862,6 @@ struct Add:
     ) -> SIMD[dtype, width]:
         return lhs + rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.sub")
 struct Sub:
@@ -896,29 +873,6 @@ struct Sub:
         lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
     ) -> SIMD[dtype, width]:
         return lhs - rhs
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 @compiler.register("mo.mul")
@@ -932,29 +886,6 @@ struct Mul:
     ) -> SIMD[dtype, width]:
         return lhs * rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.div")
 struct Div:
@@ -966,29 +897,6 @@ struct Div:
         lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
     ) -> SIMD[dtype, width]:
         return lhs / rhs
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 @compiler.register("mo.mod")
@@ -1002,29 +910,6 @@ struct Mod:
     ) -> SIMD[dtype, width]:
         return lhs % rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.equal")
 struct Equal:
@@ -1036,29 +921,6 @@ struct Equal:
         lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
     ) -> SIMD[DType.bool, width]:
         return lhs == rhs
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 @compiler.register("mo.greater")
@@ -1072,29 +934,6 @@ struct Greater:
     ) -> SIMD[DType.bool, width]:
         return lhs > rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.greater_equal")
 struct GreaterEqual:
@@ -1107,29 +946,6 @@ struct GreaterEqual:
     ) -> SIMD[DType.bool, width]:
         return lhs >= rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.not_equal")
 struct NotEqual:
@@ -1141,29 +957,6 @@ struct NotEqual:
         lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
     ) -> SIMD[DType.bool, width]:
         return lhs != rhs
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[x.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[x.dtype, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 @compiler.register("mo.and")
@@ -1178,29 +971,6 @@ struct And:
     ) -> SIMD[DType.bool, width]:
         return lhs & rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.or")
 struct Or:
@@ -1213,29 +983,6 @@ struct Or:
         _idx: IndexList,
     ) -> SIMD[DType.bool, width]:
         return lhs | rhs
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 @compiler.register("mo.xor")
@@ -1250,29 +997,6 @@ struct Xor:
     ) -> SIMD[DType.bool, width]:
         return lhs ^ rhs
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[DType.bool, width]](y._fused_load[width](idx))
-            return rebind[SIMD[z.dtype, width]](Self.elementwise(lhs, rhs, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.pow")
 struct Pow:
@@ -1286,29 +1010,6 @@ struct Pow:
     ) -> SIMD[dtype, width]:
         return _pow(lhs, rhs)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = y._fused_load[width](idx)
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.max")
 struct Max:
@@ -1321,29 +1022,6 @@ struct Max:
     ) -> SIMD[dtype, width]:
         return max(lhs, rhs)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
-
 
 @compiler.register("mo.min")
 struct Min:
@@ -1355,29 +1033,6 @@ struct Min:
         lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
     ) -> SIMD[dtype, width]:
         return min(lhs, rhs)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        z: FusedOutputTensor,
-        x: FusedInputTensor,
-        y: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-            var lhs = rebind[SIMD[z.dtype, width]](x._fused_load[width](idx))
-            var rhs = rebind[SIMD[z.dtype, width]](y._fused_load[width](idx))
-            return Self.elementwise(lhs, rhs, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](z, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1395,25 +1050,6 @@ struct Cast:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[out_dtype, width]:
         return x.cast[out_dtype]()
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = x._fused_load[width](idx)
-            return Self.elementwise[out_dtype = y.dtype](input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.negative")
 struct Negative:
@@ -1423,25 +1059,6 @@ struct Negative:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return -x
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.relu")
@@ -1453,25 +1070,6 @@ struct ReLU:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return relu(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.gelu")
 struct GeLU:
@@ -1481,25 +1079,6 @@ struct GeLU:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return gelu(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.ceil")
@@ -1511,25 +1090,6 @@ struct Ceil:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return ceil(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.floor")
 struct Floor:
@@ -1539,25 +1099,6 @@ struct Floor:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return floor(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.tanh")
@@ -1569,25 +1110,6 @@ struct Tanh:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return tanh(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.atanh")
 struct ATanh:
@@ -1597,25 +1119,6 @@ struct ATanh:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return atanh(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.cos")
@@ -1627,25 +1130,6 @@ struct Cos:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return cos(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.sin")
 struct Sin:
@@ -1655,25 +1139,6 @@ struct Sin:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return sin(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.erf")
@@ -1685,25 +1150,6 @@ struct Erf:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return erf(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.exp")
 struct Exp:
@@ -1713,25 +1159,6 @@ struct Exp:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return exp(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.round")
@@ -1743,25 +1170,6 @@ struct Round:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return round(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.sqrt")
 struct Sqrt:
@@ -1772,25 +1180,6 @@ struct Sqrt:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return sqrt(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.isqrt")
 struct Isqrt:
@@ -1800,25 +1189,6 @@ struct Isqrt:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return isqrt(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.select")
@@ -1836,37 +1206,6 @@ struct Select:
     ) -> SIMD[dtype, width]:
         return cond.select(tc, fc)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        output: FusedOutputTensor,
-        condition: FusedInputTensor,
-        true_case: FusedInputTensor,
-        false_case: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[
-            width: Int
-        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
-            var cond = condition._fused_load[width](idx)
-            var tc = rebind[SIMD[output.dtype, width]](
-                true_case._fused_load[width](idx)
-            )
-            var fc = rebind[SIMD[output.dtype, width]](
-                false_case._fused_load[width](idx)
-            )
-            return Self.elementwise(cond, tc, fc, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](output, ctx)
-
 
 @compiler.register("mo.trunc")
 struct Trunc:
@@ -1879,25 +1218,6 @@ struct Trunc:
             "llvm.trunc", __type_of(x), has_side_effect=False
         ](x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.log")
 struct Log:
@@ -1907,25 +1227,6 @@ struct Log:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return log(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.log1p")
@@ -1937,25 +1238,6 @@ struct Log1p:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return log1p(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.is_nan")
 struct IsNan:
@@ -1965,26 +1247,6 @@ struct IsNan:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
         return isnan(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                Self.elementwise(x._fused_load[width](idx), idx)
-            )
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.is_inf")
@@ -1996,26 +1258,6 @@ struct IsInf:
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
         return isinf(x)
 
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            return rebind[SIMD[y.dtype, width]](
-                Self.elementwise(x._fused_load[width](idx), idx)
-            )
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
-
 
 @compiler.register("mo.not")
 struct Not:
@@ -2024,25 +1266,6 @@ struct Not:
         width: Int,
     ](x: SIMD[DType.bool, width], _idx: IndexList) -> SIMD[DType.bool, width]:
         return ~x
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var val = rebind[SIMD[DType.bool, width]](x._fused_load[width](idx))
-            return rebind[SIMD[y.dtype, width]](Self.elementwise(val, idx))
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.abs")
@@ -2053,25 +1276,6 @@ struct Abs:
         width: Int,
     ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
         return abs(x)
-
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.dtype, width]:
-            var input = rebind[SIMD[y.dtype, width]](x._fused_load[width](idx))
-            return Self.elementwise(input, idx)
-
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name,
-        ](y, ctx)
 
 
 @compiler.register("mo.squeeze_shape")
@@ -3306,27 +2510,8 @@ struct MutableStore:
         tensor: FusedInputTensor,
         ctx: DeviceContextPtr,
     ) capturing raises:
-        @parameter
-        @always_inline
-        fn func[
-            width: Int
-        ](idx: IndexList[buffer.rank]) -> SIMD[buffer.dtype, width]:
-            return rebind[SIMD[buffer.dtype, width]](
-                Self.elementwise(tensor._fused_load[width](idx), idx)
-            )
-
-        @parameter
-        @always_inline
-        fn out_func[width: Int](index: IndexList[buffer.rank]) capturing:
-            var val = func[width](rebind[IndexList[buffer.rank]](index))
-            buffer.store[width=width](index, val)
-
-        foreach[
-            func,
-            out_func,
-            target=target,
-            _trace_name=_trace_name,
-        ](buffer, ctx)
+        # TODO: Remove the execute method (GEX-2453).
+        raise Error("exec should never be called !")
 
 
 @compiler.register("mo.mutable.store.slice")
