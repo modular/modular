@@ -13,7 +13,9 @@
 
 """Normalization layer."""
 
-from collections.abc import Sequence
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from max.dtype import DType
@@ -27,7 +29,7 @@ from max.graph import (
     ops,
 )
 
-from ..layer import Layer, Module
+from ..layer import Layer, Module, Shardable
 
 
 @dataclass
@@ -59,7 +61,7 @@ class RMSNormV1(Layer):
         )[0].tensor
 
 
-class RMSNorm(Module):
+class RMSNorm(Module, Shardable):
     """Computes the Root Mean Square normalization on inputs.
 
     Args:
@@ -83,9 +85,12 @@ class RMSNorm(Module):
     ) -> None:
         super().__init__()
         self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
+        self.dim = dim
+        self.dtype = dtype
         self.eps = eps
         self.weight_offset = weight_offset
         self.multiply_before_cast = multiply_before_cast
+        self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
         # Validate that weight dimension matches input's last dimension if
@@ -118,22 +123,54 @@ class RMSNorm(Module):
             parameters={"multiply_before_cast": self.multiply_before_cast},
         )[0].tensor
 
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the RMSNorm sharding strategy."""
+        return self._sharding_strategy
 
-class DistributedRMSNorm(RMSNorm):
-    def __init__(self, *args, devices: Sequence[DeviceRef], **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.num_devices = len(devices)
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the RMSNorm layer.
 
-        self.weight.sharding_strategy = ShardingStrategy.replicate(
-            self.num_devices
-        )
-        # Create a separate RMS layer for each device.
-        self.rms_norms = []
+        Args:
+            strategy: The sharding strategy to apply.
+        """
+        # RMSNorm always uses replicate strategy
+        if not strategy.is_replicate:
+            raise ValueError("RMSNorm only supports replicate strategy")
+
+        self._sharding_strategy = strategy
+        self.weight.sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[RMSNorm]:
+        """Creates sharded views of this RMSNorm across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded RMSNorm instances, one for each device.
+        """
+        if self.sharding_strategy is None:
+            raise ValueError("Sharding strategy is not set")
+
+        # Get sharded weights
         weight_shards = self.weight.shard(devices)
-        for n in range(len(devices)):
-            layer = RMSNorm(*args, **kwargs)
-            layer.weight = weight_shards[n]
-            self.rms_norms.append(layer)
 
-    def __call__(self, xs: Sequence[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
-        return [self.rms_norms[i](xs[i]) for i in range(self.num_devices)]
+        shards = []
+        for weight_shard in weight_shards:
+            # Create new RMSNorm instance with the same configuration
+            sharded = RMSNorm(
+                dim=self.dim,
+                dtype=self.dtype,
+                eps=self.eps,
+                weight_offset=self.weight_offset,
+                multiply_before_cast=self.multiply_before_cast,
+            )
+
+            # Assign the sharded weight
+            sharded.weight = weight_shard
+
+            shards.append(sharded)
+
+        return shards

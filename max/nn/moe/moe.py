@@ -257,18 +257,18 @@ class MoE(Module, Shardable):
         )
         return down_proj
 
-    def __call__(self, hidden_state: TensorValue) -> TensorValue:
+    def __call__(self, x: TensorValue) -> TensorValue:
         """
         Args:
-            hidden_state: (seq_len, hidden_dim)
+            x: (seq_len, hidden_dim)
 
         Returns:
             (seq_len, hidden_dim)
         """
-        seq_len = hidden_state.shape[0]
+        seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
-        router_idx, router_weight = self.gate(hidden_state)
+        router_idx, router_weight = self.gate(x)
         router_idx = ops.reshape(
             router_idx, [-1]
         )  # (seq_len * n_expert_per_token,)
@@ -284,7 +284,7 @@ class MoE(Module, Shardable):
         )
 
         permutated_states = ops.gather(
-            hidden_state,
+            x,
             token_expert_order / self.num_experts_per_token,
             axis=0,
         )
@@ -292,7 +292,7 @@ class MoE(Module, Shardable):
         if self.apply_router_weight_first:
             permutated_states = permutated_states * ops.gather(
                 router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(hidden_state.dtype)
+            ).cast(x.dtype)
 
         gate_up_projs = grouped_matmul_ragged(
             permutated_states,
@@ -325,15 +325,15 @@ class MoE(Module, Shardable):
                 ops.unsqueeze(router_weight, axis=1) @ down_projs
             )
             routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                hidden_state.dtype
+                x.dtype
             )
         else:
             routed_expert_out = down_projs.transpose(1, 2)
             routed_expert_out = ops.squeeze(
                 ops.sum(routed_expert_out, axis=2), axis=2
-            ).cast(hidden_state.dtype)
+            ).cast(x.dtype)
 
         if self.has_shared_experts:
-            routed_expert_out += self.shared_experts(hidden_state)
+            routed_expert_out += self.shared_experts(x)
 
         return routed_expert_out

@@ -22,9 +22,9 @@ from max.nn import (
     MLP,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
-    DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
+    RMSNorm,
     RotaryEmbedding,
     VocabParallelEmbedding,
 )
@@ -52,11 +52,10 @@ class DistributedMistral(DistributedTransformer):
         )
 
         distributed_norm = functools.partial(
-            DistributedRMSNorm,
+            RMSNorm,
             dim=config.hidden_size,
             dtype=config.dtype,
             eps=config.rms_norm_eps,
-            devices=config.devices,
         )
 
         layers = [

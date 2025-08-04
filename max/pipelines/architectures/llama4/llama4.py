@@ -29,10 +29,10 @@ from max.nn import (
     MLP,
     Allreduce,
     ColumnParallelLinear,
-    DistributedRMSNorm,
     Llama3RotaryEmbedding,
     Module,
     ReturnLogits,
+    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -110,19 +110,28 @@ class Llama4DecoderLayer(Module):
             self.feed_forward_allreduce = Allreduce(
                 num_accelerators=len(config.devices)
             )
-        self.input_layernorm = DistributedRMSNorm(
+        self.input_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
             multiply_before_cast=False,
         )
-        self.post_attention_layernorm = DistributedRMSNorm(
+        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.input_layernorm_shards = self.input_layernorm.shard(config.devices)
+
+        self.post_attention_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
             multiply_before_cast=False,
+        )
+        self.post_attention_layernorm.sharding_strategy = (
+            ShardingStrategy.replicate(len(config.devices))
+        )
+        self.post_attention_layernorm_shards = (
+            self.post_attention_layernorm.shard(config.devices)
         )
         self.devices = devices
 
@@ -136,8 +145,13 @@ class Llama4DecoderLayer(Module):
         ],
         **kwargs,
     ) -> list[TensorValue]:
+        # Apply input layer norm to each shard
+        norm_xs = [
+            self.input_layernorm_shards[i](xs[i]) for i in range(len(xs))
+        ]
+
         attn_outs = self.self_attn(
-            self.input_layernorm(xs),
+            norm_xs,
             distributed_cache_positions,
             kv_collections,
             signal_buffers=signal_buffers,
@@ -145,7 +159,11 @@ class Llama4DecoderLayer(Module):
         )
 
         hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
-        post_norm_states = self.post_attention_layernorm(hidden_states)
+        # Apply post attention layer norm to each shard
+        post_norm_states = [
+            self.post_attention_layernorm_shards[i](hidden_states[i])
+            for i in range(len(hidden_states))
+        ]
 
         if self.is_moe_layer:
             mlp_outs = self.feed_forward(
@@ -184,13 +202,16 @@ class Llama4TextModel(Module):
                 for layer_idx in range(config.num_hidden_layers)
             ]
         )
-        self.norm = DistributedRMSNorm(
+        self.norm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
             multiply_before_cast=False,
         )
+        self.norm.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.norm_shards = self.norm.shard(config.devices)
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
@@ -249,8 +270,13 @@ class Llama4TextModel(Module):
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, self.devices)
+        # Apply norm to each shard
+        norm_last_token = [
+            self.norm_shards[i](last_token_distributed[i])
+            for i in range(len(self.devices))
+        ]
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed), signal_buffers)[0],
+            self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
         )
 
@@ -259,7 +285,14 @@ class Llama4TextModel(Module):
 
         if self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(
-                self.lm_head(self.norm(h), signal_buffers)[0], DType.float32
+                self.lm_head(
+                    [
+                        self.norm_shards[i](h[i])
+                        for i in range(len(self.devices))
+                    ],
+                    signal_buffers,
+                )[0],
+                DType.float32,
             )
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
 

@@ -20,10 +20,9 @@ from max.graph import ShardingStrategy
 from max.nn import (
     MLP,
     ColumnParallelLinear,
-    DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    Shardable,
+    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
@@ -60,11 +59,10 @@ class DistributedDeepseekV2(DistributedTransformer):
         )
 
         distributed_norm = functools.partial(
-            DistributedRMSNorm,
+            RMSNorm,
             dim=config.hidden_size,
             dtype=config.dtype,
             eps=config.rms_norm_eps,
-            devices=config.devices,
             multiply_before_cast=False,
         )
 
@@ -94,11 +92,11 @@ class DistributedDeepseekV2(DistributedTransformer):
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
                 ),
-                mlp=self._get_mlp(config, i),
+                mlp=self._get_mlp(config, idx),
                 attention_norm=distributed_norm(),
                 mlp_norm=distributed_norm(),
             )
-            for i in range(config.num_hidden_layers)
+            for idx in range(config.num_hidden_layers)
         ]
 
         # Create Embedding and output layers.
@@ -140,7 +138,7 @@ class DistributedDeepseekV2(DistributedTransformer):
             ],
         )
 
-    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Shardable:
+    def _get_mlp(self, config: DeepseekV2Config, idx: int) -> MLP | MoE:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
 
@@ -153,8 +151,8 @@ class DistributedDeepseekV2(DistributedTransformer):
         """
         if (
             config.n_routed_experts is not None
-            and i >= config.first_k_dense_replace
-            and i % config.moe_layer_freq == 0
+            and idx >= config.first_k_dense_replace
+            and idx % config.moe_layer_freq == 0
         ):
             moe = MoE(
                 devices=config.devices,

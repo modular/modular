@@ -45,7 +45,6 @@ from .linear import (
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
-    DistributedRMSNorm,
     GroupNorm,
     LayerNorm,
     LayerNormV1,
@@ -90,7 +89,6 @@ __all__ = [
     "ConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
-    "DistributedRMSNorm",
     "DistributedTransformer",
     "DistributedTransformerBlock",
     "Embedding",

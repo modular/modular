@@ -23,10 +23,10 @@ from max.nn import (
     MLP,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
-    DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
     Linear,
+    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -71,11 +71,10 @@ class DistributedLlama3(DistributedTransformer):
         )
 
         create_distributed_norm = functools.partial(
-            DistributedRMSNorm,
+            RMSNorm,
             dim=config.hidden_size,
             dtype=config.norm_dtype or config.dtype,
             eps=config.rms_norm_eps,
-            devices=config.devices,
         )
 
         fp8_cfg = config.float8_config

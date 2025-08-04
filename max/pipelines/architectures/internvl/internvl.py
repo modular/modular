@@ -37,7 +37,6 @@ from max.nn import (
     Allreduce,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
-    DistributedRMSNorm,
     DynamicRotaryEmbedding,
     LayerList,
     LayerNorm,
@@ -139,17 +138,29 @@ class InternVLDecoderLayer(Module):
         self.mlp_shards = self.mlp.shard(devices)
         self.mlp_allreduce = Allreduce(num_accelerators=len(devices))
 
-        self.input_layernorm = DistributedRMSNorm(
+        if llm_config.rms_norm_eps is None:
+            raise ValueError("rms_norm_eps must be provided")
+
+        self.input_layernorm = RMSNorm(
             dim=llm_config.hidden_size,
             dtype=llm_config.dtype,
             eps=llm_config.rms_norm_eps,
-            devices=devices,
         )
-        self.post_attention_layernorm = DistributedRMSNorm(
+        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+            len(devices)
+        )
+        self.input_layernorm_shards = self.input_layernorm.shard(devices)
+
+        self.post_attention_layernorm = RMSNorm(
             dim=llm_config.hidden_size,
             dtype=llm_config.dtype,
             eps=llm_config.rms_norm_eps,
-            devices=devices,
+        )
+        self.post_attention_layernorm.sharding_strategy = (
+            ShardingStrategy.replicate(len(devices))
+        )
+        self.post_attention_layernorm_shards = (
+            self.post_attention_layernorm.shard(devices)
         )
 
     def __call__(
@@ -173,9 +184,15 @@ class InternVLDecoderLayer(Module):
         Returns:
             The output hidden states after attention and MLP, one per device.
         """
+        # Apply input layer norm to each shard
+        norm_xs = [
+            norm_shard(x)
+            for norm_shard, x in zip(self.input_layernorm_shards, xs)
+        ]
+
         attn_outs = self.self_attn(
             layer_idx,
-            self.input_layernorm(xs),
+            norm_xs,
             signal_buffers,
             kv_collections,
             freqs_cis=freqs_cis,
@@ -185,7 +202,11 @@ class InternVLDecoderLayer(Module):
         # Add residual.
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
 
-        normed_hs = self.post_attention_layernorm(hs)
+        # Apply post attention layer norm to each shard
+        normed_hs = [
+            norm_shard(h)
+            for norm_shard, h in zip(self.post_attention_layernorm_shards, hs)
+        ]
         mlp_outs = [shard(x) for shard, x in zip(self.mlp_shards, normed_hs)]
         mlp_outs = self.mlp_allreduce(mlp_outs, signal_buffers)
 
@@ -255,12 +276,18 @@ class InternVLLanguageModel(Module):
             ]
         )
 
-        self.norm = DistributedRMSNorm(
+        if llm_config.rms_norm_eps is None:
+            raise ValueError("rms_norm_eps must be provided")
+
+        self.norm = RMSNorm(
             dim=llm_config.hidden_size,
             dtype=llm_config.dtype,
             eps=llm_config.rms_norm_eps,
-            devices=self.devices,
         )
+        self.norm.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        self.norm_shards = self.norm.shard(self.devices)
 
         self.embed_tokens = VocabParallelEmbedding(
             llm_config.vocab_size,
@@ -356,7 +383,13 @@ class InternVLLanguageModel(Module):
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(self.norm(last_token_h), signal_buffers)[0],
+            self.lm_head(
+                [
+                    norm_shard(h)
+                    for norm_shard, h in zip(self.norm_shards, last_token_h)
+                ],
+                signal_buffers,
+            )[0],
             DType.float32,
         )
 
@@ -886,13 +919,13 @@ class InternVisionEncoderLayer(Module):
                 dim=self.embed_dim,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
-                multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
+                multiply_before_cast=False,
             )
             self.norm2 = RMSNorm(
                 dim=self.embed_dim,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
-                multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
+                multiply_before_cast=False,
             )
         else:  # layer_norm
             self.norm1 = LayerNorm(
