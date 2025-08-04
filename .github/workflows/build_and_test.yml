@@ -12,15 +12,16 @@
 ##===----------------------------------------------------------------------===##
 
 name: Build and Test
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
   push:
     branches:
-    - main
+      - main
     paths:
-    - "bazel/mojo.MODULE.bazel"
+      - "bazel/mojo.MODULE.bazel"
 
 permissions:
   contents: read
@@ -65,6 +66,13 @@ jobs:
             )
           fi
 
-          ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
+          # Set up filter arguments
+          BUILD_TAG_FILTERS="-skip-external-ci-${{ matrix.os }},-requires-network"
+          TEST_TAG_FILTERS="-skip-external-ci-${{ matrix.os }},-requires-network"
+
+          ./bazelw test --config=ci --config=public-cache "${args[@]}" \
+            --build_tag_filters="$BUILD_TAG_FILTERS" \
+            --test_tag_filters="$TEST_TAG_FILTERS" \
+            -- //...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

@@ -15,8 +15,8 @@ name: Deploy Engineering Docs
 
 on:
   push:
-    branches: [ main ]
-    paths: [ 'docs/eng-design/**' ]
+    branches: [main]
+    paths: ["docs/eng-design/**"]
   workflow_dispatch:
 
 permissions:
@@ -35,22 +35,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39
 
       - name: Set up Python
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: |
-          cd docs/eng-design
-          uv sync
+        working-directory: docs/eng-design
+        run: uv sync
 
       - name: Build docs
-        run: |
-          cd docs/eng-design
-          uv run mkdocs build --site-dir ../../_site
+        working-directory: docs/eng-design
+        run: uv run mkdocs build --site-dir ../../_site
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -58,7 +54,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '_site'
+          path: "_site"
 
   deploy:
     environment:
