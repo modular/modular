@@ -16,7 +16,7 @@ from utils.static_tuple import StaticTuple
 from utils.index import Index, IndexList
 from gpu.host import DeviceContext
 from gpu.id import warp_id as get_warp_id
-from gpu.id import block_idx
+from gpu.id import block_idx, block_id_in_cluster
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -52,14 +52,14 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
         alignment=16,
     ]()
 
-    var clc_throuttle_full_mbar = stack_allocation[
+    var clc_throttle_full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
         address_space = AddressSpace.SHARED,
         alignment=16,
     ]()
 
-    var clc_throuttle_empty_mbar = stack_allocation[
+    var clc_throttle_empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
         address_space = AddressSpace.SHARED,
@@ -76,15 +76,15 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
         TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
     )
 
-    alias clc_throuttle_producer_arv_count = TMA_LOAD_THREADS
-    alias clc_throuttle_consumer_arv_count = SCHEDULER_THREADS
+    alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
+    alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
     @parameter
     for i in range(num_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
-        clc_throuttle_full_mbar[i].init(clc_throuttle_producer_arv_count)
-        clc_throuttle_empty_mbar[i].init(clc_throuttle_consumer_arv_count)
+        clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
+        clc_throttle_empty_mbar[i].init(clc_throttle_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
@@ -115,23 +115,23 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
     var clc_pipe_producer_state = PipelineState[num_stages](0, 1, 0)
     var clc_pipe_consumer_state = PipelineState[num_stages]()
 
-    var clc_throuttle_producer_state = PipelineState[num_stages](0, 1, 0)
-    var clc_throuttle_consumer_state = PipelineState[num_stages]()
+    var clc_throttle_producer_state = PipelineState[num_stages](0, 1, 0)
+    var clc_throttle_consumer_state = PipelineState[num_stages]()
 
     if is_tma_load:
         # This should not be necessary in a regular matmul, but for
         # stream-k, CTAs might be also working on the same coordinates. In
         # that case, we don't need to block the tile scheduler.
         var required_clc_query = True
-        while True:
+        while work_info.is_valid():
             # CLC throuttle prevents each CTA from going a few waves ahead.
             if is_first_cta_in_cluster and required_clc_query:
-                var index = clc_throuttle_producer_state.index()
-                var phase = clc_throuttle_producer_state.phase()
-                clc_throuttle_empty_mbar[index].wait(phase)
-                _ = clc_throuttle_full_mbar[index].arrive()
+                var index = clc_throttle_producer_state.index()
+                var phase = clc_throttle_producer_state.phase()
+                clc_throttle_empty_mbar[index].wait(phase)
+                _ = clc_throttle_full_mbar[index].arrive()
 
-                _ = clc_throuttle_producer_state.step()
+                _ = clc_throttle_producer_state.step()
 
             # DO TMA LOAD
             # scheduler fetch next work
@@ -141,26 +141,23 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
             )
             work_info = next_work_info
             clc_pipe_consumer_state.step()
-            if not work_info.is_valid():
-                break
 
     if is_scheduler:
         var required_clc_query = True
 
-        while True:
+        while work_info.is_valid():
             if required_clc_query:
-                var index = clc_throuttle_consumer_state.index()
-                var phase = clc_throuttle_consumer_state.phase()
-                clc_throuttle_full_mbar[index].wait(phase)
-                _ = clc_throuttle_empty_mbar[index].arrive()
+                var index = clc_throttle_consumer_state.index()
+                var phase = clc_throttle_consumer_state.phase()
+                clc_throttle_full_mbar[index].wait(phase)
+                _ = clc_throttle_empty_mbar[index].arrive()
 
-                clc_throuttle_consumer_state.step()
+                clc_throttle_consumer_state.step()
 
                 # advance to next work
                 clc_pipe_producer_state = scheduler.advance_to_next_work(
                     clc_pipe_producer_state
                 )
-
             # scheduler fetch next work
             next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
@@ -169,27 +166,30 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-            if not work_info.is_valid():
-                break
+        @parameter
+        for i in range(num_stages):
+            clc_empty_mbar[clc_pipe_producer_state.index()].wait(
+                clc_pipe_producer_state.phase()
+            )
+            clc_pipe_producer_state.step()
 
     if is_mma:
         # TMEM alloc
-        while True:
+        while work_info.is_valid():
             # DO MMA
             # scheduler fetch next work
             next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
+
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-            if not work_info.is_valid():
-                break
-
     if is_epilogue:
-        while True:
+        while work_info.is_valid():
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
+
             next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
@@ -199,12 +199,10 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
             if not work_info.is_valid():
                 break
 
-    cluster_sync()
-
 
 fn test_tile_scheduler(ctx: DeviceContext) raises:
-    alias kernel = test_kernel[2, StaticTuple[Int32, 3](2, 2, 1)]
-    ctx.enqueue_function[kernel](grid_dim=(16, 32), block_dim=(256))
+    alias kernel = test_kernel[2, StaticTuple[Int32, 3](4, 4, 1)]
+    ctx.enqueue_function[kernel](grid_dim=(16, 16), block_dim=(256))
 
 
 def main():

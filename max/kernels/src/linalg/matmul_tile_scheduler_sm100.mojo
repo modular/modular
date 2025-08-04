@@ -15,7 +15,7 @@ from sys import sizeof
 
 from utils.index import Index, IndexList
 from gpu.memory import AddressSpace, fence_async_view_proxy
-from gpu.id import block_idx, lane_id
+from gpu.id import block_idx, lane_id, block_id_in_cluster
 from layout.tma_async import PipelineState, SharedMemBarrier
 from gpu.cluster import (
     elect_one_sync,
@@ -124,12 +124,31 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn initial_work_info(self) -> WorkInfo:
+    @staticmethod
+    fn work_info_from_cluster(
+        work_info: WorkInfo,
+    ) -> WorkInfo:
+        var normalized_m = work_info.m // Self.cluster_shape[0]
+        var normalized_n = work_info.n // Self.cluster_shape[1]
+        var normalized_k = work_info.k_start // Self.cluster_shape[2]
+
         return WorkInfo(
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-            is_valid_tile=False,
+            m=normalized_m * Self.cluster_shape[0] + block_id_in_cluster.x,
+            n=normalized_n * Self.cluster_shape[1] + block_id_in_cluster.y,
+            k_start=normalized_k * Self.cluster_shape[2]
+            + block_id_in_cluster.z,
+            is_valid_tile=work_info.is_valid_tile,
+        )
+
+    @always_inline
+    fn initial_work_info(self) -> WorkInfo:
+        return self.work_info_from_cluster(
+            WorkInfo(
+                block_idx.x,
+                block_idx.y,
+                block_idx.z,
+                is_valid_tile=True,
+            )
         )
 
     @always_inline
@@ -144,7 +163,7 @@ struct TileScheduler[
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
-        return work_tile
+        return self.work_info_from_cluster(work_tile)
 
     @always_inline
     fn advance_to_next_work(

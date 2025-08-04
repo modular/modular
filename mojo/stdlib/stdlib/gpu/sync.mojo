@@ -652,6 +652,30 @@ fn mbarrier_try_wait_parity_shared[
         ]()
 
 
+@always_inline("nodebug")
+fn umma_arrive_leader_cta[
+    type: AnyType
+](mbar_ptr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_]):
+    """Signal arrival at the barrier to the leader CTA of the pair.
+
+    This function signals arrival at the barrier to the leader CTA of the pair.
+    It is used in the context of pair MMA operations.
+
+    Parameters:
+        type: The type of the memory barrier.
+
+    Args:
+        mbar_ptr: Pointer to the shared memory barrier.
+    """
+
+    inlined_assembly[
+        "mbarrier.arrive.shared::cluster.b64 _, [$0];",
+        NoneType,
+        constraints="r",
+        has_side_effect=True,
+    ](Int32(Int(mbar_ptr)) & 0xFEFFFFFF)
+
+
 @always_inline
 fn cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
