@@ -965,3 +965,20 @@ fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
         # CHECK: lit.call {{.*}}take_movable_pointer
         # CHECK-SAME: <:!Movable !kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
         take_movable_pointer(ptr)
+
+
+# This test ensure that overload resolution properly ignores methods coming
+# from parent traits when the child trait also has an equivalent definition.
+
+@register_passable("trivial")
+trait A:
+    fn foo(self: Self):
+      pass
+
+@register_passable("trivial")
+trait B(A):
+    fn foo(self: Self):
+      pass
+
+fn blah[b_t: B](b: b_t):
+    b.foo()

@@ -3077,6 +3077,14 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
             continue;
           }
 
+          // This check is necessary since an alias mau be defined multiple
+          // times in a trait's inheritance tree. If this branch is true then
+          // that means that the current trait didn't define an alias of 'name'
+          // and ad already created a decl pointing to one of the parent trait's
+          // aliases.
+          if (isInherited(overrideAliasDecl, traitDecl))
+            continue;
+
           // Store a SymbolRefAttr pointing to the parent trait of the alias
           // we're currently overriding.
           //

@@ -944,6 +944,21 @@ fn receiveStructWithExplicitOverride[T: StructWithExplicitOverride]():
     alias cc: CC = T.Type
 
 
+# // -----
+
+# Tests that a bug originally introduced by (#65985) is no longer present.
+struct ZInt:
+    pass
+
+trait A:
+    alias foo: ZInt
+
+trait B(A):
+    alias foo: ZInt
+
+trait C(B):
+    pass
+
 # TODO(MOCO-2123): Make this work:
 # trait TraitWithNoOverride(A, B):
 #     pass
