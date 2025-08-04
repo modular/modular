@@ -752,11 +752,11 @@ struct MojoDocument::Context {
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
-MojoDocument::MojoDocument(
-    Kind kind, ArrayRef<lsp::URIForFile> uris, int64_t version,
-    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
-    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
-    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
+MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
+                           int64_t version,
+                           SendDiagnosticsFnRef sendDiagnosticsFn,
+                           AsyncRT::Runtime &runtime,
+                           ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)),
@@ -768,8 +768,11 @@ MojoDocument::MojoDocument(
   std::vector<std::string> allIncludeDirs{parentDir};
   llvm::append_range(allIncludeDirs, includeDirs);
   getSourceMgr().setIncludeDirs(allIncludeDirs);
+}
 
-  // Start a task to resolve the document.
+void MojoDocument::startDocumentParse(AsyncRT::AnyAsyncValueRef chain,
+                                      LSPTelemetryContext &telemetryCtx,
+                                      ProgressManager &progressMgr) {
   chain.andThenAsync(
       [doc = MojoDocumentRef::copy(this), &telemetryCtx, &progressMgr] {
         doc->parseDocument(telemetryCtx, progressMgr);
@@ -1962,14 +1965,13 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 // MojoTextDocument
 //===----------------------------------------------------------------------===//
 
-MojoTextDocument::MojoTextDocument(
-    const lsp::URIForFile &uri, std::string &&contents, int64_t version,
-    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
-    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
-    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
+MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
+                                   std::string &&contents, int64_t version,
+                                   SendDiagnosticsFnRef sendDiagnosticsFn,
+                                   AsyncRT::Runtime &runtime,
+                                   ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
-                   runtime, std::move(chain), includeDirs, telemetryCtx,
-                   progressMgr),
+                   runtime, includeDirs),
       contents(std::move(contents)) {
   // We add the main doc to the SourceMgr here to ensure it's considered the
   // "main" file.
@@ -2101,11 +2103,9 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
     SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
-    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
-    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
+    ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
-                   sendDiagnosticsFn, runtime, std::move(chain), includeDirs,
-                   telemetryCtx, progressMgr) {
+                   sendDiagnosticsFn, runtime, includeDirs) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
     if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
       continue;
@@ -2452,10 +2452,12 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   }
 
   // Create a new document.
-  it->second = MojoTextDocumentRef::create(
-      uri, std::move(contents), version, impl->sendDiagnosticsFn, runtime,
-      std::move(chain), impl->includeDirs, getLSPTelemetryContext(),
-      impl->progressMgr);
+  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
+                                           impl->sendDiagnosticsFn, runtime,
+                                           impl->includeDirs);
+
+  it->second->startDocumentParse(std::move(chain), getLSPTelemetryContext(),
+                                 impl->progressMgr);
 }
 
 /// Convert a UTF-16 based offset to a UTF-8 offset, using a UTF-8 encoded
@@ -2610,12 +2612,14 @@ void MojoServer::addNotebookDocument(
     docURIs.push_back(cell.uri);
 
   // Create a new document.
-  file = MojoNotebookDocumentRef::create(
-      docURIs, version, cells, cellDocuments, impl->sendDiagnosticsFn, runtime,
-      std::move(chain), impl->includeDirs, getLSPTelemetryContext(),
-      impl->progressMgr);
+  file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
+                                         impl->sendDiagnosticsFn, runtime,
+                                         impl->includeDirs);
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
+
+  file->startDocumentParse(std::move(chain), getLSPTelemetryContext(),
+                           impl->progressMgr);
 }
 
 void MojoServer::removeNotebookDocument(

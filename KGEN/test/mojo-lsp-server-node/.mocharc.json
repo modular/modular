@@ -1,4 +1,5 @@
 {
   "timeout": "30s",
-  "allowUncaught": false
+  "allowUncaught": false,
+  "jobs": 8
 }

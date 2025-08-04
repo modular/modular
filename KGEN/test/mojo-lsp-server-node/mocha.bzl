@@ -13,20 +13,13 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
     bin.mocha_test(
         name = name,
         args = [
-            # Temporary workaround to avoid blocking CI runs with flaky tests.
-            # See MOTO-1268.
-            "--pass-on-failing-test-suite",
+            "--parallel",
             "--reporter",
-            "mocha-multi-reporters",
-            "--reporter-options",
-            "configFile=$(location //KGEN/test/mojo-lsp-server-node:mocha-reporters.json)",
+            native.package_name() + "/src/reporter.js",
             "--config=$(location //KGEN/test/mojo-lsp-server-node:.mocharc.json)",
-            native.package_name() + "/**/*.spec.js",
+            native.package_name() + "/src/**/*.spec.js",
         ] + args,
         data = data + srcs + [
-            "//KGEN/test/mojo-lsp-server-node:node_modules/mocha-junit-reporter",
-            "//KGEN/test/mojo-lsp-server-node:node_modules/mocha-multi-reporters",
-            "//KGEN/test/mojo-lsp-server-node:mocha-reporters.json",
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",
             "@mojo//:stdlib",
             "//SDK/lib/API/mojo/max/tensor",

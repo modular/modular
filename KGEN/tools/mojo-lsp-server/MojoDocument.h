@@ -211,6 +211,10 @@ public:
   /// errors are reported to the source manager.
   void checkModuleSemantics(MojoASTDeclRef decl);
 
+  void startDocumentParse(AnyAsyncValueRef chain,
+                          LSPTelemetryContext &telemetryCtx,
+                          ProgressManager &progressMgr);
+
   //===--------------------------------------------------------------------===//
   // Asynchronous LSP Queries
   //===--------------------------------------------------------------------===//
@@ -275,9 +279,7 @@ public:
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn,
-               AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
-               ArrayRef<std::string> includeDirs,
-               LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr);
+               AsyncRT::Runtime &runtime, ArrayRef<std::string> includeDirs);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -558,10 +560,8 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
-                   ArrayRef<std::string> includeDirs,
-                   LSPTelemetryContext &telemetryCtx,
-                   ProgressManager &progressMgr);
+                   AsyncRT::Runtime &runtime,
+                   ArrayRef<std::string> includeDirs);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 
@@ -667,13 +667,13 @@ public:
     MojoDocStrings docStrings;
   };
 
-  MojoNotebookDocument(
-      ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs, int64_t version,
-      ArrayRef<mlir::lsp::NotebookCell> cellInfos,
-      ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
-      SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
-      AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
-      LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr);
+  MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,
+                       int64_t version,
+                       ArrayRef<mlir::lsp::NotebookCell> cellInfos,
+                       ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
+                       SendDiagnosticsFnRef sendDiagnosticsFn,
+                       AsyncRT::Runtime &runtime,
+                       ArrayRef<std::string> includeDirs);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;
 
