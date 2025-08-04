@@ -9,6 +9,7 @@ from .audio_generation import (
     AudioGenerationRequest,
     AudioGenerationResponse,
     AudioGenerator,
+    AudioGeneratorContext,
     AudioGeneratorOutput,
 )
 from .embeddings_generation import EmbeddingsGenerator, EmbeddingsOutput
@@ -28,6 +29,7 @@ __all__ = [
     "AudioGenerationRequest",
     "AudioGenerationResponse",
     "AudioGenerator",
+    "AudioGeneratorContext",
     "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",

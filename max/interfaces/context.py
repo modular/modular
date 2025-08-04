@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Optional, Protocol, TypeVar, Union, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -113,6 +113,9 @@ class BaseContext(Protocol):
     def update_status(self, status: GenerationStatus) -> None:
         """Update the generation status of the request."""
         ...
+
+
+BaseContextType = TypeVar("BaseContextType", bound=BaseContext)
 
 
 @runtime_checkable
