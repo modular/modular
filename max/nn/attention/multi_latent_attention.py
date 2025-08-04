@@ -612,7 +612,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
                     layer_idx,
                     xs[i],
                     kv_collections[i],
-                    freqs_cis=freqs_cis,
+                    freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
                 )
                 for i in range(len(self.devices))
