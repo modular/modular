@@ -306,6 +306,20 @@ struct Optional[T: Copyable & Movable](
         output.write(")")
         return output
 
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(Bool),
+    ](self) -> Bool:
+        """Merge with other bools in an expression.
+
+        Parameters:
+            other_type: The type of the bool to merge with.
+
+        Returns:
+            A Bool after merging with the specified `other_type`.
+        """
+        return self.__bool__()
+
     fn write_to[
         W: Writer, U: Representable & Copyable & Movable, //
     ](self: Optional[U], mut writer: W):
@@ -537,6 +551,20 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
 
         Returns:
             True if the Optional has a value and False otherwise.
+        """
+        return self.__bool__()
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(Bool),
+    ](self) -> Bool:
+        """Merge with other bools in an expression.
+
+        Parameters:
+            other_type: The type of the bool to merge with.
+
+        Returns:
+            A Bool after merging with the specified `other_type`.
         """
         return self.__bool__()
 

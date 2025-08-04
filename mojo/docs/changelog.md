@@ -28,8 +28,20 @@ what we publish.
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the
   Python equivalent function.
+
 - `Span` is now `Representable` if its elements implement trait
   `Representable`.
+
+- `Optional` and `OptionalReg` can now be composed with `Bool` in
+  expressions, both at comptime and runtime:
+
+  ```mojo
+  alias value = Optional[Int](42)
+
+  @parameter
+  if CompilationTarget.is_macos() and value:
+      print("is macos and value is:", value.value())
+  ```
 
 ### Tooling changes
 
