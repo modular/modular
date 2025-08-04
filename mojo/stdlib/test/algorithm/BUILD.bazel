@@ -6,7 +6,6 @@ _FILECHECK_TESTS = [
     "test_reductions.mojo",
     "test_stencil.mojo",
     "test_tile.mojo",
-    "test_vectorize.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {
