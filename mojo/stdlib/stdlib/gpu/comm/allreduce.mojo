@@ -184,6 +184,7 @@ fn _can_enable_p2p_impl(ctxs: List[DeviceContext]) raises -> Bool:
                 # Only ignore the benign "already enabled" error
                 if "PEER_ACCESS_ALREADY_ENABLED" in String(e):
                     continue
+
                 # Any other error means P2P cannot be established
                 return False
 
@@ -203,19 +204,31 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     alias p2p_not_available = Scalar[DType.index](1)
     alias p2p_available = Scalar[DType.index](2)
 
+    # grab context IDs
+    var ctx_ids = List[Int]()
+    for ctx in ctxs:
+        ctx_ids.append(Int(ctx.id()))
+
+    # sort context IDs for consistent cache key
+    @parameter
+    @always_inline
+    fn _less_than(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
+
+    sort[_less_than](Span[Int](ctx_ids.unsafe_ptr(), len(ctx_ids)))
+
     var cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
+    for ctx_id in ctx_ids:
+        cache_name += "_" + String(ctx_id)
+
     # We use 0 to indicate that the cache is not found, 1 to indicate that it is
     # found and p2p is not present and 2 to indicate that the cache is found and
     # that p2p is present.
     var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
-
-    # Always try to enable P2P, even if we have a cached result
-    # This ensures new GPU pairs get enabled when moving from 2 to 4 GPUs
-    var res = _can_enable_p2p_impl(ctxs)
-
-    # Only use cache if we haven't established P2P is available
-    if found and not res:
+    if found:
         return found == p2p_available
+
+    var res = _can_enable_p2p_impl(ctxs)
     var ok = p2p_available if res else p2p_not_available
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_name),
