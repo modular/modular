@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# TODO: re-enable B200 test
-# UNSUPPORTED: B200-GPU
 
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n 1 %t
