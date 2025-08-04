@@ -6,6 +6,7 @@ modular_py_test(
     data = ["//SDK/lib/API/python/tests/torch/custom_ops"],
     env = {
         "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //SDK/lib/API/python/tests/torch/custom_ops)",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.4",
     },
     imports = ["pytests"],
     mojo_deps = [
