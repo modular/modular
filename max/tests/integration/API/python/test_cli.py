@@ -34,7 +34,7 @@ from test_common.pipeline_cli_utils import (
     CLITestEnum,
     Output,
 )
-from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 
@@ -389,7 +389,7 @@ VALID_RESULTS = {
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_pipeline_config_cli_parsing() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(PipelineConfig)
     for config_field in fields(PipelineConfig):
         if not config_field.name.startswith("_"):
@@ -399,7 +399,7 @@ def test_pipeline_config_cli_parsing() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_cli__get_default() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     for config_field in fields(CLITestConfig):
         assert (
             get_default(config_field)
@@ -410,7 +410,7 @@ def test_cli__get_default() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_cli__get_field_type() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -427,7 +427,7 @@ def test_cli__get_field_type() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_cli__option_is_flag() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -440,7 +440,7 @@ def test_cli__option_is_flag() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_cli__option_is_multiple() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -451,7 +451,7 @@ def test_cli__option_is_multiple() -> None:
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_cli__option_is_optional() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):

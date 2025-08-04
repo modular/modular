@@ -14,7 +14,10 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from test_common.mocks import mock_estimate_memory_footprint
-from test_common.pipeline_model_dummy import DUMMY_ARCH, DUMMY_GPTQ_ARCH
+from test_common.pipeline_model_dummy import (
+    DUMMY_LLAMA_ARCH,
+    DUMMY_LLAMA_GPTQ_ARCH,
+)
 from test_common.registry import prepare_registry
 
 
@@ -24,7 +27,7 @@ from test_common.registry import prepare_registry
     accelerator_count() == 0, reason="GPTQ only supported on gpu"
 )
 def test_config__raises_with_unsupported_GPTQ_format() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_GPTQ_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_GPTQ_ARCH)
     # this should work
     config = PipelineConfig(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
@@ -49,7 +52,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     reason="BF16 is not supported on ARM CPU architecture",
 )
 def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path) -> None:  # noqa: ANN001
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     temp_valid_kernels = [
         ("bf16", 1, 16),

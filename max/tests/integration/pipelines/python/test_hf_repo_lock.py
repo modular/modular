@@ -9,7 +9,7 @@ import logging
 import hf_repo_lock
 import pytest
 from test_common.mocks import DummyPipelineConfig
-from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 
 logger = logging.getLogger("max.pipelines")
 
@@ -51,7 +51,7 @@ def test_apply_to_config() -> None:
         max_batch_size=None,
         max_length=None,
         device_specs=[],
-        quantization_encoding=DUMMY_ARCH.default_encoding,
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
     )
     assert config.model_config.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
@@ -64,7 +64,7 @@ def test_apply_to_config_raises_on_missing_revision() -> None:
         max_batch_size=None,
         max_length=None,
         device_specs=[],
-        quantization_encoding=DUMMY_ARCH.default_encoding,
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
     )
     with pytest.raises(
         ValueError, match="No locked revision found for model repository"

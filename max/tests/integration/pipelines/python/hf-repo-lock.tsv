@@ -44,6 +44,7 @@ google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
 hf-internal-testing/tiny-random-LlamaForCausalLM	f142fc3230c41b4e67f2826b879e289a4e08e679
 hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4	f184d2b18e2b7c257af79aa0bc53ef3ee505caa2
 kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit	0dbc9d99d9036c187562e72e9eeb8036da4e1105
+lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF	d0ac80a21158e6315dccfd568bebfa5b3ed3f1d3
 meta-llama/Llama-3.1-8B-Instruct	0e9e39f249a16976918f6564b8830bc894c89659
 meta-llama/Llama-3.2-11B-Vision-Instruct	9eb2daaa8597bf192a8b0e73f848f3a102794df5
 meta-llama/Llama-3.2-1B	4e20de362430cd3b72f300e6b0f18e50e7166e08

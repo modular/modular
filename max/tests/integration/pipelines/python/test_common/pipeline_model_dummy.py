@@ -33,7 +33,7 @@ from max.pipelines import (
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.lib import KVCacheMixin
+from max.pipelines.lib import KVCacheMixin, RopeType
 from transformers import AutoConfig
 
 
@@ -273,36 +273,26 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
             raise ValueError(msg) from e
 
 
-class DummyReplitPipelineModel(DummyPipelineModel):
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_seq_len,
-                default=pipeline_config.max_length,
-            )
-        except ValueError as e:
-            msg = (
-                "Unable to infer max_length for DummyModel, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.max_seq_len})."
-            )
-            raise ValueError(msg) from e
-
-
-DUMMY_ARCH = SupportedArchitecture(
+DUMMY_LLAMA_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["modularai/Llama-3.1-8B-Instruct-GGUF"],
+    example_repo_ids=[
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        "meta-llama/Llama-Guard-3-8B",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct",
+        "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "modularai/Llama-3.1-8B-Instruct-GGUF",
+    ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
-        SupportedEncoding.q6_k: [KVCacheStrategy.CONTINUOUS],
-        SupportedEncoding.q4_0: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,
@@ -310,8 +300,7 @@ DUMMY_ARCH = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
 )
 
-
-DUMMY_GPTQ_ARCH = SupportedArchitecture(
+DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
@@ -332,4 +321,33 @@ DUMMY_GPTQ_ARCH = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
 )
 
-ARCHITECTURES = [DUMMY_ARCH]
+DUMMY_GEMMA_ARCH = SupportedArchitecture(
+    name="Gemma3ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=[
+        # it = Instruction tuned (recommended).
+        # pt = Pre-trained.
+        "google/gemma-3-1b-it",
+        "google/gemma-3-1b-pt",
+        # TODO(MODELS-487): >=4B models have a slightly different architecture
+        # and config and use a different rotary embedding. These will likely
+        # need a separate SupportedArchitecture registration.
+        # "google/gemma-3-4b-it",
+        # "google/gemma-3-4b-pt",
+        # "google/gemma-3-12b-it",
+        # "google/gemma-3-12b-pt",
+        # "google/gemma-3-27b-it",
+        # "google/gemma-3-27b-pt",
+    ],
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+    },
+    pipeline_model=DummyPipelineModel,
+    tokenizer=TextTokenizer,
+    default_weights_format=WeightsFormat.safetensors,
+    rope_type=RopeType.normal,
+    multi_gpu_supported=False,
+)
+
+ARCHITECTURES = [DUMMY_LLAMA_ARCH, DUMMY_GEMMA_ARCH]

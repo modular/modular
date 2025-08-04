@@ -28,11 +28,6 @@ SMOLLM_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_HF_REPO_ID)
 SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 SMOLLM2_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM2_HF_REPO_ID)
 
-EXAONE_2_4B_HF_REPO_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
-EXAONE_2_4B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
-    EXAONE_2_4B_HF_REPO_ID
-)
-
 DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 )
@@ -40,6 +35,14 @@ DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
 )
 
+LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
+    "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF"
+)
+LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION = (
+    hf_repo_lock.revision_for_hf_repo(
+        LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
+    )
+)
 
 TINY_RANDOM_LLAMA_HF_REPO_ID = (
     "trl-internal-testing/tiny-random-LlamaForCausalLM"
@@ -257,24 +260,6 @@ def smollm2_135m_local_path():
 
 
 @pytest.fixture
-def exaone_2_4b_local_path():
-    assert isinstance(EXAONE_2_4B_HF_REVISION, str), (
-        "EXAONE_2_4B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(
-            EXAONE_2_4B_HF_REPO_ID, EXAONE_2_4B_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {e}")
-        logger.warning(
-            f"Falling back to repo_id: {EXAONE_2_4B_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = EXAONE_2_4B_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
 def deepseek_r1_distill_llama_8b_local_path():
     assert isinstance(DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION, str), (
         "DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
@@ -290,6 +275,26 @@ def deepseek_r1_distill_llama_8b_local_path():
             f"Falling back to repo_id: {DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def lmstudio_deepseek_r1_distill_llama_8b_local_path():
+    assert isinstance(LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION, str), (
+        "LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+
+    try:
+        model_path = generate_local_model_path(
+            LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID,
+            LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION,
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
     return model_path
 
 

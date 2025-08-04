@@ -10,25 +10,25 @@ import pytest
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from test_common.mocks import mock_pipeline_config_hf_dependencies
-from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_registry__test_register() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     assert "LlamaForCausalLM" in PIPELINE_REGISTRY.architectures
 
     # This should fail when registering the architecture for a second time.
     with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.register(DUMMY_ARCH)
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     with pytest.raises(ValueError):
         config = PipelineConfig(
@@ -45,7 +45,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
 def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
     None
 ):
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     # Should now raise an error since HuggingFace fallback is removed
     with pytest.raises(
@@ -61,7 +61,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
     @prepare_registry
     @mock_pipeline_config_hf_dependencies
     def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
-        PIPELINE_REGISTRY.register(DUMMY_ARCH)
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         config = PipelineConfig(
             model_path="some-model",
             max_batch_size=1,

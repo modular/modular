@@ -19,8 +19,8 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_decoding import (
     SpeculativeDecodingTextGenerationPipeline,
 )
-from test_common.mocks import mock_estimate_memory_footprint
-from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.graph_utils import is_h100_h200
+from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 
@@ -94,16 +94,15 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     }
 
 
-@prepare_registry
-@mock_estimate_memory_footprint
-@pytest.mark.skip(
-    reason="TODO(AITLIB-339): This test is flaky due to bad huggingface cache hydration"
+@pytest.mark.skipif(
+    is_h100_h200(),
+    reason="For some reason, quantization encoding can't be found on H100",
 )
+@prepare_registry
 def test_config__validate_device_and_encoding_combinations(
     smollm_135m_local_path,  # noqa: ANN001
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     # Valid device/encoding combinations
     config = PipelineConfig(
@@ -114,30 +113,47 @@ def test_config__validate_device_and_encoding_combinations(
     )
 
 
+@pytest.mark.skipif(
+    is_h100_h200(),
+    reason="For some reason, quantization encoding can't be found on H100",
+)
+@prepare_registry
 def test_config__validate_target_and_draft_architecture(
-    exaone_2_4b_local_path,  # noqa: ANN001
     smollm_135m_local_path,  # noqa: ANN001
     deepseek_r1_distill_llama_8b_local_path,  # noqa: ANN001
+    lmstudio_deepseek_r1_distill_llama_8b_local_path,  # noqa: ANN001
+    gemma_3_1b_it_local_path,  # noqa: ANN001
 ) -> None:
-    with pytest.raises(ValueError):
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+    PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+
+    with pytest.raises(
+        ValueError,
+        match=r"architecture for the draft_model \(.*\) does not match the architecture retrieved for the target model \(.*\)",
+    ):
         # Test that when the target & draft architectures are different
         # we raise an error.
         config = PipelineConfig(
-            model_path=exaone_2_4b_local_path,
-            quantization_encoding=SupportedEncoding.q4_k,
-            device_specs=[DeviceSpec.cpu()],
-            draft_model_path=smollm_135m_local_path,
+            model_path=smollm_135m_local_path,
+            device_specs=[DeviceSpec.accelerator()],
+            draft_model_path=gemma_3_1b_it_local_path,
+            draft_device_specs=[DeviceSpec.accelerator()],
         )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"tokenizer for draft_model \(.*\) does not match the vocabulary of the tokenizer for the target model",
+    ):
         # Test that the target & draft architectures are the same,
         # but the tokenizers are different
         config = PipelineConfig(
             model_path=deepseek_r1_distill_llama_8b_local_path,
-            quantization_encoding=SupportedEncoding.q4_k,
+            quantization_encoding=SupportedEncoding.q6_k,
+            device_specs=[DeviceSpec.accelerator()],
             weight_path=[
                 Path(
-                    "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
+                    lmstudio_deepseek_r1_distill_llama_8b_local_path,
+                    "DeepSeek-R1-Distill-Llama-8B-Q6_K.gguf",
                 )
             ],
             draft_model_path=smollm_135m_local_path,
