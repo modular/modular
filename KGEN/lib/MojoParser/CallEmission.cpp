@@ -147,6 +147,10 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     if (!isValid(eval) || bestFitness->isBetter(eval))
       continue;
 
+    // Ignore any functions explicitly marked as disabled.
+    if (isDisabledFunction(candidate))
+      continue;
+
     // If we found a strictly better candidate, clear the list.
     if (eval.isBetter(*bestFitness)) {
       newFnDecls.clear();
