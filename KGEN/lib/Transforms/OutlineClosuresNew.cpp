@@ -700,6 +700,14 @@ Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
   Region &region = closureInitData.region();
   region.insertArgument((unsigned)0, selfType, region.getLoc());
   liftCallFunction(b, closureInitData, capturedInstance);
+  // TODO: create thunks for register passable closures (MOCO-2242).
+  if (!isRegisterPassable) {
+    liftMoveFunction(b, closureInitData, loweredClosureType, {},
+                     capturedInstance);
+    liftDelFunction(b, closureInitData, loweredClosureType, {},
+                    capturedInstance);
+  }
+
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
   b.setInsertionPoint(closureInitData.getClosureInit());
