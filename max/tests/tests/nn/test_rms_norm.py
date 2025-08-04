@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn.norm import DistributedRMSNorm, RMSNorm
+from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
+from max.nn.norm import RMSNorm
 
 from .norm_test_utils import (
     COMMON_NORM_TEST_SHAPES,
@@ -80,19 +80,25 @@ def test_rms_norm_device_transfer() -> None:
 
 
 def test_distributed_rms_norm() -> None:
-    """Tests DistributedRMSNorm with multiple devices."""
+    """Tests RMSNorm with sharding across multiple devices."""
     devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
-    norm = DistributedRMSNorm(dim=64, dtype=DType.float32, devices=devices)
-    # DistributedRMSNorm expects a single input that will be split across devices.
+    norm = RMSNorm(dim=64, dtype=DType.float32)
+    norm.sharding_strategy = ShardingStrategy.replicate(len(devices))
+    norm_shards = norm.shard(devices)
+
+    # Test that we get the correct number of shards
+    assert len(norm_shards) == 2
+
+    # Create a graph with one of the shards
     g = Graph(
         "test",
-        forward=norm,
+        forward=norm_shards[0],
         input_types=[TensorType(DType.float32, (2, 64), DeviceRef.GPU(0))],
     )
 
-    # Should have multiple rms_norm ops, one per device.
+    # Should have one rms_norm op
     rms_norm_ops = find_ops_in_graph(g, "mo.custom", "rms_norm")
-    assert len(rms_norm_ops) == 2
+    assert len(rms_norm_ops) == 1
 
 
 def test_rms_norm_tensor_parallel_scenario() -> None:
