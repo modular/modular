@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
+
+import msgspec
 
 
 class LoRAType(Enum):
@@ -48,8 +49,7 @@ class LoRAStatus(Enum):
     LOAD_INVALID_ADAPTER = "load_invalid_adapter"
 
 
-@dataclass
-class LoRARequest:
+class LoRARequest(msgspec.Struct, omit_defaults=True):
     """Container for LoRA adapter requests."""
 
     operation: LoRAOperation
@@ -57,8 +57,7 @@ class LoRARequest:
     lora_path: str | None = None
 
 
-@dataclass
-class LoRAResponse:
+class LoRAResponse(msgspec.Struct):
     """Response from LoRA operations."""
 
     status: LoRAStatus
