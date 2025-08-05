@@ -9,6 +9,7 @@ from typing import Callable, Union
 
 from .context import BaseContext, BaseContextType, InputContext, SamplingParams
 from .log_probabilities import LogProbabilities
+from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import Pipeline, PipelineOutputsDict
 from .pipeline_variants import (
     AudioGenerationMetadata,
@@ -57,6 +58,11 @@ __all__ = [
     "EmbeddingsOutput",
     "GenerationStatus",
     "InputContext",
+    "LoRAOperation",
+    "LoRARequest",
+    "LoRAResponse",
+    "LoRAStatus",
+    "LoRAType",
     "LogProbabilities",
     "MAXQueue",
     "Pipeline",
