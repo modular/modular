@@ -75,6 +75,9 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
 
         response = requests.get("http://localhost:8001/metrics")
 
+        # Ensure enough time for request to complete
+        time.sleep(5)
+
         assert response.status_code == 200
         assert "maxserve_num_input_tokens_total" in response.text
         assert (
