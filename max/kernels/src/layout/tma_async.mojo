@@ -620,9 +620,7 @@ struct TMATensorTile[
         cta_group: Int = 1
     ](
         self,
-        dst: LayoutTensor[
-            dtype, _, address_space = AddressSpace.SHARED, *_, **_
-        ],
+        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -654,6 +652,11 @@ struct TMATensorTile[
         constrained[
             __type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
+        ]()
+
+        constrained[
+            __type_of(dst).dtype == dtype,
+            "Input tensor has a different type than the TMA op",
         ]()
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
