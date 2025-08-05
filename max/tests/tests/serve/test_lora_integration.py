@@ -207,3 +207,75 @@ def test_lora_error_handling(lora_manager: LoRAManager) -> None:
 
     status = lora_manager.unload_adapter("nonexistent")
     assert status == LoRAStatus.UNLOAD_NAME_NONEXISTENT
+
+
+def test_lora_lru_eviction(
+    lora_manager: LoRAManager, temp_adapters: list[str]
+) -> None:
+    """Test LRU eviction behavior when slots are full."""
+
+    for i in range(6):
+        adapter_path = temp_adapters[i % len(temp_adapters)]
+        status = lora_manager.load_adapter(f"adapter_{i}={adapter_path}")
+        assert status == LoRAStatus.SUCCESS
+
+    assert len(lora_manager.loras) == 6
+
+    cache_size = len(lora_manager._active_loras)
+    assert cache_size < 6, (
+        f"Expected LRU cache to evict some items, but has {cache_size} items"
+    )
+
+    evicted_count = 0
+    for i in range(3):
+        if lora_manager._active_loras.get_slot(f"adapter_{i}") is None:
+            evicted_count += 1
+
+    assert evicted_count > 0, (
+        "Expected at least some early items to be evicted due to LRU policy"
+    )
+
+
+def test_lru_cache_automatic_activation(
+    lora_manager: LoRAManager, temp_adapters: list[str]
+) -> None:
+    """Test that LoRAs are automatically activated when referenced in batches."""
+
+    for i in range(3):
+        status = lora_manager.load_adapter(f"adapter_{i}={temp_adapters[i]}")
+        assert status == LoRAStatus.SUCCESS
+
+    lora_manager._active_loras.clear()
+    assert len(lora_manager._active_loras) == 0
+
+    mock_contexts = []
+    for name in ["adapter_0", "adapter_1", "/mock/path"]:
+        ctx = MagicMock()
+        ctx.model_name = name
+        mock_contexts.append(ctx)
+
+    batch = {
+        "req1": mock_contexts[0],
+        "req2": mock_contexts[1],
+        "req3": mock_contexts[2],
+    }
+
+    sorted_batch = lora_manager.sort_lora_batch(batch)
+
+    assert len(lora_manager._active_loras) == 2
+    assert lora_manager._active_loras.get_slot("adapter_0") is not None
+    assert lora_manager._active_loras.get_slot("adapter_1") is not None
+    assert lora_manager._active_loras.get_slot("adapter_2") is None
+
+    sorted_keys = list(sorted_batch.keys())
+    slot_0 = lora_manager._model_name_to_id("adapter_0")
+    slot_1 = lora_manager._model_name_to_id("adapter_1")
+    base_slot = lora_manager._model_name_to_id("/mock/path")
+
+    # Check that LoRA slots are assigned (>= 0) and base model slot is -1
+    assert slot_0 >= 0
+    assert slot_1 >= 0
+    assert base_slot == -1
+
+    # Check that slots are sorted
+    assert slot_0 < slot_1
