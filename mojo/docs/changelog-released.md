@@ -17,43 +17,33 @@ See how to [install the nightly release](/max/packages#install).
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
-## v25.5 (pending)
+## v25.5 (2025-08-05)
 
-### ✨ Highlights
+### ✨ Highlights {#25-5-highlights}
 
-### Language enhancements
+- Mojo is now available independently as the `mojo` Conda package. In includes
+  the Mojo compiler, standard library, and the `layout` package (which is
+  heavily used in GPU programming). It also includes the Mojo developer tools:
+  LSP, debugger, formatter, and so on.
 
-- `@parameter for` now works on a broader range of collection types, enabling
-  things like `@parameter for i in [1, 2, 3]: ...`.
+  Currently to use Python to Mojo interoperability, you must install the
+  `modular` package.
+
+  For more details, see [Packages](/max/packages).
 
 - Parametric aliases are now supported: Aliases can be specified with an
   optional parameter list (just like functions). Parametric aliases are
-  considered first class parameter values, too.
+  considered first class parameter values, too. For more details, see
+  [Parametric aliases](/mojo/manual/parameters/#parametric-aliases) in the Mojo
+  Manual.
 
-- The compiler now detects attempts to materialize references (and related types
-  like slices/pointers) to comptime interpreter stack memory into runtime code.
-  The compiler cannot currently track the lifetime of internal stack objects
-  when materialized to runtime, which could cause memory leaks.  Consider this
-  example:
+- Mojo API documentation now generates cross-references for parameter, argument,
+  and return value types.
 
-  ```mojo
-  fn test_comptime_materialize():
-    # This is ok! Forms a comptime reference to a comptime "stack" value of String
-    # type.
-    alias bad = String("foo" + "bar").unsafe_ptr()
-    # This is ok too, dereferences the pointer at comptime loading the byte.
-    alias byte = bad[]
-    # This materializes a Byte from comptime to runtime.
-    var rt_byte = byte
-    # Error: cannot materialize to runtime value, the type contains an origin
-    # referring to a compile-time value
-    var use_bad = bad
-  ```
+### Language enhancements {#25-5-language-enhancements}
 
-  Previously the compiler would materialize the memory representation of the
-  `String` value but not know it needs to be destroyed.  It now detects the
-  problem. If you run into this, rework the code to materialize the full object
-  (e.g. the String) to runtime explicitly.
+- `@parameter for` now works on a broader range of collection types, enabling
+  things like `@parameter for i in [1, 2, 3]: ...`.
 
 - `StringLiteral` now automatically materializes to a `String` when used at
   runtime:
@@ -74,21 +64,53 @@ See how to [install the nightly release](/max/packages#install).
   var if_result = "foo" if True else "bar"
   ```
 
-Initializing a `String` from a `StringLiteral` initially points to static
-constant memory, and does not perform SSO or allocate until the first
-mutation.
+  Initializing a `String` from a `StringLiteral` initially points to static
+  constant memory, and does not perform any allocation until the first mutation.
 
-### Language changes
+- The compiler now detects attempts to materialize references to compile-time
+  interpreter stack memory into runtime code. This includes related types that
+  reference memory, like slices, spans, and pointers.
+
+  The compiler cannot currently track the lifetime of internal stack objects
+  when materialized to runtime, which could cause memory leaks.  Consider this
+  example:
+
+  ```mojo
+  fn test_comptime_materialize():
+    # This is ok! Forms a comptime pointer to a comptime "stack" value of
+    # String type.
+    alias comptime_ptr = String("foo" + "bar").unsafe_ptr()
+    # This is ok too, dereferences the pointer at comptime, loading the byte.
+    alias byte = comptime_ptr[]
+    # This materializes a Byte from comptime to runtime.
+    var rt_byte = byte
+    # Error: cannot materialize to runtime value, the type contains an origin
+    # referring to a compile-time value
+    var bad_usage = comptime_ptr
+  ```
+
+  Previously the compiler would materialize the memory representation of the
+  `String` value but not know it needs to be destroyed.  It now detects the
+  problem. If you run into this, rework the code to materialize the full object
+  (e.g. the String) to runtime explicitly:
+
+  ```mojo
+  alias comptime_string = String("foo" + "bar")
+  var runtime_string = comptime_string
+  ```
+
+### Language changes {#25-5-language-changes}
 
 - The `@value` decorator has been formally deprecated with a warning, it will
-  be removed in the next release of Mojo.  Please move to the `@fieldwise_init`
+  be removed in the next release of Mojo.  Please move to the
+  [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init/)
   and synthesized `Copyable` and `Movable` trait conformance.
 
 - Implicit trait conformance is removed. All conformances must be explicitly
   declared.
 
 - The `owned` argument convention is being renamed to `var`. This reflects that
-  `var` is used consistently for a "named, scoped, owning of a value" already
+  `var` is used consistently for a "named, scoped, owned value" already
   which is exactly what the `owned` convention does.  In this release, both
   `var` and `owned` are allowed in an argument list, but `owned` will be removed
   in a subsequent release, so please move your code over.
@@ -104,39 +126,40 @@ mutation.
   fn get(self, *, idx2: Int) -> Float32
   ```
 
-### Standard library changes
+### Standard library changes {#25-5-standard-library-changes}
 
-- The `Dict` now has an `H` parameter which allows users to provider a
-  custom `Hasher` type.
-  - `default_hasher` (AHasher) and `default_comp_time_hasher` (Fnv1a)
-    are now provided
-  - The `H` parameter of `Dict` defaults to `default_hasher`
-
-- The `Hashable` trait has been updated to use a new data flow strategy.
-  - Users are now required to implement the method
-    `fn __hash__[H: Hasher](self, mut hasher: H):`
-    (see `Hashable` docstring for further details).
-
-- Indexing into a `String` now returns a `StringSlice`, avoiding an allocation.
+- Indexing into a [`String`](/mojo/stdlib/collections/string/string/String/) now
+  returns a
+  [`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice),
+  avoiding an allocation. `String.split()` now returns a `List[StringSlice]`.
 
 - Added support for a wider range of consumer-grade AMD hardware, including:
+
   - AMD Radeon RX 7xxx GPUs
   - AMD Radeon RX 9xxx GPUs
-- Compile-time checks for AMD RDNA3+ GPUs are now provided by the functions:
+
+- Compile-time checks for AMD RDNA3+ GPUs are now provided by the following
+  functions (which can be imported from `sys.info`):
+
   - `_is_amd_rdna3()`
   - `_is_amd_rdna4()`
   - `_is_amd_rdna()`
+
 - Added WMMA matrix-multiplication instructions for RDNA3+ GPUs to help support
   running AI models on those GPUs.
 
-- `memory.UnsafePointer` is now implicitly included in all mojo files. Moreover,
-  `OpaquePointer` (the equivalent of a `void*` in C) is moved into the `memory`
-  module, and is also implicitly included.
+- Added support for NVIDIA GeForce RTX 3090.
+
+- [`memory.UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) is
+  now implicitly included in all mojo files. Moreover,
+  [`OpaquePointer`](/mojo/stdlib/memory/unsafe_pointer/#opaquepointer) (the
+  equivalent of a `void*` in C) is moved into the `memory` module, and is also
+  implicitly included.
 
 - Python interop changes:
 
   - Mojo methods can now take `py_self: UnsafePointer[Self]` instead of the raw
-    `py_self: PythonObject`, elimintating the downcasting boilerplate required
+    `py_self: PythonObject`, eliminating the downcasting boilerplate required
     in the common case.
 
   - Mojo functions can now natively accept
@@ -152,29 +175,52 @@ mutation.
         y = kwargs["y"]
     ```
 
-  - The `PythonTypeBuilder` utility now allows:
-    - registering bindings for Python static methods, i.e. methods that don't
+  - The [`PythonTypeBuilder`](/mojo/stdlib/python/bindings/PythonTypeBuilder/)
+    utility now allows:
+    - Registering bindings for Python static methods, i.e. methods that don't
       require an instance of the class.
-    - registering initializers that take arguments. Types no longer need to be
+    - Registering initializers that take arguments. Types no longer need to be
       `Defaultable` to be exposed and created from Python.
 
-  - The `PythonConvertible` trait has been renamed to `ConvertibleToPython`.
-    This is now consistent with the `ConvertibleFromPython` trait, modeling
-    Mojo types that can be converted either to or from a `PythonObject`.
+  - The `PythonConvertible` trait has been renamed to
+    [`ConvertibleToPython`](/mojo/stdlib/python/python_object/ConvertibleToPython/).
+    This is now consistent with the
+    [`ConvertibleFromPython`](/mojo/stdlib/python/python_object/ConvertibleFromPython)
+    trait, modeling Mojo types that can be converted either to or from a
+    `PythonObject`.
 
-- Added `Iterator` trait for modeling types that produce a sequence of values.
+  For more information, see
+  [Calling Mojo from Python](/mojo/manual/python/mojo-from-python) in the Mojo
+  Manual.
+
+- Added [`Iterator`](/mojo/stdlib/builtin/value/Iterator/) trait for modeling
+  types that produce a sequence of values.
 
   A type can implement `Iterator` by providing `__next__()` and `__has_next__()`
   methods. This naming and behavior is based on
   the Python
   [`Iterator`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)
-  typing annotation, diverging slightly due to constraints present in Mojo today.
+  type annotation, diverging slightly due to constraints present in Mojo today.
 
   Any type that implements `Iterator` can be used within `for` and
   `@parameter for` looping syntax.
 
   `Iterator` does not currently have a variant for supporting iteration over
   borrowed `ref` values.
+
+- The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type now has an `H`
+  parameter which allows users to provider a custom `Hasher` type.
+
+  - `default_hasher` (AHasher) and `default_comp_time_hasher` (Fnv1a)
+    are now provided
+  - The `H` parameter of `Dict` defaults to `default_hasher`
+
+- The [`Hashable`](/mojo/stdlib/hashlib/hash/Hashable) trait has been updated to
+  use a new data flow strategy.
+
+  - Users are now required to implement the method
+    `fn __hash__[H: Hasher](self, mut hasher: H):`
+    (see the `Hashable` API documentation for further details).
 
 - `InlineArray` can now be constructed with a size of 0. This makes it easier to
   use `InlineArray` in situations where the number of elements is generic and
@@ -186,32 +232,36 @@ mutation.
   this operation that takes an arbitrary-length number of additional elements
   (possibly 0) to add to the list.
 
-- A new `io` module is available in the library. Some core input/output types
-  previously in the `builtin` module have been moved and imports may need to be
-  adjusted.
-  - `utils/write.mojo` got moved to `io/write.mojo` as well.
+- A new [`io`](/mojo/stdlib/io/) module is available in the library. Some core
+  input/output APIs previously in the `builtin` module have been moved to `io`.
+  Currently all of the APIs in the `io` module are imported automatically. The
+  following APIs were moved to `io`:
 
-- Added support for NVIDIA GeForce RTX 3090.
-
-- `String.split()` now returns a `List[StringSlice]`.
+  - File-related APIs such as `open()`, `FileHandle` and `FileDescriptor`.
+  - The `Writer` and `Writable` traits.
+  - `input()` and `print()` functions.
 
 - `StringLiteral.strip()` family of functions now return a `StaticString`.
 
-### Tooling changes
+### Tooling changes {#25-5-tooling-changes}
 
 - Added support for GCC-style debug flags `-g0`, `-g1`, and `-g2` to match
   common compiler conventions:
-  - `-g0`: No debug information (alias for `--debug-level=none`)
-  - `-g1`: Line table debug information (alias for `--debug-level=line-tables`)
-  - `-g2`: Full debug information (alias for `--debug-level=full`)
 
-- Added progress reporting support to the Mojo language server. This will emit progress
-  notifications in your editor when the server is currently parsing a document.
+  - `-g0`: No debug information (alias for `--debug-level=none`).
+  - `-g1`: Line table debug information (alias for `--debug-level=line-tables`).
+  - `-g2`: Full debug information (alias for `--debug-level=full`).
 
-### ❌ Removed
+- Added progress reporting support to the Mojo language server. This will emit
+  progress notifications in your editor when the server is currently parsing a
+  document.
 
-- Various functions from the `sys.info` have been removed.  Use the appropriate method
-  on `CompilationTarget` from `sys.info` instead.
+### ❌ Removed {#25-5-removed}
+
+- Various functions from the `sys.info` package have been moved to the
+  [`sys.info.CompilationTarget`](/mojo/stdlib/sys/info/CompilationTarget)
+  struct:
+
   - `is_x86()`
   - `has_sse4()`
   - `has_avx()`
@@ -229,7 +279,7 @@ mutation.
 - `DType.tensor_float32` has been removed due to lack of support for it in the
   library and the compiler.
 
-### 🛠️ Fixed
+### 🛠️ Fixed {#25-5-fixed}
 
 - [#4121](https://github.com/modular/modular/issues/4121) - better error message
   for `.value()` on empty `Optional`.
@@ -275,6 +325,30 @@ mutation.
 
 - [#5016](https://github.com/modular/modular/issues/5016) - Conditional
   Conformance Trait Alias Bug.
+
+### Special thanks {#25-5-special-thanks}
+
+Special thanks to our community contributors:
+
+[@zsiegel92](https://github.com/zsiegel92),
+[@yeison](https://github.com/yeison),
+[@soraros](https://github.com/soraros),
+[@samufi](https://github.com/samufi),
+[@mzaks](https://github.com/mzaks),
+[@mmicu](https://github.com/mmicu),
+[@martinvuyk](https://github.com/martinvuyk),
+[@hardikkgupta](https://github.com/hardikkgupta),
+[@gustawdaniel](https://github.com/gustawdaniel),
+[@cyrillzadra](https://github.com/cyrillzadra),
+[@cnhz95](https://github.com/cnhz95),
+[@christoph-schlumpf](https://github.com/christoph-schlumpf),
+[@bgreni](https://github.com/bgreni),
+[@benz0li](https://github.com/benz0li),
+[@LeeLee26](https://github.com/LeeLee26),
+[@Caslyn](https://github.com/Caslyn),
+[@Amila-Rukshan](https://github.com/Amila-Rukshan),
+[@Amet13](https://github.com/Amet13), and
+[@AceMouse](https://github.com/AceMouse).
 
 ## v25.4 (2025-06-18)
 
