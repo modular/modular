@@ -1246,10 +1246,6 @@ async def load_lora_adapter(
             raise HTTPException(
                 status_code=400, detail=response.message
             )  # Bad Request
-        elif response.status == LoRAStatus.LOAD_SLOTS_FULL:
-            raise HTTPException(
-                status_code=503, detail=response.message
-            )  # Service Unavailable
         else:
             raise HTTPException(
                 status_code=500, detail=response.message

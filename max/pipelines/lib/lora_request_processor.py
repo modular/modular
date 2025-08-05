@@ -79,11 +79,10 @@ class LoRARequestProcessor(Generic[ReqId]):
         )
         self._zmq_running = True
         self._zmq_thread.start()
-        logger.info("Started ZMQ handler thread for LoRA requests")
 
     def _process_zmq_requests(self):
         """Process ZMQ requests in background thread."""
-        logger.info("LoRA ZMQ handler thread started")
+        logger.info("LoRA request handler thread started.")
         while self._zmq_running:
             try:
                 try:

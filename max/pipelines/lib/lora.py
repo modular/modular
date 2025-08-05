@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -46,6 +47,153 @@ ADAPTER_CONFIG_FILE = "adapter_config.json"
 T = TypeVar("T", bound=InputContext)
 
 
+class LoRALRUCache:
+    """
+    LRU cache for managing active LoRA models and their slot assignments.
+
+    This cache maintains a maximum number of active LoRA models and evicts
+    the least recently used model when the cache is full. It also manages
+    slot assignments for GPU buffer placement.
+    """
+
+    def __init__(self, max_size: int):
+        """
+        Initialize the LRU cache.
+
+        Args:
+            max_size: Maximum number of LoRA models to keep in the cache.
+        """
+        self._cache: OrderedDict[str, tuple[LoRAModel, int]] = OrderedDict()
+        self._max_size = max_size
+        self._free_slots: set[int] = set(range(max_size))
+        self._name_to_slot: dict[str, int] = {}
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a key exists in the cache."""
+        return key in self._cache
+
+    def __len__(self) -> int:
+        """Return the number of items in the cache."""
+        return len(self._cache)
+
+    def get(self, key: str) -> tuple[LoRAModel | None, int | None]:
+        """
+        Get a LoRA model and its slot from the cache and mark it as recently used.
+
+        Args:
+            key: The name of the LoRA model.
+
+        Returns:
+            A tuple of (LoRA model, slot) if found, None otherwise.
+        """
+        if key not in self._cache:
+            return None, None
+
+        self._cache.move_to_end(key)
+        return self._cache[key]
+
+    def get_slot(self, key: str) -> int | None:
+        """
+        Get the slot assignment for a LoRA model.
+
+        Args:
+            key: The name of the LoRA model.
+
+        Returns:
+            The slot number if the model is active, None otherwise.
+        """
+        return self._name_to_slot.get(key)
+
+    def next_slot(self) -> int | None:
+        """
+        Get the next available slot for a new LoRA.
+
+        Returns:
+            The next available slot number, or None if no slots are available.
+        """
+        if not self._free_slots:
+            return None
+        return min(self._free_slots)
+
+    def put(
+        self, key: str, value: LoRAModel, slot: int | None = None
+    ) -> tuple[str | None, int | None]:
+        """
+        Add or update a LoRA model in the cache with slot assignment.
+
+        Args:
+            key: The name of the LoRA model.
+            value: The LoRA model to cache.
+            slot: Optional slot assignment. If None, assigns next available slot.
+
+        Returns:
+            A tuple of (evicted_key, freed_slot) if eviction occurred, (None, None) otherwise.
+        """
+        evicted_key = None
+        freed_slot = None
+
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return (None, None)
+
+        # Need to add new entry
+        if slot is None:
+            slot = self.next_slot()
+            if slot is None:
+                # No free slots, need to evict
+                if len(self._cache) >= self._max_size:
+                    # Evict least recently used (first item)
+                    evicted_key, (_, freed_slot) = self._cache.popitem(
+                        last=False
+                    )
+                    del self._name_to_slot[evicted_key]
+                    self._free_slots.add(freed_slot)
+                    slot = freed_slot
+
+        if slot is not None:
+            self._cache[key] = (value, slot)
+            self._name_to_slot[key] = slot
+            self._free_slots.discard(slot)
+
+        return (evicted_key, freed_slot)
+
+    def remove(self, key: str) -> tuple[bool, int | None]:
+        """
+        Remove a LoRA model from the cache.
+
+        Args:
+            key: The name of the LoRA model to remove.
+
+        Returns:
+            A tuple of (success, freed_slot).
+        """
+        if key in self._cache:
+            _, slot = self._cache[key]
+            del self._cache[key]
+            del self._name_to_slot[key]
+            self._free_slots.add(slot)
+            return (True, slot)
+        return (False, None)
+
+    def clear(self) -> None:
+        """Clear all entries from the cache."""
+        self._cache.clear()
+        self._name_to_slot.clear()
+        self._free_slots = set(range(self._max_size))
+
+    def keys(self) -> list[str]:
+        """Return all keys in the cache, ordered from least to most recently used."""
+        return list(self._cache.keys())
+
+    def values(self) -> list[tuple[LoRAModel, int]]:
+        """Return all values in the cache, ordered from least to most recently used."""
+        return list(self._cache.values())
+
+    def items(self) -> list[tuple[str, tuple[LoRAModel, int]]]:
+        """Return all key-value pairs with slots in the cache, ordered from least to most recently used."""
+        return list(self._cache.items())
+
+
 def is_lora_kind(key: str) -> bool:
     """
     Whether the key is a lora kind
@@ -63,20 +211,29 @@ class LoRAModel:
     """
 
     def __init__(
-        self, name: str, path: str, base_dtype: DType, strict: bool = True
+        self,
+        name: str,
+        path: str,
+        base_dtype: DType,
+        max_lora_rank: int,
+        strict: bool = True,
     ) -> None:
         """
         Initializes a LoRAModel by loading its configuration and weights.
 
         .. code-block:: python
 
-            lora = LoRAModel("my_adapter", "/path/to/lora")
+            lora = LoRAModel("my_adapter", "/path/to/lora", base_dtype, max_lora_rank)
 
         Args:
             name:
                 A string identifier for this adapter.
             path:
                 Filesystem path is only supported
+            base_dtype:
+                The base model dtype.
+            max_lora_rank:
+                The maximum LoRA rank supported by the system.
             strict:
                 Whether to enforce strict validation while loading the adapter.
 
@@ -87,6 +244,7 @@ class LoRAModel:
         self.name = name
         self.path = path
         self.strict = strict
+        self.max_lora_rank = max_lora_rank
         self._lora_A: dict[str, WeightData] = {}
         self._lora_B: dict[str, WeightData] = {}
         self._lora_bias: dict[str, WeightData] = {}
@@ -203,17 +361,43 @@ class LoRAModel:
             key = self._normalize_lora_key(key)
             data = weight.data()
 
+            # TODO: Need to pad the tensors since max.driver.Tensors don't allow for
+            #  non-contiguous copies. Move padding to max, if possible.
             if LoRAType.A.value in key:
-                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
+                # Convert to numpy array
+                weight_np = Tensor.from_dlpack(data.data).to_numpy()
+
+                # Pad LoRA A weights from [rank, in_features] to [max_rank, in_features]
+                if adapter_config["r"] < self.max_lora_rank:
+                    padded = np.zeros(
+                        (self.max_lora_rank, weight_np.shape[-1]),
+                        dtype=weight_np.dtype,
+                    )
+                    padded[: adapter_config["r"], :] = weight_np
+                    weight_np = padded
+
+                # Cast to base dtype after padding
+                data.data = _cast_to_dtype(weight_np, data.dtype, base_dtype)
                 self._lora_A[key] = data
             elif LoRAType.B.value in key:
                 # A minor optimization so we don't have to multiply scale
                 # by LoRA B in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
-                data.data = (
+                weight_np = (
                     Tensor.from_dlpack(data.data).copy().to_numpy() * scale
                 )
-                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
+
+                # Pad LoRA B weights from [out_features, rank] to [out_features, max_rank]
+                if adapter_config["r"] < self.max_lora_rank:
+                    padded = np.zeros(
+                        (weight_np.shape[0], self.max_lora_rank),
+                        dtype=weight_np.dtype,
+                    )
+                    padded[:, : adapter_config["r"]] = weight_np
+                    weight_np = padded
+
+                # Cast to base dtype after padding
+                data.data = _cast_to_dtype(weight_np, data.dtype, base_dtype)
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
                 data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
@@ -256,8 +440,9 @@ class LoRAManager:
         self.max_lora_rank = config.max_lora_rank
 
         self._loras: dict[str, LoRAModel] = dict()
-        self._active_loras: dict[str, LoRAModel] = dict()
-        self._lora_index_to_id: list[str | None] = [None] * self.max_num_loras
+        self._active_loras: LoRALRUCache = LoRALRUCache(
+            max_size=self.max_num_loras
+        )
 
         self._lora_lock = threading.RLock()
         self._request_processor: LoRARequestProcessor = LoRARequestProcessor(
@@ -274,21 +459,18 @@ class LoRAManager:
         with self._lora_lock:
             return list(self._loras.keys())
 
-    def _name_to_slot(self, name: str):
-        """
-        Maps the model name to the assigned slot.
-        """
-        return self._lora_index_to_id.index(name)
-
     def _model_name_to_id(self, name: str | None) -> int:
         """
-        Maps the model name to it's assigned slot id.
+        Maps the model name to its assigned slot id.
+
+        Active LoRAs get their assigned slot (0 to max_num_loras-2).
+        Base model or non-existent LoRAs get the last slot (max_num_loras-1).
         """
-        return (
-            self._name_to_slot(name)
-            if name in self._loras
-            else self._NO_ACTIVE_LORA
-        )
+        if name and name in self._loras:
+            slot = self._active_loras.get_slot(name)
+            if slot is not None:
+                return slot
+        return self._NO_ACTIVE_LORA
 
     def _model_name_to_rank(self, name: str | None) -> int:
         """
@@ -386,30 +568,6 @@ class LoRAManager:
                 }
                 raise RuntimeError(error_messages.get(status))
 
-    def _next_free_slot(self) -> int | None:
-        """
-        Finds and returns the index of the next available slot for a new LoRA adapter.
-
-        This is an internal utility used to manage a fixed number of LoRA slots.
-        The last slot (max_num_loras) is reserved for inactive LoRAs and
-        should always contain zeros.
-
-        .. code-block:: python
-
-            slot_index = manager._next_free_slot()
-
-        Returns:
-            The integer index of the next available LoRA slot, or None if no slots are available.
-        """
-        # Reserve the last slot (max_num_loras - 1) for inactive LoRAs
-        for i, slot in enumerate(self._lora_index_to_id):
-            if slot is None:
-                return i
-
-        raise RuntimeError(
-            f"No available LoRA slots left. Current max is: {self.max_num_loras}"
-        )
-
     def load_adapter(self, path: str) -> LoRAStatus:
         """
         Loads a single LoRA adapter from the given path and registers it under a unique name.
@@ -450,18 +608,13 @@ class LoRAManager:
                 ) != LoRAStatus.SUCCESS:
                     return status
 
-                # Check for available slots
-                slot = self._next_free_slot()
-                if slot is None:
-                    return LoRAStatus.LOAD_SLOTS_FULL
-
-                # Try to load the LoRA model
                 try:
-                    lora = LoRAModel(name, path, self.base_dtype)
+                    lora = LoRAModel(
+                        name, path, self.base_dtype, self.max_lora_rank
+                    )
                 except ValueError as e:
                     return LoRAStatus.LOAD_INVALID_ADAPTER
 
-                self._lora_index_to_id[slot] = lora.name
                 self._loras[lora.name] = lora
                 return LoRAStatus.SUCCESS
 
@@ -471,7 +624,7 @@ class LoRAManager:
                 )
                 return LoRAStatus.LOAD_ERROR
 
-    def unload_adapter(self, lora: str) -> LoRAStatus:
+    def unload_adapter(self, name: str) -> LoRAStatus:
         """
         Unloads the specified LoRA adapter from the internal registry and frees its slot.
 
@@ -490,62 +643,31 @@ class LoRAManager:
         """
         with self._lora_lock:
             try:
-                if lora not in self._loras:
+                if name not in self._loras:
                     return LoRAStatus.UNLOAD_NAME_NONEXISTENT
 
-                # Find the slot used by this LoRA
-                slot = self._name_to_slot(lora)
-
                 # Remove from registries
-                del self._loras[lora]
-                if lora in self._active_loras:
-                    del self._active_loras[lora]
-
-                # Free the slot
-                self._lora_index_to_id[slot] = None
+                del self._loras[name]
+                # Remove from active cache (if present)
+                self._active_loras.remove(name)
 
                 return LoRAStatus.SUCCESS
             except Exception as e:
-                logger.exception(f"Error unloading LoRA adapter '{lora}': {e}")
+                logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
                 return LoRAStatus.UNLOAD_ERROR
 
-    def unload_adapters(self, lora_names: list[str]) -> list[LoRAStatus]:
-        """
-        Unloads multiple LoRA adapters from the internal registry and frees their slots.
-
-        This method is useful when you want to unload multiple LoRA adapters in one call.
-
-        .. code-block:: python
-
-            unloaded_names = manager.unload_adapters(["adapter1", "adapter2"])
-
-        Args:
-            lora_names:
-                A list of LoRA adapter names to unload.
-
-        Returns:
-            A list of strings representing the names of successfully unloaded LoRA adapters.
-        """
-        statuses: list[LoRAStatus] = []
-
-        for lora_name in lora_names:
-            status = self.unload_adapter(lora_name)
-            statuses.append(status)
-
-        return statuses
-
-    def activate_adapter(self, lora: str) -> None:
+    def activate_adapter(self, name: str) -> None:
         """
         Moves the specified LoRA adapter to GPU and marks it as active.
 
-        Useful for enabling a specific adapter for use in model inference or training.
+        Useful for enabling a specific adapter for use in model inference.
 
         .. code-block:: python
 
             manager.activate_adapter("my_adapter")
 
         Args:
-            lora:
+            name:
                 The name of the LoRA adapter to activate.
 
         Returns:
@@ -554,7 +676,79 @@ class LoRAManager:
         Raises:
             KeyError: If the specified adapter does not exist in the registry.
         """
-        pass
+        with self._lora_lock:
+            if name not in self._loras:
+                raise KeyError(f"LoRA adapter '{name}' not found in registry")
+
+            # Check if already active before putting
+            is_active = name in self._active_loras
+            # if it is active already, we still need to update the lru cache
+            self._active_loras.put(name, self._loras[name])
+
+            # Only update buffers if the LoRA wasn't already active
+            if not is_active:
+                # Get the current LoRA and its slot
+                (lora, slot) = self._active_loras.get(name)
+
+                if lora is None or slot is None:
+                    raise RuntimeError(
+                        "LoRA or slot is None even after it has been added to cache..."
+                        " This shouldn't happen."
+                    )
+
+                # Update alias buffers with the newly activated LoRA
+                self._update_alias_buffers_for_lora(lora, slot)
+
+    def _update_alias_buffers_for_lora(
+        self, lora: LoRAModel, slot: int
+    ) -> None:
+        """
+        Updates the alias buffers with weights from a newly activated LoRA.
+
+        This function copies the LoRA weights (A, B, and bias) into the appropriate
+        slot in the alias buffers, which are used for dynamic LoRA swapping during
+        inference.
+
+        Args:
+            lora: The LoRAModel instance containing the weights.
+            slot: The slot index where the LoRA weights should be placed.
+        """
+        for state_key in self._alias_buffers:
+            buffer = Tensor.from_dlpack(self._alias_buffers[state_key])
+
+            if lora_weight := lora.get(state_key):
+                weight = Tensor.from_dlpack(lora_weight.data)
+
+                if (
+                    LoRAType.A.value in state_key
+                    or LoRAType.B.value in state_key
+                ):
+                    buffer[slot, :, :].inplace_copy_from(weight)
+                elif LoRAType.BIAS.value in state_key:
+                    buffer[slot, :].inplace_copy_from(weight)
+            else:
+                # If this LoRA doesn't have this weight, zero out the slot
+                if LoRAType.A.value in state_key:
+                    zeros = Tensor.zeros(
+                        (self.max_lora_rank, buffer.shape[-1]),
+                        dtype=buffer.dtype,
+                        device=buffer.device,
+                    )
+                    buffer[slot, :, :].inplace_copy_from(zeros)
+                elif LoRAType.B.value in state_key:
+                    zeros = Tensor.zeros(
+                        (buffer.shape[1], self.max_lora_rank),
+                        dtype=buffer.dtype,
+                        device=buffer.device,
+                    )
+                    buffer[slot, :, :].inplace_copy_from(zeros)
+                elif LoRAType.BIAS.value in state_key:
+                    zeros = Tensor.zeros(
+                        buffer.shape[1:],
+                        dtype=buffer.dtype,
+                        device=buffer.device,
+                    )
+                    buffer[slot, :].inplace_copy_from(zeros)
 
     def _get_lora_weights(self, key: str, base_weight: Weight) -> WeightData:
         """
@@ -570,10 +764,8 @@ class LoRAManager:
         """
         weight_np = np.zeros(base_weight.shape.static_dims, dtype=np.float32)
 
-        for name, lora in self._loras.items():
+        for lora, slot in self._active_loras.values():
             if lora_weight := lora.get(key):
-                slot = self._name_to_slot(name)
-
                 if LoRAType.A.value in key:
                     weight_np[slot, : lora.rank, :] = lora_weight.data
                 elif LoRAType.B.value in key:
@@ -647,6 +839,7 @@ class LoRAManager:
             device: The device the base model resides in.
         """
         self._lora_layers = self._get_lora_leaf_layers(model)
+
         for key, layer in self._lora_layers.items():
             for weight_key, weight in layer.layer_weights.items():
                 if not is_lora_kind(weight_key):
@@ -695,18 +888,35 @@ class LoRAManager:
                 layer.set_lora_batch_info(lora_ids, lora_ranks)
 
     def sort_lora_batch(self, batch: dict[str, T]) -> dict[str, T]:
-        """ "
-        Sorts the LoRA batch by name
+        """
+        Sorts the LoRA batch by name and activates any new LoRAs in the batch.
+
+        This method ensures that all LoRAs referenced in the batch are moved to
+        the active cache, implementing the LRU policy by evicting least recently
+        used LoRAs if necessary.
+
         Args:
             batch: The context batch to sort
         """
-        batch_by_model_names = {
-            req_id: batch[req_id]
-            for req_id, _ in sorted(
-                batch.items(),
-                key=lambda item: self._model_name_to_rank(
-                    getattr(item[1], "model_name", None)
-                ),
-            )
-        }
-        return batch_by_model_names
+        # First, activate any LoRAs referenced in the batch that aren't already active
+        with self._lora_lock:
+            for context in batch.values():
+                model_name = getattr(context, "model_name", None)
+                if (
+                    model_name
+                    and model_name != self.base_model_path
+                    and model_name in self._loras
+                ):
+                    self.activate_adapter(model_name)
+
+            # Then sort the batch by slot ID (active LoRAs by their slot, inactive ones to the start)
+            batch_by_model_names = {
+                req_id: batch[req_id]
+                for req_id, _ in sorted(
+                    batch.items(),
+                    key=lambda item: self._model_name_to_id(
+                        getattr(item[1], "model_name", None)
+                    ),
+                )
+            }
+            return batch_by_model_names
