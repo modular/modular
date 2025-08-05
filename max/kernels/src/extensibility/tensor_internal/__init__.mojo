@@ -44,3 +44,9 @@ from .managed_tensor_slice import (
     view_copy_impl,
 )
 from .tensor_spec import RuntimeTensorSpec
+from .operation_traits import (
+    ElementwiseBinaryOp,
+    ElementwiseBinaryComparisonOp,
+    ElementwiseUnaryOp,
+    ElementwiseUnaryMixedOp,
+)

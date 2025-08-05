@@ -244,6 +244,10 @@ from tensor_internal import (
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
+    ElementwiseBinaryOp,
+    ElementwiseBinaryComparisonOp,
+    ElementwiseUnaryOp,
+    ElementwiseUnaryMixedOp,
 )
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
@@ -852,7 +856,7 @@ struct Copy:
 
 
 @compiler.register("mo.add")
-struct Add:
+struct Add(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -862,7 +866,7 @@ struct Add:
 
 
 @compiler.register("mo.sub")
-struct Sub:
+struct Sub(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -872,7 +876,7 @@ struct Sub:
 
 
 @compiler.register("mo.mul")
-struct Mul:
+struct Mul(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -882,7 +886,7 @@ struct Mul:
 
 
 @compiler.register("mo.div")
-struct Div:
+struct Div(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -892,7 +896,7 @@ struct Div:
 
 
 @compiler.register("mo.mod")
-struct Mod:
+struct Mod(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -902,7 +906,7 @@ struct Mod:
 
 
 @compiler.register("mo.equal")
-struct Equal:
+struct Equal(ElementwiseBinaryComparisonOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -914,7 +918,7 @@ struct Equal:
 
 
 @compiler.register("mo.greater")
-struct Greater:
+struct Greater(ElementwiseBinaryComparisonOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -926,7 +930,7 @@ struct Greater:
 
 
 @compiler.register("mo.greater_equal")
-struct GreaterEqual:
+struct GreaterEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -938,7 +942,7 @@ struct GreaterEqual:
 
 
 @compiler.register("mo.not_equal")
-struct NotEqual:
+struct NotEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -950,41 +954,35 @@ struct NotEqual:
 
 
 @compiler.register("mo.and")
-struct And:
+struct And(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
+        dtype: DType,
         width: Int,
-    ](lhs: SIMD[DType.bool, width], rhs: SIMD[DType.bool, width]) -> SIMD[
-        DType.bool, width
-    ]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        constrained[dtype == DType.bool, "expected bool operands for mo.and"]()
         return lhs & rhs
 
 
 @compiler.register("mo.or")
-struct Or:
+struct Or(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
+        dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[DType.bool, width],
-        rhs: SIMD[DType.bool, width],
-    ) -> SIMD[
-        DType.bool, width
-    ]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        constrained[dtype == DType.bool, "expected bool operands for mo.oor"]()
         return lhs | rhs
 
 
 @compiler.register("mo.xor")
-struct Xor:
+struct Xor(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
+        dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[DType.bool, width],
-        rhs: SIMD[DType.bool, width],
-    ) -> SIMD[
-        DType.bool, width
-    ]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        constrained[dtype == DType.bool, "expected bool operands for mo.xor"]()
         return lhs ^ rhs
 
 
@@ -1002,7 +1000,7 @@ struct Pow:
 
 
 @compiler.register("mo.max")
-struct Max:
+struct Max(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1012,7 +1010,7 @@ struct Max:
 
 
 @compiler.register("mo.min")
-struct Min:
+struct Min(ElementwiseBinaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1027,7 +1025,7 @@ struct Min:
 
 
 @compiler.register("mo.cast")
-struct Cast:
+struct Cast(ElementwiseUnaryMixedOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1038,7 +1036,7 @@ struct Cast:
 
 
 @compiler.register("mo.negative")
-struct Negative:
+struct Negative(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1048,7 +1046,7 @@ struct Negative:
 
 
 @compiler.register("mo.relu")
-struct ReLU:
+struct ReLU(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1058,7 +1056,7 @@ struct ReLU:
 
 
 @compiler.register("mo.gelu")
-struct GeLU:
+struct GeLU(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1068,7 +1066,7 @@ struct GeLU:
 
 
 @compiler.register("mo.ceil")
-struct Ceil:
+struct Ceil(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1078,7 +1076,7 @@ struct Ceil:
 
 
 @compiler.register("mo.floor")
-struct Floor:
+struct Floor(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1088,7 +1086,7 @@ struct Floor:
 
 
 @compiler.register("mo.tanh")
-struct Tanh:
+struct Tanh(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1098,7 +1096,7 @@ struct Tanh:
 
 
 @compiler.register("mo.atanh")
-struct ATanh:
+struct ATanh(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1108,7 +1106,7 @@ struct ATanh:
 
 
 @compiler.register("mo.cos")
-struct Cos:
+struct Cos(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1118,7 +1116,7 @@ struct Cos:
 
 
 @compiler.register("mo.sin")
-struct Sin:
+struct Sin(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1128,7 +1126,7 @@ struct Sin:
 
 
 @compiler.register("mo.erf")
-struct Erf:
+struct Erf(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1138,7 +1136,7 @@ struct Erf:
 
 
 @compiler.register("mo.exp")
-struct Exp:
+struct Exp(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1148,7 +1146,7 @@ struct Exp:
 
 
 @compiler.register("mo.round")
-struct Round:
+struct Round(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1158,7 +1156,7 @@ struct Round:
 
 
 @compiler.register("mo.sqrt")
-struct Sqrt:
+struct Sqrt(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1168,7 +1166,7 @@ struct Sqrt:
 
 
 @compiler.register("mo.isqrt")
-struct Isqrt:
+struct Isqrt(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1193,7 +1191,7 @@ struct Select:
 
 
 @compiler.register("mo.trunc")
-struct Trunc:
+struct Trunc(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1205,7 +1203,7 @@ struct Trunc:
 
 
 @compiler.register("mo.log")
-struct Log:
+struct Log(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1215,7 +1213,7 @@ struct Log:
 
 
 @compiler.register("mo.log1p")
-struct Log1p:
+struct Log1p(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -1225,36 +1223,46 @@ struct Log1p:
 
 
 @compiler.register("mo.is_nan")
-struct IsNan:
+struct IsNan(ElementwiseUnaryMixedOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
+        out_dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
-        return isnan(x)
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+        constrained[
+            out_dtype == DType.bool, "expected bool output type for mo.is_nan"
+        ]()
+        return rebind[SIMD[out_dtype, width]](isnan(x))
 
 
 @compiler.register("mo.is_inf")
-struct IsInf:
+struct IsInf(ElementwiseUnaryMixedOp):
+    @staticmethod
+    fn elementwise[
+        dtype: DType,
+        out_dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+        constrained[
+            out_dtype == DType.bool, "expected bool output type for mo.is_inf"
+        ]()
+        return rebind[SIMD[out_dtype, width]](isinf(x))
+
+
+@compiler.register("mo.not")
+struct Not(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
-        return isinf(x)
-
-
-@compiler.register("mo.not")
-struct Not:
-    @staticmethod
-    fn elementwise[
-        width: Int,
-    ](x: SIMD[DType.bool, width]) -> SIMD[DType.bool, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        constrained[dtype == DType.bool, "expected bool operands for mo.not"]()
         return ~x
 
 
 @compiler.register("mo.abs")
-struct Abs:
+struct Abs(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
@@ -2478,7 +2486,7 @@ struct Slice:
 
 
 @compiler.register("mo.mutable.store")
-struct MutableStore:
+struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
