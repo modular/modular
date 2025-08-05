@@ -26,7 +26,7 @@ def test_elementwise():
     @always_inline
     def run_elementwise[
         numelems: Int, outer_rank: Int, is_blocking: Bool
-    ](dims: DimList) -> Bool:
+    ](dims: DimList):
         var memory1 = InlineArray[Float32, numelems](uninitialized=True)
         var buffer1 = NDBuffer[DType.float32, outer_rank](
             memory1.unsafe_ptr(), dims
@@ -67,20 +67,20 @@ def test_elementwise():
                 ok = False
                 break
 
-        return ok
+        assert_true(ok)
 
-    assert_true(run_elementwise[16, 1, False](DimList(16)))
-    assert_true(run_elementwise[16, 1, True](DimList(16)))
-    assert_true(run_elementwise[16, 2, False](DimList(4, 4)))
-    assert_true(run_elementwise[16, 2, True](DimList(4, 4)))
-    assert_true(run_elementwise[16, 3, False](DimList(4, 2, 2)))
-    assert_true(run_elementwise[16, 3, True](DimList(4, 2, 2)))
-    assert_true(run_elementwise[32, 4, False](DimList(4, 2, 2, 2)))
-    assert_true(run_elementwise[32, 4, False](DimList(4, 2, 2, 2)))
-    assert_true(run_elementwise[32, 5, False](DimList(4, 2, 1, 2, 2)))
-    assert_true(run_elementwise[32, 5, True](DimList(4, 2, 1, 2, 2)))
-    assert_true(run_elementwise[131072, 2, False](DimList(1024, 128)))
-    assert_true(run_elementwise[131072, 2, True](DimList(1024, 128)))
+    run_elementwise[16, 1, False](DimList(16))
+    run_elementwise[16, 1, True](DimList(16))
+    run_elementwise[16, 2, False](DimList(4, 4))
+    run_elementwise[16, 2, True](DimList(4, 4))
+    run_elementwise[16, 3, False](DimList(4, 2, 2))
+    run_elementwise[16, 3, True](DimList(4, 2, 2))
+    run_elementwise[32, 4, False](DimList(4, 2, 2, 2))
+    run_elementwise[32, 4, False](DimList(4, 2, 2, 2))
+    run_elementwise[32, 5, False](DimList(4, 2, 1, 2, 2))
+    run_elementwise[32, 5, True](DimList(4, 2, 1, 2, 2))
+    run_elementwise[131072, 2, False](DimList(1024, 128))
+    run_elementwise[131072, 2, True](DimList(1024, 128))
 
 
 def test_elementwise_implicit_runtime():
