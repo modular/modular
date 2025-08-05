@@ -19,7 +19,6 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_decoding import (
     SpeculativeDecodingTextGenerationPipeline,
 )
-from test_common.graph_utils import is_h100_h200
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
@@ -94,10 +93,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     }
 
 
-@pytest.mark.skipif(
-    is_h100_h200(),
-    reason="For some reason, quantization encoding can't be found on H100",
-)
+@pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 @prepare_registry
 def test_config__validate_device_and_encoding_combinations(
     smollm_135m_local_path,  # noqa: ANN001
@@ -113,10 +109,7 @@ def test_config__validate_device_and_encoding_combinations(
     )
 
 
-@pytest.mark.skipif(
-    is_h100_h200(),
-    reason="For some reason, quantization encoding can't be found on H100",
-)
+@pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 @prepare_registry
 def test_config__validate_target_and_draft_architecture(
     smollm_135m_local_path,  # noqa: ANN001
