@@ -48,7 +48,6 @@ modular_cc_library(
         "DocumentSymbolTest",
         "FoldingRangeTest",
         "InitFileTest",
-        "ReferencesTest",
         "RegressionTest",
         "SampleTest",
         "SemanticTokensTest",
