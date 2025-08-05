@@ -129,6 +129,9 @@ dependencies = [
   # tts
   "zhon",
   "zhconv",
+
+  # Testing video processing for qwen2.5vl
+  "opencv-python",
 ]
 
 [dependency-groups]
@@ -147,6 +150,7 @@ amd = [
   "sentence-transformers",
   "timm",
   "torchmetrics",
+  "qwen-vl-utils",
 ]
 
 cpu = [
@@ -161,6 +165,7 @@ cpu = [
   "sentence-transformers",
   "timm",
   "torchmetrics",
+  "qwen-vl-utils",
 ]
 
 nvidia = [
@@ -177,6 +182,7 @@ nvidia = [
   "sentence-transformers",
   "timm",
   "torchmetrics",
+  "qwen-vl-utils",
 ]
 
 [tool.uv]

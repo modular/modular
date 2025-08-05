@@ -58,6 +58,7 @@ PINS = {
     "nvitop": "nvitop@1.4.0",
     "onnxruntime": "onnxruntime@1.19.2",
     "openai": "openai@1.52.2",
+    "opencv-python": "opencv-python@4.12.0.88",
     "opentelemetry-api": "opentelemetry-api@1.35.0",
     "opentelemetry-exporter-otlp-proto-http": "opentelemetry-exporter-otlp-proto-http@1.35.0",
     "opentelemetry-exporter-prometheus": "opentelemetry-exporter-prometheus@0.56b0",
@@ -91,6 +92,7 @@ PINS = {
     "pytorch-triton-rocm": "pytorch-triton-rocm@3.3.0",
     "pyyaml": "pyyaml@6.0.2",
     "pyzmq": "pyzmq@26.3.0",
+    "qwen-vl-utils": "qwen-vl-utils@0.0.11",
     "regex": "regex@2024.11.6",
     "requests": "requests@2.32.3",
     "responses": "responses@0.25.3",
@@ -4125,6 +4127,55 @@ def targets():
         wheel = ":_wheel_openai@1.52.2",
     )
 
+    _opencv_python_4_12_0_88_deps = [
+        ":numpy@2.0.2",
+    ]
+
+    _opencv_python_4_12_0_88_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_opencv-python@4.12.0.88",
+        actual = "@pycross_lock_file_sdist_opencv_python_4.12.0.88//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_opencv-python@4.12.0.88",
+        sdist = ":_sdist_opencv-python@4.12.0.88",
+        target_environment = _target,
+        deps = _opencv_python_4_12_0_88_deps + _opencv_python_4_12_0_88_build_deps,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_opencv-python@4.12.0.88",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": ":_build_opencv-python@4.12.0.88",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": ":_build_opencv-python@4.12.0.88",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": ":_build_opencv-python@4.12.0.88",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": ":_build_opencv-python@4.12.0.88",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.9_aarch64-apple-darwin": ":_build_opencv-python@4.12.0.88",
+            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "opencv-python@4.12.0.88",
+        deps = _opencv_python_4_12_0_88_deps,
+        wheel = ":_wheel_opencv-python@4.12.0.88",
+    )
+
     _opentelemetry_api_1_35_0_deps = [
         ":importlib-metadata@7.1.0",
         ":typing-extensions@4.12.2",
@@ -5173,6 +5224,24 @@ def targets():
     pycross_wheel_library(
         name = "pyzmq@26.3.0",
         wheel = ":_wheel_pyzmq@26.3.0",
+    )
+
+    _qwen_vl_utils_0_0_11_deps = [
+        ":av@14.2.0",
+        ":packaging@24.1",
+        ":pillow@10.4.0",
+        ":requests@2.32.3",
+    ]
+
+    native.alias(
+        name = "_wheel_qwen-vl-utils@0.0.11",
+        actual = "@pycross_lock_file_wheel_qwen_vl_utils_0.0.11_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "qwen-vl-utils@0.0.11",
+        deps = _qwen_vl_utils_0_0_11_deps,
+        wheel = ":_wheel_qwen-vl-utils@0.0.11",
     )
 
     native.alias(
@@ -7638,6 +7707,16 @@ def repositories():
         ],
         sha256 = "883c987dee1880e2a864ab0dc9892292582510604156762362d9326444636e78",
         downloaded_file_path = "numpy-2.0.2.tar.gz",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_sdist_opencv_python_4.12.0.88",
+        urls = [
+            "https://files.pythonhosted.org/packages/ac/71/25c98e634b6bdeca4727c7f6d6927b056080668c5008ad3c8fc9e7f8f6ec/opencv-python-4.12.0.88.tar.gz",
+        ],
+        sha256 = "8b738389cede219405f6f3880b851efa3415ccd674752219377353f017d2994d",
+        downloaded_file_path = "opencv-python-4.12.0.88.tar.gz",
     )
 
     maybe(
@@ -13762,6 +13841,26 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_aarch64.manylinux_2_17_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/62/3a/440bd64736cf8116f01f3b7f9f2e111afb2e02beb2ccc08a6458114a6b5d/opencv_python-4.12.0.88-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+        ],
+        sha256 = "51fd981c7df6af3e8f70b1556696b05224c4e6b6777bdd2a46b3d4fb09de1a92",
+        downloaded_file_path = "opencv_python-4.12.0.88-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_opencv_python_4.12.0.88_cp37_abi3_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/68/1f/795e7f4aa2eacc59afa4fb61a2e35e510d06414dd5a802b51a012d691b37/opencv_python-4.12.0.88-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "092c16da4c5a163a818f120c22c5e4a2f96e0db4f24e659c701f1fe629a690f9",
+        downloaded_file_path = "opencv_python-4.12.0.88-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_opentelemetry_api_1.35.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/1d/5a/3f8d078dbf55d18442f6a2ecedf6786d81d7245844b2b20ce2b8ad6f0307/opentelemetry_api-1.35.0-py3-none-any.whl",
@@ -15658,6 +15757,16 @@ def repositories():
         ],
         sha256 = "5e17cc198dc50a25a0f245e6b1e56f692df2acec3ccae82d1f60c34bfb72bbec",
         downloaded_file_path = "pyzmq-26.3.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_qwen_vl_utils_0.0.11_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/0a/c2/ad7f93e1eea4ea0aefd1cc6fbe7a7095fd2f03a4d8fe2c3707e612b0866e/qwen_vl_utils-0.0.11-py3-none-any.whl",
+        ],
+        sha256 = "7fd5287ac04d6c1f01b93bf053b0be236a35149e414c9e864e3cc5bf2fe8cb7b",
+        downloaded_file_path = "qwen_vl_utils-0.0.11-py3-none-any.whl",
     )
 
     maybe(
