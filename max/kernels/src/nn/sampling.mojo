@@ -189,15 +189,14 @@ fn update_frequency_data[
         alias block_size = 128
 
         dev_ctx = ctx.get_device_context()
-        dev_ctx.enqueue_function[
-            update_frequency_data_kernel[
-                token_type,
-                block_size,
-                compressed_frequency_data.layout,
-                frequency_offsets.layout,
-                new_tokens.layout,
-            ]
-        ](
+        alias kernel = update_frequency_data_kernel[
+            token_type,
+            block_size,
+            compressed_frequency_data.layout,
+            frequency_offsets.layout,
+            new_tokens.layout,
+        ]
+        dev_ctx.enqueue_function_checked[kernel, kernel](
             compressed_frequency_data,
             frequency_offsets,
             new_tokens,
