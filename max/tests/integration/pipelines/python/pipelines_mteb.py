@@ -117,7 +117,6 @@ class EmbeddingModel:
             pipeline_request[str(n)] = await self.tokenizer.new_context(
                 TextGenerationRequest(
                     request_id=str(n),
-                    index=n,
                     prompt=sentence,
                     model_name=self.pipeline_config.model_config.model_path,
                 )

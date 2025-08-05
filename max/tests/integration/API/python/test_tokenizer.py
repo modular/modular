@@ -68,7 +68,6 @@ def test_text_and_vision_tokenizer() -> None:
             ] + [{"type": "image"} for _ in imgs_list]
             request = TextGenerationRequest(
                 request_id="request...",
-                index=0,
                 model_name=repo_id,
                 messages=[
                     TextGenerationRequestMessage(
@@ -101,7 +100,6 @@ def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
 
     request = TextGenerationRequest(
         request_id="request_with_tools",
-        index=0,
         model_name=model_path,
         messages=[
             TextGenerationRequestMessage(
@@ -148,7 +146,6 @@ def test_tokenizer__truncates_to_max_length(
 
     short_request = TextGenerationRequest(
         request_id="request_with_short_message",
-        index=0,
         model_name=llama_3_1_8b_instruct_local_path,
         prompt="Short message",
     )
@@ -157,7 +154,6 @@ def test_tokenizer__truncates_to_max_length(
 
     long_request = TextGenerationRequest(
         request_id="request_with_short_message",
-        index=0,
         model_name=llama_3_1_8b_instruct_local_path,
         prompt="Longer message with lots of text with more words than max length for sure.",
     )
@@ -241,7 +237,6 @@ def test_text_tokenizer_with_constrained_decoding(
 
     request = TextGenerationRequest(
         request_id="request_with_tools",
-        index=0,
         model_name=pipeline_config.model_config.model_path,
         messages=[
             TextGenerationRequestMessage(
@@ -281,7 +276,6 @@ def test_tokenizer_encode_stop_criteria(
 
     request = TextGenerationRequest(
         request_id="id_0",
-        index=0,
         model_name=llama_3_1_8b_instruct_local_path,
         messages=[
             TextGenerationRequestMessage(

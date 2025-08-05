@@ -71,7 +71,6 @@ async def test_smollm2_with_lora_adapter() -> None:
     base_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="base",
-            index=0,
             prompt=prompt,
             model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             sampling_params=sampling_params,
@@ -81,7 +80,6 @@ async def test_smollm2_with_lora_adapter() -> None:
     lora_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="lora",
-            index=1,
             prompt=prompt,
             model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             lora_name=lora_path,
@@ -122,7 +120,6 @@ async def test_lora_vs_base_comparison() -> None:
     base_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="base",
-            index=0,
             prompt=prompt,
             model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             sampling_params=sampling_params,
@@ -132,7 +129,6 @@ async def test_lora_vs_base_comparison() -> None:
     lora_context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id="lora",
-            index=1,
             prompt=prompt,
             model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
             lora_name=lora_path,
@@ -176,7 +172,6 @@ async def test_multiple_lora_adapters() -> None:
         "base": await tokenizer.new_context(
             TextGenerationRequest(
                 request_id="base",
-                index=0,
                 prompt=prompt,
                 model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
                 sampling_params=sampling_params,
@@ -185,7 +180,6 @@ async def test_multiple_lora_adapters() -> None:
         "lora1": await tokenizer.new_context(
             TextGenerationRequest(
                 request_id="lora1",
-                index=1,
                 prompt=prompt,
                 model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
                 lora_name=lora_paths[0],
@@ -195,7 +189,6 @@ async def test_multiple_lora_adapters() -> None:
         "lora2": await tokenizer.new_context(
             TextGenerationRequest(
                 request_id="lora2",
-                index=2,
                 prompt=prompt,
                 model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
                 lora_name=lora_paths[1],

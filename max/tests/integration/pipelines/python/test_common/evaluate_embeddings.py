@@ -58,7 +58,6 @@ async def encode_async(
         context = await tokenizer.new_context(
             TextGenerationRequest(
                 request_id="",
-                index=0,
                 prompt=prompt,
                 model_name=type(pipeline).__name__,
             )

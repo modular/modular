@@ -44,7 +44,6 @@ async def test_internvl_tokenizer_with_image() -> None:
     text_context = await max_tokenizer.new_context(
         TextGenerationRequest(
             request_id=str(uuid.uuid4()),
-            index=0,
             model_name=model_id,
             prompt=test_text,
         )
@@ -52,7 +51,6 @@ async def test_internvl_tokenizer_with_image() -> None:
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
             request_id=str(uuid.uuid4()),
-            index=0,
             model_name=model_id,
             prompt=test_text,
             images=[test_image],

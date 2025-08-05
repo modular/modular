@@ -57,7 +57,6 @@ def test_smollm_with_structured_output_gpu(
     request = TextGenerationRequest(
         model_name=pipeline_config.model_config.model_path,
         request_id=request_id,
-        index=0,
         messages=[
             TextGenerationRequestMessage(
                 role="user",

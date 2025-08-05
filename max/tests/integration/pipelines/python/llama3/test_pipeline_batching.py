@@ -107,7 +107,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     for i in range(batch_size):
         context = await pipeline_tokenizer.new_context(
             TextGenerationRequest(
-                request_id="", index=i, prompt=prompt, model_name="llama3"
+                request_id="", prompt=prompt, model_name="llama3"
             )
         )
         batch_id = str(i)
@@ -158,7 +158,6 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
         context = await pipeline_tokenizer.new_context(
             TextGenerationRequest(
                 request_id="",
-                index=i,
                 prompt=prompt,
                 model_name="llama3",
                 sampling_params=sampling_params,
@@ -231,7 +230,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         for i in range(batch_size):
             context = await pipeline_tokenizer.new_context(
                 TextGenerationRequest(
-                    request_id="", index=i, prompt=prompt, model_name="llama3"
+                    request_id="", prompt=prompt, model_name="llama3"
                 )
             )
             batch_id = str(i)
@@ -281,7 +280,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            request_id="", index=0, prompt=prompt_a, model_name="llama3"
+            request_id="", prompt=prompt_a, model_name="llama3"
         )
     )
     next_token_with_logits(llama3, {"A": context_a}, stored_logits)
@@ -289,7 +288,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     # Send in B for context encoding
     context_b = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            request_id="", index=1, prompt=prompt_b, model_name="llama3"
+            request_id="", prompt=prompt_b, model_name="llama3"
         )
     )
     next_token_with_logits(llama3, {"B": context_b}, stored_logits)
@@ -302,7 +301,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     # Send in C for context encoding
     context_c = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
-            request_id="", index=2, prompt=prompt_c, model_name="llama3"
+            request_id="", prompt=prompt_c, model_name="llama3"
         )
     )
     next_token_with_logits(llama3, {"C": context_c}, stored_logits)

@@ -132,7 +132,6 @@ async def run_model_async(
         context = await tokenizer.new_context(
             TextGenerationRequest(
                 request_id="",
-                index=len(batch_contexts),
                 prompt=request.prompt,
                 model_name="llama3",
                 # Download images for this specific request.

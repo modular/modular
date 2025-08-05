@@ -45,7 +45,6 @@ def test_mock_text_tokenizer() -> None:
 
     request = TextGenerationRequest(
         request_id="request_0",
-        index=0,
         model_name=model_path,
         prompt=test_prompt,
         messages=None,
@@ -105,7 +104,6 @@ def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  #
             sampling_params = SamplingParams(max_new_tokens=max_new_tokens[id])
             request = TextGenerationRequest(
                 request_id=id,
-                index=i,
                 model_name=model_path,
                 prompt=prompt,
                 messages=None,

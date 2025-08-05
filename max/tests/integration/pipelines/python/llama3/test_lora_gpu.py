@@ -80,7 +80,6 @@ async def test_pipeline_lora(
     context_a = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
             request_id="",
-            index=0,
             prompt=prompt_a,
             model_name=llama_3_1_8b_lora_local_path,
         )
@@ -121,7 +120,6 @@ async def test_lora_vs_base_model_logits(
     base_context = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
             request_id="base_test",
-            index=0,
             prompt=prompt,
             model_name="llama3",  # Any string
             sampling_params=sampling_params,
@@ -130,7 +128,6 @@ async def test_lora_vs_base_model_logits(
     lora_context = await pipeline_tokenizer.new_context(
         TextGenerationRequest(
             request_id="lora_test",
-            index=1,  # Reset index since we released the previous context
             prompt=prompt,
             model_name="llama3",
             sampling_params=sampling_params,
