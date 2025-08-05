@@ -166,15 +166,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         self = Self(capacity=length)
 
-        for i in range(length):
-            var src = UnsafePointer(to=elements[i])
-            var dest = self._data + i
+        # Transfer all of the elements into the List.
+        @parameter
+        fn init_elt(idx: Int, var elt: T):
+            (self._data + idx).init_pointee_move(elt^)
 
-            src.move_pointee_into(dest)
+        elements^.consume_elements[init_elt]()
 
-        # Do not destroy the elements when their backing storage goes away.
-        __disable_del elements
-
+        # Remember how many elements we have.
         self._len = length
 
     fn __init__(out self, span: Span[T]):
