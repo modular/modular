@@ -16,6 +16,7 @@ from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
@@ -75,6 +76,7 @@ class DummyPipelineConfig(PipelineConfig):
         self._sampling_config = SamplingConfig(
             enable_structured_output=enable_structured_output,
         )
+        self._lora_config = LoRAConfig(enable_lora=False)
 
         self._model_config = DummyMAXModelConfig(
             model_path=model_path,

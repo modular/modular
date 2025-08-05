@@ -83,13 +83,12 @@ class MockPipelineModel(PipelineModel):
         )
         self._lora_manager = (
             LoRAManager(
-                pipeline_config.model_config.model_path,
-                weights,
-                self.pipeline_config.lora_config.max_num_loras,
-                self.pipeline_config.lora_config.max_lora_rank,
-                self.pipeline_config.lora_config.lora_paths,
+                config=self.pipeline_config.lora_config,
+                base_model_path=pipeline_config.model_config.model_path,
+                base_dtype=self.encoding.dtype,
             )
             if self.pipeline_config.lora_config
+            and self.pipeline_config.lora_config.enable_lora
             else None
         )
 

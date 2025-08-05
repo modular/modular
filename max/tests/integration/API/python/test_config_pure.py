@@ -161,6 +161,7 @@ class TestPipelineConfigUtilityMethods:
         config = PipelineConfig(model_path="test/model")
 
         kwargs = {
+            "enable_lora": True,
             "lora_paths": ["/path/to/lora1", "/path/to/lora2"],
             "max_lora_rank": 32,
             "other_param": "value",
@@ -344,6 +345,7 @@ class TestPipelineConfigUtilityMethods:
             "model_path": "test/model",
             "max_batch_size": 4,
             # LoRA config
+            "enable_lora": True,
             "lora_paths": ["/lora1", "/lora2"],
             "max_lora_rank": 64,
             # Draft model config
@@ -713,6 +715,7 @@ def test_config__validates_lora_configuration(
         model_path=llama_3_1_8b_instruct_local_path,
         device_specs=[DeviceSpec.accelerator()],
         max_length=1,
+        enable_lora=True,
         lora_paths=[llama_3_1_8b_lora_local_path],
     )
     assert config.lora_config is not None
@@ -732,6 +735,7 @@ def test_integration_full_config_initialization_do_penalties_speculative_decodin
         "model_path": "test/model",
         "max_batch_size": 4,
         # LoRA config
+        "enable_lora": True,
         "lora_paths": ["/lora1", "/lora2"],
         "max_lora_rank": 64,
         # Draft model config
