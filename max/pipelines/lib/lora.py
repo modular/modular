@@ -69,6 +69,37 @@ def is_lora_kind(key: str) -> bool:
     )
 
 
+def _validate_lora_path(path: str) -> None:
+    """
+    Validates that a LoRA adapter path exists locally.
+
+    Remote HuggingFace repositories are not supported and must be downloaded
+    to a local directory first.
+
+    Args:
+        path: The path to validate.
+
+    Raises:
+        ValueError: If the path is a HuggingFace repository identifier or
+            if the path does not exist locally.
+    """
+    # Check if the path exists locally
+    if not os.path.exists(path):
+        # Path doesn't exist - check if it looks like a HF repo
+        # HF repos are typically "organization/model-name" format
+        if path.count("/") == 1 and not path.startswith(("/", "./")):
+            raise ValueError(
+                f"Remote HuggingFace repositories are not supported for LoRA adapters. "
+                f"'{path}' appears to be a HuggingFace repository identifier. "
+                f"Please download the adapter to a local directory first."
+            )
+        else:
+            raise ValueError(
+                f"LoRA adapter path does not exist: '{path}'. "
+                f"Please ensure the path points to a valid local directory."
+            )
+
+
 class LoRAModel:
     """
     Manages LoRA weights and configuration for a single adapter.
@@ -187,10 +218,16 @@ class LoRAModel:
             ValueError: If the weight format is not safetensors, or if keys
                 are not recognized as valid LoRA components.
         """
-        hf_repo = HuggingFaceRepo(repo_id=self.path)
+        # Validate path exists locally (remote HF repos not supported)
+        _validate_lora_path(self.path)
 
+        hf_repo = HuggingFaceRepo(repo_id=self.path)
         weight_files = hf_repo.weight_files
+
         config_path = os.path.join(self.path, ADAPTER_CONFIG_FILE)
+        if not os.path.exists(config_path):
+            raise ValueError(f"Adapter config file not found: {config_path}")
+
         with open(config_path) as f:
             adapter_config = json.load(f)
 
@@ -420,6 +457,9 @@ class LoRAManager:
         else:
             name = path
             path = path
+
+        # Validate path exists locally (remote HF repos not supported)
+        _validate_lora_path(path)
 
         if name not in self._loras:
             slot = self._next_free_slot()

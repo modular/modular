@@ -24,6 +24,7 @@ from .hf_utils import (
     validate_hf_repo_access,
 )
 from .lora import LoRAManager
+from .lora_request_processor import LoRARequestProcessor
 from .max_config import (
     KVCacheConfig,
     LoRAConfig,
@@ -69,6 +70,7 @@ __all__ = [
     "KVCacheMixin",
     "LoRAConfig",
     "LoRAManager",
+    "LoRARequestProcessor",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "ModelInputs",
