@@ -197,12 +197,6 @@ public:
                             unsigned &storageOffset, unsigned &offset,
                             Value value);
 
-  /// Walk a simple or aggregate LLVM type and generate the code to extract its
-  /// elements from a variant's content type.
-  Value walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
-                              unsigned &storageOffset, unsigned &offset,
-                              Type type);
-
 private:
   /// The builder to use.
   ImplicitLocOpBuilder b;

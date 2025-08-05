@@ -1896,21 +1896,41 @@ struct ConvertPOPUnionBitcast : public ConvertPOPToLLVMPattern<UnionBitcastOp> {
 // ConvertPOPUnionWrap
 //===----------------------------------------------------------------------===//
 
+static FailureOr<Value> materializeLLVMUnionAlloca(TargetInfoAttr target,
+                                                   OpBuilder &b, Operation *op,
+                                                   Type popUnionType,
+                                                   Type llvmUnionType) {
+  std::optional<int64_t> typeAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, popUnionType);
+  std::optional<int64_t> typeABIAlign =
+      DataLayoutInterface::getTypeABIAlign(target, popUnionType);
+  if (!typeAllocSize || !typeABIAlign)
+    return op->emitError("failed to get union type size and alignment");
+
+  return materializeLLVMAlloca(b, target, llvmUnionType, 1, op, *typeAllocSize,
+                               *typeABIAlign);
+}
+
 struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult matchAndRewrite(UnionWrapOp op, UnionWrapOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
+
     auto variantType =
         dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
     if (!variantType)
       return failure();
 
-    VariantHelper helper(b, op.getLoc(), *getTypeConverter());
-    Value result = helper.materializeLLVMUnion(variantType, adaptor.getValue());
-    if (!result)
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    FailureOr<Value> ptrOr =
+        materializeLLVMUnionAlloca(target, b, op, op.getType(), variantType);
+
+    if (failed(ptrOr))
       return failure();
-    b.replaceOp(op, result);
+
+    b.create<LLVM::StoreOp>(op->getLoc(), adaptor.getValue(), *ptrOr);
+    b.replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, *ptrOr);
     return success();
   }
 };
@@ -1928,8 +1948,6 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
     if (!valueType)
       return failure();
 
-    Location loc = op->getLoc();
-    const POPToLLVMTypeConverter &tc = *getTypeConverter();
     auto contentType = cast<LLVM::LLVMStructType>(adaptor.getValue().getType());
     if (contentType.getBody().empty()) {
       b.replaceOpWithNewOp<LLVM::UndefOp>(op, contentType);
@@ -1939,49 +1957,15 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
             contentType.getBody().size() == 2) &&
            "must have 1 or 2 fields for union struct.");
 
-    // Extract values and turns {max_align_t, [n x i8]} into an array of
-    // integers.
-    Value alignV = b.create<LLVM::ExtractValueOp>(loc, adaptor.getValue(), 0);
-    Value arrayV = nullptr;
-    if (contentType.getBody().size() > 1)
-      arrayV = b.create<LLVM::ExtractValueOp>(loc, adaptor.getValue(), 1);
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    FailureOr<Value> ptrOr = materializeLLVMUnionAlloca(
+        target, b, op, op.getValue().getType(), contentType);
 
-    SmallVector<Value> storageValues;
-    if (auto vecTp = dyn_cast<VectorType>(alignV.getType())) {
-      for (int i = 0, e = vecTp.getNumElements(); i < e; i++) {
-        Value vecElem = b.create<LLVM::ExtractElementOp>(
-            loc, vecTp.getElementType(), alignV,
-            b.create<LLVM::ConstantOp>(loc, b.getI32Type(), i));
-        storageValues.push_back(b.create<LLVM::BitcastOp>(
-            loc, b.getIntegerType(vecTp.getElementTypeBitWidth()), vecElem));
-      }
-    } else if (alignV.getType().isIntOrFloat() ||
-               isa<LLVM::LLVMPointerType>(alignV.getType())) {
-      int64_t bitSz = tc.getTypeSizeInBits(alignV.getType());
-      auto intTp = b.getIntegerType(bitSz);
-      Value v = alignV.getType().isIntOrFloat()
-                    ? b.create<LLVM::BitcastOp>(loc, intTp, alignV).getRes()
-                    : b.create<LLVM::PtrToIntOp>(loc, intTp, alignV).getRes();
-      storageValues.push_back(v);
-    } else {
-      llvm_unreachable(
-          "The first type in lowered union type must be non-aggregated.");
-    }
+    if (failed(ptrOr))
+      return failure();
 
-    if (arrayV) {
-      auto arrayTp = cast<LLVM::LLVMArrayType>(arrayV.getType());
-      for (int i = 0, e = arrayTp.getNumElements(); i < e; i++)
-        storageValues.push_back(b.create<LLVM::ExtractValueOp>(loc, arrayV, i));
-    }
-
-    VariantHelper helper(b, op.getLoc(), tc);
-    ArrayRef<Value>::iterator valueIt = storageValues.begin();
-    unsigned storageOffset = 0;
-    unsigned offset = 0;
-    Value result =
-        helper.walkAndExtractVariant(valueIt, storageOffset, offset, valueType);
-
-    b.replaceOp(op, result);
+    b.create<LLVM::StoreOp>(op->getLoc(), adaptor.getValue(), *ptrOr);
+    b.replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, *ptrOr);
     return success();
   }
 };
