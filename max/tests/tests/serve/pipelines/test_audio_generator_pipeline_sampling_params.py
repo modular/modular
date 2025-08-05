@@ -52,7 +52,6 @@ def create_test_request_with_sampling_params(
     return AudioGenerationRequest(
         request_id=id,
         input="Test prompt for sampling params",
-        index=0,
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],
         audio_prompt_transcription="test-transcription",
@@ -117,7 +116,6 @@ def test_pipeline_receives_default_sampling_params() -> None:
     request = AudioGenerationRequest(
         request_id="test-request-default",
         input="Default sampling params test",
-        index=0,
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],
         audio_prompt_transcription="test-transcription",
