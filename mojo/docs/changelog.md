@@ -41,6 +41,15 @@ what we publish.
   @parameter
   if CompilationTarget.is_macos() and value:
       print("is macos and value is:", value.value())
+
+- Added `sys.info.platform_map` for specifying types that can have different
+
+  values depending on the platform:
+
+  ```mojo
+  from sys.info import platform_map
+
+  alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
   ```
 
 ### Tooling changes
