@@ -70,7 +70,13 @@ class MistralConfig(MAXModelConfig, MistralConfigBase):
             page_size=kv_cache_config.kv_cache_page_size,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
+            head_dim=(
+                getattr(huggingface_config, "head_dim", None)
+                or (
+                    huggingface_config.hidden_size
+                    // huggingface_config.num_attention_heads
+                )
+            ),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,

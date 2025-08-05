@@ -29,6 +29,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("psutil"),
         requirement("requests"),
+        requirement("sentencepiece"),
         requirement("tokenizers"),
         requirement("tqdm"),
         requirement("transformers"),
