@@ -794,8 +794,18 @@ def calculate_metrics(
     gpu_utilization = []
     if collect_gpu_stats:
         from nvitop import Device
+        from nvitop.libnvml import NVMLError  # type: ignore
 
-        for i in range(Device.count()):
+        try:
+            device_count = Device.count()
+        except NVMLError as e:
+            logging.warning(f"Failed to get GPU device count: {e}")
+            logging.warning(
+                "GPU stats collection is only supported on NVIDIA GPUs."
+            )
+            device_count = 0
+
+        for i in range(device_count):
             peak_gpu_memory_mib.append(
                 float(
                     gpu_metrics.get(f"benchmark/gpu:{i}/memory_used (MiB)/max")
