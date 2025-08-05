@@ -271,8 +271,14 @@ modular_shared_library(
             "include/AsyncRT/NIXL/utils/ucx/**",
         ],
     ),
+    # We link libibverb.so directly instead of relying on user to dlopen it at
+    # runtime. This is due to a weird bug where `ibv_get_device_list` would return
+    # invalid contents if we do it the other way, even though it should functionally
+    # be the same. Note that we have added libibverbs.so to sysroot so that the
+    # CI machine have this dep at build time.
     linkopts = select({
         "@platforms//os:linux": [
+            "-l:libibverbs.so.1",
             "-Wl,-z,undefs",
         ],
         "@platforms//os:macos": [
