@@ -73,7 +73,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         default_factory=SamplingParams
     )
     model_name: str = msgspec.field(default="")
-    lora_name: str | None = msgspec.field(default=None)
     _matcher: Any | None = msgspec.field(default=None)
     _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
     _size: int = msgspec.field(default=-1)

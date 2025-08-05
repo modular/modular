@@ -360,12 +360,12 @@ class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
-            lora_names: list[str | None] = [
-                ctx.lora_name if ctx.lora_name else None
+            model_names: list[str | None] = [
+                ctx.model_name if ctx.model_name else None
                 for ctx in context_batch
             ]
             lora_ids, lora_ranks = self._lora_manager.get_lora_graph_inputs(
-                lora_names, self.devices[0]
+                model_names, self.devices[0]
             )
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks

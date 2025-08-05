@@ -705,7 +705,7 @@ class LoRAManager:
             for req_id, _ in sorted(
                 batch.items(),
                 key=lambda item: self._model_name_to_rank(
-                    getattr(item[1], "lora_name")  # noqa: B009
+                    getattr(item[1], "model_name", None)
                 ),
             )
         }

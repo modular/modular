@@ -143,16 +143,25 @@ class OpenAIResponseGenerator(ABC):
         pass
 
 
-def get_pipeline(
+async def get_pipeline(
     request: Request, model_name: str
 ) -> Union[TokenGeneratorPipeline, AudioGeneratorPipeline]:
     app_state: State = request.app.state
     pipeline: Union[TokenGeneratorPipeline, AudioGeneratorPipeline] = (
         app_state.pipeline
     )
-    if pipeline.model_name != model_name:
+
+    models = [pipeline.model_name]
+
+    if lora_queue := app_state.pipeline.lora_queue:
+        lora_response = await lora_queue.get_response(
+            request.state.request_id, LoRARequest(LoRAOperation.LIST)
+        )
+        models += lora_response.message
+
+    if model_name not in models:
         raise ValueError(
-            f"Unknown model '{model_name}', currently serving '{pipeline.model_name}'."
+            f"Unknown model '{model_name}', currently serving '{models}'."
         )
     if not isinstance(pipeline.tokenizer, PipelineTokenizer):
         raise ValueError(
@@ -206,12 +215,11 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     id=request.request_id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
-                    model=self.pipeline.model_name,
+                    model=request.model_name,
                     object="chat.completion.chunk",
                     system_fingerprint=None,
                     usage=usage,
                     service_tier=None,
-                    lora=request.lora_name,
                 )
                 n_tokens += 1
                 payload = response.model_dump_json()
@@ -316,12 +324,11 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 id=request.request_id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
-                model=self.pipeline.model_name,
+                model=request.model_name,
                 object="chat.completion",
                 system_fingerprint=None,
                 service_tier=None,
                 usage=usage,
-                lora=request.lora_name,
             )
             return response
         finally:
@@ -587,7 +594,7 @@ async def openai_create_chat_completion(
         completion_request = CreateChatCompletionRequest.model_validate(
             request_json
         )
-        pipeline = get_pipeline(request, completion_request.model)
+        pipeline = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -644,7 +651,6 @@ async def openai_create_chat_completion(
         token_request = TextGenerationRequest(
             request_id=request_id,
             model_name=completion_request.model,
-            lora_name=completion_request.lora,
             messages=request_messages,
             images=request_images,
             tools=tools,
@@ -752,7 +758,7 @@ async def openai_create_embeddings(
         async with _request_parsing_semaphore:
             request_json = await request.json()
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
-        pipeline = get_pipeline(request, embeddings_request.model)
+        pipeline = await get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -818,7 +824,6 @@ class CompletionStreamResponse(BaseModel):
     choices: list[CompletionResponseStreamChoice]
     object: Literal["text_completion"]
     usage: Optional[CompletionUsage] = Field(default=None)
-    lora: Optional[str] = Field(default=None)
 
 
 def _process_log_probabilities(
@@ -873,9 +878,8 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     id=request.request_id,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
-                    model=self.pipeline.model_name,
+                    model=request.model_name,
                     object="text_completion",
-                    lora=request.lora_name,
                 )
                 n_tokens += 1
                 del tracer  # create_completion_stream_response
@@ -949,10 +953,9 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 id=requests[0].request_id,
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
-                model=self.pipeline.model_name,
+                model=requests[0].model_name,
                 object="text_completion",
                 system_fingerprint=None,
-                lora=requests[0].lora_name,
             )
             return response
         except:
@@ -1026,7 +1029,7 @@ async def openai_create_completion(
                 request_json_ns - request_timestamp_ns
             ) / 1e6
 
-        pipeline = get_pipeline(request, completion_request.model)
+        pipeline = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -1067,7 +1070,6 @@ async def openai_create_completion(
                 logprobs=completion_request.logprobs,
                 echo=completion_request.echo,
                 sampling_params=sampling_params,
-                lora_name=completion_request.lora,
             )
             token_requests.append(tgr)
 
@@ -1114,8 +1116,8 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
         Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
 
-    if lora_q := request.app.state.pipeline.lora_queue:
-        loras = await lora_q.get_response(
+    if lora_queue := request.app.state.pipeline.lora_queue:
+        loras = await lora_queue.get_response(
             request.state.request_id, LoRARequest(LoRAOperation.LIST)
         )
         model_list += [
@@ -1158,7 +1160,7 @@ async def create_streaming_audio_speech(
         audio_generation_request = CreateAudioGenerationRequest.model_validate(
             request_json
         )
-        pipeline = get_pipeline(request, audio_generation_request.model)
+        pipeline = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(
             min_new_tokens=audio_generation_request.min_tokens
@@ -1170,7 +1172,6 @@ async def create_streaming_audio_speech(
             sampling_params=sampling_params,
             audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
             audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
-            lora=audio_generation_request.lora,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,
@@ -1206,14 +1207,6 @@ async def load_lora_adapter(
             request_json = await request.json()
         load_request = LoadLoraRequest.model_validate(request_json)
 
-        logger.debug(
-            "Processing LoRA load request, req-id: %s, lora_name: %s, lora_path: %s",
-            request_id,
-            load_request.lora_name,
-            load_request.lora_path,
-        )
-
-        # Get the LoRA queue from app state
         app_state: State = request.app.state
 
         # Check if LoRA is enabled
@@ -1291,13 +1284,6 @@ async def unload_lora_adapter(
             request_json = await request.json()
         unload_request = UnloadLoraRequest.model_validate(request_json)
 
-        logger.debug(
-            "Processing LoRA unload request, req-id: %s, lora_name: %s",
-            request_id,
-            unload_request.lora_name,
-        )
-
-        # Get the LoRA queue from app state
         app_state: State = request.app.state
 
         if app_state.pipeline.lora_queue is None:
