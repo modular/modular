@@ -177,6 +177,9 @@ def test_get_lora_graph_inputs(
     # Load a LoRA
     lora_manager.load_adapter("loaded_lora=/path/loaded")
 
+    # Activate the LoRA to assign it a slot
+    lora_manager.activate_adapter("loaded_lora")
+
     # Create requests
     device = CPU()
 
