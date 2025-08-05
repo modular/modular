@@ -3,28 +3,29 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from max.driver import CPU
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lib.lora import LoRAManager, LoRAModel, _validate_lora_path
 
 
 @pytest.fixture
-def mock_lora_model():
+def mock_lora_model() -> Generator[MagicMock, None, None]:
     with patch("max.pipelines.lib.lora.LoRAModel") as MockLoRAModel:
         yield MockLoRAModel
 
 
 @pytest.fixture
-def configured_mock_lora(mock_lora_model):  # noqa: ANN001
+def configured_mock_lora(mock_lora_model: MagicMock) -> MagicMock:
     """
     Sets up LoRAModel mock to return a mock instance with a .name attribute.
     Usage: test can just rely on the LoRAModel mock working correctly.
     """
 
-    def _factory(name):  # noqa: ANN001
+    def _factory(name: str) -> MagicMock:
         instance = MagicMock()
         instance.name = name
         instance.rank = 16
@@ -35,11 +36,22 @@ def configured_mock_lora(mock_lora_model):  # noqa: ANN001
 
 
 @pytest.fixture
-def mock_weights():
+def mock_weights() -> MagicMock:
     return MagicMock(name="Weights")
 
 
-def test_load_single_adapter(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
+@pytest.fixture
+def mock_validate_lora_path() -> Generator[MagicMock, None, None]:
+    """Mock _validate_lora_path to bypass filesystem checks during testing."""
+    with patch("max.pipelines.lib.lora._validate_lora_path") as mock_validate:
+        yield mock_validate
+
+
+def test_load_single_adapter(
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
+) -> None:
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
         base_weights=mock_weights,
@@ -54,7 +66,11 @@ def test_load_single_adapter(mock_weights, configured_mock_lora) -> None:  # noq
     assert manager._lora_index_to_id[0] == "my_cool_lora"
 
 
-def test_load_adapter_no_equals(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
+def test_load_adapter_no_equals(
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
+) -> None:
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
         base_weights=mock_weights,
@@ -68,7 +84,11 @@ def test_load_adapter_no_equals(mock_weights, configured_mock_lora) -> None:  # 
     assert "/path/to/lora" in manager._loras
 
 
-def test_load_adapters_bulk(mock_weights, configured_mock_lora) -> None:  # noqa: ANN001
+def test_load_adapters_bulk(
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
+) -> None:
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
         base_weights=mock_weights,
@@ -84,8 +104,9 @@ def test_load_adapters_bulk(mock_weights, configured_mock_lora) -> None:  # noqa
 
 
 def test_load_adapter_limit_exceeded(
-    mock_weights,  # noqa: ANN001
-    configured_mock_lora,  # noqa: ANN001
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
 ) -> None:
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
@@ -101,8 +122,9 @@ def test_load_adapter_limit_exceeded(
 
 
 def test_reloading_existing_adapter_raises(
-    mock_weights,  # noqa: ANN001
-    configured_mock_lora,  # noqa: ANN001
+    mock_weights: MagicMock,
+    configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
 ) -> None:
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
@@ -123,7 +145,11 @@ def test_reloading_existing_adapter_raises(
 def test_get_lora_graph_inputs(
     mock_weights: MagicMock,
     configured_mock_lora: MagicMock,
+    mock_validate_lora_path: MagicMock,
 ) -> None:
+    # Configure the mock to not raise an exception
+    mock_validate_lora_path.return_value = None
+
     manager = LoRAManager(
         base_model_path="a-name/best-ai-model",
         base_weights=mock_weights,
@@ -144,3 +170,57 @@ def test_get_lora_graph_inputs(
 
     # Assertions
     assert np.all(lora_ids_np == [0, -1])
+
+
+def test_lora_remote_hf_repo_validation(mock_weights: MagicMock) -> None:
+    """Test that remote HuggingFace repositories are rejected for LoRA adapters."""
+    # Test _validate_lora_path function with HF-style paths
+    fake_hf_repo = "username/my-lora-model"
+    with pytest.raises(
+        ValueError, match="appears to be a HuggingFace repository identifier"
+    ):
+        _validate_lora_path(fake_hf_repo)
+
+    # Test _validate_lora_path function with non-existent local paths
+    non_existent = "/path/that/does/not/exist"
+    with pytest.raises(ValueError, match="LoRA adapter path does not exist"):
+        _validate_lora_path(non_existent)
+
+    # Test LoRAModel initialization with HF-style path
+    fake_hf_repo = "mistralai/my-lora-adapter"
+    with pytest.raises(
+        ValueError, match="appears to be a HuggingFace repository identifier"
+    ):
+        LoRAModel("test", fake_hf_repo)
+
+    # Test LoRAManager.load_adapter with HF-style paths
+    manager = LoRAManager(
+        base_model_path="a-name/best-ai-model",
+        base_weights=mock_weights,
+        max_num_loras=5,
+        max_lora_rank=16,
+    )
+
+    # Test with HF-style path
+    fake_hf_repo = "meta-llama/llama-lora-adapter"
+    with pytest.raises(
+        ValueError, match="appears to be a HuggingFace repository identifier"
+    ):
+        manager.load_adapter(fake_hf_repo)
+
+    # Test with name=path format where path is HF repo
+    fake_path_with_name = f"my_lora={fake_hf_repo}"
+    with pytest.raises(
+        ValueError, match="appears to be a HuggingFace repository identifier"
+    ):
+        manager.load_adapter(fake_path_with_name)
+
+    # Test with non-existent local path
+    non_existent_path = "/this/path/does/not/exist"
+    with pytest.raises(ValueError, match="LoRA adapter path does not exist"):
+        manager.load_adapter(non_existent_path)
+
+    # Test that relative paths would get "does not exist" error, not HF error
+    relative_path = "relative/path/to/lora"
+    with pytest.raises(ValueError, match="LoRA adapter path does not exist"):
+        _validate_lora_path(relative_path)
