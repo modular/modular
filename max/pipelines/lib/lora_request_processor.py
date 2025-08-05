@@ -62,12 +62,14 @@ class LoRARequestProcessor(Generic[ReqId]):
 
         self._request_socket = ZmqPullSocket[tuple[ReqId, LoRARequest]](
             zmq_endpoint=zmq_request_endpoint,
-            deserialize=msgspec.msgpack.decode,
+            deserialize=msgspec.msgpack.Decoder(
+                type=tuple[ReqId, LoRARequest]
+            ).decode,
         )
 
         self._response_socket = ZmqPushSocket[tuple[ReqId, LoRAResponse]](
             zmq_endpoint=zmq_response_endpoint,
-            serialize=msgspec.msgpack.encode,
+            serialize=msgspec.msgpack.Encoder().encode,
         )
 
         self._zmq_thread = threading.Thread(
@@ -140,15 +142,47 @@ class LoRARequestProcessor(Generic[ReqId]):
 
     def _handle_load_request(self, request: LoRARequest) -> LoRAResponse:
         """Handle LoRA load request."""
-        return LoRAResponse(LoRAStatus.SUCCESS, "")
+        lora_name = request.lora_name
+        lora_path = request.lora_path
+
+        status = self.manager.load_adapter(f"{lora_name}={lora_path}")
+
+        if status == LoRAStatus.SUCCESS:
+            message = f"LoRA adapter '{lora_name}' loaded successfully"
+        elif status == LoRAStatus.LOAD_NAME_EXISTS:
+            message = f"LoRA adapter name '{lora_name}' already exists with different path"
+        elif status == LoRAStatus.LOAD_INVALID_PATH:
+            message = f"Invalid LoRA adapter path: '{lora_path}'. Path must exist locally (remote repositories are not supported)"
+        elif status == LoRAStatus.LOAD_INVALID_ADAPTER:
+            message = f"Invalid LoRA adapter at '{lora_path}'. Ensure the adapter has the correct format and required files"
+        elif status == LoRAStatus.LOAD_ERROR:
+            message = f"Unexpected error loading LoRA adapter '{lora_name}'"
+        else:
+            message = f"Failed to load LoRA adapter '{lora_name}' with status: {status.value}"
+
+        return LoRAResponse(status, message)
 
     def _handle_unload_request(self, request: LoRARequest) -> LoRAResponse:
         """Handle LoRA unload request."""
-        return LoRAResponse(LoRAStatus.SUCCESS, "")
+        status = self.manager.unload_adapter(request.lora_name)  # type: ignore
+
+        if status == LoRAStatus.SUCCESS:
+            message = (
+                f"LoRA adapter '{request.lora_name}' unloaded successfully"
+            )
+        elif status == LoRAStatus.UNLOAD_NAME_NONEXISTENT:
+            message = f"LoRA adapter '{request.lora_name}' not found"
+        elif status == LoRAStatus.UNLOAD_ERROR:
+            message = f"Error unloading LoRA adapter '{request.lora_name}'"
+        else:
+            message = f"Failed to unload LoRA adapter '{request.lora_name}' with status: {status.value}"
+
+        return LoRAResponse(status, message)
 
     def _handle_list_request(self) -> LoRAResponse:
         """Handle LoRA list request."""
-        return LoRAResponse(LoRAStatus.SUCCESS, [])
+        loras = self.manager.loras
+        return LoRAResponse(LoRAStatus.SUCCESS, loras)
 
     def __del__(self):
         """Cleanup when the object is destroyed."""

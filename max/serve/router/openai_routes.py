@@ -34,6 +34,9 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
     AudioGenerationRequest,
+    LoRAOperation,
+    LoRARequest,
+    LoRAStatus,
     PipelineTokenizer,
     SamplingParams,
     TextGenerationRequest,
@@ -74,6 +77,7 @@ from max.serve.schemas.openai import (  # type: ignore
     ErrorResponse,
     Function1,
     ListModelsResponse,
+    LoadLoraRequest,
     Logprobs,
     Logprobs2,
     Model,
@@ -81,6 +85,7 @@ from max.serve.schemas.openai import (  # type: ignore
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
     ResponseFormatText,
+    UnloadLoraRequest,
     Usage,
 )
 from max.serve.telemetry.metrics import METRICS
@@ -1109,6 +1114,15 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
         Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
 
+    if lora_q := request.app.state.pipeline.lora_queue:
+        loras = await lora_q.get_response(
+            request.state.request_id, LoRARequest(LoRAOperation.LIST)
+        )
+        model_list += [
+            Model(id=lora, object="model", created=None, owned_by="")
+            for lora in loras.message
+        ]
+
     return ListModelsResponse(object="list", data=model_list)
 
 
@@ -1179,3 +1193,157 @@ async def create_streaming_audio_speech(
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
         raise HTTPException(status_code=400, detail="Value error.") from e
+
+
+@router.post("/load_lora_adapter", response_model=None)
+async def load_lora_adapter(
+    request: Request,
+) -> JSONResponse:
+    """Load a LoRA adapter into the pipeline."""
+    request_id = request.state.request_id
+    try:
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
+        load_request = LoadLoraRequest.model_validate(request_json)
+
+        logger.debug(
+            "Processing LoRA load request, req-id: %s, lora_name: %s, lora_path: %s",
+            request_id,
+            load_request.lora_name,
+            load_request.lora_path,
+        )
+
+        # Get the LoRA queue from app state
+        app_state: State = request.app.state
+
+        # Check if LoRA is enabled
+        if app_state.pipeline.lora_queue is None:
+            raise HTTPException(
+                status_code=501,
+                detail="LoRA functionality is not enabled on this server. Please restart the server with LoRA enabled.",
+            )
+
+        response = await app_state.pipeline.lora_queue.get_response(
+            request_id,
+            LoRARequest(
+                LoRAOperation.LOAD,
+                load_request.lora_name,
+                load_request.lora_path,
+            ),
+        )
+
+        # Map LoRA status to appropriate HTTP status codes
+        if response.status == LoRAStatus.SUCCESS:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": response.status.value,
+                    "message": response.message,
+                },
+            )
+        elif response.status == LoRAStatus.LOAD_NAME_EXISTS:
+            raise HTTPException(
+                status_code=409, detail=response.message
+            )  # Conflict
+        elif response.status == LoRAStatus.LOAD_INVALID_PATH:
+            raise HTTPException(
+                status_code=400, detail=response.message
+            )  # Bad Request
+        elif response.status == LoRAStatus.LOAD_INVALID_ADAPTER:
+            raise HTTPException(
+                status_code=400, detail=response.message
+            )  # Bad Request
+        elif response.status == LoRAStatus.LOAD_SLOTS_FULL:
+            raise HTTPException(
+                status_code=503, detail=response.message
+            )  # Service Unavailable
+        else:
+            raise HTTPException(
+                status_code=500, detail=response.message
+            )  # Internal Server Error
+
+    except JSONDecodeError as e:
+        logger.exception("JSONDecodeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except (TypeError, ValidationError) as e:
+        logger.exception("Validation error in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except ValueError as e:
+        logger.exception("ValueError in request %s", request_id)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error loading LoRA adapter in request %s", request_id)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load LoRA adapter: {str(e)}"
+        ) from e
+
+
+@router.post("/unload_lora_adapter", response_model=None)
+async def unload_lora_adapter(
+    request: Request,
+) -> JSONResponse:
+    """Unload a LoRA adapter from the pipeline."""
+    request_id = request.state.request_id
+    try:
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
+        unload_request = UnloadLoraRequest.model_validate(request_json)
+
+        logger.debug(
+            "Processing LoRA unload request, req-id: %s, lora_name: %s",
+            request_id,
+            unload_request.lora_name,
+        )
+
+        # Get the LoRA queue from app state
+        app_state: State = request.app.state
+
+        if app_state.pipeline.lora_queue is None:
+            raise HTTPException(
+                status_code=501,
+                detail="LoRA functionality is not enabled on this server. Please restart the server with LoRA enabled.",
+            )
+
+        response = await app_state.pipeline.lora_queue.unload_lora(
+            request_id,
+            LoRARequest(LoRAOperation.UNLOAD, unload_request.lora_name),
+        )
+
+        # Map LoRA status to appropriate HTTP status codes
+        if response.status == LoRAStatus.SUCCESS:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": response.status.value,
+                    "message": response.message,
+                },
+            )
+        elif response.status == LoRAStatus.UNLOAD_NAME_NONEXISTENT:
+            raise HTTPException(
+                status_code=404, detail=response.message
+            )  # Not Found
+        else:
+            raise HTTPException(
+                status_code=500, detail=response.message
+            )  # Internal Server Error
+
+    except JSONDecodeError as e:
+        logger.exception("JSONDecodeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except (TypeError, ValidationError) as e:
+        logger.exception("Validation error in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except ValueError as e:
+        logger.exception("ValueError in request %s", request_id)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Error unloading LoRA adapter in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to unload LoRA adapter: {str(e)}"
+        ) from e

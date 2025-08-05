@@ -161,7 +161,7 @@ class Llama3(Transformer):
             linear_cls = functools.partial(
                 GPTQLinear, quantization_config=config.quantization_config
             )
-        elif config.lora_config:
+        elif config.lora_config is not None:
             linear_cls = functools.partial(
                 LinearLoRA,
                 max_num_loras=config.lora_config.max_num_loras,
@@ -199,7 +199,7 @@ class Llama3(Transformer):
                 quantization_encoding=config.model_quantization_encoding,
                 scale=config.attention_multiplier,
             )
-        elif config.lora_config:
+        elif config.lora_config is not None:
             attention_cls = functools.partial(
                 AttentionWithRopeAndLoRA,
                 stacked_qkv=config.stacked_qkv,

@@ -62,6 +62,8 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             return {}
         tracer: Tracer = Tracer("compute_parameters")
 
+        self._maybe_sort_loras(batch)
+
         # Flatten our batch for consistent indexing.
         context_batch = list(batch.values())
         eos_token_list = list(self._eos_token_id)

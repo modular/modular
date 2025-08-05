@@ -499,7 +499,7 @@ class PipelineRegistry:
             )
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
-            functools.partial(  # type: ignore[misc]
+            functools.partial(
                 pipeline_class,
                 pipeline_config=pipeline_config,
                 pipeline_model=arch.pipeline_model,

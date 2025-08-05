@@ -5232,3 +5232,12 @@ class CreateAudioGenerationRequest(BaseModel):
 class CreateAudioGenerationResponse(BaseModel):
     audio_data: bytes = Field(..., description='The audio data for the audio generation.')
     metadata: Dict[str, Any] = Field(..., description='The metadata for the audio generation.')
+
+
+class LoadLoraRequest(BaseModel):
+    lora_name: str = Field(..., description='The name identifier for the LoRA adapter.')
+    lora_path: str = Field(..., description='The file path to the LoRA adapter weights.')
+
+
+class UnloadLoraRequest(BaseModel):
+    lora_name: str = Field(..., description='The name identifier for the LoRA adapter to unload.')

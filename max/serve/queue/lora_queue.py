@@ -42,11 +42,13 @@ class LoRAQueue(Generic[ReqId]):
     ):
         self._request_socket = ZmqPushSocket[tuple[ReqId, LoRARequest]](
             zmq_endpoint=request_zmq_endpoint,
-            serialize=msgspec.msgpack.encode,
+            serialize=msgspec.msgpack.Encoder().encode,
         )
         self._response_socket = ZmqPullSocket[tuple[ReqId, LoRAResponse]](
             zmq_endpoint=response_zmq_endpoint,
-            deserialize=msgspec.msgpack.decode,
+            deserialize=msgspec.msgpack.Decoder(
+                type=tuple[ReqId, LoRAResponse]
+            ).decode,
         )
 
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}

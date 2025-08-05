@@ -34,6 +34,7 @@ from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
+from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler import PrefillRequest, PrefillResponse
 
 T = TypeVar("T")
@@ -193,6 +194,14 @@ async def _async_worker(
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
+    lora_queue: LoRAQueue | None = (
+        LoRAQueue(
+            pipeline_config.lora_config.lora_request_endpoint,
+            pipeline_config.lora_config.lora_response_endpoint,
+        )
+        if pipeline_config.lora_config
+        else None
+    )
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
@@ -207,6 +216,7 @@ async def _async_worker(
             model_name=model_name,
             tokenizer=tokenizer,
             engine_queue=engine_queue,
+            lora_queue=lora_queue,
         ) as pipeline,
     ):
         pc.set_started()

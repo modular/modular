@@ -35,6 +35,7 @@ from max.interfaces import (
 )
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
+from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
@@ -70,6 +71,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         model_name: str,
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue[BaseContextType, Any],
+        lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.TokenGeneratorPipeline"
@@ -81,6 +83,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.engine_queue = engine_queue
+        self.lora_queue = lora_queue
         self.stats = TokenGeneratorStats()
 
         self._background_tasks: set[asyncio.Task] = set()
@@ -250,6 +253,9 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)
 
+        if self.lora_queue:
+            self.create_background_task(self.lora_queue.response_worker)
+
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError(
                 "Worker process not healthy after running background task"
@@ -317,6 +323,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         model_name: str,
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue[AudioGeneratorContext, Any],
+        lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.AudioGeneratorPipeline"
@@ -327,6 +334,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.engine_queue = engine_queue
+        self.lora_queue = lora_queue
         self.stats = TokenGeneratorStats()
 
         self._background_tasks: set[asyncio.Task] = set()
@@ -424,6 +432,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)
+
+        if self.lora_queue:
+            self.create_background_task(self.lora_queue.response_worker)
 
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError(

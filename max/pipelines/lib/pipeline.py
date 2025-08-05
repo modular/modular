@@ -221,21 +221,24 @@ class PipelineModel(ABC, Generic[T]):
                 session, self.kv_cache_config._available_cache_memory
             )
 
-        self._lora_manager = (
+        self._lora_manager: LoRAManager | None = (
             LoRAManager(
+                pipeline_config.lora_config,
                 pipeline_config.model_config.model_path,
-                weights,
-                self.pipeline_config.lora_config.max_num_loras,
-                self.pipeline_config.lora_config.max_lora_rank,
-                self.pipeline_config.lora_config.lora_paths,
+                self.dtype,
             )
-            if self.pipeline_config.lora_config
+            if pipeline_config.lora_config
             else None
         )
 
     @property
     def dtype(self) -> DType:
-        return self.encoding.dtype
+        # AudioGeneratorPipeline passes Nones for all args except pipeline config
+        return (
+            self.encoding.dtype
+            if self.encoding is not None
+            else self.pipeline_config.model_config.quantization_encoding.dtype
+        )
 
     @classmethod
     @abstractmethod
@@ -929,6 +932,7 @@ class TextGenerationPipeline(
         assert isinstance(new_seed, Tensor)
         return (tokens, generated_tokens, new_seed)
 
+    @traced
     def _maybe_sort_loras(self, batch: dict[str, T]):
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need

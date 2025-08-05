@@ -205,15 +205,15 @@ class PipelineConfig(MAXConfig):
         return extracted
 
     def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
-        """Extract LoRA kwargs and create LoRAConfig if lora_paths provided."""
+        """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
         lora_kwargs = PipelineConfig._extract_kwargs_for_config(
             kwargs, LoRAConfig
         )
 
-        if lora_kwargs.get("lora_paths", []):
+        if lora_kwargs.get("enable_lora", False):
             self._lora_config = LoRAConfig(**lora_kwargs)
         # TODO: We should add an elif to check / error out if other LoRA params
-        # are provided, but lora_paths is not. We can't do this today as our
+        # are provided, but enable_lora is not. We can't do this today as our
         # click PipelineConfig autogenerates defaults for all fields, including
         # required ones.
 

@@ -17,12 +17,13 @@ from __future__ import annotations
 import logging
 import os
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.pipelines")
 
@@ -165,7 +166,10 @@ class ProfilingConfig(MAXConfig):
 
 @dataclass
 class LoRAConfig(MAXConfig):
-    lora_paths: list[str]
+    enable_lora: bool = False
+    """Enables LoRA on the server"""
+
+    lora_paths: list[str] = field(default_factory=list)
     """List of statically defined LoRA paths"""
 
     max_lora_rank: int = 16
@@ -174,16 +178,19 @@ class LoRAConfig(MAXConfig):
     max_num_loras: int = 100
     """The maximum number of active LoRAs in a batch"""
 
-    def __post_init__(self):
-        if len(self.lora_paths) > self.max_num_loras:
-            raise ValueError(
-                "Number of statically defined LoRAs exceeds the number of maximum loadable LoRAs."
-            )
+    lora_request_endpoint: str = field(default_factory=generate_zmq_ipc_path)
+    """The request endpoint for ZMQ communication"""
+
+    lora_response_endpoint: str = field(default_factory=generate_zmq_ipc_path)
+    """The response endpoint for ZMQ communication"""
 
     @staticmethod
     def help() -> dict[str, str]:
         return {
+            "enable_lora": "Enables LoRA on the server",
             "lora_paths": "List of paths to the LoRAs.",
             "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
             "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
+            "lora_request_endpoint": "The ZMQ request endpoint for IPC.",
+            "lora_response_endpoint": "The ZMQ response endpoint for IPC.",
         }

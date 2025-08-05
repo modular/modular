@@ -405,11 +405,11 @@ class Llama3ConfigBase(MAXModelConfigBase):
     devices: list[DeviceRef]
     clip_qkv: float | None
     float8_config: Float8Config | None
+    lora_config: LoRAConfig | None = None
     pipeline_parallel_degree: int = 1
     tensor_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
-    lora_config: LoRAConfig | None = None
 
     @staticmethod
     def help() -> dict[str, str]:

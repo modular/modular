@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 """LoRA-specific classes."""
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import json
 import logging
 import os
 import re
-from enum import Enum
+import threading
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -28,34 +29,21 @@ from max.dtype import DType
 from max.graph import Weight
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
-from max.graph.weights import WeightData, Weights, WeightsFormat, load_weights
+from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
-from max.interfaces import InputContext
+from max.interfaces import InputContext, LoRAStatus, LoRAType
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
+from max.pipelines.lib.config import LoRAConfig
 
 from .hf_utils import HuggingFaceRepo
+from .lora_request_processor import LoRARequestProcessor
 
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
 
 T = TypeVar("T", bound=InputContext)
-
-
-class LoRAType(Enum):
-    """
-    Enumeration for LoRA Types.
-    """
-
-    A = "lora_A"
-    """Represents the LoRA A matrix (high rank tensor to low rank tensor)."""
-
-    B = "lora_B"
-    """Represents the LoRA B matrix. (low rank tensor to high rank tensor)"""
-
-    BIAS = "lora.bias"
-    """Represents the LoRA bias matrix. (added to matrix B)"""
 
 
 def is_lora_kind(key: str) -> bool:
@@ -69,43 +57,14 @@ def is_lora_kind(key: str) -> bool:
     )
 
 
-def _validate_lora_path(path: str) -> None:
-    """
-    Validates that a LoRA adapter path exists locally.
-
-    Remote HuggingFace repositories are not supported and must be downloaded
-    to a local directory first.
-
-    Args:
-        path: The path to validate.
-
-    Raises:
-        ValueError: If the path is a HuggingFace repository identifier or
-            if the path does not exist locally.
-    """
-    # Check if the path exists locally
-    if not os.path.exists(path):
-        # Path doesn't exist - check if it looks like a HF repo
-        # HF repos are typically "organization/model-name" format
-        if path.count("/") == 1 and not path.startswith(("/", "./")):
-            raise ValueError(
-                f"Remote HuggingFace repositories are not supported for LoRA adapters. "
-                f"'{path}' appears to be a HuggingFace repository identifier. "
-                f"Please download the adapter to a local directory first."
-            )
-        else:
-            raise ValueError(
-                f"LoRA adapter path does not exist: '{path}'. "
-                f"Please ensure the path points to a valid local directory."
-            )
-
-
 class LoRAModel:
     """
     Manages LoRA weights and configuration for a single adapter.
     """
 
-    def __init__(self, name: str, path: str, strict: bool = True) -> None:
+    def __init__(
+        self, name: str, path: str, base_dtype: DType, strict: bool = True
+    ) -> None:
         """
         Initializes a LoRAModel by loading its configuration and weights.
 
@@ -132,7 +91,7 @@ class LoRAModel:
         self._lora_B: dict[str, WeightData] = {}
         self._lora_bias: dict[str, WeightData] = {}
 
-        self._adapter_config = self._load_weights()
+        self._adapter_config = self._load_weights(base_dtype)
 
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]
@@ -199,7 +158,7 @@ class LoRAModel:
         else:
             return key
 
-    def _load_weights(self) -> dict[str, Any]:
+    def _load_weights(self, base_dtype: DType) -> dict[str, Any]:
         """
         Loads LoRA adapter weights and configuration from disk.
 
@@ -218,9 +177,6 @@ class LoRAModel:
             ValueError: If the weight format is not safetensors, or if keys
                 are not recognized as valid LoRA components.
         """
-        # Validate path exists locally (remote HF repos not supported)
-        _validate_lora_path(self.path)
-
         hf_repo = HuggingFaceRepo(repo_id=self.path)
         weight_files = hf_repo.weight_files
 
@@ -248,6 +204,7 @@ class LoRAModel:
             data = weight.data()
 
             if LoRAType.A.value in key:
+                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
                 self._lora_A[key] = data
             elif LoRAType.B.value in key:
                 # A minor optimization so we don't have to multiply scale
@@ -256,8 +213,10 @@ class LoRAModel:
                 data.data = (
                     Tensor.from_dlpack(data.data).copy().to_numpy() * scale
                 )
+                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
+                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
                 self._lora_bias[key] = data
             else:
                 raise ValueError(f"Invalid LoRA type got key: {key}")
@@ -277,33 +236,43 @@ class LoRAManager:
 
     def __init__(
         self,
+        config: LoRAConfig,
         base_model_path: str,
-        base_weights: Weights,
-        max_num_loras: int,
-        max_lora_rank: int,
-        lora_paths: list[str] | None = None,
+        base_dtype: DType,
     ):
         """
         Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
-            base_weights (Weights): The base model weights used as the starting point for LoRA modifications.
+            base_model_path (str): The name/path of the base model.
+            base_dtype (DType): The base model dtype.
             max_num_loras (int): The maximum number of LoRA models to manage concurrently.
+            max_lora_rank (int): The maximum rank of all LoRAs loadable on the server.
             lora_paths: (list[str]): An optional list of local LoRAs to load on initialization.
         """
         self.base_model_path = base_model_path
-        self.base_weights = base_weights
-        self.max_num_loras = max_num_loras
-        self.max_lora_rank = max_lora_rank
+        self.base_dtype = base_dtype
+        self.max_num_loras = config.max_num_loras
+        self.max_lora_rank = config.max_lora_rank
 
         self._loras: dict[str, LoRAModel] = dict()
         self._active_loras: dict[str, LoRAModel] = dict()
         self._lora_index_to_id: list[str | None] = [None] * self.max_num_loras
 
-        if lora_paths:
-            self.load_adapters(lora_paths)
+        self._lora_lock = threading.RLock()
+        self._request_processor: LoRARequestProcessor = LoRARequestProcessor(
+            self, config.lora_request_endpoint, config.lora_response_endpoint
+        )
+
+        if config.lora_paths:
+            self._load_adapters(config.lora_paths)
 
         self._alias_buffers: dict[str, DLPackArray] = {}
+
+    @property
+    def loras(self) -> list[str]:
+        with self._lora_lock:
+            return list(self._loras.keys())
 
     def _name_to_slot(self, name: str):
         """
@@ -357,7 +326,11 @@ class LoRAManager:
             device: The device
         """
         for name in model_names:
-            if name and name not in self._loras:
+            if (
+                name
+                and name != self.base_model_path
+                and name not in self._loras
+            ):
                 raise RuntimeError(
                     "Issuing a request with a non-existent LoRA. "
                     f"Requested LoRA with name: {name}. Valid LoRA names are: "
@@ -374,35 +347,46 @@ class LoRAManager:
 
         return lora_ids, lora_ranks
 
-    def load_adapters(self, lora_paths: list[str]) -> list[str]:
+    def _validate_lora_path(self, path: str) -> LoRAStatus:
         """
-        Loads LoRA adapters from the specified file paths and registers them for use.
+        Validates that a LoRA adapter path exists locally.
 
-        This method is useful when you want to load multiple LoRA adapters in one call.
-
-        .. code-block:: python
-
-            lora_ids = manager.load_adapters(["adapter1=/path/to/lora1", "/path/to/lora2"])
+        Remote HuggingFace repositories are not supported and must be downloaded
+        to a local directory first.
 
         Args:
-            lora_paths:
-                A list of file paths (optionally with name prefixes like `name=path`) to LoRA adapter directories.
+            path: The path to validate.
 
-        Returns:
-            A list of strings representing the registered names of the successfully loaded LoRA adapters.
+        """
+        if not os.path.exists(path):
+            return LoRAStatus.LOAD_INVALID_PATH
+
+        return LoRAStatus.SUCCESS
+
+    def _load_adapters(self, lora_paths: list[str]) -> None:
+        """
+        Internal method to load LoRA adapters during initialization.
+
+        This method raises exceptions on any errors to fail during startup.
+
+        Args:
+            lora_paths: List of LoRA adapter paths to load.
 
         Raises:
-            RuntimeError: If there are no available LoRA slots remaining.
+            RuntimeError: If any adapter fails to load.
         """
-        lora_ids: list[str] = []
-
         for lora_path in lora_paths:
-            if lora_id := self.load_adapter(lora_path):
-                lora_ids.append(lora_id)
+            status = self.load_adapter(lora_path)
+            if status != LoRAStatus.SUCCESS:
+                error_messages = {
+                    LoRAStatus.LOAD_NAME_EXISTS: f"LoRA adapter name already exists with different path: {lora_path}",
+                    LoRAStatus.LOAD_INVALID_PATH: f"Invalid LoRA adapter path: {lora_path}",
+                    LoRAStatus.LOAD_INVALID_ADAPTER: f"Invalid LoRA adapter format: {lora_path}",
+                    LoRAStatus.LOAD_ERROR: f"Unexpected error loading LoRA adapter: {lora_path}",
+                }
+                raise RuntimeError(error_messages.get(status))
 
-        return lora_ids
-
-    def _next_free_slot(self) -> int:
+    def _next_free_slot(self) -> int | None:
         """
         Finds and returns the index of the next available slot for a new LoRA adapter.
 
@@ -415,10 +399,7 @@ class LoRAManager:
             slot_index = manager._next_free_slot()
 
         Returns:
-            The integer index of the next available LoRA slot.
-
-        Raises:
-            RuntimeError: If no available slots are left.
+            The integer index of the next available LoRA slot, or None if no slots are available.
         """
         # Reserve the last slot (max_num_loras - 1) for inactive LoRAs
         for i, slot in enumerate(self._lora_index_to_id):
@@ -429,7 +410,7 @@ class LoRAManager:
             f"No available LoRA slots left. Current max is: {self.max_num_loras}"
         )
 
-    def load_adapter(self, path: str) -> str | None:
+    def load_adapter(self, path: str) -> LoRAStatus:
         """
         Loads a single LoRA adapter from the given path and registers it under a unique name.
 
@@ -446,34 +427,51 @@ class LoRAManager:
                 A string in the form `name=path` or just a file path. The adapter is expected to reside at that path.
 
         Returns:
-            A string representing the name under which the LoRA adapter was registered.
-
-        Raises:
-            RuntimeError: If there are no available slots remaining.
+            LoRAStatus indicating the result of the load operation.
         """
-        # vLLM allows passing in args to cli like: {name}={path} {name}={path}
-        if "=" in path:
-            name, path = path.split("=", 1)
-        else:
-            name = path
-            path = path
+        with self._lora_lock:
+            try:
+                if "=" in path:
+                    name, path = path.split("=", 1)
+                else:
+                    name = path
+                    path = path
 
-        # Validate path exists locally (remote HF repos not supported)
-        _validate_lora_path(path)
+                # Check if name already exists first
+                if name in self._loras:
+                    existing_lora = self._loras[name]
+                    if existing_lora.path == path:
+                        return LoRAStatus.SUCCESS
+                    else:
+                        return LoRAStatus.LOAD_NAME_EXISTS
 
-        if name not in self._loras:
-            slot = self._next_free_slot()
-            lora = LoRAModel(name, path)
+                if (
+                    status := self._validate_lora_path(path)
+                ) != LoRAStatus.SUCCESS:
+                    return status
 
-            self._lora_index_to_id[slot] = lora.name
-            self._loras[lora.name] = lora
-            return lora.name
+                # Check for available slots
+                slot = self._next_free_slot()
+                if slot is None:
+                    return LoRAStatus.LOAD_SLOTS_FULL
 
-        raise RuntimeError(
-            f"LoRA with name {name} already exists in LoRA registry."
-        )
+                # Try to load the LoRA model
+                try:
+                    lora = LoRAModel(name, path, self.base_dtype)
+                except ValueError as e:
+                    return LoRAStatus.LOAD_INVALID_ADAPTER
 
-    def unload_adapter(self, lora: str) -> None:
+                self._lora_index_to_id[slot] = lora.name
+                self._loras[lora.name] = lora
+                return LoRAStatus.SUCCESS
+
+            except Exception as e:
+                logger.exception(
+                    f"Unexpected error loading LoRA adapter from '{path}': {e}"
+                )
+                return LoRAStatus.LOAD_ERROR
+
+    def unload_adapter(self, lora: str) -> LoRAStatus:
         """
         Unloads the specified LoRA adapter from the internal registry and frees its slot.
 
@@ -488,12 +486,53 @@ class LoRAManager:
                 The name of the LoRA adapter to unload.
 
         Returns:
-            None
-
-        Raises:
-            KeyError: If the specified LoRA adapter is not found in the registry.
+            LoRAStatus indicating the result of the unload operation.
         """
-        pass
+        with self._lora_lock:
+            try:
+                if lora not in self._loras:
+                    return LoRAStatus.UNLOAD_NAME_NONEXISTENT
+
+                # Find the slot used by this LoRA
+                slot = self._name_to_slot(lora)
+
+                # Remove from registries
+                del self._loras[lora]
+                if lora in self._active_loras:
+                    del self._active_loras[lora]
+
+                # Free the slot
+                self._lora_index_to_id[slot] = None
+
+                return LoRAStatus.SUCCESS
+            except Exception as e:
+                logger.exception(f"Error unloading LoRA adapter '{lora}': {e}")
+                return LoRAStatus.UNLOAD_ERROR
+
+    def unload_adapters(self, lora_names: list[str]) -> list[LoRAStatus]:
+        """
+        Unloads multiple LoRA adapters from the internal registry and frees their slots.
+
+        This method is useful when you want to unload multiple LoRA adapters in one call.
+
+        .. code-block:: python
+
+            unloaded_names = manager.unload_adapters(["adapter1", "adapter2"])
+
+        Args:
+            lora_names:
+                A list of LoRA adapter names to unload.
+
+        Returns:
+            A list of strings representing the names of successfully unloaded LoRA adapters.
+        """
+        statuses: list[LoRAStatus] = []
+
+        for lora_name in lora_names:
+            status = self.unload_adapter(lora_name)
+            statuses.append(status)
+
+        return statuses
 
     def activate_adapter(self, lora: str) -> None:
         """

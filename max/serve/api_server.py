@@ -36,6 +36,7 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
@@ -129,6 +130,15 @@ async def lifespan(
                 )
             )
 
+            lora_queue: LoRAQueue | None = (
+                LoRAQueue(
+                    serving_settings.pipeline_config.lora_config.lora_request_endpoint,
+                    serving_settings.pipeline_config.lora_config.lora_response_endpoint,
+                )
+                if serving_settings.pipeline_config.lora_config
+                else None
+            )
+
             METRICS.pipeline_load(serving_settings.model_name)
             pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
             if serving_settings.pipeline_task in (
@@ -139,6 +149,7 @@ async def lifespan(
                     model_name=serving_settings.model_name,
                     tokenizer=serving_settings.tokenizer,
                     engine_queue=engine_queue,
+                    lora_queue=lora_queue,
                 )
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
@@ -147,6 +158,7 @@ async def lifespan(
                     model_name=serving_settings.model_name,
                     tokenizer=serving_settings.tokenizer,
                     engine_queue=engine_queue,
+                    lora_queue=lora_queue,
                 )
             else:
                 raise ValueError(
@@ -154,6 +166,7 @@ async def lifespan(
                 )
 
             app.state.pipeline = pipeline
+
             await exit_stack.enter_async_context(pipeline)
             logger.info(
                 f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
