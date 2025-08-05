@@ -361,7 +361,7 @@ struct MojoKernelFunctionAdaptor {
       if (i + 1 == endOfInputArguments &&
           argTypeName ==
               KGEN::MOGGPreElab::MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME) {
-        // The last argument of an elementwise function is the IndexList
+        // The last argument of an elementwise function can be an IndexList
         // argument. Skip it for the execute function.
         continue;
       }
@@ -466,7 +466,7 @@ struct MojoKernelAdaptor {
   /// TODO: (GEX-1994) Remove this.
   bool isCoreMOOperation() const { return registeredOpName.starts_with("mo."); }
 
-  bool isElementwise() { return elementwiseFunction.has_value(); }
+  bool isElementwise() const { return elementwiseFunction.has_value(); }
 };
 
 //===----------------------------------------------------------------------===//
