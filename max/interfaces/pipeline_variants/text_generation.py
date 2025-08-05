@@ -113,12 +113,6 @@ class TextGenerationRequest(Request):
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    lora_name: str | None = None
-    """
-    The name of the lora to be used for generating tokens. This should match
-    the available models on the server and determines the behavior and
-    capabilities of the response generation.
-    """
     prompt: Union[str, Sequence[int], None] = None
     """
     The prompt to be processed by the model. This field supports legacy
