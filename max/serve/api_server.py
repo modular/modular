@@ -84,7 +84,7 @@ async def lifespan(
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
-            if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service():
+            if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service:
                 # create dispatcher factory
                 dispatcher_factory = DispatcherFactory[
                     Union[

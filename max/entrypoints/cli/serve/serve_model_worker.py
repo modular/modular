@@ -123,7 +123,7 @@ def serve_model_worker(
         try:
             async with AsyncExitStack() as exit_stack:
                 # Start dispatcher service if needed
-                if pipeline_config.pipeline_role.uses_dispatch_service():
+                if pipeline_config.pipeline_role.uses_dispatch_service:
                     # create dispatcher factory
                     dispatcher_factory = DispatcherFactory[
                         Union[
