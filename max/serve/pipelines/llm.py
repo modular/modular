@@ -112,9 +112,8 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         itl = StopWatch()
         total_sw = StopWatch()
         self.logger.debug(
-            "%s [%d]: Started: Elapsed: %0.2f ms",
+            "%s: Started: Elapsed: %0.2f ms",
             request.request_id,
-            request.index,
             total_sw.elapsed_ms,
         )
 
@@ -200,9 +199,8 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         finally:
             if self.debug_logging:
                 self.logger.debug(
-                    "%s [%d]: Completed: Elapsed: %0.2f ms",
+                    "%s: Completed: Elapsed: %0.2f ms",
                     request.request_id,
-                    request.index,
                     total_sw.elapsed_ms,
                 )
 
@@ -220,7 +218,6 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
             request.request_id,
-            request.index,
             total_sw.elapsed_ms,
         )
 
@@ -238,9 +235,8 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
         finally:
             if self.debug_logging:
                 self.logger.debug(
-                    "%s [%d]: Completed: Elapsed: %0.2f ms",
+                    "%s: Completed: Elapsed: %0.2f ms",
                     request.request_id,
-                    request.index,
                     total_sw.elapsed_ms,
                 )
         return None
@@ -351,9 +347,8 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         """Generates and streams audio for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
-            "%s [%d]: Started: Elapsed: %0.2f ms",
+            "%s: Started: Elapsed: %0.2f ms",
             request.request_id,
-            request.index,
             total_sw.elapsed_ms,
         )
 
@@ -379,9 +374,8 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         finally:
             if self.debug_logging:
                 self.logger.debug(
-                    "%s [%d]: Completed: Elapsed: %0.2f ms",
+                    "%s: Completed: Elapsed: %0.2f ms",
                     request.request_id,
-                    request.index,
                     total_sw.elapsed_ms,
                 )
 

@@ -226,7 +226,6 @@ async def _async_worker(
                 )
                 gen_request = TextGenerationRequest(
                     request_id=str(uuid.uuid4()),
-                    index=0,
                     model_name=model_name,
                     prompt=prompt,
                     sampling_params=sampling_params,

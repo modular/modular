@@ -5221,7 +5221,6 @@ class AssistantStreamEvent(
 class CreateAudioGenerationRequest(BaseModel):
     model: str = Field(..., description='The model to use for the audio generation.')
     input: str = Field(..., description='The input to the audio generation.')
-    index: int = Field(..., description='The index of the audio generation.')
     audio_prompt_tokens: list[int] = Field(..., description='The audio prompt tokens to use for the audio generation.')
     audio_prompt_transcription: str = Field(..., description='The audio prompt transcription to use for the audio generation.')
     instructions: str = Field(..., description='The instructions for the audio generation.')

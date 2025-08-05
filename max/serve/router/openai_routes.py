@@ -638,7 +638,6 @@ async def openai_create_chat_completion(
         )
         token_request = TextGenerationRequest(
             request_id=request_id,
-            index=0,
             model_name=completion_request.model,
             lora_name=completion_request.lora,
             messages=request_messages,
@@ -776,7 +775,6 @@ async def openai_create_embeddings(
         embedding_requests = [
             TextGenerationRequest(
                 request_id=f"{request_id}_{idx}",
-                index=idx,
                 model_name=embeddings_request.model,
                 prompt=input_text,
                 timestamp_ns=request.state.request_timer.start_ns,
@@ -1057,7 +1055,6 @@ async def openai_create_completion(
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
                 request_id=f"{http_req_id}_{i}",
-                index=i,
                 model_name=completion_request.model,
                 prompt=prompt,
                 timestamp_ns=request.state.request_timer.start_ns,
@@ -1155,7 +1152,6 @@ async def create_streaming_audio_speech(
         audio_request = AudioGenerationRequest(
             request_id=request_id,
             input=audio_generation_request.input,
-            index=audio_generation_request.index,
             model=audio_generation_request.model,
             sampling_params=sampling_params,
             audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,

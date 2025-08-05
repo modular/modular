@@ -50,7 +50,6 @@ async def stream_text_to_console(
     context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id=req_id,
-            index=0,
             prompt=prompt,
             images=images,
             model_name=MODEL_NAME,
