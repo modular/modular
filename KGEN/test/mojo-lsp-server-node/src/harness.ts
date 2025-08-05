@@ -10,10 +10,12 @@ import {
   Hover,
   HoverRequest,
   InitializeParams,
+  Location,
   MessageConnection,
   Position,
   PublishDiagnosticsParams,
   Range,
+  ReferencesRequest,
 } from "vscode-languageserver-protocol";
 import { createMessageConnection } from "vscode-languageserver-protocol/node";
 
@@ -81,10 +83,15 @@ export class LanguageServer {
 
     await this.connection.sendRequest("shutdown");
     assert.ok(this.serverProcess.kill());
-    const result = await Promise.race([once(this.serverProcess, "exit"), setTimeout(5000, 'timeout')]);
+    const result = await Promise.race([
+      once(this.serverProcess, "exit"),
+      setTimeout(5000, "timeout"),
+    ]);
 
-    if (result === 'timeout') {
-      console.error("Timed out waiting for language server to exit, did server crash?");
+    if (result === "timeout") {
+      console.error(
+        "Timed out waiting for language server to exit, did server crash?"
+      );
     }
   }
 }
@@ -183,6 +190,21 @@ export class Document {
         uri: this.uri,
       },
       position,
+    });
+  }
+
+  public async references(
+    position: Position,
+    includeDeclaration: boolean
+  ): Promise<Location[] | null> {
+    return this.server.connection.sendRequest(ReferencesRequest.type, {
+      textDocument: {
+        uri: this.uri,
+      },
+      position,
+      context: {
+        includeDeclaration,
+      },
     });
   }
 }
