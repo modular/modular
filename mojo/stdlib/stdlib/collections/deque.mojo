@@ -154,13 +154,14 @@ struct Deque[ElementType: Copyable & Movable](
 
         self = Self(capacity=capacity)
 
-        for i in range(args_length):
-            dst = self._data + i
-            UnsafePointer(to=elements[i]).move_pointee_into(dst)
+        # Transfer all of the elements into the deque.
+        @parameter
+        fn init_elt(idx: Int, var elt: ElementType):
+            (self._data + idx).init_pointee_move(elt^)
 
-        # Do not destroy the elements when their backing storage goes away.
-        __disable_del elements
+        elements^.consume_elements[init_elt]()
 
+        # Remember how many elements we have.
         self._tail = args_length
 
     fn copy(self) -> Self:

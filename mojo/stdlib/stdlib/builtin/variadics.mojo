@@ -267,6 +267,32 @@ struct VariadicListMem[
             for i in reversed(range(len(self))):
                 UnsafePointer(to=self[i]).destroy_pointee()
 
+    fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](var self):
+        """Consume the variadic list by transfering ownership of each element
+        into the provided closure one at a time.  This is only valid on 'owned'
+        variadic lists.
+
+        Parameters:
+            elt_handler: A function that will be called for each element of the
+                         list.
+        """
+
+        constrained[
+            is_owned,
+            "consume_elements may only be called on owned variadic lists",
+        ]()
+
+        for i in range(len(self)):
+            var ptr = UnsafePointer(to=self[i])
+            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # the element to be Movable, which is not required here.
+            elt_handler(i, __get_address_as_owned_value(ptr.address))
+
+        # Don't run our destructor, it would destroy the element again.
+        __disable_del self
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -428,6 +454,33 @@ struct VariadicPack[
             @parameter
             for i in reversed(range(Self.__len__())):
                 UnsafePointer(to=self[i]).destroy_pointee()
+
+    fn consume_elements[
+        elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
+    ](var self):
+        """Consume the variadic pack by transfering ownership of each element
+        into the provided closure one at a time.  This is only valid on 'owned'
+        variadic packs.
+
+        Parameters:
+            elt_handler: A function that will be called for each element of the
+                         pack.
+        """
+
+        constrained[
+            is_owned,
+            "consume_elements may only be called on owned variadic packs",
+        ]()
+
+        @parameter
+        for i in range(Self.__len__()):
+            var ptr = UnsafePointer(to=self[i])
+            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # the element to be Movable, which is not required here.
+            elt_handler[i](__get_address_as_owned_value(ptr.address))
+
+        # Don't run our destructor, it would destroy the element again.
+        __disable_del self
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

@@ -184,29 +184,12 @@ struct LinkedList[
         """
         self = Self()
 
-        var length = len(elements)
+        # Transfer all of the elements into the list.
+        @parameter
+        fn init_elt(idx: Int, var elt: ElementType):
+            self.append(elt^)
 
-        for i in range(length):
-            var src = UnsafePointer(to=elements[i])
-            var node = Self._NodePointer.alloc(1)
-            if not node:
-                abort("Out of memory")
-            var dst = UnsafePointer(to=node[].value)
-            src.move_pointee_into(dst)
-            node[].next = Self._NodePointer()
-            node[].prev = self._tail
-            if self._tail:
-                self._tail[].next = node
-                self._tail = node
-            else:
-                self._head = node
-                self._tail = node
-
-        # Do not destroy the elements when their backing storage goes away.
-        # FIXME(https://github.com/modular/modular/issues/3969) this is leaking!
-        __disable_del elements
-
-        self._size = length
+        elements^.consume_elements[init_elt]()
 
     fn __copyinit__(out self, read other: Self):
         """Initialize this list as a copy of another list.

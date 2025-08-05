@@ -157,20 +157,17 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
         Args:
             storage: The variadic pack storage to construct from.
         """
-        # Mark storage as initialized
+        # Mark our storage as initialized
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self.storage)
         )
 
-        # Move each element into the tuple storage
+        # Move each element into the tuple storage.
         @parameter
-        for i in range(Self.__len__()):
-            UnsafePointer(to=storage[i]).move_pointee_into(
-                UnsafePointer(to=self[i])
-            )
+        fn init_elt[idx: Int](var elt: element_types[idx]):
+            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
-        # Don't destroy elements when storage goes away
-        __disable_del storage
+        storage^.consume_elements[init_elt]()
 
     fn __del__(owned self):
         """Destructor that destroys all elements."""
