@@ -21,7 +21,6 @@ import uuid
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 import msgspec
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
@@ -64,7 +63,6 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         send_endpoint: str,
         recv_endpoint: str,
         transport: DispatcherTransport[DispatcherMessagePayload],
@@ -76,10 +74,10 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
 
         self.local_pull_socket = ZmqPullSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](zmq_ctx, zmq_endpoint=recv_endpoint, deserialize=deserialize)
+        ](zmq_endpoint=recv_endpoint, deserialize=deserialize)
         self.local_push_socket = ZmqPushSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](zmq_ctx, zmq_endpoint=send_endpoint, serialize=serialize)
+        ](zmq_endpoint=send_endpoint, serialize=serialize)
 
         self._running = False
         self._tasks: list[asyncio.Task] = []

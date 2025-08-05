@@ -23,7 +23,6 @@ from collections.abc import Generator
 from typing import Any
 
 import numpy as np
-import zmq
 from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationResponse,
@@ -208,26 +207,22 @@ class AudioGenerationScheduler(Scheduler):
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
-        zmq_ctx: zmq.Context,
         paged_manager: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
         self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
         self.response_q = ZmqPushSocket[
             dict[str, SchedulerResult[AudioGeneratorOutput]]
         ](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
         self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(list[str]),
         )

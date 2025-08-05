@@ -20,7 +20,6 @@ import threading
 import time
 from typing import Any, Callable, Generic, Optional, cast
 
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_service import (
     DispatcherMessage,
@@ -45,7 +44,6 @@ class DispatcherClient(Generic[DispatcherMessagePayload]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         send_endpoint: str,
         recv_endpoint: str,
         serialize: Callable[[Any], bytes] = pickle.dumps,
@@ -54,10 +52,10 @@ class DispatcherClient(Generic[DispatcherMessagePayload]):
         """Initialize dispatcher client with ZMQ sockets for communication."""
         self.pull_socket = ZmqPullSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](zmq_ctx, zmq_endpoint=recv_endpoint, deserialize=deserialize)
+        ](zmq_endpoint=recv_endpoint, deserialize=deserialize)
         self.push_socket = ZmqPushSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](zmq_ctx, zmq_endpoint=send_endpoint, serialize=serialize)
+        ](zmq_endpoint=send_endpoint, serialize=serialize)
 
         # Request handlers
         self._request_handlers: dict[

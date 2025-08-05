@@ -32,9 +32,8 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic, Optional
+from typing import Any, Generic
 
-import zmq
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.kvcache_agent.dispatcher_service import (
     DispatcherMessagePayload,
@@ -67,11 +66,10 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
 
         bind_address: str = "tcp://127.0.0.1:5555"
         instance_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-        default_destination_address: Optional[str] = None
+        default_destination_address: str | None = None
 
     @staticmethod
     def create_dynamic_zmq_transport(
-        zmq_ctx: zmq.Context,
         config: DynamicZmqTransportConfig,
         payload_type: Any,
     ) -> DynamicZmqTransport[DispatcherMessagePayload]:
@@ -82,7 +80,6 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
             f"Creating DynamicZmqTransport: bind_address={config.bind_address}, instance_id={config.instance_id}"
         )
         return DynamicZmqTransport[DispatcherMessagePayload](
-            zmq_ctx=zmq_ctx,
             bind_address=config.bind_address,
             instance_id=config.instance_id,
             default_destination_address=config.default_destination_address,
@@ -94,7 +91,6 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
         cls,
         transport_type: TransportType,
         config: DynamicZmqTransportConfig,
-        zmq_ctx: zmq.Context,
         payload_type: Any,
     ) -> DispatcherTransport:
         """
@@ -103,7 +99,7 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
         if transport_type == TransportType.DYNAMIC_ZMQ:
             assert isinstance(config, cls.DynamicZmqTransportConfig)
             return cls.create_dynamic_zmq_transport(
-                zmq_ctx=zmq_ctx, config=config, payload_type=payload_type
+                config=config, payload_type=payload_type
             )
 
 
@@ -140,7 +136,7 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
         self._transport_payload_type = transport_payload_type
 
     def create_service(
-        self, zmq_ctx: zmq.Context
+        self,
     ) -> DispatcherService[DispatcherMessagePayload]:
         """
         Create a dispatcher service using the provided ZMQ context.
@@ -150,24 +146,21 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
         ].create_transport_from_config(
             transport_type=self._config.transport,
             config=self._config.transport_config,
-            zmq_ctx=zmq_ctx,
             payload_type=self._transport_payload_type,
         )
         return DispatcherService[DispatcherMessagePayload](
-            zmq_ctx=zmq_ctx,
             send_endpoint=self._service_to_client,
             recv_endpoint=self._client_to_service,
             transport=transport,
         )
 
     def create_client(
-        self, zmq_ctx: zmq.Context
+        self,
     ) -> DispatcherClient[DispatcherMessagePayload]:
         """
         Create a dispatcher client using the provided ZMQ context.
         """
         return DispatcherClient[DispatcherMessagePayload](
-            zmq_ctx=zmq_ctx,
             send_endpoint=self._client_to_service,
             recv_endpoint=self._service_to_client,
         )

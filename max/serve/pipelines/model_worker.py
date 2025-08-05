@@ -25,7 +25,6 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-import zmq
 from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
@@ -123,10 +122,6 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
-            # Initialize ZeroMQ Context.
-            # This should only be done once per process.
-            zmq_ctx = zmq.Context(io_threads=2)
-
             # create dispatcher client
             pipeline_role = pipeline_config.pipeline_role
 
@@ -146,13 +141,12 @@ class ModelWorker:
                         f"Dispatcher factory is required for {pipeline_role} but was not provided"
                     )
                 logger.debug(f"Starting dispatcher client for {pipeline_role}")
-                dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
+                dispatcher_client = dispatcher_factory.create_client()
                 dispatcher_client.start()
 
             # Retrieve Scheduler.
             scheduler = load_scheduler(
                 pipeline,
-                zmq_ctx,
                 pipeline_config,
                 settings,
                 dispatcher_client,
@@ -231,7 +225,6 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     pipeline_task: PipelineTask,
-    zmq_io_threads: int = 1,
     dispatcher_factory: DispatcherFactory | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
@@ -242,7 +235,6 @@ async def start_model_worker(
         settings: Global server settings
         metric_client: Metric client for recording metrics
         pipeline_task: The task for the pipeline
-        zmq_io_threads: Number of IO threads for ZMQ
         dispatcher_factory: Factory for creating dispatcher client instances
 
     Returns:
@@ -257,14 +249,12 @@ async def start_model_worker(
     pc = ProcessControl(
         mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
-    zmq_ctx = zmq.Context(io_threads=zmq_io_threads)
     engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
         mp_context,
         worker_pc=pc,
         request_zmq_endpoint=settings.request_zmq_endpoint,
         response_zmq_endpoint=settings.response_zmq_endpoint,
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
         pipeline_task=pipeline_task,
     )
 

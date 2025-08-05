@@ -16,7 +16,6 @@ import queue
 from dataclasses import dataclass
 from typing import Any
 
-import zmq
 from max.interfaces import (
     EmbeddingsGenerator,
     EmbeddingsOutput,
@@ -48,20 +47,17 @@ class EmbeddingsScheduler(Scheduler):
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
-        zmq_ctx: zmq.Context,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
         self.request_q = ZmqPullSocket[tuple[str, TextContext]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
         )
         self.response_q = ZmqPushSocket[
             dict[str, SchedulerResult[EmbeddingsOutput]]
         ](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )

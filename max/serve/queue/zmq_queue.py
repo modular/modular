@@ -25,7 +25,6 @@ from typing import Any, Callable, Generic, Optional, TypeVar
 
 import psutil
 import zmq
-import zmq.asyncio
 import zmq.constants
 
 logger = logging.getLogger("max.serve")
@@ -78,13 +77,15 @@ def is_valid_zmq_address(address: str) -> bool:
 #  - vllm: https://github.com/vllm-project/vllm/blob/46c759c165a5a985ce62f019bf684e4a6109e41c/vllm/utils.py#L2093
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783
 def _open_zmq_socket(
-    zmq_ctx: zmq.Context,
     path: str,
     mode: int,
     bind: bool = True,
 ) -> zmq.Socket:
     """Open a ZMQ socket with the proper bind/connect semantics."""
     mem = psutil.virtual_memory()
+
+    # Grab the singleton global zmq ctx
+    zmq_ctx = zmq.Context.instance(io_threads=2)
     socket = zmq_ctx.socket(mode)
 
     # Calculate buffer size based on system memory
@@ -141,7 +142,6 @@ def _open_zmq_socket(
 class ZmqPushSocket(Generic[T]):
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         *,
         serialize: Callable[[Any], bytes],
         zmq_endpoint: Optional[str] = None,
@@ -151,9 +151,7 @@ class ZmqPushSocket(Generic[T]):
             if zmq_endpoint is not None
             else generate_zmq_ipc_path()
         )
-        self.push_socket = _open_zmq_socket(
-            zmq_ctx, self.zmq_endpoint, mode=zmq.PUSH
-        )
+        self.push_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PUSH)
         self.serialize = serialize
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
@@ -216,7 +214,6 @@ class ZmqPushSocket(Generic[T]):
 class ZmqPullSocket(Generic[T]):
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         *,
         deserialize: Callable[[Any], Any],
         zmq_endpoint: Optional[str] = None,
@@ -226,9 +223,7 @@ class ZmqPullSocket(Generic[T]):
             if zmq_endpoint is not None
             else generate_zmq_ipc_path()
         )
-        self.pull_socket = _open_zmq_socket(
-            zmq_ctx, self.zmq_endpoint, mode=zmq.PULL
-        )
+        self.pull_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PULL)
         self.deserialize = deserialize
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
@@ -282,7 +277,6 @@ class ZmqRouterSocket(Generic[T]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         zmq_endpoint: str,
         bind: bool = True,
         serialize: Callable[[Any], bytes] = pickle.dumps,
@@ -290,7 +284,7 @@ class ZmqRouterSocket(Generic[T]):
     ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.router_socket = _open_zmq_socket(
-            zmq_ctx, self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
+            self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
         )
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
@@ -363,7 +357,6 @@ class ZmqDealerSocket(Generic[T]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         zmq_endpoint: str,
         bind: bool = False,
         serialize: Callable[[Any], bytes] = pickle.dumps,
@@ -371,7 +364,7 @@ class ZmqDealerSocket(Generic[T]):
     ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.dealer_socket = _open_zmq_socket(
-            zmq_ctx, self.zmq_endpoint, mode=zmq.DEALER, bind=bind
+            self.zmq_endpoint, mode=zmq.DEALER, bind=bind
         )
         self.serialize = serialize
         self.deserialize = deserialize

@@ -47,7 +47,6 @@ T = TypeVar("T")
 
 def load_scheduler(
     pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator,
-    zmq_ctx: zmq.Context,
     pipeline_config: PipelineConfig,
     settings: Settings,
     dispatcher_client: DispatcherClient | None = None,
@@ -64,7 +63,6 @@ def load_scheduler(
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-            zmq_ctx=zmq_ctx,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert isinstance(pipeline, AudioGenerator)
@@ -95,13 +93,11 @@ def load_scheduler(
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-            zmq_ctx=zmq_ctx,
             paged_manager=paged_manager,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)
         return load_text_generation_scheduler(
-            zmq_ctx,
             settings,
             pipeline,
             pipeline_config,
@@ -113,7 +109,6 @@ def load_scheduler(
                 "Dispatcher client is required for decode scheduler"
             )
         return load_decode_scheduler(
-            zmq_ctx,
             settings,
             pipeline,
             pipeline_config,

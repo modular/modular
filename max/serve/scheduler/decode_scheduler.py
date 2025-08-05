@@ -19,7 +19,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Union
 
-import zmq
 from max.interfaces import (
     Pipeline,
     RequestID,
@@ -73,21 +72,18 @@ class DecodeScheduler(Scheduler):
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
-        zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.paged_manager = paged_manager
-        self.zmq_ctx = zmq_ctx
         self.dispatcher_client = dispatcher_client
 
         # Initialize Queues
         self.request_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ](
-            zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
                 tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -96,14 +92,12 @@ class DecodeScheduler(Scheduler):
         self.response_push_socket = ZmqPushSocket[
             dict[str, SchedulerResult[TextGenerationOutput]]
         ](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
         self.cancel_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
                 tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -430,7 +424,6 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: Pipeline[
         TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
@@ -464,6 +457,5 @@ def load_decode_scheduler(
         request_zmq_endpoint=settings.request_zmq_endpoint,
         response_zmq_endpoint=settings.response_zmq_endpoint,
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
         dispatcher_client=dispatcher_client,
     )

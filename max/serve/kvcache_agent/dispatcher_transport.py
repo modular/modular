@@ -97,7 +97,7 @@ class DispatcherTransport(Generic[Payload], ABC):
     async def send_message(
         self,
         message: TransportMessage[Payload],
-        destination_address: Optional[str] = None,
+        destination_address: str | None = None,
     ) -> None:
         """
         Send a message to the specified destination.
@@ -122,7 +122,7 @@ class DispatcherTransport(Generic[Payload], ABC):
     @abstractmethod
     async def receive_message(
         self,
-    ) -> Optional[TransportMessageEnvelope[Payload]]:
+    ) -> TransportMessageEnvelope[Payload] | None:
         """
         Receive an inbound message with optional reply context.
         """
@@ -150,25 +150,23 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         bind_address: str,
         instance_id: str,
         payload_type: Any,
-        default_destination_address: Optional[str] = None,
+        default_destination_address: str | None = None,
     ) -> None:
         """
         Initialize dynamic ZMQ transport with ROUTER/DEALER sockets.
         """
-        self._zmq_ctx = zmq_ctx
         self._bind_address = bind_address
         self._instance_id = instance_id
         self._default_destination_address = default_destination_address
         self._payload_type = payload_type
 
         # Receiving socket (ROUTER for handling multiple connections)
-        self._router_socket: Optional[
-            ZmqRouterSocket[TransportMessage[Payload]]
-        ] = None
+        self._router_socket: (
+            ZmqRouterSocket[TransportMessage[Payload]] | None
+        ) = None
 
         # Sending sockets (DEALER for each destination)
         self._dealer_connections: dict[
@@ -191,7 +189,6 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
         """
         try:
             self._router_socket = ZmqRouterSocket[TransportMessage[Payload]](
-                self._zmq_ctx,
                 self._bind_address,
                 serialize=msgpack_numpy_encoder(),
                 deserialize=msgpack_numpy_decoder(self._payload_type),
@@ -207,7 +204,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
     async def send_message(
         self,
         message: TransportMessage[Payload],
-        destination_address: Optional[str] = None,
+        destination_address: str | None = None,
     ) -> None:
         """
         Send message to explicit destination address.
@@ -275,7 +272,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
     async def send_reply(
         self,
         message: TransportMessage[Payload],
-        reply_context: Optional[ReplyContext] = None,
+        reply_context: ReplyContext | None = None,
     ) -> None:
         """
         Send a reply message using the provided reply context.
@@ -316,7 +313,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
 
     async def receive_message(
         self,
-    ) -> Optional[TransportMessageEnvelope[Payload]]:
+    ) -> TransportMessageEnvelope[Payload] | None:
         """
         Receive messages from both ROUTER (new requests) and DEALER (replies) sockets.
         """
@@ -391,7 +388,6 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
                 return False
 
             dealer_socket = ZmqDealerSocket[TransportMessage[Payload]](
-                self._zmq_ctx,
                 destination_address,
                 bind=False,
                 serialize=msgpack_numpy_encoder(),
