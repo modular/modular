@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan, NVIDIA-GPU, AMD-GPU
+# UNSUPPORTED: asan, NVIDIA-GPU, AMD-GPU, system-darwin
+
+# COM: Stack traces are supported on Darwin, but result to different output.
+# COM: To avoid having fragile test, mark this test as unsupported on MacOS
 
 
 fn main():

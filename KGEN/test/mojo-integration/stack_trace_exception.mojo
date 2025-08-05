@@ -4,6 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
+
+# COM: Stack traces are supported on Darwin, but result to different output.
+# COM: To avoid having fragile test, mark this test as unsupported on MacOS
+
 
 fn foo() raises:
     raise Error("gotcha!")
