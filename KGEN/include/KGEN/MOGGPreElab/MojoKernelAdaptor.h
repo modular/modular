@@ -237,6 +237,13 @@ struct MojoKernelOperandAdaptor {
 
     return isMutable;
   }
+
+  bool isOpaqueWithTypeName(StringRef name) const {
+    if (!std::holds_alternative<OpaqueOperandAdaptor>(underlyingType))
+      return false;
+
+    return std::get<OpaqueOperandAdaptor>(underlyingType).typeName == name;
+  }
 };
 
 template <typename FuncOpType>
