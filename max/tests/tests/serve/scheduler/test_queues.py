@@ -8,8 +8,6 @@ import pickle
 import uuid
 
 import numpy as np
-import pytest
-import zmq
 from max.interfaces import (
     SharedMemoryArray,
     msgpack_numpy_decoder,
@@ -23,20 +21,13 @@ from max.serve.queue.zmq_queue import (
 )
 
 
-@pytest.fixture(scope="session")
-def zmq_ctx():
-    return zmq.Context(io_threads=2)
-
-
-def test_serialization_and_deserialization_through_queue_with_pickle(
-    zmq_ctx,  # noqa: ANN001
-) -> None:
+def test_serialization_and_deserialization_through_queue_with_pickle() -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[int, TextContext]](
-        zmq_ctx, zmq_endpoint=test_address, serialize=pickle.dumps
+        zmq_endpoint=test_address, serialize=pickle.dumps
     )
     pull_socket = ZmqPullSocket[tuple[int, TextContext]](
-        zmq_ctx, zmq_endpoint=test_address, deserialize=pickle.loads
+        zmq_endpoint=test_address, deserialize=pickle.loads
     )
 
     context = (
@@ -50,16 +41,13 @@ def test_serialization_and_deserialization_through_queue_with_pickle(
     assert context == received_context
 
 
-def test_serialization_and_deserialization_through_queue_with_msgpack(
-    zmq_ctx,  # noqa: ANN001
-) -> None:
+def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[str, TextContext]](
-        zmq_ctx, zmq_endpoint=test_address, serialize=msgpack_numpy_encoder()
+        zmq_endpoint=test_address, serialize=msgpack_numpy_encoder()
     )
 
     pull_socket = ZmqPullSocket[tuple[str, TextContext]](
-        zmq_ctx,
         zmq_endpoint=test_address,
         deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
     )
@@ -75,7 +63,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack(
     assert context == received_context
 
 
-def test_vision_context_shared_memory_fallback(zmq_ctx, mocker) -> None:  # noqa: ANN001
+def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     """Test that vision context serialization falls back gracefully when shared memory is exhausted."""
 
     # Create realistic vision context with InternVL-sized image

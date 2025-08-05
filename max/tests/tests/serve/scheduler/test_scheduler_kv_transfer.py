@@ -13,7 +13,6 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -125,11 +124,6 @@ def decode_cancel_zmq_path():
 
 
 @pytest.fixture
-def decode_client_zmq_ctx():
-    return zmq.Context()
-
-
-@pytest.fixture
 def decode_dispatch_endpoint() -> str:
     return "tcp://127.0.0.1:5555"
 
@@ -163,7 +157,6 @@ def decode_dispatcher_factory(
 def decode_scheduler(
     mock_pipeline,  # noqa: ANN001
     decode_paged_manager,  # noqa: ANN001
-    decode_client_zmq_ctx,  # noqa: ANN001
     decode_request_zmq_path,  # noqa: ANN001
     decode_response_zmq_path,  # noqa: ANN001
     decode_cancel_zmq_path,  # noqa: ANN001
@@ -171,9 +164,7 @@ def decode_scheduler(
 ) -> Callable[[], DecodeScheduler]:
     def create_scheduler() -> DecodeScheduler:
         # Create dispatcher client
-        decode_client = decode_dispatcher_factory.create_client(
-            decode_client_zmq_ctx
-        )
+        decode_client = decode_dispatcher_factory.create_client()
         decode_client.start()
 
         # Initialize scheduler config
@@ -189,16 +180,10 @@ def decode_scheduler(
             request_zmq_endpoint=decode_request_zmq_path,
             response_zmq_endpoint=decode_response_zmq_path,
             cancel_zmq_endpoint=decode_cancel_zmq_path,
-            zmq_ctx=decode_client_zmq_ctx,
             dispatcher_client=decode_client,
         )
 
     return create_scheduler
-
-
-@pytest.fixture
-def prefill_client_zmq_ctx():
-    return zmq.Context()
 
 
 @pytest.fixture
@@ -261,14 +246,11 @@ def prefill_paged_manager():
 def prefill_scheduler(
     mock_pipeline,  # noqa: ANN001
     prefill_paged_manager,  # noqa: ANN001
-    prefill_client_zmq_ctx,  # noqa: ANN001
     prefill_dispatcher_factory,  # noqa: ANN001
 ) -> Callable[[], PrefillScheduler]:
     def create_scheduler() -> PrefillScheduler:
         # Create dispatcher client
-        prefill_client = prefill_dispatcher_factory.create_client(
-            prefill_client_zmq_ctx
-        )
+        prefill_client = prefill_dispatcher_factory.create_client()
         prefill_client.start()
 
         # Initialize scheduler config
@@ -300,9 +282,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     prefill_dispatcher_factory,  # noqa: ANN001
 ) -> None:
     # Create request push socket
-    zmq_ctx = zmq.Context()
     request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx,
         zmq_endpoint=decode_request_zmq_path,
         serialize=msgpack_numpy_encoder(),
     )
@@ -311,7 +291,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     response_pull_socket = ZmqPullSocket[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=decode_response_zmq_path,
         deserialize=msgpack_numpy_decoder(
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -320,7 +299,6 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
     # Create cancel push socket
     cancel_push_socket = ZmqPushSocket[list[str]](
-        zmq_ctx,
         zmq_endpoint=decode_cancel_zmq_path,
         serialize=msgpack_numpy_encoder(),
     )
@@ -334,16 +312,11 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
     async def _run_decode_scheduler_tests(decode_result_queue) -> None:  # noqa: ANN001
         try:
-            # Create separate ZMQ contexts for each service
-            decode_zmq_ctx = zmq.Context()
-
             # Create and start decode service thread
             print(
                 f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: creating dispatcher service"
             )
-            decode_service = decode_dispatcher_factory.create_service(
-                decode_zmq_ctx
-            )
+            decode_service = decode_dispatcher_factory.create_service()
             print(
                 f"decode service {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: pull endpoint {decode_service.local_pull_socket.zmq_endpoint}"
             )
@@ -471,15 +444,11 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 
     async def _run_prefill_scheduler_tests() -> None:
         try:
-            prefill_zmq_ctx = zmq.Context()
-
             # Create and start prefill service thread
             print(
                 f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: creating dispatcher service"
             )
-            prefill_service = prefill_dispatcher_factory.create_service(
-                prefill_zmq_ctx
-            )
+            prefill_service = prefill_dispatcher_factory.create_service()
             await prefill_service.start()
             print(
                 f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: prefill dispatcher service started"

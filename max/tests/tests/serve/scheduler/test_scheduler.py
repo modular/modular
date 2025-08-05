@@ -6,12 +6,11 @@
 
 import queue
 import time
-from typing import Union
+from typing import Union, cast
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-import zmq
 from max.interfaces import (
     GenerationStatus,
     RequestID,
@@ -33,11 +32,6 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-
-
-@pytest.fixture(scope="session")
-def zmq_ctx():
-    return zmq.Context(io_threads=2)
 
 
 @pytest.fixture
@@ -79,9 +73,8 @@ def scheduler_config():
 
 @pytest.fixture(scope="function")
 def scheduler(
-    mock_pipeline,  # noqa: ANN001
-    scheduler_config,  # noqa: ANN001
-    zmq_ctx,  # noqa: ANN001
+    mock_pipeline: Mock,
+    scheduler_config: TokenGenerationSchedulerConfig,
 ):
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
@@ -89,7 +82,6 @@ def scheduler(
         request_zmq_endpoint=generate_zmq_ipc_path(),
         response_zmq_endpoint=generate_zmq_ipc_path(),
         cancel_zmq_endpoint=generate_zmq_ipc_path(),
-        zmq_ctx=zmq_ctx,
     )
 
 
@@ -108,11 +100,15 @@ def create_mock_request(
     return context
 
 
-def test_should_schedule_ce_empty_queue(scheduler) -> None:  # noqa: ANN001
+def test_should_schedule_ce_empty_queue(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     assert not scheduler._should_schedule_ce()
 
 
-def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_should_schedule_ce_full_batch(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     scheduler.active_batch = {}
     for _ in range(scheduler.scheduler_config.max_batch_size_tg):
         mock_request = create_mock_request(seq_len=5, start_idx=0)
@@ -122,7 +118,6 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -132,12 +127,11 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN
     assert not scheduler._should_schedule_ce()
 
 
-def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_try_create_ce_batch(scheduler: TokenGenerationScheduler) -> None:
     # Create a push socket to send data.
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -153,7 +147,9 @@ def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     assert batch[mock_request.request_id] is not None
 
 
-def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_try_create_chunked_ce_batch(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     # Configure scheduler for chunked prefill
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
@@ -163,7 +159,6 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN00
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -180,7 +175,9 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:  # noqa: ANN00
     assert batch[mock_data.request_id].active_length == 20
 
 
-def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_scheduler_handle_terminated_responses(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     mock_1 = create_mock_request()
     mock_2 = create_mock_request()
     batch_executed = {
@@ -193,14 +190,19 @@ def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:  # n
     batch_responses[mock_2.request_id].is_done = True  # req2 is terminated
     batch_responses[mock_2.request_id].tokens = []
 
-    scheduler._handle_terminated_responses(batch_executed, batch_responses)
+    scheduler._handle_terminated_responses(
+        batch_executed, cast(dict[str, TextGenerationOutput], batch_responses)
+    )
 
     assert mock_2.request_id not in batch_executed
     # Cache cleanup is now handled by pipeline.release()
+    assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.release.assert_called_once()
 
 
-def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_scheduler_handle_chunked_requests(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     req_1 = create_mock_request(seq_len=31, start_idx=30)
     req_2 = create_mock_request(
         seq_len=30, start_idx=20
@@ -214,14 +216,16 @@ def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:  # noqa:
     batch_responses[req_1.request_id].is_done = False
     batch_responses[req_2.request_id].is_done = False
 
-    scheduler._handle_chunked_requests(batch_executed, batch_responses)
+    scheduler._handle_chunked_requests(
+        batch_executed, cast(dict[str, TextGenerationOutput], batch_responses)
+    )
 
     assert req_2.request_id not in batch_executed
     assert req_2.request_id not in batch_responses
     assert scheduler.pending_reqs
 
 
-def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_handle_cancelled_requests(scheduler: TokenGenerationScheduler) -> None:
     mock_request = create_mock_request()
     scheduler.active_batch = {mock_request.request_id: mock_request}
 
@@ -229,7 +233,6 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
@@ -237,7 +240,6 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     )
 
     cancel_push_socket = ZmqPushSocket[list[str]](
-        zmq_ctx,
         zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -248,10 +250,11 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:  # noqa: ANN001
 
     assert len(scheduler.active_batch) == 0
     # Cache cleanup is now handled by pipeline.release()
+    assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.release.assert_called_once_with(mock_request.request_id)
 
 
-def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_schedule_ce(scheduler: TokenGenerationScheduler) -> None:
     mock_request = create_mock_request()
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         mock_request.request_id: mock_request
@@ -266,7 +269,6 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
@@ -276,12 +278,15 @@ def test_schedule_ce(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     scheduler._schedule_ce(sch_output)
 
     assert mock_request.request_id in scheduler.active_batch
+    assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.execute.assert_called_once_with(
         TextGenerationInputs(batch_to_execute, num_steps=1)
     )
 
 
-def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_schedule_ce_with_chunked_prefill(
+    scheduler: TokenGenerationScheduler,
+) -> None:
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
@@ -291,7 +296,6 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -300,7 +304,6 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
@@ -332,7 +335,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:  # noqa: 
     assert data.active_length == 10
 
 
-def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_schedule_mixed_ce_tg(scheduler: TokenGenerationScheduler) -> None:
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.enable_in_flight_batching = True
@@ -346,7 +349,6 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     request_push_socket = ZmqPushSocket[
         tuple[str, Union[TextContext, TextAndVisionContext]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.request_q.zmq_endpoint,
         serialize=msgpack_numpy_encoder(),
     )
@@ -359,7 +361,6 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
@@ -390,7 +391,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     assert batch[mock_request_ce.request_id].active_length == 19
 
 
-def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
+def test_schedule_tg(scheduler) -> None:  # noqa: ANN001
     mock_request = create_mock_request()
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         mock_request.request_id: mock_request
@@ -404,7 +405,6 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:  # noqa: ANN001
     response_pull_socket = ZmqPullSocket[
         dict[str, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_ctx,
         zmq_endpoint=scheduler.response_q.zmq_endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
