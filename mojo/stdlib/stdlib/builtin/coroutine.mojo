@@ -133,6 +133,13 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         __disable_del self
 
     @always_inline
+    fn _take_handle(var self) -> AnyCoroutine:
+        """Take ownership of the raw handle."""
+        var handle = self._handle
+        __disable_del self
+        return handle
+
+    @always_inline
     fn __await__(var self, out result: type):
         """Suspends the current coroutine until the coroutine is complete.
 

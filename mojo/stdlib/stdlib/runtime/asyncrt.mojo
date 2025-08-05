@@ -302,9 +302,7 @@ struct _TaskGroupBox(Copyable, Movable):
     var handle: AnyCoroutine
 
     fn __init__[type: AnyType](out self, var coro: Coroutine[type]):
-        var handle = coro._handle
-        __disable_del coro
-        self.handle = handle
+        self.handle = coro^._take_handle()
 
     fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
