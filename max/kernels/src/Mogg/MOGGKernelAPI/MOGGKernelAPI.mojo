@@ -806,7 +806,9 @@ struct Range:
     ) capturing raises:
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
+        fn func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[1]) -> SIMD[dtype, width]:
             return start + step * (iota[dtype, width](idx[0]))
 
         foreach[
@@ -849,8 +851,12 @@ struct Copy:
     ) capturing raises:
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[rank]) -> SIMD[dtype, width]:
-            return input._fused_load[width](idx)
+        fn func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input._fused_load[
+                width, element_alignment=element_alignment
+            ](idx)
 
         foreach[func](output, ctx)
 
@@ -8968,11 +8974,13 @@ struct AdvancedIndexingSetItem:
         @parameter
         @always_inline
         fn func[
-            width: Int
+            width: Int, element_alignment: Int
         ](idx: IndexList[output_tensor.rank]) -> SIMD[
             output_tensor.dtype, width
         ]:
-            return input_tensor._fused_load[width](idx)
+            return input_tensor._fused_load[
+                width, element_alignment=element_alignment
+            ](idx)
 
         foreach[
             func,

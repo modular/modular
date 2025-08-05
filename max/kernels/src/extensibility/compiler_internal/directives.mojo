@@ -59,9 +59,9 @@ struct StaticTensorSpec[
     rank: Int,
 ](Copyable, Movable):
     # Represents the DimList type (not accessible from KGEN tests).
-    alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
-        dtype, simd_width
-    ]
+    alias in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, simd_width]
     alias out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
         IndexList[rank], SIMD[dtype, simd_width]
     ) capturing -> None

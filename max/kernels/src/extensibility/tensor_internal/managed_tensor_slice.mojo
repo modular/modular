@@ -145,6 +145,7 @@ fn simd_load_from_managed_tensor_slice[
     rank: Int,
     simd_width: Int,
     static_spec: StaticTensorSpec[dtype, rank],
+    element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
@@ -153,7 +154,9 @@ fn simd_load_from_managed_tensor_slice[
     alias static_stride = tensor._static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[tensor.alignment, alignof[dtype]()]()
+    alias max_alignment = _gcd_pow2[
+        tensor.alignment, element_alignment * alignof[dtype]()
+    ]()
     alias invariant = not tensor.io_spec.mut
 
     # Stride = 1
@@ -306,11 +309,15 @@ fn _input_fusion_hook_impl[
 ) -> __type_of(static_spec):
     @always_inline
     @parameter
-    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dtype, _w]:
+    fn _input_lambda[
+        _w: Int, _elem_align: Int = 1
+    ](i: IndexList[rank]) -> SIMD[dtype, _w]:
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         return rebind[SIMD[dtype, _w]](
-            simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
+            simd_load_from_managed_tensor_slice[
+                simd_width=_w, element_alignment=_elem_align
+            ](tensor, i)
         )
 
     return _extract_tensor_spec[
@@ -493,11 +500,15 @@ fn _mixed_precision_input_fusion_hook_impl[
 ) -> StaticTensorSpec[dst_dtype, rank]:
     @always_inline
     @parameter
-    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dst_dtype, _w]:
+    fn _input_lambda[
+        _w: Int, _elem_align: Int = 1
+    ](i: IndexList[rank]) -> SIMD[dst_dtype, _w]:
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         var v = rebind[SIMD[src_dtype, _w]](
-            simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
+            simd_load_from_managed_tensor_slice[
+                simd_width=_w, element_alignment=_elem_align
+            ](tensor, i)
         )
         # .... compiler-generated-code here to bridge between src and dst_dtype
         return rebind[SIMD[dst_dtype, _w]](v)
@@ -894,12 +905,14 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
         """Gets data from this tensor slice as a `SIMD`.
 
         Parameters:
             width: The width of the `SIMD` value. This must be large enough to contain the data from this tensor slice.
             _rank: The rank of the tensor slice.
+            element_alignment: Indicate the alignment of the pointer stored to memory. This is needed to issue vector load for GPUs with strict alignment requirements.
 
         Args:
             index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to obtain data from.
@@ -914,7 +927,9 @@ struct ManagedTensorSlice[
 
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        return simd_load_from_managed_tensor_slice[simd_width=width](self, ridx)
+        return simd_load_from_managed_tensor_slice[
+            simd_width=width, element_alignment=element_alignment
+        ](self, ridx)
 
     @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
@@ -922,6 +937,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) capturing -> SIMD[dtype, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -934,24 +950,25 @@ struct ManagedTensorSlice[
         @parameter
         if in_lambda:
             alias in_fn = in_lambda.value()
-            return in_fn[width](ridx)
+            return in_fn[width, element_alignment](ridx)
         else:
-            return simd_load_from_managed_tensor_slice[simd_width=width](
-                self, ridx
-            )
+            return simd_load_from_managed_tensor_slice[
+                simd_width=width, element_alignment=element_alignment
+            ](self, ridx)
 
     @always_inline("nodebug")
     fn _lambda_load[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
         alias in_lambda = static_spec.in_lambda
         constrained[Bool(in_lambda)]()
         alias in_fn = in_lambda.value()
-        return in_fn[width](ridx)
+        return in_fn[width, element_alignment](ridx)
 
     @always_inline
     fn _compute_offset(self, index: IndexList[rank]) -> Int:
@@ -1324,7 +1341,9 @@ fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
 fn foreach[
     dtype: DType,
     rank: Int, //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: fn[width: Int, element_alignment: Int] (
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1355,10 +1374,15 @@ fn foreach[
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
-        width: Int, rank: Int
+        width: Int,
+        rank: Int,
     ](index: IndexList[rank]) capturing:
-        var val = func[width](rebind[IndexList[tensor.rank]](index))
-        tensor._fused_store(index, val)
+        # TODO: Propagate element_alignment through the foreach kernel
+        alias element_alignment = 1
+        var val = func[width, element_alignment](
+            rebind[IndexList[tensor.rank]](index)
+        )
+        tensor._fused_store[element_alignment=element_alignment](index, val)
 
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
@@ -1422,6 +1446,50 @@ fn foreach[
     ](tensor.shape(), ctx)
 
 
+fn foreach[
+    dtype: DType,
+    rank: Int, //,
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
+    ctx: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Apply the function `func` to each element of the tensor slice.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        func: The function to apply to each element of the tensor slice.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        tensor: The output tensor slice which receives the return values from `func`.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    @parameter
+    @always_inline
+    fn func_shim[
+        width: Int, element_alignment: Int
+    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
+        return func[width](index)
+
+    foreach[
+        dtype=dtype,
+        rank=rank,
+        func=func_shim,
+        target=target,
+        simd_width=simd_width,
+        _trace_name=_trace_name,
+    ](tensor, ctx)
+
+
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
 @__mogg_intrinsic_attr("mogg.view_materialize")
@@ -1447,8 +1515,12 @@ fn view_copy_impl[
 
     @parameter
     @always_inline
-    fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-        return simd_load_from_managed_tensor_slice[simd_width=width](x, idx)
+    fn func[
+        width: Int, element_alignment: Int
+    ](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+        return simd_load_from_managed_tensor_slice[
+            simd_width=width, element_alignment=element_alignment
+        ](x, idx)
 
     foreach[
         func,
