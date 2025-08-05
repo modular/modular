@@ -107,13 +107,6 @@ class TextGenerationRequestMessage(TypedDict):
 
 @dataclass(frozen=True)
 class TextGenerationRequest(Request):
-    index: int
-    """
-    The sequence order of this request within a batch. This is useful for
-    maintaining the order of requests when processing multiple requests
-    simultaneously, ensuring that responses can be matched back to their
-    corresponding requests accurately.
-    """
     model_name: str
     """
     The name of the model to be used for generating tokens. This should match
@@ -224,6 +217,7 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 # It is NOT sufficient for actual text generation functionality, as real text generation requires additional methods and properties
 # (such as token management, status updates, and sampling parameters) that are not guaranteed by BaseContext alone.
 # This is a temporary solution to allow for gradual migration of the codebase to the new context interface.
+
 
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType",

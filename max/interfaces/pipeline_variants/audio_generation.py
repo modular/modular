@@ -24,13 +24,6 @@ from typing_extensions import TypeVar
 
 @dataclass(frozen=True)
 class AudioGenerationRequest(Request):
-    index: int
-    """The sequence order of this request within a batch. This is useful for
-    maintaining the order of requests when processing multiple requests
-    simultaneously, ensuring that responses can be matched back to their
-    corresponding requests accurately.
-    """
-
     model: str
     """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
