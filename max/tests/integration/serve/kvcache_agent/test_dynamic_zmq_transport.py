@@ -8,7 +8,6 @@ import asyncio
 from typing import Any, Union
 
 import pytest
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_transport import (
     DynamicZmqTransport,
@@ -31,18 +30,15 @@ def create_test_message(
 @pytest.mark.asyncio
 async def test_simple_send_receive() -> None:
     """Test basic send and receive between two transports."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create sender and receiver
         sender = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "sender",
             payload_type=TransportMessage[dict[str, str]],
         )
         receiver = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "receiver",
             payload_type=TransportMessage[dict[str, str]],
@@ -81,24 +77,20 @@ async def test_simple_send_receive() -> None:
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_request_reply_pattern() -> None:
     """Test request-reply communication pattern."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create client and server
         client = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "client",
             payload_type=TransportMessage[dict[str, str]],
         )
         server = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "server",
             payload_type=TransportMessage[dict[str, str]],
@@ -151,18 +143,15 @@ async def test_request_reply_pattern() -> None:
         await server.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_multiple_clients_one_server() -> None:
     """Test multiple clients sending to one server."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create one server and three clients
         server = DynamicZmqTransport[dict[str, Union[int, str]]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "server",
             payload_type=TransportMessage[dict[str, Union[int, str]]],
@@ -172,7 +161,6 @@ async def test_multiple_clients_one_server() -> None:
         for i in range(3):
             client_endpoint = generate_zmq_inproc_endpoint()
             client = DynamicZmqTransport[dict[str, Union[int, str]]](
-                zmq_ctx,
                 client_endpoint,
                 f"client_{i}",
                 payload_type=TransportMessage[dict[str, Union[int, str]]],
@@ -224,13 +212,11 @@ async def test_multiple_clients_one_server() -> None:
             await client.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_multiple_clients_multiple_servers() -> None:
     """Test N:M communication with proper message routing and replies."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create 2 servers
@@ -238,7 +224,6 @@ async def test_multiple_clients_multiple_servers() -> None:
         server_endpoints = []
         for i in range(2):
             server = DynamicZmqTransport[dict[str, Union[int, str]]](
-                zmq_ctx,
                 generate_zmq_inproc_endpoint(),
                 f"server_{i}",
                 payload_type=TransportMessage[dict[str, Union[int, str]]],
@@ -250,7 +235,6 @@ async def test_multiple_clients_multiple_servers() -> None:
         clients = []
         for i in range(3):
             client = DynamicZmqTransport[dict[str, Union[int, str]]](
-                zmq_ctx,
                 generate_zmq_inproc_endpoint(),
                 f"client_{i}",
                 payload_type=TransportMessage[dict[str, Union[int, str]]],
@@ -377,13 +361,11 @@ async def test_multiple_clients_multiple_servers() -> None:
             await client.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_connection_failure() -> None:
     """Test behavior when connecting to non-existent endpoint."""
-    zmq_ctx = zmq.Context()
 
     try:
         bad_endpoint = (
@@ -391,7 +373,6 @@ async def test_connection_failure() -> None:
         )  # No one is listening here
 
         sender = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "sender",
             payload_type=TransportMessage[dict[str, str]],
@@ -417,23 +398,19 @@ async def test_connection_failure() -> None:
         await sender.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_high_throughput() -> None:
     """Test sending many messages quickly."""
-    zmq_ctx = zmq.Context()
 
     try:
         sender = DynamicZmqTransport[dict[str, Union[int, str]]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "sender",
             payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
         receiver = DynamicZmqTransport[dict[str, Union[int, str]]](
-            zmq_ctx,
             generate_zmq_inproc_endpoint(),
             "receiver",
             payload_type=TransportMessage[dict[str, Union[int, str]]],
@@ -473,18 +450,15 @@ async def test_high_throughput() -> None:
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_no_destination_address_provided() -> None:
     """Test behavior when no destination address is provided and no default is set."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create transport with NO default destination address
         transport = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="test_transport",
             default_destination_address=None,  # Explicitly set to None
@@ -521,7 +495,6 @@ async def test_no_destination_address_provided() -> None:
         # Verify transport can still send to a valid destination after errors
         # Create a receiver to test that the transport still works
         receiver = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="receiver",
             payload_type=TransportMessage[dict[str, str]],
@@ -557,18 +530,15 @@ async def test_no_destination_address_provided() -> None:
         await transport.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_default_destination_address() -> None:
     """Test behavior when default destination address is set and used."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create receiver first to get its address
         receiver = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="receiver",
             payload_type=TransportMessage[dict[str, str]],
@@ -577,7 +547,6 @@ async def test_default_destination_address() -> None:
 
         # Create sender with default destination address set to receiver
         sender = DynamicZmqTransport[dict[str, str]](
-            zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="sender",
             default_destination_address=receiver.get_address(),
@@ -627,4 +596,3 @@ async def test_default_destination_address() -> None:
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()

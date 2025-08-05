@@ -10,7 +10,6 @@ import time
 from typing import Any, Union
 
 import pytest
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
@@ -32,11 +31,8 @@ def instance_a_service_process_fn(
         pc.set_started()
         pc.beat()
 
-        # Create ZMQ context for this process
-        zmq_ctx = zmq.Context()
-
         # Create dispatcher service
-        instance_a_dispatcher = factory.create_service(zmq_ctx)
+        instance_a_dispatcher = factory.create_service()
 
         async def run_instance_a_service() -> None:
             await instance_a_dispatcher.start()
@@ -48,7 +44,6 @@ def instance_a_service_process_fn(
 
             # Cleanup
             await instance_a_dispatcher.stop()
-            zmq_ctx.term()
 
         # Run the async event loop
         asyncio.run(run_instance_a_service())
@@ -69,11 +64,8 @@ def instance_b_service_process_fn(
         pc.set_started()
         pc.beat()
 
-        # Create ZMQ context for this process
-        zmq_ctx = zmq.Context()
-
         # Create dispatcher service
-        instance_b_dispatcher = factory.create_service(zmq_ctx)
+        instance_b_dispatcher = factory.create_service()
 
         async def run_instance_b_service() -> None:
             await instance_b_dispatcher.start()
@@ -85,7 +77,6 @@ def instance_b_service_process_fn(
 
             # Cleanup
             await instance_b_dispatcher.stop()
-            zmq_ctx.term()
 
         # Run the async event loop
         asyncio.run(run_instance_b_service())
@@ -155,9 +146,6 @@ async def test_single_request_reply() -> None:
     monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
     monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
 
-    # Create ZMQ context for main process (clients)
-    zmq_ctx = zmq.Context()
-
     try:
         # Start both service processes
         process_a.start()
@@ -178,8 +166,8 @@ async def test_single_request_reply() -> None:
         assert healthy_b, "Instance B service process is not healthy"
 
         # Create clients in main process
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_a_client = instance_a_factory.create_client()
+        instance_b_client = instance_b_factory.create_client()
 
         # Set up message handling
         received_replies: list[Any] = []
@@ -262,7 +250,6 @@ async def test_single_request_reply() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
@@ -323,9 +310,6 @@ async def test_multiple_request_reply() -> None:
     monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
     monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
 
-    # Create ZMQ context for main process (clients)
-    zmq_ctx = zmq.Context()
-
     try:
         # Start both service processes
         process_a.start()
@@ -346,8 +330,8 @@ async def test_multiple_request_reply() -> None:
         assert healthy_b, "Instance B service process is not healthy"
 
         # Create clients in main process
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_a_client = instance_a_factory.create_client()
+        instance_b_client = instance_b_factory.create_client()
 
         # Set up message handling
         received_replies: list[Any] = []
@@ -442,7 +426,6 @@ async def test_multiple_request_reply() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
@@ -503,9 +486,6 @@ async def test_bidirectional_communication() -> None:
     monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
     monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
 
-    # Create ZMQ context for main process (clients)
-    zmq_ctx = zmq.Context()
-
     try:
         # Start both service processes
         process_a.start()
@@ -521,8 +501,8 @@ async def test_bidirectional_communication() -> None:
         assert healthy_a and healthy_b, "Service processes are not healthy"
 
         # Create clients in main process
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_a_client = instance_a_factory.create_client()
+        instance_b_client = instance_b_factory.create_client()
 
         # Set up message handling for both clients
         a_received_replies: list[Any] = []
@@ -642,7 +622,6 @@ async def test_bidirectional_communication() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
@@ -703,9 +682,6 @@ async def test_high_throughput_cross_process() -> None:
     monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=30.0)
     monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=30.0)
 
-    # Create ZMQ context for main process (clients)
-    zmq_ctx = zmq.Context()
-
     try:
         # Start both service processes
         process_a.start()
@@ -721,8 +697,8 @@ async def test_high_throughput_cross_process() -> None:
         assert healthy_a and healthy_b, "Service processes are not healthy"
 
         # Create clients in main process
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_a_client = instance_a_factory.create_client()
+        instance_b_client = instance_b_factory.create_client()
 
         # Track performance metrics
         requests_processed = 0
@@ -836,4 +812,3 @@ async def test_high_throughput_cross_process() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()

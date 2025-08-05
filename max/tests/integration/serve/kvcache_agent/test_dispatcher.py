@@ -9,7 +9,6 @@ import time
 from typing import Any, Union
 
 import pytest
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
@@ -24,7 +23,6 @@ from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 @pytest.mark.asyncio
 async def test_dispatcher_client_to_service_communication() -> None:
     """Test proper client-server communication through dispatcher services."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -55,11 +53,11 @@ async def test_dispatcher_client_to_service_communication() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        client_dispatcher_service = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher_service = client_factory.create_service()
+        client_app = client_factory.create_client()
 
-        server_dispatcher_service = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher_service = server_factory.create_service()
+        server_app = server_factory.create_client()
 
         received_requests: list[Any] = []
         received_replies: list[Any] = []
@@ -126,13 +124,11 @@ async def test_dispatcher_client_to_service_communication() -> None:
         server_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_dispatcher_request_reply_pattern() -> None:
     """Test request-reply pattern through dispatcher service and client."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -163,11 +159,11 @@ async def test_dispatcher_request_reply_pattern() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        instance_a_dispatcher = instance_a_factory.create_service(zmq_ctx)
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
+        instance_a_dispatcher = instance_a_factory.create_service()
+        instance_a_client = instance_a_factory.create_client()
 
-        instance_b_dispatcher = instance_b_factory.create_service(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_b_dispatcher = instance_b_factory.create_service()
+        instance_b_client = instance_b_factory.create_client()
 
         # Set up reply tracking
         instance_b_received_requests = []
@@ -231,13 +227,11 @@ async def test_dispatcher_request_reply_pattern() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_multiple_clients_one_server_dispatcher() -> None:
     """Test multiple clients communicating with one server through dispatchers."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Server setup using factory
@@ -253,8 +247,8 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
             server_config,
             transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_app = server_factory.create_client()
 
         # Multiple clients setup using factories
         num_clients = 3
@@ -278,8 +272,8 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
                     dict[str, Union[str, int]]
                 ],
             )
-            client_dispatcher = client_factory.create_service(zmq_ctx)
-            client_app = client_factory.create_client(zmq_ctx)
+            client_dispatcher = client_factory.create_service()
+            client_app = client_factory.create_client()
 
             clients.append(client_app)
             client_dispatchers.append(client_dispatcher)
@@ -374,13 +368,11 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
 
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_composable_handlers() -> None:
     """Test that both general and specific handlers are called for the same message."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -411,11 +403,11 @@ async def test_composable_handlers() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        instance_a_dispatcher = instance_a_factory.create_service(zmq_ctx)
-        instance_a_client = instance_a_factory.create_client(zmq_ctx)
+        instance_a_dispatcher = instance_a_factory.create_service()
+        instance_a_client = instance_a_factory.create_client()
 
-        instance_b_dispatcher = instance_b_factory.create_service(zmq_ctx)
-        instance_b_client = instance_b_factory.create_client(zmq_ctx)
+        instance_b_dispatcher = instance_b_factory.create_service()
+        instance_b_client = instance_b_factory.create_client()
 
         # Track messages with BOTH general and specific handlers
         instance_a_general_messages = []
@@ -510,13 +502,11 @@ async def test_composable_handlers() -> None:
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_error_handling_and_resilience() -> None:
     """Test error handling and system resilience."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -551,11 +541,11 @@ async def test_error_handling_and_resilience() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Track messages
         successful_requests = []
@@ -639,13 +629,11 @@ async def test_error_handling_and_resilience() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_high_throughput_performance() -> None:
     """Test high throughput message processing."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -676,11 +664,11 @@ async def test_high_throughput_performance() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Track performance
         requests_processed = 0
@@ -763,13 +751,11 @@ async def test_high_throughput_performance() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_connection_failure_recovery() -> None:
     """Test connection failure and recovery scenarios."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher config
@@ -788,8 +774,8 @@ async def test_connection_failure_recovery() -> None:
         )
 
         # Create dispatcher service and client using factory
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Start client
         await client_dispatcher.start()
@@ -820,13 +806,11 @@ async def test_connection_failure_recovery() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_handler_exception_isolation() -> None:
     """Test that handler exceptions don't crash the process and other messages are still processed."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -861,11 +845,11 @@ async def test_handler_exception_isolation() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Track messages
         received_requests: list[Any] = []
@@ -954,13 +938,11 @@ async def test_handler_exception_isolation() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_no_handler_registered() -> None:
     """Test that messages with no registered handler are handled gracefully."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher configs
@@ -991,11 +973,11 @@ async def test_no_handler_registered() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_app = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Intentionally DO NOT register any handlers for server
         # This will test what happens when a message is received with no handler
@@ -1041,13 +1023,11 @@ async def test_no_handler_registered() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_invalid_destination_address() -> None:
     """Test that sending to invalid addresses is handled gracefully."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher config
@@ -1066,8 +1046,8 @@ async def test_invalid_destination_address() -> None:
         )
 
         # Create dispatcher service and client using factory
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Start dispatcher and client
         await client_dispatcher.start()
@@ -1107,13 +1087,11 @@ async def test_invalid_destination_address() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
 
 
 @pytest.mark.asyncio
 async def test_duplicate_handler_registration() -> None:
     """Test that registering duplicate handlers raises ValueError."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create dispatcher config
@@ -1132,7 +1110,7 @@ async def test_duplicate_handler_registration() -> None:
         )
 
         # Create client
-        client_app = client_factory.create_client(zmq_ctx)
+        client_app = client_factory.create_client()
 
         # Register first handler
         @client_app.request_handler(MessageType.PREFILL_REQUEST)
@@ -1183,4 +1161,3 @@ async def test_duplicate_handler_registration() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()

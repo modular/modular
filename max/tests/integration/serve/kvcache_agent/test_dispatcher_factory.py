@@ -8,7 +8,6 @@ import asyncio
 from typing import Any, Union
 
 import pytest
-import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
@@ -36,9 +35,8 @@ async def test_dispatcher_factory_dynamic_zmq() -> None:
         )
 
         # Test creating server and client
-        zmq_ctx = zmq.Context()
-        server = factory.create_service(zmq_ctx)
-        client = factory.create_client(zmq_ctx)
+        server = factory.create_service()
+        client = factory.create_client()
 
         assert server is not None
         assert client is not None
@@ -53,7 +51,6 @@ async def test_dispatcher_factory_dynamic_zmq() -> None:
 @pytest.mark.asyncio
 async def test_end_to_end_communication_with_config() -> None:
     """Test end-to-end communication using configuration-based factory."""
-    zmq_ctx = zmq.Context()
 
     try:
         # Create server factory from config
@@ -69,8 +66,8 @@ async def test_end_to_end_communication_with_config() -> None:
             server_config,
             transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
-        server_dispatcher = server_factory.create_service(zmq_ctx)
-        server_client = server_factory.create_client(zmq_ctx)
+        server_dispatcher = server_factory.create_service()
+        server_client = server_factory.create_client()
 
         # Create client factory from config
         client_config = DispatcherConfig(
@@ -85,8 +82,8 @@ async def test_end_to_end_communication_with_config() -> None:
             client_config,
             transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
-        client_dispatcher = client_factory.create_service(zmq_ctx)
-        client_app = client_factory.create_client(zmq_ctx)
+        client_dispatcher = client_factory.create_service()
+        client_app = client_factory.create_client()
 
         # Set up message handling
         received_requests: list[Any] = []
@@ -143,4 +140,3 @@ async def test_end_to_end_communication_with_config() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
-        zmq_ctx.term()
