@@ -396,43 +396,40 @@ fn blackwell_tma_pair_umma_kernel[
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for i in range(TMA_BN // 16):
+            var d_reg_upper = c_frag_upper.slice[
+                8, offset = (i + tma_n * (TMA_BN // 16)) * 8
+            ]().cast[DType.bfloat16]()
+            var d_reg_lower = c_frag_lower.slice[
+                8, offset = (i + tma_n * (TMA_BN // 16)) * 8
+            ]().cast[DType.bfloat16]()
 
-            @parameter
-            for i in range(TMA_BN // 16):
-                var d_reg_upper = c_frag_upper.slice[
-                    8, offset = (i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
-                var d_reg_lower = c_frag_lower.slice[
-                    8, offset = (i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
-
-                var st_matrix_args = RuntimeTuple[
+            var st_matrix_args = RuntimeTuple[
+                IntTuple(
+                    UNKNOWN_VALUE,
                     IntTuple(
+                        i,
+                        0,
                         UNKNOWN_VALUE,
-                        IntTuple(
-                            i,
-                            m_mma,
-                            UNKNOWN_VALUE,
-                        ),
-                    )
-                ](lane_id(), i, m_mma, 0)
-
-                var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
-                var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
-
-                st_matrix[simd_width=4](
-                    upper.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     ),
-                    d_reg_upper_packed,
                 )
-                st_matrix[simd_width=4](
-                    lower.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
-                    d_reg_lower_packed,
-                )
+            ](thread_idx.x % 32, i, 0, 0)
+
+            var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
+            var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
+
+            st_matrix[simd_width=4](
+                upper.ptr.offset(
+                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
+                ),
+                d_reg_upper_packed,
+            )
+            st_matrix[simd_width=4](
+                lower.ptr.offset(
+                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
+                ),
+                d_reg_lower_packed,
+            )
 
     barrier()
 
