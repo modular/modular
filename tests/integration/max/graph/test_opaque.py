@@ -123,10 +123,6 @@ def test_opaque_type_parameterization(
     custom_ops_mojopkg: Path,
     monkeypatch,  # noqa: ANN001
 ) -> None:
-    # Opaque parameterization is only supported using the new MOGG dialect based
-    # compilation path.
-    monkeypatch.setenv("MOGG_USE_EXP_KERNELS", "1")
-
     result_type = TensorType(DType.int32, [12], device=DeviceRef.CPU())
 
     with Graph(
