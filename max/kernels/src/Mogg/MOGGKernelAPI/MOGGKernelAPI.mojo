@@ -857,9 +857,7 @@ struct Add:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
 
 
@@ -869,9 +867,7 @@ struct Sub:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs - rhs
 
 
@@ -881,9 +877,7 @@ struct Mul:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs * rhs
 
 
@@ -893,9 +887,7 @@ struct Div:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs / rhs
 
 
@@ -905,9 +897,7 @@ struct Mod:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs % rhs
 
 
@@ -917,9 +907,9 @@ struct Equal:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[DType.bool, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs == rhs
 
 
@@ -929,9 +919,9 @@ struct Greater:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[DType.bool, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs > rhs
 
 
@@ -941,9 +931,9 @@ struct GreaterEqual:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[DType.bool, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs >= rhs
 
 
@@ -953,9 +943,9 @@ struct NotEqual:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[DType.bool, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs != rhs
 
 
@@ -964,11 +954,9 @@ struct And:
     @staticmethod
     fn elementwise[
         width: Int,
-    ](
-        lhs: SIMD[DType.bool, width],
-        rhs: SIMD[DType.bool, width],
-        _idx: IndexList,
-    ) -> SIMD[DType.bool, width]:
+    ](lhs: SIMD[DType.bool, width], rhs: SIMD[DType.bool, width]) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs & rhs
 
 
@@ -980,8 +968,9 @@ struct Or:
     ](
         lhs: SIMD[DType.bool, width],
         rhs: SIMD[DType.bool, width],
-        _idx: IndexList,
-    ) -> SIMD[DType.bool, width]:
+    ) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs | rhs
 
 
@@ -993,8 +982,9 @@ struct Xor:
     ](
         lhs: SIMD[DType.bool, width],
         rhs: SIMD[DType.bool, width],
-        _idx: IndexList,
-    ) -> SIMD[DType.bool, width]:
+    ) -> SIMD[
+        DType.bool, width
+    ]:
         return lhs ^ rhs
 
 
@@ -1005,9 +995,9 @@ struct Pow:
         dtype: DType,
         pow_dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width]) -> SIMD[
+        dtype, width
+    ]:
         return _pow(lhs, rhs)
 
 
@@ -1017,9 +1007,7 @@ struct Max:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(lhs, rhs)
 
 
@@ -1029,9 +1017,7 @@ struct Min:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](
-        lhs: SIMD[dtype, width], rhs: SIMD[dtype, width], _idx: IndexList
-    ) -> SIMD[dtype, width]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return min(lhs, rhs)
 
 
@@ -1047,7 +1033,7 @@ struct Cast:
         dtype: DType,
         out_dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[out_dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         return x.cast[out_dtype]()
 
 
@@ -1057,7 +1043,7 @@ struct Negative:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return -x
 
 
@@ -1067,7 +1053,7 @@ struct ReLU:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
 
 
@@ -1077,7 +1063,7 @@ struct GeLU:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return gelu(x)
 
 
@@ -1087,7 +1073,7 @@ struct Ceil:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return ceil(x)
 
 
@@ -1097,7 +1083,7 @@ struct Floor:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return floor(x)
 
 
@@ -1107,7 +1093,7 @@ struct Tanh:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return tanh(x)
 
 
@@ -1117,7 +1103,7 @@ struct ATanh:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return atanh(x)
 
 
@@ -1127,7 +1113,7 @@ struct Cos:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return cos(x)
 
 
@@ -1137,7 +1123,7 @@ struct Sin:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return sin(x)
 
 
@@ -1147,7 +1133,7 @@ struct Erf:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return erf(x)
 
 
@@ -1157,7 +1143,7 @@ struct Exp:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return exp(x)
 
 
@@ -1167,7 +1153,7 @@ struct Round:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return round(x)
 
 
@@ -1177,7 +1163,7 @@ struct Sqrt:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return sqrt(x)
 
 
@@ -1187,7 +1173,7 @@ struct Isqrt:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return isqrt(x)
 
 
@@ -1202,7 +1188,6 @@ struct Select:
         cond: SIMD[cond_dtype, width],
         tc: SIMD[dtype, width],
         fc: SIMD[dtype, width],
-        _idx: IndexList,
     ) -> SIMD[dtype, width]:
         return cond.select(tc, fc)
 
@@ -1213,7 +1198,7 @@ struct Trunc:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return llvm_intrinsic[
             "llvm.trunc", __type_of(x), has_side_effect=False
         ](x)
@@ -1225,7 +1210,7 @@ struct Log:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return log(x)
 
 
@@ -1235,7 +1220,7 @@ struct Log1p:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return log1p(x)
 
 
@@ -1245,7 +1230,7 @@ struct IsNan:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
         return isnan(x)
 
 
@@ -1255,7 +1240,7 @@ struct IsInf:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
         return isinf(x)
 
 
@@ -1264,7 +1249,7 @@ struct Not:
     @staticmethod
     fn elementwise[
         width: Int,
-    ](x: SIMD[DType.bool, width], _idx: IndexList) -> SIMD[DType.bool, width]:
+    ](x: SIMD[DType.bool, width]) -> SIMD[DType.bool, width]:
         return ~x
 
 
@@ -1274,7 +1259,7 @@ struct Abs:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](x: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return abs(x)
 
 
@@ -2498,7 +2483,7 @@ struct MutableStore:
     fn elementwise[
         dtype: DType,
         width: Int,
-    ](val: SIMD[dtype, width], _idx: IndexList) -> SIMD[dtype, width]:
+    ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return val
 
     @staticmethod
