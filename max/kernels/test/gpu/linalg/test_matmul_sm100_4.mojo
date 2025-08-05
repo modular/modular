@@ -632,9 +632,9 @@ fn blackwell_tma_pair_umma_kernel[
 
     var c_smem_tile = c_smem_tile_t(c_smem_base.static_alignment_cast[128]())
 
-    var smem_poll = (c_smem_base + c_smem_size).bitcast[Int64]()
+    var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
-    var tma_mbar_ptr = smem_poll
+    var tma_mbar_ptr = smem_pool
     var mma_mbar_ptr = tma_mbar_ptr + (2 * num_pipeline_stages)
     var accum_full_mbar_ptr = mma_mbar_ptr + (2 * num_pipeline_stages)
     var accum_empty_mbar_ptr = accum_full_mbar_ptr + (

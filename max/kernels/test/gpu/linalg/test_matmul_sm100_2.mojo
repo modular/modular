@@ -163,7 +163,7 @@ fn blackwell_tma_pair_umma_kernel[
 
     var c_smem_tile = c_smem_tile_t(c_smem)
 
-    var smem_poll = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
+    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
         Int64
     ]()
 
@@ -186,7 +186,7 @@ fn blackwell_tma_pair_umma_kernel[
     alias accum_type = get_accum_type[a_type]()
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (smem_poll.bitcast[Int64]() + 4).bitcast[UInt32]()
+    var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
 
     alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag = SIMD[accum_type, c_frag_size]()
@@ -196,8 +196,8 @@ fn blackwell_tma_pair_umma_kernel[
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
-    var tma_mbar_ptr = smem_poll.bitcast[Int64]()
-    var mma_mbar_ptr = smem_poll.bitcast[Int64]() + 2
+    var tma_mbar_ptr = smem_pool.bitcast[Int64]()
+    var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()

@@ -457,7 +457,7 @@ fn grouped_matmul_kernel[
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
     var c_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[Scalar[c_type]]()
-    var smem_poll = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
+    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
         Int64
     ]()
 
@@ -485,8 +485,8 @@ fn grouped_matmul_kernel[
         alignment=128,
     ](c_smem.static_alignment_cast[128]())
 
-    var a_mbars_ptr = smem_poll.bitcast[Int64]()
-    var b_mbars_ptr = smem_poll.bitcast[Int64]() + pipeline_stages
+    var a_mbars_ptr = smem_pool.bitcast[Int64]()
+    var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
 
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
