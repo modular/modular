@@ -24,7 +24,6 @@ from collections.abc import Generator
 from typing import Generic, TypeVar
 
 import msgspec
-import zmq
 from max.interfaces import LoRARequest, LoRAResponse
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -38,17 +37,14 @@ class LoRAQueue(Generic[ReqId]):
 
     def __init__(
         self,
-        zmq_ctx: zmq.Context,
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
     ):
         self._request_socket = ZmqPushSocket[tuple[ReqId, LoRARequest]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
             serialize=msgspec.msgpack.encode,
         )
         self._response_socket = ZmqPullSocket[tuple[ReqId, LoRAResponse]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=response_zmq_endpoint,
             deserialize=msgspec.msgpack.decode,
         )

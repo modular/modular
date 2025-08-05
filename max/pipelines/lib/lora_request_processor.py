@@ -22,7 +22,6 @@ import time
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 import msgspec
-import zmq
 from max.interfaces.lora import (
     LoRAOperation,
     LoRARequest,
@@ -50,7 +49,6 @@ class LoRARequestProcessor(Generic[ReqId]):
     def __init__(
         self,
         manager: LoRAManager,
-        zmq_ctx: zmq.Context,
         zmq_request_endpoint: str,
         zmq_response_endpoint: str,
     ):
@@ -63,13 +61,11 @@ class LoRARequestProcessor(Generic[ReqId]):
         self.manager = manager
 
         self._request_socket = ZmqPullSocket[tuple[ReqId, LoRARequest]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=zmq_request_endpoint,
             deserialize=msgspec.msgpack.decode,
         )
 
         self._response_socket = ZmqPushSocket[tuple[ReqId, LoRAResponse]](
-            zmq_ctx=zmq_ctx,
             zmq_endpoint=zmq_response_endpoint,
             serialize=msgspec.msgpack.encode,
         )
