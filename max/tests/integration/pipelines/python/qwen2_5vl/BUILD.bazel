@@ -47,6 +47,8 @@ modular_py_test(
         requirement("torch"),
         requirement("torchvision"),
         requirement("transformers"),
+        requirement("qwen-vl-utils"),
+        requirement("opencv-python"),
     ],
 )
 
