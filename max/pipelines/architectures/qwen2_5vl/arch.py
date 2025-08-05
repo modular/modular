@@ -18,10 +18,10 @@ from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
-    TextAndVisionTokenizer,
 )
 
 from .model import Qwen2_5VLModel
+from .tokenizer import Qwen2_5VLTokenizer
 
 qwen2_5_vl_arch = SupportedArchitecture(
     name="Qwen2_5_VLForConditionalGeneration",
@@ -36,5 +36,5 @@ qwen2_5_vl_arch = SupportedArchitecture(
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Qwen2_5VLModel,
-    tokenizer=TextAndVisionTokenizer,
+    tokenizer=Qwen2_5VLTokenizer,
 )
