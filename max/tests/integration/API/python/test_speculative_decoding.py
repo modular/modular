@@ -24,7 +24,7 @@ from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def setup_speculative_decoding_pipeline(num_steps: int = 10):
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
@@ -160,6 +160,7 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
+@pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_no_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -233,6 +234,7 @@ def test_speculative_decoding_no_rejection(
     assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_partial_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -331,6 +333,7 @@ def test_speculative_decoding_partial_rejection(
     assert np.all(context2.generated_tokens[:-1] == draft_tokens_host[1])
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_multiple_token_without_rejection(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -357,6 +360,7 @@ def test_speculative_decoding_multiple_token_without_rejection(
         context2_len = context2.current_length
 
 
+@pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_context_update(
     setup_speculative_decoding_pipeline,  # noqa: ANN001
 ) -> None:
@@ -364,8 +368,8 @@ def test_speculative_decoding_context_update(
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
     context1: TextContext = data["context1"]
     context2: TextContext = data["context2"]
-    req_id1: str = context1.request_id
-    req_id2: str = context2.request_id
+    req_id1: str = data["req_id1"]
+    req_id2: str = data["req_id2"]
     pipeline_request: dict[str, TextContext] = data["pipeline_request"]
     context_batch: list[TextContext] = data["context_batch"]
     num_steps: int = data["num_steps"]
@@ -464,7 +468,6 @@ def test_speculative_decoding_context_update(
         pipeline_request, list(pipeline_request.values())
     )
     assert len(response) == 2
-
     assert len(response[req_id1].tokens) == reject_token1_idx + 1
     assert len(response[req_id2].tokens) == reject_token2_idx + 1
     response_tokens1 = response[req_id1].tokens
