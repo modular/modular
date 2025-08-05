@@ -44,7 +44,6 @@ class LoRAStatus(Enum):
     UNLOAD_NAME_NONEXISTENT = "unload_name_nonexistent"
     LOAD_ERROR = "load_error"
     UNLOAD_ERROR = "unload_error"
-    LOAD_SLOTS_FULL = "load_slots_full"
     LOAD_INVALID_PATH = "load_invalid_path"
     LOAD_INVALID_ADAPTER = "load_invalid_adapter"
 
