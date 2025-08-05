@@ -940,26 +940,25 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal)
       return failure();
 
-    RefType valueRefType;
+    // If we are binding the reference to a value in memory directly, check for
+    // reference compatibility directly.
     if (argVal.isMValue()) {
-      valueRefType = cast<RefType>(value.getMValueReference().getType());
+      RefType valueRefType =
+          cast<RefType>(value.getMValueReference().getType());
       // If the IRValue type is MBValue or MRValue then we need infer an
       // immutable ref, to match behavior where we don't allow passing an
       // MBValue or MRValue as 'mut'.
       if (!argVal.getIfMLValue() && !argVal.getIfMBPValue() &&
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
-    }
 
-    // If we are binding the reference to a value in memory directly, check for
-    // reference compatibility.
-    if (valueRefType)
       return matchTypes(valueRefType, expectedType);
+    }
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
     // infer it as AnyOrigin.  We bind the origin directly and then handle
     // it like any other argument because we can support implicit conversions.
-    valueRefType =
+    RefType valueRefType =
         RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
     auto expectedRef = cast<RefType>(expectedType);
 
