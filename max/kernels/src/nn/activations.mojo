@@ -257,5 +257,4 @@ fn leaky_relu[
         dtype.is_floating_point(),
         "dtype must be a floating point dtype",
     ]()
-    
     return (x >= 0).select(x, negative_slope * x)
