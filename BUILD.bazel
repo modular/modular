@@ -29,6 +29,12 @@ alias(
     actual = "@mojo_gpu_toolchains//:nvidia_gpu",
 )
 
+alias(
+    name = "apple_gpu",
+    actual = "@mojo_gpu_toolchains//:apple_gpu",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 [
     alias(
         name = "{}_gpu".format(gpu),
