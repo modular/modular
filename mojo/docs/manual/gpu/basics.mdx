@@ -71,8 +71,8 @@ install
 then clone the repo that contains the markdown that generated this website:
 
 ```sh
-git clone git@github.com:modular/max
-cd max/mojo/docs/manual/gpu
+git clone git@github.com:modular/modular
+cd modular/mojo/docs/manual/gpu
 ```
 
 And open `basics.mdx` to run the code cells interactively. If you don't have
@@ -86,8 +86,8 @@ If you prefer the traditional approach using a CLI, first install
 curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
-Then restart your terminal, create a project, install the Modular Platform
-(which includes Mojo), and enter the virtual environment:
+Then restart your terminal, create a project, install the `mojo` package, and
+enter the virtual environment:
 
 ```sh
 pixi init gpu-basics \
@@ -95,7 +95,7 @@ pixi init gpu-basics \
 
 cd gpu-basics
 
-pixi add modular
+pixi add mojo
 
 pixi shell # enter virtual environment
 ```

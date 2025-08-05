@@ -40,9 +40,8 @@ configure AI coding assistants to help you write Mojo code.
 
 ## 1. Create a Mojo project
 
-To install the Modular Platform, which includes Mojo, we
-recommend using [`pixi`](https://pixi.sh/latest/) (for other options,
-see the [packages guide](/max/packages)).
+To install Mojo, we recommend using [`pixi`](https://pixi.sh/latest/) (for
+other options, see the [packages guide](/max/packages)).
 
 1. If you don't have `pixi`, you can install it with this command:
 
@@ -62,11 +61,18 @@ see the [packages guide](/max/packages)).
     This creates a project directory named `gpu-intro`, adds the Modular conda
     package channel, and enters the directory.
 
-3. Install the Modular Platform from the `modular` package (which
-includes Mojo):
+    :::tip
+
+    **Tip:**
+    You can skip the `-c` options if you [add these channels as
+    defaults](/pixi#create-a-project-and-virtual-environment).
+
+    :::
+
+3. Install the `mojo` package:
 
     ```bash
-    pixi add modular
+    pixi add mojo
     ```
 
 3. Let's verify the project is configured
