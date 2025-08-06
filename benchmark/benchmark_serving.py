@@ -71,6 +71,7 @@ class RequestFuncInput:
     model: str
     lora: str
     session_id: Optional[str] = None
+    temperature: float = 0.0
 
 
 @dataclass
@@ -144,7 +145,7 @@ async def async_request_trt_llm(
         payload = {
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
-            "temperature": 0.0,
+            "temperature": request_func_input.temperature,
             "top_p": 1.0,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
@@ -215,7 +216,7 @@ async def async_request_openai_completions(
             "model": request_func_input.model,
             "lora": request_func_input.lora,
             "prompt": request_func_input.prompt,
-            "temperature": 0.0,
+            "temperature": request_func_input.temperature,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -318,7 +319,7 @@ async def async_request_openai_chat_completions(
             "model": request_func_input.model,
             "messages": messages_data,
             "lora": request_func_input.lora,
-            "temperature": 0.0,
+            "temperature": request_func_input.temperature,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
@@ -972,6 +973,7 @@ async def benchmark(
     delay_between_chat_turns: Optional[int],
     ttft_skip_requests: int,
     max_output_len: Optional[int],
+    temperature: float,
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
 ):
@@ -1101,6 +1103,7 @@ async def benchmark(
                 api_url=api_url,
                 prompt_len=request.prompt_len,
                 max_tokens=max_tokens,
+                temperature=temperature,
                 ignore_eos=ignore_eos,
                 img=request.encoded_img,
             )
@@ -1544,6 +1547,7 @@ def main(args: argparse.Namespace) -> None:
             delay_between_chat_turns=args.delay_between_chat_turns,
             ttft_skip_requests=args.ttft_skip_requests,
             max_output_len=args.max_output_len,
+            temperature=args.temperature,
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
         )
@@ -1653,6 +1657,7 @@ def main(args: argparse.Namespace) -> None:
             "model",
             "request_rate",
             "seed",
+            "temperature",
         )
         output_lens_dict = {}
         output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
@@ -1777,6 +1782,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Max output length for each request",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Temperature used for token sampling. Default: 0.0",
     )
     parser.add_argument(
         "--sonnet-input-len",
