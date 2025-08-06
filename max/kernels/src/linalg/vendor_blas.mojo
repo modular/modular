@@ -983,14 +983,21 @@ fn _hipblasLt_matmul(
 ) raises:
     constrained[
         (
-            a.type in [DType.float32, DType.float16, DType.bfloat16]
-            and b.type in [DType.float32, DType.float16, DType.bfloat16]
+            a.type
+            in (
+                DType.float32,
+                DType.float16,
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                DType.float8_e5m2,
+                DType.float8_e4m3fnuz,
+                DType.float8_e5m2fnuz,
+            )
         ),
-        (
-            "Only FP32, FP16, BF16 input data types are supported. Please"
-            " extend it if you need more data types."
-        ),
+        "Unsupported data type. Please extend it if you need more data types.",
     ]()
+
+    constrained[a.type == b.type, "A and B must have the same type"]()
 
     @always_inline
     @parameter

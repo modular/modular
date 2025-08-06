@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from os import abort
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList
 from gpu.host import DeviceContext
@@ -26,10 +28,10 @@ from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import Backend, Handle, matmul
 
 
-fn test_cublaslt[
+fn test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext, handle: Handle) raises:
-    print("== test_cublaslt", input_type, "x", M, "x", N, "x", K)
+    print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
     alias transpose_b = True
     alias static_a_shape = DimList(M, K)
@@ -110,10 +112,22 @@ fn test_cublaslt[
     _ = c_host_ref
 
 
-fn main() raises:
-    with DeviceContext() as ctx, Handle[Backend.CUBLASLT]() as handle:
-        test_cublaslt[DType.float8_e4m3fn, 64, 16, 32](ctx, handle)
-        test_cublaslt[DType.float8_e4m3fn, 512, 2560, 512](ctx, handle)
+fn test_matmul[backend: Backend, input_types: List[DType]]() raises:
+    with DeviceContext() as ctx, Handle[backend]() as handle:
 
-        test_cublaslt[DType.bfloat16, 64, 16, 32](ctx, handle)
-        test_cublaslt[DType.bfloat16, 512, 2560, 512](ctx, handle)
+        @parameter
+        for input_type in input_types:
+            test_matmul[input_type, 64, 16, 32](ctx, handle)
+            test_matmul[input_type, 512, 2560, 512](ctx, handle)
+
+
+fn main() raises:
+    @parameter
+    if has_amd_gpu_accelerator():
+        test_matmul[
+            Backend.HIPBLASLT, [DType.float8_e4m3fnuz, DType.bfloat16]
+        ]()
+    elif has_nvidia_gpu_accelerator():
+        test_matmul[Backend.CUBLASLT, [DType.float8_e4m3fn, DType.bfloat16]]()
+    else:
+        abort("Unknown GPU Accelerator.")

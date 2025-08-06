@@ -16,7 +16,6 @@ _EXTRA_COPTS = {
 }
 
 _H100_TESTS = [
-    "test_cublaslt_matmul.mojo",
     "test_stmatrix.mojo",
     "test_tensor_core_sm90.mojo",
     "test_tensormap_replace_insts.mojo",
@@ -46,6 +45,11 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_vendor_blas_matmul.mojo": select({
+        "//:h100_gpu": [],
+        "//:mi300x_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
 }
