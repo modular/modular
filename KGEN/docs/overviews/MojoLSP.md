@@ -20,23 +20,54 @@ part of this extension and will be automatically launched whenever a `.mojo` or
 
 ### Testing mojo-lsp-server
 
-Our tests live in `KGEN/unittests/mojo-lsp-server/` and are specified using the
-C++ GTest framework.
+Our tests are currently split across three implementations. We will eventually
+converge on the NodeJS-based test harness in `KGEN/test/mojo-lsp-server-node`.
 
-You can read more about GTests in this
+#### NodeJS-based tests
+
+These tests use Microsoft's reference implementation of the Language Server
+Protocol, which is also used in VS Code. Unlike the Lit or C++-based tests,
+these more closely mimic real-world conditions for the language server and are
+preferred over the alternatives. Each test starts the language server and
+communicates with it as an actual editor client would.
+
+These tests live in `KGEN/test/mojo-lsp-server-node` and can be run using
+
+```sh
+bazel test //KGEN/test/mojo-lsp-server-node
+```
+
+If you are running these tests in a TTY, you can enable colorized output by
+setting the `FORCE_COLOR` environment variable to 1. Doing so enables, among
+other features, colorized diffs, which is helpful when a test produces incorrect
+output.
+
+```sh
+FORCE_COLOR=1 bazel test //KGEN/test/mojo-lsp-server-node
+```
+
+#### Lit tests
+
+These tests use llvm-lit to speak JSON-RPC to the language server and inspect
+its output. They live in `KGEN/test/mojo-lsp-server` and can be run using
+
+```sh
+bazel test //KGEN/test/mojo-lsp-server
+```
+
+#### C++ unit tests
+
+These tests are written in C++ using GTest and live in
+`KGEN/unittests/mojo-lsp-server`. You can read more about GTests in this
 [primer](https://github.com/google/googletest/blob/main/docs/primer.md).
 
-#### How to write a test
+Our tests live in `KGEN/unittests/mojo-lsp-server/` and are specified using the
+C++ GTest framework.
 
 You can read `KGEN/unittests/mojo-lsp-server/SampleTest.cpp` for a sample
 test with some useful explanatory comments.
 
-#### Running the tests
-
-In order to run these tests, you just need to execute
-`build check-mojo-lsp-server`, which will run all LSP-related tests.
-
-#### Inspecting the LSP traffic
+##### Inspecting the LSP traffic
 
 You can invoke the tests with
 `PRESERVE_LSP_IO_FILES=1 build check-mojo-lsp-server`, which will indicate the
@@ -44,7 +75,7 @@ test suite to print to stderr the IO files used to communicate with the Language
 Server upon failures. In this case, these files are not cleaned up upon
 termination, and you can inspect them to debug your issues or even invoke the
 Language Server manually with
-`cat /path/to/lsp_stdout | mojo-lsp-server -mojo-test`.
+`cat /path/to/lsp_stdin | mojo-lsp-server -mojo-test`.
 
 ### mojo-lsp-simple-client
 
@@ -66,8 +97,3 @@ capability:
 - Via the `mojo-lsp-simple-client`, which offers the `-attach-debugger` option.
   This can be more convenient for automating a LSP session and rerun it
   repeatedly.
-
-### Building
-
-If you need to build the VS Code extension from source, you can use
-`vscode-build` to compile the extension and install it locally.
