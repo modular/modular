@@ -1713,19 +1713,14 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       return failure();
     }
 
-    // Initializers without an out argument or a -> Self result may be legacy
-    // form.
-    if (!argList.resultArg.name && !argList.parsedArgs.empty() &&
-        argList.parsedArgs[0].convention == ParsedArgument::kConventionMut &&
+    // Initializers without an out argument or a -> Self result are incorrect.
+    if (!argList.resultArg.name &&
         (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
          argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
-      // TODO(25.4): Make this an error.
-      shared.emitWarning(argList.parsedArgs[0].loc,
-                         "__init__ method with 'mut' convention is deprecated, "
-                         "please use 'out' instead");
-      argList.resultArg = argList.parsedArgs[0];
-      argList.parsedArgs.erase(argList.parsedArgs.begin());
-      argList.resultArg.convention = ParsedArgument::kConventionOut;
+      shared.emitError(
+          argList.parsedArgs[0].loc,
+          "__init__ method must return Self type with 'out' argument");
+      return failure();
     }
 
     // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be

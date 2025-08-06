@@ -97,7 +97,7 @@ fn bad_out5(out a: Int) -> Int: pass
 fn bad_out6(out self) -> None: pass
 
 struct BadInitResult:
-  # expected-warning @+1 {{__init__ method with 'mut' convention is deprecated, please use 'out' instead}}
+  # expected-error @+1 {{__init__ method must return Self type with 'out' argument}}
   fn __init__(mut self) raises -> None:
     pass
 
@@ -285,7 +285,8 @@ fn badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
-    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'None'}}
+    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, args, AnyType, Ts]'}}
+    # expected-error @below {{__init__ method must return Self type with 'out' argument}}
     fn __init__(*args: *Ts):
          pass
 
@@ -620,6 +621,7 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
+  # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
   def __init__(self: None): pass
 
