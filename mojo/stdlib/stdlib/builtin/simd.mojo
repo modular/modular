@@ -63,7 +63,7 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer
 from sys.intrinsics import _type_is_eq
 
-from bit import byte_swap, pop_count
+from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
@@ -75,6 +75,7 @@ from python import ConvertibleToPython, PythonObject, Python
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
 from utils.numerics import FPUtils
+from utils.numerics import inf as _inf
 from utils.numerics import isinf as _isinf
 from utils.numerics import isnan as _isnan
 from utils.numerics import max_finite as _max_finite
@@ -1804,14 +1805,22 @@ struct SIMD[dtype: DType, size: Int](
                 return self.cast[DType.float32]().cast[target]()
 
         @parameter
-        if target in (DType.float8_e4m3fn, DType.float8_e5m2):
+        if target in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
+        ):
             # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
-            return _convert_f32_to_float8[target=target, size=size](
-                self.cast[DType.float32]()
-            )
+            return _convert_f32_to_float8[target](self.cast[DType.float32]())
 
         @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+        if dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
+        ):
             constrained[
                 target
                 in (
@@ -3074,63 +3083,65 @@ fn _powi(base: Scalar, exp: Int32) -> __type_of(base):
 
 
 @always_inline
-fn _convert_float8_to_f32_scaler[
-    dtype: DType,
-](x: Scalar[dtype]) -> Float32:
-    var kF32_NaN: UInt32 = 0x7FFFFFFF
-    var FP8_NUM_BITS = 8
-    var IS_E4M3 = dtype is DType.float8_e4m3fn
-    var FP8_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    var FP8_NUM_EXPONENT_BITS = FPUtils[dtype].exponent_width()
-    var FP32_NUM_BITS = 32
-    var FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
-    var FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
-    var FP8_MAX_EXPONENT = 7 if IS_E4M3 else 15
-    var FP8_EXPONENT_BIAS = 7 if IS_E4M3 else 15
-    var FP32_EXPONENT_BIAS = 127
-    var FP32_NUM_MANTISSA_BITS = 23
+fn _convert_float8_to_f32_scalar[
+    dtype: DType, //,
+    result_dtype: DType,
+](x: Scalar[dtype]) -> Scalar[result_dtype]:
+    alias FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
+    alias FP8_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
+    alias FP32_EXPONENT_BIAS = FPUtils[result_dtype].exponent_bias()
+    alias FP32_NUM_MANTISSA_BITS = FPUtils[result_dtype].mantissa_width()
 
-    var f8: UInt8 = bitcast[DType.uint8](x)
+    var exp = FPUtils.get_exponent_biased(x)
+    var mantissa = FPUtils.get_mantissa(x)
 
-    var sign: UInt32 = (f8.cast[DType.uint32]() >> (FP8_NUM_BITS - 1)) & 1
-    var exp: UInt32 = ((f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK).cast[
-        DType.uint32
-    ]()
-    var mantissa: UInt32 = (f8 & FP8_MANTISSA_MASK).cast[DType.uint32]()
+    if exp == 0 and mantissa != 0:
+        var subnormal_shift = FP8_NUM_MANTISSA_BITS - bit_width(mantissa)
+        exp -= subnormal_shift
+        mantissa <<= subnormal_shift + 1
+        mantissa &= FPUtils[dtype].mantissa_mask()
 
-    var f: UInt32 = sign << (FP32_NUM_BITS - 1)
+    # TODO: To generalize this routine for float16, logic needs to be added
+    # to convert float8 numbers that are in the normal exponent range to
+    # float16 numbers that are in the subnormal exponent range. This is not
+    # a problem for float32/bfloat16 as the exponent range is wider than any
+    # currently supported float8 types.
+    constrained[result_dtype != DType.float16]()
 
-    if IS_E4M3 and exp == 15 and mantissa == 0x7:
-        f = kF32_NaN
-    elif exp > 0 and (
-        IS_E4M3 or exp < (FP8_MAX_EXPONENT + FP8_EXPONENT_BIAS + 1)
-    ):
-        # normal
-        exp += FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS
-        f |= exp << FP32_NUM_MANTISSA_BITS
-        f |= mantissa << (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
-    elif exp == 0:
-        if mantissa:
-            # subnormal
-            exp += (FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS) + 1
-            while (mantissa & (1 << FP8_NUM_MANTISSA_BITS)) == 0:
-                mantissa <<= 1
-                exp -= 1
-            mantissa = mantissa & FP8_MANTISSA_MASK.cast[DType.uint32]()
-            f |= exp << FP32_NUM_MANTISSA_BITS
-            f |= mantissa << (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
+    exp += FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS
+    mantissa <<= FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS
+
+    var result = Scalar[result_dtype](0)
+    result = FPUtils.set_exponent(result, exp)
+    result = FPUtils.set_mantissa(result, mantissa)
+
+    var x_bits = FPUtils.bitcast_to_uint(x)
+    var exp_mantissa = x_bits & FPUtils[dtype].exponent_mantissa_mask()
+
+    if exp_mantissa == 0x00:
+        result = Scalar[result_dtype](0)
+
+    @parameter
+    if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+
+        @parameter
+        if dtype is DType.float8_e4m3fn:
+            if exp_mantissa == 0x7F:
+                result = _nan[result_dtype]()
         else:
-            # sign-preserving zero
-            pass
-    else:
-        if mantissa == 0:
-            # Sign-preserving infinity
-            f |= 0x7F800000
-        else:
-            # Canonical NaN
-            f = kF32_NaN
+            if exp_mantissa == 0x7C:
+                result = _inf[result_dtype]()
+            elif exp_mantissa > 0x7C:
+                result = _nan[result_dtype]()
 
-    return bitcast[DType.float32](f)
+    result = FPUtils.set_sign(result, FPUtils.get_sign(x))
+
+    @parameter
+    if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        if x_bits == 0x80:
+            result = _nan[result_dtype]()
+
+    return result
 
 
 @always_inline
@@ -3139,7 +3150,10 @@ fn _convert_float8_to_f32[
     size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
     @parameter
-    if _is_sm_9x_or_newer():
+    if _is_sm_9x_or_newer() and dtype in (
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+    ):
         return _convert_float8_to_f16(val).cast[DType.float32]()
     else:
 
@@ -3148,9 +3162,7 @@ fn _convert_float8_to_f32[
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_float8_to_f32_scaler(
-                val._refine[dtype](),
-            )._refine[result_dtype]()
+            return _convert_float8_to_f32_scalar[result_dtype](val)
 
         return _simd_apply[wrapper_fn, DType.float32, size](val)
 
@@ -3161,7 +3173,10 @@ fn _convert_float8_to_f16[
     size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
     @parameter
-    if _is_sm_9x_or_newer():
+    if _is_sm_9x_or_newer() and dtype in (
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+    ):
         # do not call `SIMD.cast` here; the inliner will diverge
         return __mlir_op.`pop.cast`[
             _type = SIMD[DType.float16, size]._mlir_type
@@ -3173,11 +3188,14 @@ fn _convert_float8_to_f16[
 @always_inline
 fn _convert_f32_to_float8[
     dtype: DType,
+    size: Int, //,
     target: DType,
-    size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
-    if _is_sm_9x_or_newer():
+    if _is_sm_9x_or_newer() and target in (
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+    ):
         # do not call `SIMD.cast` here; the inliner will diverge
         return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
             val.value
@@ -3189,69 +3207,71 @@ fn _convert_f32_to_float8[
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_f32_to_float8_scaler[dtype, result_dtype](
-                val._refine[dtype]()
-            )
+            return _convert_f32_to_float8_scalar[result_dtype](val)
 
         return _simd_apply[wrapper_fn, target, size](val)
 
 
 @always_inline
-fn _convert_f32_to_float8_scaler[
-    dtype: DType,
+fn _convert_f32_to_float8_scalar[
+    dtype: DType, //,
     target: DType,
 ](x: Scalar[dtype]) -> Scalar[target]:
     # software implementation rounds toward nearest even
 
-    alias IS_E4M3 = target is DType.float8_e4m3fn
+    @parameter
+    fn max_finite_byte() -> UInt8:
+        @parameter
+        if target is DType.float8_e4m3fn:
+            return UInt8(0x7E)
+        elif target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+            return UInt8(0x7F)
+        else:
+            constrained[target is DType.float8_e5m2]()
+            return UInt8(0x7B)
+
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
     alias FP32_NUM_BITS = bitwidthof[dtype]()
     alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
     alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
-    alias FP8_MAX_EXPONENT = FPUtils[target].exponent_bias()
-    var FP8_MIN_EXPONENT = -6 if IS_E4M3 else -14
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
+    alias FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
     alias FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
     alias FP32_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    alias FP8_MAX_FLT = UInt8(0x7E) if IS_E4M3 else UInt8(0x7B)
+    alias FP8_MAX_FLT = max_finite_byte()
 
     # Extract the bits in the FP32 type
     var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
     var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - FP32_EXPONENT_BIAS
     var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
 
-    var kF8_NaN: UInt8 = 0x7F
-
     # NaN => NaN
     if _isnan(x):
-        return bitcast[target](kF8_NaN)
+
+        @parameter
+        if target in (DType.float8_e4m3fn, DType.float8_e5m2):
+            return bitcast[target](UInt8(0x7F))
+        else:
+            constrained[
+                target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz)
+            ]()
+            return bitcast[target](UInt8(0x80))
 
     # Inf => MAX_FLT (satfinite)
     if _isinf(x):
         return bitcast[target](sign | FP8_MAX_FLT)
 
-    # Special handling
-    if exp == -128:
-        # int8 range is from -128 to 127
-        # So 255(inf) - 127(bias) = 128 - will show up as -128
-
-        # satfinite
-        return bitcast[target](sign | FP8_MAX_FLT)
-
     var sticky_bit: Int32 = 0
 
-    var skip_sign = False
-    var may_be_nan = False
-
-    if exp >= FP8_MIN_EXPONENT and exp <= FP8_MAX_EXPONENT:
+    if abs(x) >= Scalar[dtype](_max_finite[target]()):
+        # satfinite
+        return bitcast[target](sign | FP8_MAX_FLT)
+    elif exp >= FP8_MIN_EXPONENT:
         # normal fp32 to normal fp8
         exp += FP8_EXPONENT_BIAS
         u = (
-            (
-                (exp).cast[DType.uint32]()
-                & FP8_EXPONENT_MASK.cast[DType.uint32]()
-            )
+            (exp.cast[DType.uint32]() & FP8_EXPONENT_MASK.cast[DType.uint32]())
             << FP8_NUM_MANTISSA_BITS
         ).cast[DType.uint8]()
         u = (
@@ -3260,7 +3280,7 @@ fn _convert_f32_to_float8_scaler[
                 mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
             ).cast[DType.uint8]()
         )
-    elif exp < FP8_MIN_EXPONENT:
+    else:
         # normal single-precision to subnormal float8-precision representation
         var rshift: Int32 = FP8_MIN_EXPONENT - exp
         if rshift < FP32_NUM_BITS:
@@ -3275,25 +3295,6 @@ fn _convert_f32_to_float8_scaler[
         else:
             mantissa = 0
             u = 0
-    # Exponent > FP8_MAX_EXPONENT - this is a special case done to match HW
-    # 0x4380_0000 to 0x43e0_0000 - maps from 256 to 448, and does not saturate / inf.
-    else:
-        if exp == (FP8_MAX_EXPONENT + 1):
-            var mantissa_tmp: UInt8 = (
-                mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
-            ).cast[DType.uint8]()
-            if mantissa_tmp < FP8_MANTISSA_MASK:
-                exp = exp + FP8_EXPONENT_BIAS
-                u = ((exp).cast[DType.uint32]() << FP8_NUM_MANTISSA_BITS).cast[
-                    DType.uint8
-                ]() | mantissa_tmp
-                may_be_nan = mantissa_tmp == (FP8_MANTISSA_MASK - 1)
-            else:
-                # satfinite
-                return bitcast[target](sign | FP8_MAX_FLT)
-        else:
-            # satfinite
-            return bitcast[target](sign | FP8_MAX_FLT)
 
     # round to nearest even
     var NUM_BITS_SHIFT: Int32 = FP32_NUM_MANTISSA_BITS - (
@@ -3306,17 +3307,14 @@ fn _convert_f32_to_float8_scaler[
 
     if (round_bit and sticky_bit) or (round_bit and (u & 1)):
         u = (u + 1).cast[DType.uint8]()
-        if may_be_nan:
-            skip_sign = True
 
-    if u > FP8_MAX_FLT:
-        # satfinite
-        u = sign | FP8_MAX_FLT
+    # Special case for dtypes that lack a representation for signed zero.
+    @parameter
+    if target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        if u == 0:
+            return bitcast[target](UInt8(0))
 
-    if not skip_sign:
-        u |= sign
-
-    return bitcast[target](u)
+    return bitcast[target](sign | u)
 
 
 # ===----------------------------------------------------------------------=== #

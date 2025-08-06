@@ -642,9 +642,7 @@ struct DType(
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
 
         @parameter
-        if dtype is DType.float8_e4m3fnuz:
-            return 7
-        elif dtype is DType.float8_e4m3fn:
+        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
