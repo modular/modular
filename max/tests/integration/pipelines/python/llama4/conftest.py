@@ -25,8 +25,8 @@ WEIGHTS_STDDEV = 0.01
 @pytest.fixture
 def text_config() -> Llama4TextConfig:
     config = Llama4TextConfig()
-    path = os.getenv("PIPELINES_TESTDATA")
-    config_path = Path(path) / "config.json"  # type: ignore
+    path = os.environ["PIPELINES_TESTDATA"]
+    config_path = Path(path) / "config.json"
     with open(config_path) as file:
         data = json.load(file)
     config.update(data)

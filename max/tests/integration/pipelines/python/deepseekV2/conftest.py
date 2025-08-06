@@ -22,8 +22,8 @@ WEIGHT_STDDEV = 0.001
 @pytest.fixture
 def config() -> DeepseekV2Config:
     config = DeepseekV2Config()
-    path = os.getenv("PIPELINES_TESTDATA")
-    config_path = Path(path) / "config.json"  # type: ignore
+    path = os.environ["PIPELINES_TESTDATA"]
+    config_path = Path(path) / "config.json"
     with open(config_path) as file:
         data = json.load(file)
     config.update(data)
