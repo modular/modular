@@ -39,7 +39,7 @@ def _session() -> engine.api.InferenceSession:
     return session
 
 
-class Tensor(graph.TensorValue):
+class Tensor:
     """A Tensor object with numerics.
 
     A Tensor type that can do the kinds of things people expect
@@ -69,24 +69,24 @@ class Tensor(graph.TensorValue):
     _storage: driver.Tensor | None
     #: - For a realized tensor this is a graph input value
     #: - For an unrealized tensor this is a node in the graph
-    _mlir_value: _core.Value[mo.TensorType]
+    _value: graph.TensorValue
 
     def __init__(
         self,
         *,
         storage: driver.Tensor | None = None,
-        mlir_value: _core.Value[mo.TensorType] | None = None,
+        value: graph.TensorValue | None = None,
     ):
         self._storage = storage
-        if mlir_value is not None:
-            self._mlir_value = mlir_value
+        if value is not None:
+            self._value = value
             GRAPH.unrealized.add(self)
         else:
             GRAPH.add_source(self)
 
     @classmethod
     def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
-        return cls(mlir_value=value._mlir_value)
+        return cls(value=value)
 
     @classmethod
     def constant(cls, value, dtype, device) -> Tensor:  # noqa: ANN001
@@ -98,9 +98,25 @@ class Tensor(graph.TensorValue):
         )
 
     @property
-    def device_(self) -> Device:
+    def type(self) -> TensorType:
+        return self._value.type
+
+    @property
+    def rank(self) -> int:
+        return self._value.rank
+
+    @property
+    def shape(self) -> graph.Shape:
+        return self._value.shape
+
+    @property
+    def dtype(self) -> DType:
+        return self._value.dtype
+
+    @property
+    def device(self) -> Device:
         """The tensor's device."""
-        return super().device.to_device()
+        return self._value.device.to_device()
 
     @property
     def real(self) -> bool:
@@ -117,6 +133,9 @@ class Tensor(graph.TensorValue):
             raise TypeError("Can't get driver tensor for symbolic tensor")
         assert self._storage is not None
         return self._storage
+
+    def __tensorvalue__(self) -> graph.TensorValue:
+        return self._value
 
     def __await__(self):
         """Force the tensor to realize if it is not already."""
@@ -275,7 +294,9 @@ class ComputeGraph:
         # create strong references during execution
         unrealized = list(self.unrealized)
         with self.graph:
-            self.graph.output(ops.random._next_seed(), *unrealized)
+            self.graph.output(
+                ops.random._next_seed(), *map(graph.TensorValue, unrealized)
+            )
         # Remove dead values and inputs
         module: builtin.ModuleOp = _core.Operation._from_cmlir(
             self.graph._module.operation
@@ -324,8 +345,10 @@ class ComputeGraph:
             type = driver_tensor_type(tensor.driver_tensor).to_mlir()
             inputs = op.function_type.inputs
             op.function_type = builtin.FunctionType([*inputs, type])  # type: ignore
-            tensor._mlir_value = block.add_argument(type, _location())
-        self.sources[tensor._mlir_value] = tensor
+            tensor._value = graph.TensorValue.from_mlir(
+                block.add_argument(type, _location())
+            )
+        self.sources[tensor._value._mlir_value] = tensor
 
 
 def functional(op):  # noqa: ANN001
