@@ -17,13 +17,17 @@ models, from very basic calculations to complex image processing and full model
 implementations. These examples require a system with a [MAX-compatible
 GPU](https://docs.modular.com/max/faq/#gpu-requirements)
 
-The four examples of PyTorch custom operations consist of:
+The five examples of PyTorch custom operations consist of:
 
 - **addition.py**: A very basic example, where a Mojo custom operation that
   adds a constant value to every element of an input tensor is defined and run.
 - **grayscale.py**: An image processing example that converts RGB images to
   grayscale using a custom Mojo kernel. This demonstrates how to process
   real-world data with automatic vectorization and parallelization.
+- **torch-grayscale.py**: A simplified grayscale conversion example that uses
+  MAX graph operations (`@graph_op`) instead of custom Mojo kernels. This shows
+  how to build PyTorch custom operations using MAX's built-in graph operations
+  for quick prototyping and experimentation.
 - **whisper.py**: A PyTorch implementation of the
   [Whisper](https://huggingface.co/docs/transformers/en/model_doc/whisper)
   speech model, with its attention layer replaced by a custom fused attention
@@ -38,6 +42,7 @@ You can run these examples via [Pixi](https://pixi.sh):
 ```sh
 pixi run addition
 pixi run grayscale
+pixi run torch-grayscale
 pixi run whisper
 pixi run graph
 ```
@@ -48,6 +53,7 @@ PyTorch have been installed:
 ```sh
 python addition.py
 python grayscale.py
+python torch-grayscale.py
 python whisper.py
 python graph.py
 ```

@@ -36,7 +36,8 @@ def add_const(x: torch.Tensor) -> torch.Tensor:
 
 if __name__ == "__main__":
     # Initialize a tensor of ones.
-    x = torch.ones(10).cuda()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    x = torch.ones(10, device=device)
 
     # Call the custom operation, and print the result.
     print(add_const(x))
