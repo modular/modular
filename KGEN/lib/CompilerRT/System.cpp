@@ -130,8 +130,22 @@ COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
 COMPILERRT_EXPORT
 COMPILERRT_VISIBILITY_EXPORT int KGEN_CompilerRT_GetStackTrace(char **strings,
                                                                unsigned depth) {
-  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR"))
+  // Cache the result of the environment variable check:
+  //  -1: environment variable was not processed yet
+  //   0: environment variable was processed previously and was set to '0' or
+  //      'false'. Stack trace is disabled.
+  //   1: environment variable was processed previously. Stack trace is enabled.
+  static std::atomic<int> enabled(-1);
+
+  int isEnabled = enabled.load();
+  if (isEnabled == -1) {
+    isEnabled = isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR") ? 1 : 0;
+    enabled.store(isEnabled);
+  }
+
+  if (isEnabled == 0)
     return 0;
+
   std::string stacktrace = getStackTrace(depth);
   const size_t len = stacktrace.length();
   *strings = (char *)malloc(len);
