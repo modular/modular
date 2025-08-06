@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test that metrics are collected correctly during a serve request."""
 
+import time
+
 import pytest
 import requests
 from async_asgi_testclient import TestClient
