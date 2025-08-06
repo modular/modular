@@ -59,7 +59,7 @@ def _rgba_to_rgb(
 class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     """Qwen2.5VL-specific tokenizer that handles vision and text processing.
 
-    This tokenizer integrates with HuggingFace's AutoProcessor and qwen_vl_utils
+    This tokenizer integrates with HuggingFace's AutoProcessor
     to handle multimodal inputs for the Qwen2.5VL model.
     """
 
