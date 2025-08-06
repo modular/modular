@@ -144,7 +144,7 @@ amd = [
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]",
+  "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
   "sentence-transformers",
@@ -159,7 +159,7 @@ cpu = [
   "torchvision==0.22.0",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]",
+  "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
   "sentence-transformers",
@@ -176,7 +176,7 @@ nvidia = [
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]",
+  "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
   "sentence-transformers",

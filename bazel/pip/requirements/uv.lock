@@ -764,7 +764,7 @@ requires-dist = [
 amd = [
     { name = "accelerate" },
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },
-    { name = "lm-eval", extras = ["api", "ifeval", "math"] },
+    { name = "lm-eval", extras = ["api", "ifeval", "math"], specifier = ">=0.4.7" },
     { name = "mteb" },
     { name = "optimum" },
     { name = "pytorch-triton-rocm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", index = "https://download.pytorch.org/whl/rocm6.3" },
@@ -778,7 +778,7 @@ amd = [
 ]
 cpu = [
     { name = "accelerate" },
-    { name = "lm-eval", extras = ["api", "ifeval", "math"] },
+    { name = "lm-eval", extras = ["api", "ifeval", "math"], specifier = ">=0.4.7" },
     { name = "mteb" },
     { name = "optimum" },
     { name = "qwen-vl-utils" },
@@ -792,7 +792,7 @@ cpu = [
 nvidia = [
     { name = "accelerate" },
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },
-    { name = "lm-eval", extras = ["api", "ifeval", "math"] },
+    { name = "lm-eval", extras = ["api", "ifeval", "math"], specifier = ">=0.4.7" },
     { name = "mteb" },
     { name = "optimum" },
     { name = "qwen-vl-utils" },
