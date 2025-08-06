@@ -50,7 +50,7 @@ gemma3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 """Implements the Gemma3 model."""
 
 from __future__ import annotations
@@ -18,73 +19,38 @@ import functools
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import MLP, LayerList, Linear, Module, ReturnLogits
+from max.graph import (
+    BufferValue,
+    ShardingStrategy,
+    TensorValue,
+    ops,
+)
+from max.nn import (
+    MLP,
+    ColumnParallelLinear,
+    LayerList,
+    Module,
+    ReturnLogits,
+)
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
 
-from .layers.attention import _Gemma3Attention as Gemma3Attention
+from .layers.attention import Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm
 from .layers.scaled_word_embedding import ScaledWordEmbedding
+from .layers.transformer_block import Gemma3TransformerBlock
 from .model_config import Gemma3Config
-
-
-class TransformerBlock(Module):
-    """Stack of Attention, FeedForward, and RMSNorm layers.
-
-    Unlike the transformer block in the `max.nn` library, this class applies
-    normalizations to the hidden states immediately after the attention, and
-    before and after the feedforward layers.
-    """
-
-    def __init__(
-        self,
-        attention: Module,
-        mlp: Module,
-        input_layernorm: Module,
-        post_attention_layernorm: Module,
-        pre_feedforward_layernorm: Module,
-        post_feedforward_layernorm: Module,
-    ) -> None:
-        super().__init__()
-        self.self_attn = attention
-        self.mlp = mlp
-        self.input_layernorm = input_layernorm
-        self.post_attention_layernorm = post_attention_layernorm
-        self.pre_feedforward_layernorm = pre_feedforward_layernorm
-        self.post_feedforward_layernorm = post_feedforward_layernorm
-
-    def __call__(
-        self,
-        x: TensorValue,
-        kv_collection: FetchPagedKVCacheCollection,
-        **kwargs,
-    ) -> TensorValue:
-        residual = x
-        attn_out = self.self_attn(
-            self.input_layernorm(x), kv_collection, **kwargs
-        )
-        hidden_states = self.post_attention_layernorm(attn_out)
-        hidden_states = residual + hidden_states
-
-        residual = hidden_states
-        hidden_states = self.pre_feedforward_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = self.post_feedforward_layernorm(hidden_states)
-        return residual + hidden_states
 
 
 class Gemma3TextModel(Module):
     """The Gemma 3 language model."""
 
     def __init__(self, config: Gemma3Config) -> None:
-        assert len(config.devices) == 1, (
-            "Only single-device configuration is supported."
-        )
-
+        super().__init__()
+        self.devices = config.devices
         # Use scaling_params for both cases (with and without scaling)
         scaling_params = (
             Llama3RopeScalingParams(
@@ -124,23 +90,27 @@ class Gemma3TextModel(Module):
             config.vocab_size,
             config.hidden_size,
             config.dtype,
-            config.devices[0],
+            config.devices,
             embed_scale=config.hidden_size**0.5,
         )
 
         self.norm = Gemma3RMSNorm(
             config.hidden_size, config.dtype, config.rms_norm_eps
         )
+        self.norm.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.norm_shards = self.norm.shard(config.devices)
 
-        self.lm_head = Linear(
+        self.lm_head = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
             dtype=config.dtype,
-            device=config.devices[0],
+            devices=config.devices,
+            tied_weight=(
+                self.embed_tokens.weight if config.tie_word_embeddings else None
+            ),
         )
-
-        if config.tie_word_embeddings:
-            self.lm_head.set_shared_weight("weight", self.embed_tokens.weight)
 
         create_norm = functools.partial(
             Gemma3RMSNorm,
@@ -150,7 +120,7 @@ class Gemma3TextModel(Module):
         )
 
         layers = [
-            TransformerBlock(
+            Gemma3TransformerBlock(
                 attention=Gemma3Attention(
                     rope_global=rope_global,
                     rope_local=rope_local,
@@ -176,6 +146,7 @@ class Gemma3TextModel(Module):
                 post_attention_layernorm=create_norm(),
                 pre_feedforward_layernorm=create_norm(),
                 post_feedforward_layernorm=create_norm(),
+                devices=config.devices,
             )
             for i in range(config.num_hidden_layers)
         ]
@@ -188,65 +159,112 @@ class Gemma3TextModel(Module):
         self.embed_tokens = self.embed_tokens
         self.kv_params = config.kv_params
         self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            config.kv_params
+            config.kv_params,
+            num_layers=config.num_hidden_layers,
         )
         self.return_logits = config.return_logits
 
     def __call__(
         self,
-        tokens: TensorValueLike,
-        kv_cache_inputs: Sequence[TensorValue],
+        tokens: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
+        input_row_offsets: Sequence[TensorValue],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
-        h = self.embed_tokens(tokens)
+        h = self.embed_tokens(tokens, signal_buffers)
 
-        kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
-        input_row_offsets = kwargs["input_row_offsets"]
+        # Create KV cache collections per device
+        kv_collections = [
+            self.kv_collection_constructor(*kv_cache_inputs)
+            for kv_cache_inputs in kv_cache_inputs_per_dev
+        ]
 
-        for layer in self.layers:
-            h = layer(h, kv_collection, **kwargs)
+        # Run through transformer layers
+        for idx, layer in enumerate(self.layers):
+            layer_idx_tensor = ops.constant(
+                idx, DType.uint32, device=self.devices[0]
+            )
+            h = layer(
+                layer_idx_tensor,
+                h,
+                signal_buffers,
+                kv_collections,
+                input_row_offsets=input_row_offsets,
+                **kwargs,
+            )
 
-        # Retrieve a variable number of tokens
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
+        last_token_h = []
+        if h:
+            last_token_h = [
+                ops.gather(h_device, indices, axis=0)
+                for h_device, indices in zip(h, last_token_indices)
+            ]
+        last_logits = ops.cast(
+            # Take only the device 0 logits to device-to-host transfer.
+            self.lm_head(
+                [
+                    self.norm_shards[i](last_token_h[i])
+                    for i in range(len(last_token_h))
+                ],
+                signal_buffers,
+            )[0],
+            DType.float32,
+        )
+
         logits = None
         offsets = None
 
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
+        if self.return_logits == ReturnLogits.VARIABLE and h:
+            # Create range and gather indices for variable logits
+            return_range = ops.range(
                 return_n_logits[0],
-                0,
-                -1,
+                ops.constant(0, DType.int64, device=self.devices[0]),
+                ops.constant(-1, DType.int64, device=self.devices[0]),
                 out_dim="return_n_logits_range",
-                device=h.device,
-                dtype=DType.int64,
+                device=self.devices[0],
             )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            last_tokens = ops.gather(h, last_indices, axis=0)
+            last_indices = [
+                ops.reshape(
+                    ops.unsqueeze(row_offset[1:], -1) - return_range,
+                    shape=(-1,),
+                )
+                for row_offset in input_row_offsets
+            ]
+
+            # Gather, normalize, and get logits
+            variable_tokens = [
+                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
+                for i, (h_device, indices) in enumerate(zip(h, last_indices))
+            ]
             logits = ops.cast(
-                self.lm_head(self.norm(last_tokens)), DType.float32
+                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
             )
             offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                ops.constant(0, DType.int64, device=self.devices[0]),
+                last_indices[0].shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
-                device=h.device,
-                dtype=DType.int64,
+                device=self.devices[0],
             )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            offsets = input_row_offsets
+
+        elif self.return_logits == ReturnLogits.ALL and h:
+            # Apply normalization to all hidden states and get all logits
+            all_normalized = [
+                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
+            ]
+            logits = ops.cast(
+                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
+            )
+            offsets = input_row_offsets[0]
 
         if offsets is not None:
             assert logits is not None
             return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+
+        return (last_logits,)
 
 
 class Gemma3(Module):
@@ -259,13 +277,15 @@ class Gemma3(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        input_row_offsets: TensorValue,
-        kv_cache_inputs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
+        input_row_offsets: Sequence[TensorValue],
     ) -> tuple[TensorValue, ...]:
         return self.language_model(
             tokens,
-            input_row_offsets=input_row_offsets,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
+            signal_buffers,
+            kv_cache_inputs_per_dev,
+            return_n_logits,
+            input_row_offsets,
         )

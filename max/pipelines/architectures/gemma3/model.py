@@ -22,9 +22,9 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -61,15 +61,20 @@ class Gemma3Inputs(ModelInputs):
     tokens: np.ndarray | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: np.ndarray | Tensor
+    input_row_offsets: np.ndarray | Tensor | list[Tensor]
     """Tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence."""
+    or the attention mask for the padded input sequence. For distributed execution,
+    this can be a list of tensors, one per device."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
         tokens: np.ndarray | Tensor,
-        input_row_offsets: np.ndarray | Tensor,
+        input_row_offsets: np.ndarray | Tensor | list[Tensor],
         return_n_logits: Tensor,
+        signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -77,10 +82,12 @@ class Gemma3Inputs(ModelInputs):
             tokens: Input token IDs.
             input_row_offsets: Input row offsets (ragged tensors).
             return_n_logits: Number of logits to return.
+            signal_buffers: Device buffers for distributed communication.
             kv_cache_inputs: Inputs for the KV cache.
         """
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
+        self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
         self.return_n_logits = return_n_logits
 
@@ -137,6 +144,14 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
             adapter,
             return_logits,
         )
+
+        # Initialize signal buffers for distributed execution
+        self.signal_buffers = [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
+            )
+            for dev in self.devices
+        ]
 
         self.model = self.load_model(session)
 
@@ -290,7 +305,31 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )
+
         return model
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[TensorValue]
+    ) -> list[tuple[TensorValue, ...]]:
+        kv_params = Gemma3Config.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        n_devices = kv_params.n_devices
+        fetch_types = self.kv_manager.input_symbols()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev = [
+            tuple(
+                kv_inputs_flat[
+                    i * len_of_kv_tuple_per_dev : (i + 1)
+                    * len_of_kv_tuple_per_dev
+                ]
+            )
+            for i in range(n_devices)
+        ]
+        return kv_caches_per_dev
 
     # For text-only models, we should be using all the weights.  This is
     # overridden for Gemma3 multi-modal.
@@ -303,11 +342,20 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
         # NOTE: input_row_offsets_len should be batch_size + 1.
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
+        # Create input_row_offsets_type for each device
+        input_row_offsets_types = [
+            TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=DeviceRef(device.label, device.id),
+            )
+            for device in self.devices
+        ]
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
         huggingface_config = self.huggingface_config
@@ -341,23 +389,50 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
         )
         self.state_dict = nn_model.state_dict(auto_initialize=False)
 
+        # Create signal types for distributed communication
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
+
+        kv_inputs = self.kv_manager.input_symbols()
+        flattened_kv_types = [
+            kv_type for sublist in kv_inputs for kv_type in sublist
+        ]
+
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
             input_types=[
                 tokens_type,
-                input_row_offsets_type,
                 return_n_logits_type,
-                *self.kv_manager.input_symbols()[0],
+                *input_row_offsets_types,
+                *signals.input_types(),
+                *flattened_kv_types,
             ],
         ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
-            )
+            # Unpack inputs following InternVL pattern
+            tokens, return_n_logits, *variadic_args = graph.inputs
+
+            # Extract input_row_offsets (one per device)
+            input_row_offsets = [
+                v.tensor for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            # Extract signal buffers (one per device)
+            signal_buffers = [
+                v.buffer for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            # Extract KV cache inputs
+            kv_cache = [v.tensor for v in variadic_args]
+
             outputs = nn_model(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                [inp.tensor for inp in kv_cache_inputs],
+                tokens=tokens.tensor,
+                signal_buffers=signal_buffers,
+                kv_cache_inputs_per_dev=self._unflatten_kv_inputs(kv_cache),
                 return_n_logits=return_n_logits.tensor,
+                input_row_offsets=input_row_offsets,
             )
             graph.output(*outputs)
         return graph
@@ -378,10 +453,30 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
         """
         model_inputs = cast(Gemma3Inputs, model_inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+
+        # Check if input_row_offsets is a list or a single tensor
+        if isinstance(model_inputs.input_row_offsets, list):
+            input_row_offsets_list = model_inputs.input_row_offsets
+        else:
+            # For backward compatibility, distribute the single tensor to all devices
+            if isinstance(model_inputs.input_row_offsets, np.ndarray):
+                # Convert numpy array to tensor first
+                tensor = Tensor.from_numpy(model_inputs.input_row_offsets)
+                input_row_offsets_list = [
+                    tensor.to(device) for device in self.devices
+                ]
+            else:
+                # Already a tensor
+                input_row_offsets_list = [
+                    model_inputs.input_row_offsets.to(device)
+                    for device in self.devices
+                ]
+
         model_outputs = self.model.execute(
             model_inputs.tokens,
-            model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
+            *input_row_offsets_list,
+            *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
@@ -430,14 +525,19 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
+        # Create input_row_offsets for each device
+        input_row_offsets_tensors = [
+            Tensor.from_numpy(input_row_offsets).to(device)
+            for device in self.devices
+        ]
+
         return Gemma3Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
+            input_row_offsets=input_row_offsets_tensors,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -459,13 +559,19 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
         prev_model_inputs = cast(Gemma3Inputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
+
+        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
+
+        next_row_offsets = [
+            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
+            for device in self.devices
+        ]
 
         return Gemma3Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 

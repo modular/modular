@@ -13,15 +13,16 @@
 
 """Scaled Word Embedding."""
 
+from collections.abc import Iterable
 from typing import Optional
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 from max.graph.quantization import QuantizationEncoding
-from max.nn.embedding import Embedding
+from max.nn.embedding import VocabParallelEmbedding
 
 
-class ScaledWordEmbedding(Embedding):
+class ScaledWordEmbedding(VocabParallelEmbedding):
     """
     This layer is a wrapper around nn.Embedding that multiplies the embeddings
     with a scale factor.
@@ -32,7 +33,7 @@ class ScaledWordEmbedding(Embedding):
         vocab_size: int,
         hidden_dim: int,
         dtype: DType,
-        device: DeviceRef,
+        devices: list[DeviceRef],
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
         embed_scale: float = 1.0,
@@ -56,13 +57,15 @@ class ScaledWordEmbedding(Embedding):
             vocab_size=vocab_size,
             hidden_dim=hidden_dim,
             dtype=dtype,
-            device=device,
+            devices=devices,
             quantization_encoding=quantization_encoding,
             name=name,
         )
         self.embed_scale = embed_scale
 
-    def __call__(self, indices: TensorValueLike) -> TensorValue:
+    def __call__(
+        self, indices: TensorValueLike, signal_buffers: Iterable[BufferValue]
+    ) -> list[TensorValue]:
         """Embeds the input indices by looking up corresponding vectors, then
         multiplies the embeddings with the scale factor.
 
@@ -75,7 +78,13 @@ class ScaledWordEmbedding(Embedding):
             indices, multiplied by the scale factor.
             The result resides on the device specified in :obj:`device`.
         """
-        result = super().__call__(indices)
-        return result * ops.constant(
-            self.embed_scale, result.dtype, device=result.type.device
-        )
+        result = super().__call__(indices, signal_buffers)
+        return [
+            result_device
+            * ops.constant(
+                self.embed_scale,
+                result_device.dtype,
+                device=result_device.type.device,
+            )
+            for result_device in result
+        ]

@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
     flash_attention_ragged,
@@ -32,13 +33,42 @@ from max.nn.kv_cache import (
     KVCacheParams,
     PagedKVCacheCollection,
 )
-from max.nn.layer import Module
+from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 
-class _Gemma3Attention(Module):
+def compute_heads_per_device(
+    *, total_heads: int, device_idx: int, num_devices: int
+) -> int:
+    """Computes the number of attention heads per device for sharding.
+
+    This function calculates the number of heads for a given device, enforcing
+    that the total number of heads is evenly divisible by the number of devices.
+    Uneven distribution is disallowed to prevent workload imbalance.
+
+    Args:
+        total_heads: The total number of attention heads.
+        device_idx: The index of the current device (0-indexed).
+        num_devices: The total number of devices for sharding.
+
+    Returns:
+        The number of heads assigned to the specified device.
+
+    Raises:
+        ValueError: If `total_heads` is not evenly divisible by `num_devices`.
+    """
+    base_heads, remainder = divmod(total_heads, num_devices)
+    if device_idx < remainder:
+        raise ValueError(
+            "An uneven distribution of heads is not supported as it will cause a workload imbalance."
+        )
+    else:
+        return base_heads
+
+
+class Gemma3Attention(Module, Shardable):
     """Implementation of the attention layer for the Gemma3 text model."""
 
     def __init__(
@@ -92,6 +122,7 @@ class _Gemma3Attention(Module):
         self.kv_params = kv_params
         self.has_bias = has_bias
         self.devices = devices
+        self._sharding_strategy: ShardingStrategy | None = None
         self.scale = (
             scale
             if scale is not None
@@ -258,3 +289,152 @@ class _Gemma3Attention(Module):
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
         return ret
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, sharding_strategy: ShardingStrategy) -> None:
+        num_devices = sharding_strategy.num_devices
+
+        if sharding_strategy.is_replicate:
+            self.q_norm.sharding_strategy = sharding_strategy
+            self.k_norm.sharding_strategy = sharding_strategy
+            self.q_proj.sharding_strategy = sharding_strategy
+            self.k_proj.sharding_strategy = sharding_strategy
+            self.v_proj.sharding_strategy = sharding_strategy
+            self.o_proj.sharding_strategy = sharding_strategy
+
+            if self.has_bias:
+                self.bias_q.sharding_strategy = sharding_strategy
+                self.bias_k.sharding_strategy = sharding_strategy
+                self.bias_v.sharding_strategy = sharding_strategy
+
+        elif sharding_strategy.is_tensor_parallel:
+            self.q_norm.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.k_norm.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+
+            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            )
+
+            if self.has_bias:
+                self.bias_q.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.bias_k.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.bias_v.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+        else:
+            raise ValueError(
+                "Gemma3Attention only supports tensor parallel and replicate sharding strategy"
+            )
+
+        self._sharding_strategy = sharding_strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3Attention]:
+        """Creates sharded views of this attention layer across multiple devices.
+
+        Overrides the parent method to handle QK normalization layers.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded Gemma3Attention instances, one for each device.
+        """
+        if not self.sharding_strategy:
+            raise ValueError(
+                "Gemma3Attention layer cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Get sharded weights
+        q_proj_shards = self.q_proj.shard(devices)
+        k_proj_shards = self.k_proj.shard(devices)
+        v_proj_shards = self.v_proj.shard(devices)
+        o_proj_shards = self.o_proj.shard(devices)
+
+        # Shard biases if they exist
+        bias_q_shards = []
+        bias_k_shards = []
+        bias_v_shards = []
+        if self.has_bias:
+            bias_q_shards = self.bias_q.shard(devices)
+            bias_k_shards = self.bias_k.shard(devices)
+            bias_v_shards = self.bias_v.shard(devices)
+
+        # Shard QK normalization weights
+        q_norm_weight_shards = self.q_norm.weight.shard(devices)
+        k_norm_weight_shards = self.k_norm.weight.shard(devices)
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            # Calculate sharded dimensions - handle uneven head distribution
+            sharded_num_heads = compute_heads_per_device(
+                total_heads=self.n_heads,
+                device_idx=shard_idx,
+                num_devices=self.sharding_strategy.num_devices,
+            )
+            sharded_num_kv_heads = compute_heads_per_device(
+                total_heads=self.kv_params.n_kv_heads,
+                device_idx=shard_idx,
+                num_devices=self.sharding_strategy.num_devices,
+            )
+
+            # Create new attention instance with sharded configuration
+            sharded = Gemma3Attention(
+                rope_global=self.rope_global,
+                rope_local=self.rope_local,
+                num_attention_heads=sharded_num_heads,
+                num_key_value_heads=sharded_num_kv_heads,
+                hidden_size=self.q_weight_dim + self.kv_weight_dim * 2,
+                kv_params=self.kv_params,
+                layer_idx=self.layer_idx,
+                sliding_window_pattern=self.sliding_window_pattern,
+                dtype=self.q_proj.dtype,
+                devices=[device],
+                linear_cls=self.o_proj.__class__,
+                scale=self.scale,
+                has_bias=self.has_bias,
+                qk_norm_eps=self.qk_norm_eps,
+                local_window_size=self.local_window_size,
+            )
+
+            # Assign sharded weights
+            sharded.q_proj = q_proj_shards[shard_idx]
+            sharded.k_proj = k_proj_shards[shard_idx]
+            sharded.v_proj = v_proj_shards[shard_idx]
+            sharded.o_proj = o_proj_shards[shard_idx]
+
+            # Assign sharded biases if they exist
+            if self.has_bias:
+                sharded.bias_q = bias_q_shards[shard_idx]
+                sharded.bias_k = bias_k_shards[shard_idx]
+                sharded.bias_v = bias_v_shards[shard_idx]
+
+            # Assign QK normalization weights
+            sharded.q_norm.weight = q_norm_weight_shards[shard_idx]
+            sharded.k_norm.weight = k_norm_weight_shards[shard_idx]
+
+            shards.append(sharded)
+
+        return shards

@@ -255,6 +255,6 @@ class VocabParallelEmbedding(Module):
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         result *= ops.cast(
-            ops.unsqueeze(input_mask, 1), result.dtype
+            ops.unsqueeze(input_mask, -1), result.dtype
         )  # Apply input mask again
         return result
