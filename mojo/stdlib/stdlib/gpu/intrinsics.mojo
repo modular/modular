@@ -1069,6 +1069,23 @@ fn buffer_load_store_lds[
     )
 
 
+@parameter
+fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
+    @parameter
+    if bytes == 1:
+        return DType.uint8
+    elif bytes == 2:
+        return DType.uint16
+    else:
+        constrained[bytes in (4, 8, 16), "Width not supported"]()
+        return DType.uint32
+
+
+@parameter
+fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
+    return bytes // sizeof[DType.uint32]() if bytes >= 4 else 1
+
+
 @always_inline
 fn buffer_load[
     dtype: DType, width: Int
@@ -1103,6 +1120,7 @@ fn buffer_load[
     ]()
 
     alias bytes = sizeof[dtype]() * width
+
     var global_offset_bytes: Int32 = Int32(sizeof[dtype]() * gds_offset)
     # READ
     # GLC = 0 Reads can hit on the L1 and persist across wavefronts
@@ -1110,28 +1128,16 @@ fn buffer_load[
     alias glc: Int32 = 0
     var src_wave_addr_offset: Int32 = 0
 
-    @parameter
-    fn get_inst_name() -> StaticString:
-        @parameter
-        if bytes == 1:
-            return "llvm.amdgcn.raw.buffer.load.i8"
-        elif bytes == 2:
-            return "llvm.amdgcn.raw.buffer.load.i16"
-        elif bytes == 4:
-            return "llvm.amdgcn.raw.buffer.load.i32"
-        elif bytes == 8:
-            return "llvm.amdgcn.raw.buffer.load.v2i32"
-        elif bytes == 16:
-            return "llvm.amdgcn.raw.buffer.load.v4i32"
-        else:
-            constrained[False, "Width not supported"]()
-            return ""
-
-    return llvm_intrinsic[
-        get_inst_name(),
-        SIMD[dtype, width],
+    var load_val = llvm_intrinsic[
+        "llvm.amdgcn.raw.buffer.load",
+        SIMD[
+            _get_buffer_intrinsic_simd_dtype[bytes](),
+            _get_buffer_intrinsic_simd_width[bytes](),
+        ],
         has_side_effect=True,
     ](src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+
+    return bitcast[dtype, width](load_val)
 
 
 @always_inline
@@ -1166,25 +1172,11 @@ fn buffer_store[
     alias glc: Int32 = 0
     var src_wave_addr_offset: Int32 = 0
 
-    @parameter
-    fn get_inst_name() -> StaticString:
-        @parameter
-        if bytes == 1:
-            return "llvm.amdgcn.raw.buffer.store.i8"
-        elif bytes == 2:
-            return "llvm.amdgcn.raw.buffer.store.i16"
-        elif bytes == 4:
-            return "llvm.amdgcn.raw.buffer.store.i32"
-        elif bytes == 8:
-            return "llvm.amdgcn.raw.buffer.store.v2i32"
-        elif bytes == 16:
-            return "llvm.amdgcn.raw.buffer.store.v4i32"
-        else:
-            constrained[False, "Width not supported"]()
-            return ""
+    var store_val = bitcast[
+        _get_buffer_intrinsic_simd_dtype[bytes](),
+        _get_buffer_intrinsic_simd_width[bytes](),
+    ](val)
 
     llvm_intrinsic[
-        get_inst_name(),
-        NoneType,
-        has_side_effect=True,
-    ](val, src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+        "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
+    ](store_val, src_resource, global_offset_bytes, src_wave_addr_offset, glc)

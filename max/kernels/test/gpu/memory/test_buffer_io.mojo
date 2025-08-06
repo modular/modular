@@ -28,7 +28,7 @@ from memory import stack_allocation
 from testing import assert_equal
 
 alias size = 257
-alias size_clip = size - 3
+alias size_clip = size - 5
 
 
 fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
@@ -91,6 +91,8 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     for i in range(size_clip, size):
         assert_equal(a_host_buf[i], i + 1)
 
+    a_host_buf.free()
+
 
 def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
     alias dtype = DType.float32
@@ -118,9 +120,13 @@ def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        test_buffer[DType.bfloat16, 1](ctx)
-        test_buffer[DType.bfloat16, 2](ctx)
-        test_buffer[DType.bfloat16, 4](ctx)
-        test_buffer[DType.bfloat16, 8](ctx)
+
+        @parameter
+        for width in [1, 2, 4, 8]:
+            test_buffer[DType.bfloat16, width](ctx)
+
+        @parameter
+        for width in [1, 2, 4, 8, 16]:
+            test_buffer[DType.int8, width](ctx)
         test_buffer_lds[nowait=False](ctx)
         test_buffer_lds[nowait=True](ctx)
