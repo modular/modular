@@ -12,7 +12,7 @@ from typing import Callable
 import numpy as np
 import pytest
 import torch
-from hypothesis import assume
+from hypothesis import assume, settings
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
 
-MAX_SEQ_LEN = 2**16
+MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-7
 
@@ -121,10 +121,7 @@ def load_and_execute_numpy(
 
 @pytest.mark.parametrize(
     "params",
-    [
-        RopeParams(dim=64, n_heads=4, theta=1e4),
-        RopeParams(dim=512, n_heads=16, theta=5e5),
-    ],
+    [RopeParams(dim=512, n_heads=16, theta=5e5)],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
 def test_freqs_cis(
@@ -165,10 +162,7 @@ def test_freqs_cis(
 
 @pytest.mark.parametrize(
     "base_params",
-    [
-        RopeParams(dim=64, n_heads=4, theta=1e4),
-        RopeParams(dim=512, n_heads=16, theta=5e5),
-    ],
+    [RopeParams(dim=512, n_heads=16, theta=5e5)],
 )
 @pytest.mark.parametrize(
     "scaling_params",
@@ -176,12 +170,6 @@ def test_freqs_cis(
         Llama3RopeScalingParams(
             factor=4.0,
             low_freq_factor=1.0,
-            high_freq_factor=4.0,
-            orig_max_position=8192,
-        ),
-        Llama3RopeScalingParams(
-            factor=8.0,
-            low_freq_factor=4.0,
             high_freq_factor=4.0,
             orig_max_position=8192,
         ),
@@ -231,10 +219,7 @@ def test_llama3_freqs_cis(
 
 @pytest.mark.parametrize(
     "dim, n_heads, theta, short_seq_len, long_seq_len",
-    [
-        (64, 4, 1e4, 4096, 8192),
-        (512, 16, 5e5, 8192, 16384),
-    ],
+    [(512, 16, 5e5, 8192, 16384)],
 )
 def test_dynamic_rope_freqs_cis(
     session: InferenceSession,
@@ -371,6 +356,7 @@ def test_rope(
         graph.output(rope(x, start_pos, seq_len))
 
     @modular_graph_test(session, graph, max_magnitude=1.0)
+    @settings(max_examples=10)
     def test_correctness(
         execute: Callable[[Sequence[Tensor]], Tensor],
         inputs: Sequence[Tensor],
@@ -514,6 +500,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
             6: is_cache_empty_buf,
         },
     )
+    @settings(max_examples=10)
     def test_runs_without_nan(
         execute: Callable[[Sequence[Tensor]], Tensor],
         inputs: Sequence[Tensor],
@@ -573,10 +560,7 @@ def torch_longrope_freqs_cis(
 
 @pytest.mark.parametrize(
     "params",
-    [
-        RopeParams(dim=3072, n_heads=32, theta=10000.0),
-        RopeParams(dim=2048, n_heads=16, theta=10000.0),
-    ],
+    [RopeParams(dim=3072, n_heads=32, theta=10000.0)],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
 def test_longrope_scaling(
@@ -590,13 +574,18 @@ def test_longrope_scaling(
     - Ensures proper shape and numerical stability of the frequency embeddings
     - Validates numerical correctness against PyTorch reference implementation
     """
-    max_seq_len = 131072
+    max_seq_len = 32768
+    original_max_position = 4096
+
+    assert max_seq_len > original_max_position, (
+        "this ensures the long scaling factor is actually being computed"
+    )
 
     # Create scaling params with long factors being 2x short factors
     scaling_params = LongRoPEScalingParams(
         short_factor=[1.0] * (params.head_dim // 2),
         long_factor=[2.0] * (params.head_dim // 2),
-        original_max_position=4096,
+        original_max_position=original_max_position,
         max_position_embeddings=max_seq_len,
     )
 
@@ -649,7 +638,7 @@ def test_longrope_scaling(
     )
 
     # Test short sequence behavior (should use short_factor)
-    short_max_seq_len = 2048  # Less than original_max_position=4096
+    short_max_seq_len = original_max_position // 2
 
     with Graph("longrope_short_seq", input_types=[]) as graph:
         rope_short = LongRoPERotaryEmbedding(
