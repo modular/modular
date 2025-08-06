@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionWindowSdpaAttention,
@@ -41,7 +41,7 @@ def generate_cu_seqlens_full_attention(grid_thw: torch.Tensor) -> torch.Tensor:
         grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
     ).cumsum(
         dim=0,
-        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+        dtype=torch.int32,
     )
     cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
     return cu_seqlens
@@ -278,7 +278,8 @@ def test_vision_attention_multiple_images(
     window_index, cu_window_seqlens = vision_transformer.get_window_index(
         grid_thw
     )
-    window_index = window_index.to("cuda")
+    window_index = torch.tensor(window_index).to("cuda")
+    cu_window_seqlens = torch.tensor(cu_window_seqlens)
 
     # Create vision input tensor
     vision_input_tensor = torch.randn(
