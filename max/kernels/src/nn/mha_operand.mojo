@@ -11,8 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from buffer import NDBuffer
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from kv_cache.types import KVCacheT
-from layout.layout import DimList
+from layout import Layout, LayoutTensor
+from layout.layout import DimList, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
+from layout.tma_async import TMATensorTile, create_tma_tile
+from utils import IndexList
 
 
 @register_passable("trivial")
@@ -42,6 +48,25 @@ trait MHAOperand:
     @always_inline
     fn max_context_length(self) -> UInt32:
         """Returns the maximum cache length in a given batch index."""
+        ...
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        ...
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        ...
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.dtype, Layout.row_major(tile_m, tile_n)
+    ]:
+        """Creates a TMA tile for efficient GPU memory transfers."""
         ...
 
 
@@ -80,6 +105,28 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     @always_inline
     fn max_context_length(self) -> UInt32:
         return self.cache.max_context_length()
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        return self.cache.row_idx(batch_idx, start_tok_idx)
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        return self.cache.col_idx(head_idx)
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.dtype, Layout.row_major(tile_m, tile_n)
+    ]:
+        """Creates a TMA tile for efficient GPU memory transfers."""
+        # Forward to the underlying cache's implementation
+        return self.cache.create_tma_tile[
+            tile_m, tile_n, swizzle_mode=swizzle_mode
+        ](ctx)
 
 
 @register_passable("trivial")
@@ -126,6 +173,42 @@ struct NDBufferMHAOperand[
     @always_inline
     fn max_context_length(self) -> UInt32:
         return self.buffer.dim[1]()
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        return batch_idx * self.buffer.dim[1]() + start_tok_idx
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        return head_idx * self.buffer.dim[rank - 1]()
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
+    ) raises:
+        """Creates a TMA tile for efficient GPU memory transfers."""
+        # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
+        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
+        var cols = self.buffer.dim[2]() * self.buffer.dim[3]()
+        alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+        rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, cols))
+
+        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
+            self.buffer.data, rt_layout
+        )
+
+        res = rebind[__type_of(res)](
+            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
+                ctx, tensor
+            )
+        )
 
 
 @register_passable("trivial")
@@ -179,3 +262,39 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
     fn max_context_length(self) -> UInt32:
         # NotImplemented
         return 0
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        return self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        return head_idx * self.buffer.dim[2]()
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
+    ) raises:
+        """Creates a TMA tile for efficient GPU memory transfers."""
+        # View as [total_tokens, heads*head_dim]
+        var rows = self.buffer.dim[0]()  # total tokens
+        var cols = self.buffer.dim[1]() * self.buffer.dim[2]()
+
+        alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+        rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, cols))
+        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
+            self.buffer.data, rt_layout
+        )
+
+        res = rebind[__type_of(res)](
+            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
+                ctx, tensor
+            )
+        )

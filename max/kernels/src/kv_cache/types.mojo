@@ -23,8 +23,11 @@ This module defines two traits that define the roles of the different structs
 """
 
 from buffer import Dim, DimList, NDBuffer
-from layout import LayoutTensor
-
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
+from layout.tma_async import TMATensorTile, create_tma_tile
 from utils import Index, IndexList
 
 
@@ -179,6 +182,25 @@ trait KVCacheT(Copyable, Movable):
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
+        ...
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        ...
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        ...
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        dtype, Layout.row_major(tile_m, tile_n)
+    ]:
+        """Creates a TMA tile for this KV cache."""
         ...
 
 
@@ -342,6 +364,54 @@ struct ContinuousBatchingKVCache[
         return self.max_cache_length
 
     @always_inline
+    fn _stride(self) -> UInt32:
+        return UInt32(self.blocks.dynamic_stride[0]) // UInt32(
+            self.kv_params.num_heads * self.kv_params.head_size
+        )
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        block_idx = self.lookup_table[Int(batch_idx)]
+        return block_idx * self._stride() + tok_idx
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        return head_idx * Self.kv_params.head_size
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
+    ) raises:
+        """Creates a TMA tile for this KV cache."""
+        # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
+        # We create a view of the data as a flattened 2D tensor
+        var total_blocks = self.blocks.dim[0]()
+        var rows = total_blocks * self._stride()
+        alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
+
+        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        rt_layout = RuntimeLayout[layout].row_major(
+            IndexList[2](Int(rows), cols)
+        )
+
+        # Create a LayoutTensor view with compile-time shape
+        var tensor = LayoutTensor[Self.dtype, layout, MutableAnyOrigin](
+            self.blocks.data, rt_layout
+        )
+
+        res = rebind[__type_of(res)](
+            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
+                ctx, tensor
+            )
+        )
+
+    @always_inline
     fn block_paged_ptr[
         tile_size: Int
     ](
@@ -441,6 +511,71 @@ struct PagedKVCache[
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
         return Int(self.cache_lengths[batch_idx])
+
+    @always_inline
+    fn _stride(self) -> UInt32:
+        return self.blocks.dynamic_stride[0] // UInt32(
+            self.kv_params.num_heads * self.kv_params.head_size
+        )
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        var lut_block_index, tok_in_block_idx = divmod(
+            Int(tok_idx), Self.page_size
+        )
+        debug_assert(
+            tok_in_block_idx < self.blocks.dim[1](),
+            "KVCache tok_idx out of range",
+        )
+
+        debug_assert(batch_idx < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(
+            lut_block_index < self.blocks.dim[0](),
+            "block_idx is OOB. Attempted to access block index ",
+            lut_block_index,
+            " with num_blocks ",
+            self.blocks.dim[0](),
+        )
+        block_idx = self.lookup_table[Int(batch_idx), Int(lut_block_index)]
+        # alias row_stride = Int(num_heads * head_size * Self.collection_size)
+        return block_idx * self._stride() + tok_in_block_idx
+
+    @always_inline
+    fn col_idx(self, head_idx: UInt32) -> UInt32:
+        """Returns the col idx when viewing the memory as a matrix."""
+        return head_idx * Self.kv_params.head_size
+
+    @always_inline
+    fn create_tma_tile[
+        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
+    ](
+        self,
+        ctx: DeviceContext,
+        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
+    ) raises:
+        """Creates a TMA tile for this KV cache."""
+        # Paged cache is [total_num_blocks, page_size, num_heads, head_size]
+        # Create a view that accounts for the paged layout
+        var total_blocks = self.blocks.dim[0]()
+        var rows = total_blocks * self._stride()
+        alias cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
+        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        rt_layout = RuntimeLayout[layout].row_major(
+            IndexList[2](Int(rows), cols)
+        )
+
+        var tensor = LayoutTensor[
+            Self.dtype,
+            layout,
+            MutableAnyOrigin,
+        ](self.blocks.data, rt_layout)
+
+        res = rebind[__type_of(res)](
+            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
+                ctx, tensor
+            )
+        )
 
     @always_inline
     fn _get_idx(
@@ -665,6 +800,8 @@ struct PagedKVCacheCollection[
     alias CacheType = PagedKVCache[Self.dtype, Self.kv_params, page_size]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
+    # Matrix view is
+    # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
     alias blocks_shape = DimList(
         Dim(),
         Dim(),

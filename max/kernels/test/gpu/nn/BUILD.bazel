@@ -7,6 +7,11 @@ _EXTRA_CONSTRAINTS = {
     "test_mha_causal_mask.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1448
     "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
     "test_mha_mask.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_mha_operand_tma.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla.mojo": ["//:nvidia_gpu"],
     "test_padding_gpu.mojo": ["//:nvidia_gpu"],
     "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
