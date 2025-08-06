@@ -27,6 +27,9 @@ _FILECHECK_TESTS = [
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "1.5",
+        },
         tags = ["gpu"] + (
             ["manual"] if src == "test_scatterND.mojo" else []
         ),

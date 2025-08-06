@@ -48,9 +48,11 @@ _FILECHECK_TESTS = [
 ]
 
 _GPU_MEMORY = {
-    "test_batched_matmul.mojo": "3",
-    "test_matmul.mojo": "2",
-    "test_matmul_custom.mojo": "3",
+    "test_batched_matmul.mojo": "4",
+    "test_dual_gemm.mojo": "2",
+    "test_gemv2.mojo": "2",
+    "test_matmul.mojo": "3",
+    "test_matmul_custom.mojo": "4",
     "test_vendor_blas.mojo": "3",
 }
 

@@ -25,6 +25,9 @@ _EXTRA_CONSTRAINTS = {
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
         ],
+        exec_properties = {
+            "test.resources:gpu-memory": "1.5",
+        },
         main = src,
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
