@@ -12,9 +12,6 @@ build --enable_platform_specific_config=true
 # Retry dependency download flakes
 common --experimental_repository_downloader_retries=5
 
-# Make --action_env changes not invalidate repository rules
-common --incompatible_repo_env_ignores_action_env
-
 # Make globs that don't match anything fail
 common --incompatible_disallow_empty_glob
 
@@ -46,6 +43,9 @@ common --experimental_ui_max_stdouterr_bytes=4000000
 # Disable legacy duplicate runfiles creation
 common --legacy_external_runfiles=false
 common --build_runfile_links=false
+
+# Generate a smaller manifest which is nicer for remote exec
+common --incompatible_compact_repo_mapping_manifest
 
 # Make sure test outputs exist without having to unarchive
 common --zip_undeclared_test_outputs=false
