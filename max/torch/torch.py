@@ -92,6 +92,8 @@ class CustomOpLibrary:
     :code_link:`https://docs.pytorch.org/docs/stable/tensors.html#tensor-class-reference|torch.Tensor`
     value in Python. Each argument corresponding to an ``OutputTensor`` in the
     Mojo operation will be modified in-place.
+
+    For more information, see the [custom ops for PyTorch](/max/tutorials/custom-kernels-pytorch) tutorial.
     """
 
     _kernel_library: KernelLibrary
@@ -469,9 +471,10 @@ def graph_op(
 ):
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
-    This decorator allows you to define larger graphs using MAX graph ops or `max.nn`
-    modules and call them with PyTorch tensors, or integrate them into PyTorch
-    modules. These custom ops can be called eagerly, and support compilation with
+    This decorator allows you to define larger graphs using [MAX graph
+    ops](/max/api/python/graph/ops) or the MAX :obj:`~max.nn` modules and
+    call them with PyTorch tensors, or integrate them into PyTorch modules.
+    These custom ops can be called eagerly, and support compilation with
     ``torch.compile`` and the Inductor backend.
 
     The resulting custom operation uses destination-passing style, where output
@@ -482,20 +485,23 @@ def graph_op(
 
     The default behavior is to JIT-compile for the specific input and output
     shapes needed. If you are passing variable-sized inputs, for instance a
-    batch size or sequence length which may take on many different values between
-    calls, you should specify this dimension as a symbolic dimension via
-    `input_types` and `output_types`. Otherwise you will end up compiling specialized
-    graphs for each possible variation of inputs, which may use a lot of memory.
+    batch size or sequence length which may take on many different values
+    between calls, you should specify this dimension as a symbolic dimension
+    through :obj:`input_types` and :obj:`output_types`. Otherwise you will
+    end up compiling specialized graphs for each possible variation of
+    inputs, which may use a lot of memory.
 
-    If neither `output_types` nor `num_outputs` is specified, default to 1 output.
+    If neither `output_types` nor `num_outputs` is specified, default to 1
+    output.
 
-    Example usage to create a functional-style PyTorch op backed by MAX:
+    For example to create a functional-style PyTorch op backed by MAX:
 
     .. code-block:: python
+        :caption: grayscale.py
 
         import torch
         import numpy as np
-        import max
+        import max.torch
         from max.dtype import DType
         from max.graph import ops
 
@@ -512,8 +518,12 @@ def graph_op(
             max_grayscale(output, pic)  # Call as destination-passing style
             return output
 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         img = (torch.rand(64, 64, 3, device=device) * 255).to(torch.uint8)
         result = grayscale(img)
+        print(f"Input shape: {img.shape}")
+        print(f"Output shape: {result.shape}")
+        print("Grayscale conversion completed successfully!")
 
     Args:
         fn: The function to decorate. If None, returns a decorator.
