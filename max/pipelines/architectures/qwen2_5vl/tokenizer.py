@@ -17,20 +17,19 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Callable, Optional, Union
+from typing import Union
 
 import numpy as np
 from max.interfaces import TextGenerationRequest
+from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    process_vision_info,
+)
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     max_tokens_to_generate,
 )
 from PIL import Image
-
-# qwen_vl_utils is not available as a dependency
-_HAS_QWEN_VL_UTILS = False
-process_vision_info: Optional[Callable[..., Any]] = None
 
 logger = logging.getLogger("max.pipelines")
 
@@ -91,14 +90,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 for image_data in request.images
             ]
 
-        # Process vision info using qwen_vl_utils if available and using messages
+        # Process vision info using qwen_vl_utils if using messages
         image_inputs = None
         video_inputs = None
-        if (
-            request.messages
-            and _HAS_QWEN_VL_UTILS
-            and process_vision_info is not None
-        ):
+        if request.messages:
             # process_vision_info returns (image_inputs, video_inputs, placeholder_text)
             # Convert messages to the format expected by qwen_vl_utils
             # TextGenerationRequestMessage is a TypedDict, so it's already dict-like
