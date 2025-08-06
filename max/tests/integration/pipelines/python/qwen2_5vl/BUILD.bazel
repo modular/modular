@@ -22,6 +22,9 @@ modular_py_test(
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = [

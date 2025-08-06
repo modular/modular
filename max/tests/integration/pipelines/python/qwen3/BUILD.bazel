@@ -19,6 +19,9 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/qwen3/testdata"
         ),
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "1.5",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
