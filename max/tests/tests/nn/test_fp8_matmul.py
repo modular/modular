@@ -55,7 +55,7 @@ def test_dynamic_scaled_matmul_rowwise() -> None:
             # b
             TensorType(DType.float8_e4m3fn, shape=(3, 4), device=device),
             # a_scales
-            TensorType(DType.bfloat16, shape=(2, 1), device=device),
+            TensorType(DType.bfloat16, shape=(1, 8), device=device),
             # b_scales
             TensorType(DType.bfloat16, shape=(3, 1), device=device),
         ],
@@ -126,7 +126,7 @@ def test_dynamic_scaled_matmul_dtype_mismatch(
                 # b
                 TensorType(b_dtype, shape=(3, 4), device=device),
                 # a_scales
-                TensorType(a_scales_dtype, shape=(2, 1), device=device),
+                TensorType(a_scales_dtype, shape=(1, 8), device=device),
                 # b_scales
                 TensorType(b_scales_dtype, shape=(3, 1), device=device),
             ],
