@@ -193,6 +193,7 @@ def create_pipeline_config_with_lora(
         model_path=model_path,
         quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
         max_batch_size=4,
+        enable_lora=True,
         max_num_loras=max_num_loras,
         lora_paths=lora_paths,
         max_lora_rank=max_lora_rank,

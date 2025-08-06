@@ -81,8 +81,7 @@ async def test_smollm2_with_lora_adapter() -> None:
         TextGenerationRequest(
             request_id="lora",
             prompt=prompt,
-            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
-            lora_name=lora_path,
+            model_name=lora_path,
             sampling_params=sampling_params,
         )
     )
@@ -130,8 +129,7 @@ async def test_lora_vs_base_comparison() -> None:
         TextGenerationRequest(
             request_id="lora",
             prompt=prompt,
-            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
-            lora_name=lora_path,
+            model_name=lora_path,
             sampling_params=sampling_params,
         )
     )
@@ -181,8 +179,7 @@ async def test_multiple_lora_adapters() -> None:
             TextGenerationRequest(
                 request_id="lora1",
                 prompt=prompt,
-                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
-                lora_name=lora_paths[0],
+                model_name=lora_paths[0],
                 sampling_params=sampling_params,
             )
         ),
@@ -190,8 +187,7 @@ async def test_multiple_lora_adapters() -> None:
             TextGenerationRequest(
                 request_id="lora2",
                 prompt=prompt,
-                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
-                lora_name=lora_paths[1],
+                model_name=lora_paths[1],
                 sampling_params=sampling_params,
             )
         ),
