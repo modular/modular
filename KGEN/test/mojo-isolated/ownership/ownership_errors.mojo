@@ -592,3 +592,29 @@ fn test_no_unused_warning() -> Int:
   s = SP[2]()
   # COM: no warning expected as there's a use of the variable.
   return s.n
+
+
+@explicit_destroy("Use `consume() method` to finalize")
+@fieldwise_init
+struct LinearType:
+    fn consume(var self):
+        __disable_del self
+
+    fn use(self): pass
+
+fn do_something() raises:
+    pass
+
+fn test_linear_type() raises:
+    var tok1 = LinearType()
+
+    # expected-error @+1 {{'tok1' abandoned without being explicitly destroyed: Use `consume() method` to finalize}}
+    tok1.use()
+
+    # MOCO-2275: Poor error when raises interacts with @explicit_destroy type
+    var tok2 = LinearType()
+    # expected-error @below {{'tok2' abandoned without being explicitly destroyed: Use `consume() method` to finalize}}
+    # expected-note @below {{value was not consumed when an error is thrown}}
+    do_something()
+
+    tok2^.consume()
