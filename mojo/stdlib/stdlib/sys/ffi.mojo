@@ -16,7 +16,7 @@ from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
 from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import get_errno, get_errno_message
+from sys._libc_errno import get_errno, set_errno, ErrNo
 
 from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq

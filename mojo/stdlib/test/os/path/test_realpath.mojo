@@ -50,7 +50,7 @@ def main():
 
     print("error handling for non-existent paths")
     with assert_raises(
-        contains="realpath failed to resolve: no such file or directory"
+        contains="realpath failed to resolve: No such file or directory"
     ):
         _ = realpath("does-not-exist")
 
