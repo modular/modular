@@ -19,6 +19,7 @@ from max.mlir.dialects import rmo
 
 from ..dim import StaticDim
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -94,14 +95,11 @@ def band_part(
             f"{num_upper=} is out of bounds for dimension size {int(n)}"
         )
 
-    # Use the same device as the input tensor for constants
-    device = x.type.device
-
     return Graph.current._add_op(
         rmo.mo_linalg_band_part,
         x.type.to_mlir(),
         x,
-        constant(num_lower, DType.int64, device),
-        constant(num_upper, DType.int64, device),
-        constant(exclude, DType.bool, device),
+        constant(num_lower, DType.int64, DeviceRef.CPU()),
+        constant(num_upper, DType.int64, DeviceRef.CPU()),
+        constant(exclude, DType.bool, DeviceRef.CPU()),
     )[0].tensor
