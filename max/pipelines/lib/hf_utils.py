@@ -511,8 +511,13 @@ class HuggingFaceRepo:
             )
 
             if torch_dtype := getattr(cfg, "torch_dtype", None):
-                # It's a torch tensor, so this import is guaranteed to work
-                import torch  # type: ignore
+                # This is a pt file, we require pytorch to open it
+                try:
+                    import torch  # type: ignore
+                except ImportError:
+                    raise ImportError(
+                        "Tried loading a PyTorch weights file, but PyTorch isn't installed."
+                    ) from None
 
                 if torch_dtype == torch.float32:
                     supported_encodings.add(SupportedEncoding.float32)
