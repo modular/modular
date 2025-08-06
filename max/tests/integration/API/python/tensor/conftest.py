@@ -11,7 +11,7 @@ from max.experimental.tensor import Tensor
 
 def assert_all_close(t1, t2: Tensor, atol=1e-6, rtol=1e-6) -> None:  # noqa: ANN001
     if not isinstance(t1, Tensor):
-        t1 = Tensor.constant(t1, dtype=t2.dtype, device=t2.device_)
+        t1 = Tensor.constant(t1, dtype=t2.dtype, device=t2.device)
 
     absolute_difference = abs(t1 - t2)
     # TODO: div0
