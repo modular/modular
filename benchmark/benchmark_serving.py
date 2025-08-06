@@ -33,6 +33,7 @@ from typing import Any, Callable, Optional, Union
 
 import aiohttp
 import numpy as np
+import yaml
 from benchmark_datasets import (
     DATASET_REGISTRY,
     ArxivSummarizationBenchmarkDataset,
@@ -1390,28 +1391,52 @@ def main(args: argparse.Namespace) -> None:
             "'--dataset-path' if required."
         )
 
+    # Build output_lengths array
+    if args.num_prompts is not None:
+        num_requests = args.num_prompts
+    else:
+        num_requests = args.num_chat_sessions
+
+    if args.output_lengths is None:
+        output_lengths = None
+    elif os.path.exists(args.output_lengths):
+        with open(args.output_lengths) as f:
+            output_lengths = yaml.safe_load(f)["output_lengths"]
+    else:
+        output_lengths = [int(args.output_lengths)] * num_requests
+
     input_requests: Sequence[SampledRequest] = []
     chat_sessions: Sequence[ChatSession] = []
     if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
         # code_debug is a long-context dataset based on InfiniteBench
         if args.num_chat_sessions:
+            if args.output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for fixed output lengths with multi-turn code-debug"
+                )
             chat_sessions = benchmark_dataset.gen_twoturn_longcontext_requests(
                 num_chat_sessions=args.num_chat_sessions,
                 tokenizer=tokenizer,
-                fixed_output_len=args.fixed_output_len,
             )
         else:
             input_requests = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
-                fixed_output_len=args.fixed_output_len,
+                output_lengths=output_lengths,
+                shuffle=(
+                    args.output_lengths is None
+                    and not args.record_output_lengths
+                ),
             )
 
     elif isinstance(benchmark_dataset, ShareGPTBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
-            fixed_output_len=args.fixed_output_len,
+            output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
         )
 
     elif isinstance(benchmark_dataset, SonnetBenchmarkDataset):
@@ -1421,7 +1446,7 @@ def main(args: argparse.Namespace) -> None:
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             input_len=args.sonnet_input_len,
-            output_len=args.sonnet_output_len,
+            output_lengths=output_lengths,
             prefix_len=args.sonnet_prefix_len,
             apply_chat_template=apply_chat_template,
             tokenizer=tokenizer,
@@ -1430,14 +1455,17 @@ def main(args: argparse.Namespace) -> None:
     elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
-            output_len=args.vision_arena_output_len,
+            output_lengths=output_lengths,
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             input_len=args.arxiv_summarization_input_len,
-            output_len=args.arxiv_summarization_output_len,
+            output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
@@ -1470,7 +1498,7 @@ def main(args: argparse.Namespace) -> None:
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
-            fixed_output_len=args.fixed_output_len,
+            output_lengths=output_lengths,
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
@@ -1611,6 +1639,27 @@ def main(args: argparse.Namespace) -> None:
         with open(file_name, "w") as outfile:
             json.dump(result_json, outfile)
 
+    # Save output lengths if requested
+    if args.record_output_lengths:
+        # Save relevant input args for context
+        args_to_save = (
+            "backend",
+            "burstiness",
+            "dataset_name",
+            "dataset_path",
+            "endpoint",
+            "max_concurrency",
+            "max_output_len",
+            "model",
+            "request_rate",
+            "seed",
+        )
+        output_lens_dict = {}
+        output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
+        output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
+        with args.record_output_lengths as f:
+            yaml.dump(output_lens_dict, f)
+
     logger.info("finished benchmark run: Success.")
 
 
@@ -1707,22 +1756,27 @@ def parse_args() -> argparse.Namespace:
         help="Optional delay before sending next chat turn request in ms.",
     )
     parser.add_argument(
-        "--fixed-output-len",
-        type=int,
+        "--record-output-lengths",
+        type=argparse.FileType("w"),
+        metavar="/path/to/save/outputs",
+        help="Save output lengths to given file in YAML format",
+    )
+    parser.add_argument(
+        "--output-lengths",
+        type=str,
         default=None,
+        metavar="/path/to/lengths.yaml | int",
         help=(
-            "Fixed output/answer length for each request/round of chats. "
-            "Overrides the length from dataset."
+            "Path to YAML file containing list of output lengths, or an int. "
+            "If an int is given, all responses are forced to the given length. "
+            "Default: None"
         ),
     )
     parser.add_argument(
         "--max-output-len",
         type=int,
         default=None,
-        help=(
-            "Max output length for each request. Only takes effect for datasets"
-            " which do not include explicit output lengths."
-        ),
+        help="Max output length for each request",
     )
     parser.add_argument(
         "--sonnet-input-len",
@@ -1730,14 +1784,6 @@ def parse_args() -> argparse.Namespace:
         default=550,
         help=(
             "Number of input tokens per request, used only for sonnet dataset."
-        ),
-    )
-    parser.add_argument(
-        "--sonnet-output-len",
-        type=int,
-        default=150,
-        help=(
-            "Number of output tokens per request, used only for sonnet dataset."
         ),
     )
     parser.add_argument(
@@ -1749,22 +1795,10 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--vision-arena-output-len",
-        type=int,
-        default=1,
-        help="Number of output tokens per request, used only for vision-arena dataset.",
-    )
-    parser.add_argument(
         "--arxiv-summarization-input-len",
         type=int,
         default=15000,
         help="Number of input tokens per request, used only for arxiv-summarization dataset.",
-    )
-    parser.add_argument(
-        "--arxiv-summarization-output-len",
-        type=int,
-        default=1000,
-        help="Number of output tokens per request, used only for arxiv-summarization dataset.",
     )
     parser.add_argument(
         "--random-input-len",

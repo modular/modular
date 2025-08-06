@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -182,7 +184,7 @@ class BenchmarkDataset(ABC):
         cls,
         dataset_name: Optional[str] = None,
         dataset_path: Optional[str] = None,
-    ) -> "BenchmarkDataset":
+    ) -> BenchmarkDataset:
         """Factory method to create the appropriate dataset subclass based on dataset name.
 
         This factory method automatically selects and instantiates the correct
@@ -246,7 +248,7 @@ class BenchmarkDataset(ABC):
         return instance
 
     @classmethod
-    def _get_dataset_class(cls, dataset_name: str) -> type["BenchmarkDataset"]:
+    def _get_dataset_class(cls, dataset_name: str) -> type[BenchmarkDataset]:
         """Get the appropriate dataset class for the given dataset name.
 
         Args:
@@ -333,7 +335,6 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         self,
         num_chat_sessions: int,
         tokenizer: PreTrainedTokenizerBase,
-        fixed_output_len: Optional[int] = None,
     ) -> Sequence[ChatSession]:
         # Expand code_debug dataset to 2-turn chats with a pre-defined followup question
         DUMMY_OUTPUT = "A"
@@ -341,7 +342,6 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         input_requests = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
-            fixed_output_len=fixed_output_len,
         )
 
         sessions: list[ChatSession] = []
@@ -356,9 +356,7 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
                 build_chat_message(
                     "user", CODE_DEBUG_FOLLOWUP_QUESTION, tokenizer
                 ),
-                build_chat_message(
-                    "assistant", DUMMY_OUTPUT, tokenizer, fixed_output_len
-                ),
+                build_chat_message("assistant", DUMMY_OUTPUT, tokenizer),
             ]
             sessions.append(ChatSession(session_id, messages))
 
@@ -368,14 +366,12 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        fixed_output_len: Optional[int] = None,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
     ) -> Sequence[SampledRequest]:
         """
         The Long-Context dataset workload is based on InfiniteBench Code.debug
         """
-        if fixed_output_len is not None and fixed_output_len < 4:
-            raise ValueError("output_len too small")
-
         assert self.dataset_path is not None, (
             "dataset_path must be provided for CodeDebugBenchmarkDataset"
         )
@@ -397,7 +393,12 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         dataset = [data for data in dataset if "LICENSE" not in data[0]]
 
         # Shuffle the dataset.
-        random.shuffle(dataset)
+        if shuffle:
+            if output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for shuffling + pinned output lengths"
+                )
+            random.shuffle(dataset)
 
         # Filter out sequences that are too long or too short
         filtered_dataset: list[SampledRequest] = []
@@ -414,9 +415,10 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
             prompt_len = len(prompt_token_ids)
             output_len = (
                 len(completion_token_ids)
-                if fixed_output_len is None
-                else fixed_output_len
+                if output_lengths is None
+                else output_lengths[i]
             )
+            assert output_len is not None, "Unexpected null output length"
             if (
                 prompt_len > model_max_length
                 or prompt_len + output_len > model_max_length
@@ -480,12 +482,10 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        fixed_output_len: Optional[int] = None,
+        output_lengths: Sequence[int] | None,
+        shuffle: bool,
     ) -> Sequence[SampledRequest]:
         """Sample requests from ShareGPT dataset."""
-        if fixed_output_len is not None and fixed_output_len < 4:
-            raise ValueError("output_len too small")
-
         assert self.dataset_path is not None, (
             "dataset_path must be provided for ShareGPTBenchmarkDataset"
         )
@@ -504,7 +504,12 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
         ]
 
         # Shuffle the dataset.
-        random.shuffle(dataset)
+        if shuffle:
+            if output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for shuffling + pinned output lengths"
+                )
+            random.shuffle(dataset)
 
         # Filter out sequences that are too long or too short
         filtered_dataset: list[SampledRequest] = []
@@ -520,9 +525,10 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
             prompt_len = len(prompt_token_ids)
             output_len = (
                 len(completion_token_ids)
-                if fixed_output_len is None
-                else fixed_output_len
+                if output_lengths is None
+                else output_lengths[i]
             )
+            assert output_len is not None, "Unexpected null output length"
             if prompt_len < 4 or output_len < 4:
                 # Prune too short sequences.
                 continue
@@ -785,7 +791,7 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         input_len: int,
-        output_len: int,
+        output_lengths: Sequence[int] | None,
         prefix_len: int,
         apply_chat_template: bool,
         tokenizer: PreTrainedTokenizerBase,
@@ -840,7 +846,7 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
 
         # Sample the rest of lines per request.
         sampled_requests: list[SampledRequest] = []
-        for _ in range(num_requests):
+        for i in range(num_requests):
             sampled_lines = "".join(
                 prefix_lines
                 + random.sample(poem_lines, num_input_lines - num_prefix_lines)
@@ -860,6 +866,7 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
             assert isinstance(prompt_formatted, str)
             prompt_len = len(tokenizer(prompt_formatted).input_ids)
             prompt_out = prompt_formatted if apply_chat_template else prompt
+            output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
                 SampledRequest(prompt_out, prompt_len, output_len, None)
             )
@@ -879,7 +886,7 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        fixed_output_len: Optional[int] = None,
+        output_lengths: Sequence[int] | None,
     ) -> Sequence[SampledRequest]:
         """Sample requests from an Axolotl-formatted dataset.
         The dataset should be in the following JSON format:
@@ -904,7 +911,7 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         Args:
             num_requests: Number of requests to sample
             tokenizer: Tokenizer for computing token lengths
-            fixed_output_len: Optional fixed length for outputs
+            output_lengths: Optional list of request lengths for outputs
         Returns:
             List of SampledRequest objects
         """
@@ -930,10 +937,11 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         )
 
         sampled_requests: list[SampledRequest] = []
-        for prompt in sampled_prompts:
+        for i, prompt in enumerate(sampled_prompts):
             prompt_len = len(tokenizer(prompt).input_ids)
+            output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
-                SampledRequest(prompt, prompt_len, fixed_output_len, None)
+                SampledRequest(prompt, prompt_len, output_len, None)
             )
         return sampled_requests
 
@@ -952,14 +960,14 @@ class VisionArenaBenchmarkDataset(BenchmarkDataset):
     def sample_requests(
         self,
         num_requests: int,
-        output_len: int,
+        output_lengths: Sequence[int] | None,
         tokenizer: PreTrainedTokenizerBase,
     ) -> Sequence[SampledRequest]:
         dataset = load_dataset(
             "lmarena-ai/vision-arena-bench-v0.1", split="train"
         )
         sampled_requests: list[SampledRequest] = []
-        while len(sampled_requests) < num_requests:
+        for i in range(num_requests):
             # TODO: Figure out what type to 'assert isinstance' on dataset s.t.
             # MyPy is OK with this (ignored error: Value of type
             # "Union[DatasetDict, Dataset, IterableDatasetDict, IterableDataset]"
@@ -968,6 +976,7 @@ class VisionArenaBenchmarkDataset(BenchmarkDataset):
             prompt = item["turns"][0][0]["content"]
             encoded_img = encode_image(item["images"][0])
             prompt_len = len(tokenizer(prompt).input_ids)
+            output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
                 SampledRequest(prompt, prompt_len, output_len, encoded_img)
             )
@@ -992,7 +1001,8 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         input_len: int,
-        output_len: int,
+        output_lengths: Sequence[int] | None,
+        shuffle: bool,
         tokenizer: PreTrainedTokenizerBase,
     ) -> Sequence[SampledRequest]:
         """Sample requests from the arxiv-summarization dataset.
@@ -1011,10 +1021,15 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
 
         # Shuffle the dataset indices
         indices = list(range(len(dataset)))  # type: ignore[arg-type]
-        random.shuffle(indices)
+        if shuffle:
+            if output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for shuffling + pinned output lengths"
+                )
+            random.shuffle(indices)
 
         sampled_requests: list[SampledRequest] = []
-        for i in indices:
+        for i, idx in enumerate(indices):
             if len(sampled_requests) >= num_requests:
                 break
 
@@ -1022,7 +1037,7 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
             # MyPy is OK with this (ignored error: Value of type
             # "Union[DatasetDict, Dataset, IterableDatasetDict, IterableDataset]"
             # is not indexable)
-            item = dataset[i]  # type: ignore[index]
+            item = dataset[idx]  # type: ignore[index]
             article = item["article"]
 
             # Tokenize the article to check length
@@ -1062,12 +1077,14 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
                 tokenizer(prompt_formatted, add_special_tokens=False).input_ids
             )
 
+            output_len = None if output_lengths is None else output_lengths[i]
+
             # Skip if prompt is too short or too long
             if prompt_len < self.MIN_PROMPT_LEN or prompt_len > input_len:
                 continue
 
             # Skip if output length is too small
-            if output_len < self.MIN_OUTPUT_LEN:
+            if output_len is not None and output_len < self.MIN_OUTPUT_LEN:
                 continue
 
             sampled_requests.append(
