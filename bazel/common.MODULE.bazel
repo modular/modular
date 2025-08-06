@@ -33,7 +33,7 @@ single_version_override(
     version = "6.7",
 )
 
-bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
+bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
 
 archive_override(
     module_name = "rules_pycross",
@@ -63,19 +63,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:with_cfg_visibility.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_mypy",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/theoremlp/rules_mypy/pull/105
-        "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
-        # https://github.com/theoremlp/rules_mypy/pull/106
-        "//bazel/public-patches:rules_mypy_pycross.patch",
-        # https://github.com/theoremlp/rules_mypy/pull/104
-        "//bazel/public-patches:rules_mypy_user_site.patch",
     ],
 )
 
