@@ -17,7 +17,7 @@ fn main():
 
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level none -o %t 2>&1
@@ -25,7 +25,7 @@ fn main():
 # RUN: cat %t.log | FileCheck --check-prefix=O3-NONE %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level none -o %t 2>&1
@@ -33,11 +33,12 @@ fn main():
 # RUN: cat %t.log | FileCheck --check-prefix=O0-NONE %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-STACK-TRACE-ASAN %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
 # RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=0 %t 2> %t.log || true
+# RUN: cat %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-NO-STACK-TRACE-ASAN %s
 
 # O3-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}

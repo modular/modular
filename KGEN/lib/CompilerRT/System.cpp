@@ -108,19 +108,22 @@ std::string getStackTrace(unsigned depth = 0, unsigned dropFirst = 0) {
 }
 
 // Return true if we should collect stack trace. Assume that no need to collect
-// stack trace if `envVar` is not set or is set to '0' or 'false' (for
-// performance, check first char only)
-bool isStackTraceEnabled(const char *envVar) {
+// stack trace if `envVar` is set to '0' or 'false' (for performance, check
+// first char only). If `envVar` is not set, return `defaultValue`.
+bool isStackTraceEnabled(const char *envVar, bool defaultValue = false) {
   auto enableStackTrace = llvm::sys::Process::GetEnv(envVar).value_or("");
-  return !enableStackTrace.empty() && enableStackTrace[0] != '0' &&
-         enableStackTrace[0] != 'f' && enableStackTrace[0] != 'F';
+  if (enableStackTrace.empty())
+    return defaultValue;
+  return enableStackTrace[0] != '0' && enableStackTrace[0] != 'f' &&
+         enableStackTrace[0] != 'F';
 }
 } // namespace
 
 COMPILERRT_EXPORT
 COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
-  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH"))
+  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH", true)) {
     return;
+  }
   llvm::sys::PrintStackTraceOnErrorSignal("", false);
 }
 
