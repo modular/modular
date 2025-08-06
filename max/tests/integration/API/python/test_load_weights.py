@@ -202,7 +202,7 @@ def test_load_safetensors(session, graph_testdata) -> None:  # noqa: ANN001
         compiled = session.load(
             graph,
             weights_registry={
-                k: Tensor.from_numpy(v)
+                k: Tensor.from_dlpack(v)
                 for k, v in weights.allocated_weights.items()
             },
         )
