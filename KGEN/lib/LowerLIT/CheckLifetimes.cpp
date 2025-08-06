@@ -207,11 +207,8 @@ struct TypeDeclInfo {
   TypedAttr getDestructorForType(Type type) const;
   SymbolConstantAttr getMoveInitForType(Type type) const;
 
-  /// If this is a non-destructible/linear type, emit its linear type error
-  /// message and return true. Otherwise returns false.
-  bool
-  emitErrorMsgIfLinearType(Location loc, Type type,
-                           std::vector<InFlightDiagnostic> &diagsToEmit) const;
+  /// If this is a non-destructible/linear type, get the error message to emit.
+  std::optional<StringRef> getErrorMsgIfLinearType(Type type) const;
 
   /// Return the function for a given symbol name if known.
   FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
@@ -320,44 +317,26 @@ SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
   });
 }
 
-/// If this is a non-destructible/linear type, return the error message to
-/// emit if an implicit destructor call is required.
-bool TypeDeclInfo::emitErrorMsgIfLinearType(
-    Location loc, Type type,
-    std::vector<InFlightDiagnostic> &diagsToEmit) const {
-  if (auto valueType = dyn_cast<LIT::StructType>(type)) {
-    StructDeclOp structDecl = getStructDeclForType(valueType);
-    std::optional<StringRef> errorMsg = structDecl.getLinearTypeErrorMsg();
-    if (!errorMsg)
-      return false;
-
-    auto diag = ::mlir::emitError(loc) << *errorMsg;
-    diagsToEmit.push_back(std::move(diag));
-    return true;
-  }
+/// If this is a non-destructible/linear type, get the error message to emit.
+std::optional<StringRef>
+TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
+  // See if the type is a linear struct or trait.  If so, get the error message
+  // to report out.
+  if (auto valueType = dyn_cast<LIT::StructType>(type))
+    return getStructDeclForType(valueType).getLinearTypeErrorMsg();
 
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      InFlightDiagnostic diag = ::mlir::emitError(loc);
-      bool hasError = false;
       for (SymbolRefAttr symbol : trait.getSymbols()) {
         TraitDeclOp traitDecl(traitMap.at(symbol));
-        std::optional<StringRef> errorMsg = traitDecl.getLinearTypeErrorMsg();
-        if (errorMsg) {
-          if (hasError)
-            diag.attachNote();
-          diag << *errorMsg;
-          hasError = true;
-        }
+        auto errorMsg = traitDecl.getLinearTypeErrorMsg();
+        if (errorMsg)
+          return errorMsg;
       }
-
-      diagsToEmit.push_back(std::move(diag));
-      return hasError;
     }
   }
 
-  // Otherwise, must be an MLIR type like 'index'.
-  return false;
+  return {};
 }
 
 /// Return the total number of flattened fields in the specified type.
@@ -2123,13 +2102,30 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
-    // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
-    if (valueSet.typeDeclInfo.emitErrorMsgIfLinearType(
-            builder.getLoc(), destroyedType, diagsToEmit)) {
+    // linear type.  If linear, emit the error message.
+    if (std::optional<StringRef> errorMsg =
+            valueSet.typeDeclInfo.getErrorMsgIfLinearType(destroyedType)) {
+      auto diag =
+          ::mlir::emitError(builder.getLoc(), "'")
+          << valueSet.getValueInfo(valueRef.valueId).getName().str()
+          << "' abandoned without being explicitly destroyed: " << *errorMsg;
+
+      // If the insertion point is on a mark_consumed op inserted as part of an
+      // exception throw, then add a note explaining this is due to a thrown
+      // error.
+      Block &block = *builder.getInsertionBlock();
+      if (builder.getInsertionPoint() != block.end() &&
+          isa<LIT::OwnershipMarkConsumedOp>(*builder.getInsertionPoint()) &&
+          isa<ErrorReturnOp, TryRaiseOp>(block.getTerminator())) {
+        diag.attachNote(builder.getLoc())
+            << "value was not consumed when an error is thrown";
+      }
+
+      diagsToEmit.push_back(std::move(diag));
       valueSet.getValueInfo(valueRef.valueId).hasErrorDiagnosed = true;
     }
 
-    // Otherwise, this is a trivial type; nothing to do.
+    // Emit the marker to denote the end of lifetime.
     return emitLifetimeEnd(value, builder);
   }
 
