@@ -21,8 +21,8 @@ from os import PathLike
 from typing import Any, Optional
 
 import numpy as np
-import numpy.typing as npt
 import torch  # type: ignore
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef
 
@@ -115,7 +115,7 @@ class PytorchWeights:
     _filepath: PathLike
     _tensor_infos: dict[str, Any]
     _prefix: str
-    _allocated: dict[str, np.ndarray]
+    _allocated: dict[str, DLPackArray]
 
     def __init__(
         self,
@@ -250,6 +250,6 @@ class PytorchWeights:
         return weight
 
     @property
-    def allocated_weights(self) -> dict[str, npt.NDArray]:
+    def allocated_weights(self) -> dict[str, DLPackArray]:
         """Gets the values of all weights that were allocated previously."""
         return self._allocated

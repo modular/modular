@@ -19,8 +19,7 @@ from typing import Optional, Union
 
 # This is only imported internally if gguf is available
 import gguf  # type: ignore
-import numpy as np
-import numpy.typing as npt
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef
 
@@ -117,7 +116,7 @@ class GGUFWeights(Weights):
     _reader: gguf.GGUFReader
     _tensors: dict[str, gguf.ReaderTensor]
     _prefix: str
-    _allocated: dict[str, np.ndarray]
+    _allocated: dict[str, DLPackArray]
 
     def __init__(
         self,
@@ -299,6 +298,6 @@ class GGUFWeights(Weights):
         return weight
 
     @property
-    def allocated_weights(self) -> dict[str, npt.NDArray]:
+    def allocated_weights(self) -> dict[str, DLPackArray]:
         """Gets the values of all weights that were allocated previously."""
         return self._allocated

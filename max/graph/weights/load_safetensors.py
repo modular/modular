@@ -18,9 +18,8 @@ from collections.abc import Mapping, Sequence, Set
 from os import PathLike
 from typing import Optional
 
-import numpy.typing as npt
 from max._core.safetensors import SafeTensor, safe_open
-from max.driver import Tensor
+from max.driver import DLPackArray, Tensor
 from max.dtype import DType
 from max.graph import DeviceRef
 
@@ -65,7 +64,7 @@ class SafetensorWeights(Weights):
     _filepaths: Sequence[PathLike]
     _tensors: Set[str]
     _tensors_to_file_idx: Mapping[str, int]
-    _allocated: dict[str, npt.NDArray]
+    _allocated: dict[str, DLPackArray]
     _st_weight_map: dict[str, Tensor]
     # This is a mapping of filepaths to SafeTensor handles. This is used to
     # avoid opening and mapping the same file to virtual memory multiple times,
@@ -259,6 +258,6 @@ class SafetensorWeights(Weights):
         return weight
 
     @property
-    def allocated_weights(self) -> dict[str, npt.NDArray]:
+    def allocated_weights(self) -> dict[str, DLPackArray]:
         """Gets the values of all weights that were allocated previously."""
         return self._allocated

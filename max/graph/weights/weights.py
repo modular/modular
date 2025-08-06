@@ -17,7 +17,6 @@ import dataclasses
 from collections.abc import Iterator
 from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
 
-import numpy.typing as npt
 from max.driver import CPU, DLPackArray, Tensor
 from max.dtype import DType
 
@@ -203,7 +202,7 @@ class Weights(Protocol):
         ...
 
     @property
-    def allocated_weights(self) -> dict[str, npt.NDArray]:
+    def allocated_weights(self) -> dict[str, DLPackArray]:
         """Get all previously allocated weights. This only includes weights that were explicitly allocated
             using the :meth:`allocate` method, not all available weights.
 
