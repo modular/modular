@@ -956,6 +956,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "gemma3-27b": GenericOracle(
+        model_path="google/gemma-3-27b-it",
+        config_params={"max_length": 8192, "trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "gemma3-multimodal": GenericOracle(
         model_path="google/gemma-3-12b-it",
         config_params={"max_length": 8192},
@@ -1113,6 +1118,10 @@ def main(
     This wrapper exists because Click command functions aren't easily picklable,
     which causes issues when called from multiprocessing.
     """
+    if pipeline_name == "gemma3-27b":
+        # Running into dynamo error:
+        # https://huggingface.co/google/gemma-3-4b-it/discussions/51
+        torch._dynamo.config.disable = True
 
     try:
         generate_llm_logits(

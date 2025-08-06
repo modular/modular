@@ -965,6 +965,17 @@ PIPELINES = {
             kl_div_threshold=0.19,
         ),
     ),
+    "google/gemma-3-27b-it-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="gemma3-27b",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_gemma3-27b_golden/torch_gemma3-27b_bfloat16_golden.json",
+            cos_dist_threshold=1.9e-02,
+            kl_div_threshold=5.7e-01,
+        ),
+    ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "tts"],  # TTS tag to identify text-to-speech models

@@ -50,6 +50,7 @@ modular_py_binary(
         "//SDK/integration-test/pipelines/python/test_common",
         "@torch_deepseek_golden",
         "@torch_gemma3-1b_golden",
+        "@torch_gemma3-27b_golden",
         "@torch_gemma3-multimodal_golden",
         "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",

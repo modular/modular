@@ -26,7 +26,7 @@ from max.nn.kv_cache import (
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.gemma3.layers.attention import (
-    _Gemma3Attention as MaxGemma3Attention,
+    Gemma3Attention as MaxGemma3Attention,
 )
 from max.pipelines.architectures.gemma3.model_config import (
     Gemma3Config as MaxGemma3Config,

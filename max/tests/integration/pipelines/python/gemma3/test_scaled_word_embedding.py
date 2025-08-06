@@ -6,10 +6,11 @@
 
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator
+from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
+from max.nn import Signals
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )
@@ -47,11 +48,12 @@ def generate_max_outputs(
     embedding_weights: torch.Tensor,
     embed_scale: float = 1.0,
 ) -> torch.Tensor:
+    devices = [DeviceRef.GPU()]
     layer = ScaledWordEmbedding(
         vocab_size=text_config.vocab_size,
         hidden_dim=text_config.hidden_size,
         dtype=DType.bfloat16,
-        device=DeviceRef.GPU(),
+        devices=devices,
         quantization_encoding=None,
         name="embeddings",
         embed_scale=embed_scale,
@@ -63,20 +65,36 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator()])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
-    graph = Graph(
+
+    # Create signal types for distributed communication
+    signals = Signals(devices=devices)
+
+    with Graph(
         "ScaledWordEmbedding",
-        layer,
-        input_types=(
+        input_types=[
             TensorType(
                 DType.int64,
                 Shape(input_indices.shape),
                 device=DeviceRef.GPU(),
             ),
-        ),
-    )
+            *signals.input_types(),
+        ],
+    ) as graph:
+        indices, *signal_inputs = graph.inputs
+        signal_buffers = [s.buffer for s in signal_inputs]
+
+        # Call the layer with signal buffers
+        result = layer(indices.tensor, signal_buffers)
+        graph.output(result[0])  # Take the first device output
 
     compiled = session.load(graph, weights_registry=state_dict)
-    max_output = compiled.execute(input_indices.to("cuda"))
+
+    # Create signal buffers for execution
+    signal_tensor = Tensor.zeros(
+        shape=(signals.NUM_BYTES,), dtype=DType.uint8, device=Accelerator()
+    )
+
+    max_output = compiled.execute(input_indices.to("cuda"), signal_tensor)
     return from_dlpack(max_output[0]).to(torch.bfloat16)
 
 
@@ -86,6 +104,9 @@ def test_scaled_word_embedding(
     embedding_weights: torch.Tensor,
 ) -> None:
     """Test ScaledWordEmbedding with default scale (1.0)."""
+    # Clear CUDA cache before test
+    torch.cuda.empty_cache()
+
     torch_output = generate_torch_outputs(
         text_config, input_indices, embedding_weights
     )
@@ -100,6 +121,9 @@ def test_scaled_word_embedding(
         atol=1e-3,
     )
 
+    # Clear CUDA cache after test
+    torch.cuda.empty_cache()
+
 
 def test_scaled_word_embedding_with_scale(
     text_config: Gemma3TextConfig,
@@ -107,6 +131,9 @@ def test_scaled_word_embedding_with_scale(
     embedding_weights: torch.Tensor,
 ) -> None:
     """Test `ScaledWordEmbedding` with a non-default scale factor."""
+    # Clear CUDA cache before test
+    torch.cuda.empty_cache()
+
     embed_scale = 0.5
     torch_output = generate_torch_outputs(
         text_config, input_indices, embedding_weights, embed_scale=embed_scale
@@ -121,3 +148,6 @@ def test_scaled_word_embedding_with_scale(
         rtol=1e-3,
         atol=1e-3,
     )
+
+    # Clear CUDA cache after test
+    torch.cuda.empty_cache()
