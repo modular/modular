@@ -38,7 +38,7 @@ from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
 from ..shape import Shape
 from ..type import DeviceRef, TensorType
-from ..value import BufferValue, TensorValue
+from ..value import BufferValue, HasTensorValue, TensorValue
 from .constant import constant
 from .where import where
 
@@ -125,6 +125,10 @@ def _slice_index_and_output(
     # to a slice(v, v+1).
 
     int64_max = 2**63 - 1
+
+    if isinstance(index, HasTensorValue):
+        index = TensorValue(index)
+
     # If index is int, return slice(index, index+1, 1)
     # For -1 specifically, slice(-1, 0, 1) is empty,
     # so we need to special case it.
@@ -425,8 +429,11 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     Returns:
         The sliced subtensor of `x`.
     """
+    x = TensorValue(x)
+
     if not any(
-        isinstance(subslice, (TensorValue, tuple)) for subslice in indices
+        isinstance(subslice, (TensorValue, HasTensorValue, tuple))
+        for subslice in indices
     ):
         # For symbolic tensors, take a special path that emits rmo.slice.
         # This path doesn't support tuples or SSA values, so send those down

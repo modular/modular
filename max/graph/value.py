@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable
-from typing import Any, Generic, TypeVar, Union, cast
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    TypeVar,
+    Union,
+    cast,
+    runtime_checkable,
+)
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -343,7 +351,9 @@ class TensorValue(Value[mo.TensorType]):
             value: The value to wrap. Can be an MLIR tensor value, another :obj:`TensorValue`,
                 a :obj:`Dim`, or a :obj:`Shape`.
         """
-        if isinstance(value, _Value):
+        if isinstance(value, HasTensorValue):
+            self._mlir_value = value.__tensorvalue__()._mlir_value
+        elif isinstance(value, _Value):
             assert isinstance(value.type, mo.TensorType)
             self._mlir_value = value
         elif isinstance(value, TensorValue):
@@ -1028,8 +1038,15 @@ class TensorValue(Value[mo.TensorType]):
         return ops.logical_not(self)
 
 
+@runtime_checkable
+class HasTensorValue(Protocol):
+    def __tensorvalue__(self) -> Value: ...
+
+
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-StrongTensorValueLike = Union[_Value[mo.TensorType], TensorValue, Shape, Dim]
+StrongTensorValueLike = Union[
+    _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
+]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
 
 # This is needed for python 3.9 compatibility.
@@ -1040,7 +1057,7 @@ _tensor_value_like = _strong_tensor_value_like + _numeric
 
 
 def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
-    return isinstance(obj, (TensorValue, Shape, Dim)) or (
+    return isinstance(obj, (TensorValue, Shape, Dim, HasTensorValue)) or (
         isinstance(obj, _Value) and isinstance(obj.type, mo.TensorType)
     )
 
