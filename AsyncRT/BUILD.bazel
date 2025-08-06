@@ -116,6 +116,7 @@ modular_cc_library(
     ] + select({
         "//:linux_x86_64": ["@nvptxcompiler_x86_64//:nvptxcompiler"],
         "//:linux_aarch64": ["@nvptxcompiler_aarch64//:nvptxcompiler"],
+        "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
         "//conditions:default": [],
     }),
     alwayslink = True,
