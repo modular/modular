@@ -85,9 +85,9 @@ fn test_dynamic_fp8_quant[
     alias group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
 
     alias static_shape = DimList(m.dim, n.dim)
-    alias static_scales_shape = DimList(m.dim, n.dim // group_size)
+    alias static_scales_shape = DimList(n.dim // group_size, m.dim)
     var dynamic_shape = DimList(m.value, n.value)
-    var dynamic_scales_shape = DimList(m.value, n.value // group_size)
+    var dynamic_scales_shape = DimList(n.value // group_size, m.value)
 
     var in_host = HostNDBuffer[in_dtype, 2, static_shape](dynamic_shape)
     var out_host = HostNDBuffer[out_dtype, 2, static_shape](dynamic_shape)
@@ -132,7 +132,7 @@ fn test_dynamic_fp8_quant[
             )
 
             assert_equal(
-                scales_host.tensor[i, group_idx].cast[DType.float64](),
+                scales_host.tensor[group_idx, i].cast[DType.float64](),
                 scale_factor.cast[DType.float64](),
             )
 
@@ -177,5 +177,5 @@ fn main() raises:
             ctx, dynamic(1), static[16384]()
         )
         test_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, 128](
-            ctx, dynamic(1), static[16384]()
+            ctx, dynamic(4), static[16384]()
         )

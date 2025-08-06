@@ -194,7 +194,7 @@ fn quantize_fp8_kernel[
         )
 
         if tid == 0:
-            scales.store[width=1](IndexList[2](row, group_idx), scale_factor)
+            scales.store[width=1](IndexList[2](group_idx, row), scale_factor)
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -292,7 +292,7 @@ fn matmul_dynamic_scaled_fp8[
     fn scaled_output_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var a_scale = a_scales.load[width=1](idx[0], 0).cast[dtype]()
+        var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
         var b_scale: SIMD[dtype, width]
 
         @parameter

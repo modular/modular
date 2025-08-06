@@ -1961,6 +1961,12 @@ def quantize_dynamic_scaled_float8(
         else input.shape[1]
     )
 
+    # pad the a_scales to 16B. This is required by NVIDIA SM90+ TMA instructions
+    padding_size = 16 // scales_type.size_in_bytes
+    scales_dim1_padded = (
+        (input.shape[0] + padding_size - 1) // padding_size
+    ) * padding_size
+
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
         device=input.device,
@@ -1976,7 +1982,7 @@ def quantize_dynamic_scaled_float8(
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[input.shape[0], input.shape[1] // group_size],
+                shape=[input.shape[1] // group_size, Dim(scales_dim1_padded)],
                 device=input.device,
             ),
         ],
@@ -2017,7 +2023,7 @@ def dynamic_scaled_matmul(
         msg = "The second dimension of b must match the second dimension of a"
         raise ValueError(msg)
 
-    if a_scales.shape[1] != 1:
+    if a_scales.shape[0] != 1:
         msg = "only per-token scaling is supported for a"
         raise ValueError(msg)
 

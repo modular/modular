@@ -843,7 +843,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         and weight_scale.shape.get[1]() == 1
     )
     alias use_per_channel = (
-        input_scale.shape.get[1]() == 1
+        input_scale.shape.get[0]() == 1
         and weight_scale.shape.get[1]() == 1
         and not use_per_tensor
     )
@@ -866,7 +866,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             var scale_b = weight_scale[0, 0].cast[dtype]()
             output_val = val * (scale_a * scale_b)
         else:
-            var scale_a = input_scale.load[width=1](idx[0], 0).cast[dtype]()
+            var scale_a = input_scale.load[width=1](0, idx[0]).cast[dtype]()
             var scale_b = weight_scale.load[width=width](idx[1], 0).cast[
                 dtype
             ]()
