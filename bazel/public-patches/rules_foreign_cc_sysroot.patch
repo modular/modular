@@ -1,0 +1,12 @@
+diff --git a/foreign_cc/private/cmake_script.bzl b/foreign_cc/private/cmake_script.bzl
+index b1ccedf..36b0182 100644
+--- a/foreign_cc/private/cmake_script.bzl
++++ b/foreign_cc/private/cmake_script.bzl
+@@ -313,6 +313,7 @@ def _fill_crossfile_from_toolchain(workspace_name, tools, flags):
+     _sysroot = _find_in_cc_or_cxx(flags, "sysroot")
+     if _sysroot:
+         dict["CMAKE_SYSROOT"] = _absolutize(workspace_name, _sysroot)
++        dict["CMAKE_OSX_SYSROOT"] = _absolutize(workspace_name, _sysroot)
+ 
+     _ext_toolchain_cc = _find_flag_value(flags.cc, "gcc_toolchain")
+     if _ext_toolchain_cc:
