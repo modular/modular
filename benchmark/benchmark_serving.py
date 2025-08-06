@@ -1539,10 +1539,6 @@ def main(args: argparse.Namespace) -> None:
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
         result_json["server_args"] = args.server_args
-        if args.server_compile_time is not None:
-            result_json["server_compile_time"] = args.server_compile_time
-        if args.server_cpu is not None:
-            result_json["cpu"] = args.server_cpu
         result_json["dataset_name"] = args.dataset_name
         result_json["client_args"] = dict(vars(args))
         # json doesn't allow infinity as numeric, so cast this to string
@@ -1555,7 +1551,14 @@ def main(args: argparse.Namespace) -> None:
             for item in args.metadata:
                 if "=" in item:
                     kvstring = item.split("=")
-                    result_json[kvstring[0].strip()] = kvstring[1].strip()
+                    key = kvstring[0].strip()
+                    value = kvstring[1].strip()
+
+                    if key == "server_cpu":
+                        # Map server_cpu to cpu for consistency with existing data pipeline
+                        result_json["cpu"] = value
+                    else:
+                        result_json[key] = value
                 else:
                     raise ValueError(
                         "Invalid metadata format. Please use KEY=VALUE format."
@@ -1945,18 +1948,6 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help="Server args",
-    )
-
-    parser.add_argument(
-        "--server-compile-time",
-        type=float,
-        help="Model compile time from server",
-    )
-
-    parser.add_argument(
-        "--server-cpu",
-        type=str,
-        help="CPU description from server",
     )
 
     return parser.parse_args()
