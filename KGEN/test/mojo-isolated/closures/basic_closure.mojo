@@ -11,7 +11,7 @@
 
 @fieldwise_init
 struct MemType(Copyable, Movable):
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

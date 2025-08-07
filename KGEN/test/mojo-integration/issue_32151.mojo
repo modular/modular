@@ -24,7 +24,7 @@ struct MTuple[T: Copyable & Movable](Copyable, Movable, Stringable, Writable):
         self.elts.append(value)
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.elts = existing.elts^
 
     @always_inline

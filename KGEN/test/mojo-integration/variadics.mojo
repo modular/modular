@@ -16,7 +16,7 @@ struct TalkativeMem(Stringable, Writable):
         self.state = state
         print("initializing", state)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
@@ -36,7 +36,7 @@ struct TalkativeReg(Stringable, Writable):
         self.state = state
         print("initializing", state)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
@@ -60,7 +60,7 @@ struct TalkativeCopableReg(Stringable, Writable):
         self.state = existing.state
         print("copying", self.state)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
@@ -86,11 +86,11 @@ struct TalkativeCopableMovableMem(Copyable, Movable, Stringable, Writable):
     fn copy(self) -> Self:
         return self
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.state = existing.state
         print("moving", self.state)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("destroying", self.state)
 
     fn __str__(self) -> String:

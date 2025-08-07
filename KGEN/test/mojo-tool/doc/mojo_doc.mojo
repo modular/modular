@@ -191,7 +191,7 @@ def fn_that_raises() -> Int:
 fn fn_with_args(
     arg: Int,
     mut inoutArg: Int,
-    owned ownedArg: Int,
+    var ownedArg: Int,
     read borrowedArg: Int,
 ):
     """This is a function summary.
@@ -798,7 +798,7 @@ struct InMemoryStruct(Sized):
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __add__(self, other: Self) -> Self:

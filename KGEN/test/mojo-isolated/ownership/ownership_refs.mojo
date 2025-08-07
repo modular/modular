@@ -18,9 +18,9 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   fn __init__(out self): pass
-  fn __moveinit__(out self, owned existing: Self): pass
+  fn __moveinit__(out self, deinit existing: Self): pass
   fn __copyinit__(out self, existing: Self): pass
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
   fn noop(self): pass
   fn mutate(mut self): pass
 
@@ -203,7 +203,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
 struct SelfRefTest:
   fn __init__(out self): pass
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
   # CHECK-LABEL: lit.fn @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
   fn method(ref self) -> Pointer[Self, __origin_of(self)]:
@@ -411,9 +411,9 @@ struct FieldRefPropagation:
 # https://github.com/modular/mojo/issues/3444
 struct HasRaisingInit:
   fn __init__(out self) raises: pass
-  fn __moveinit__(out self, owned existing: Self): pass
+  fn __moveinit__(out self, deinit existing: Self): pass
   fn __copyinit__(out self, existing: Self): pass
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
 
 struct ImmovableRaisingInit:
   fn __init__(out self) raises: pass

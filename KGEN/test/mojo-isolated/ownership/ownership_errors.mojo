@@ -36,7 +36,7 @@ struct MemExample:
     fn consume(var self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -58,7 +58,7 @@ struct RegExample:
     fn __copyinit__(out self, existing: Self):
         self.regstate = 12
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn consume(var self):
@@ -287,7 +287,7 @@ struct MoreComplexExample:
         self.mem = existing.mem
         self.reg = existing.reg
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

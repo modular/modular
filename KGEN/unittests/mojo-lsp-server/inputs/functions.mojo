@@ -22,7 +22,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         out self,
         read borrowed_input: Int,
         init_arg: Int,
-        owned owned_input: Int,
+        var owned_input: Int,
         *init_kargs: Int,
     ):
         """Init documentation.

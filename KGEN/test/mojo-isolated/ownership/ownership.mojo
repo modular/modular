@@ -13,7 +13,7 @@ struct MemExample:
   var x : Int
   fn __init__(out self): self.x = 42; pass
   fn noop(self): pass
-  fn __moveinit__(out self, owned existing: Self): self.x = existing.x
+  fn __moveinit__(out self, deinit existing: Self): self.x = existing.x
   fn __copyinit__(out self, existing: Self): self.x = existing.x
   fn __bool__(self) -> Bool: return True
 
@@ -24,7 +24,7 @@ struct MemExample:
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
   # CHECK-NEXT:    kgen.return %none : !kgen.none
-  fn __del__(owned self):
+  fn __del__(deinit self):
     self.noop()
 
 fn consume(var a: MemExample): pass
@@ -57,7 +57,7 @@ struct RegExample:
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
-  fn __del__(owned self):
+  fn __del__(deinit self):
     pass
 
   fn mutate(mut self):
@@ -176,7 +176,7 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
 struct Parameterized[level: Int]:
     fn __init__(out self): pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"test_parameterized
@@ -592,7 +592,7 @@ struct ExoticDelExample:
   var c: RegExample
 
  # CHECK-LABEL: lit.fn @"__del__
-  fn __del__(owned self):
+  fn __del__(deinit self):
     # self.b gets destroyed ASAP since it isn't used.
     # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
@@ -659,12 +659,12 @@ trait SomeTrait:
     pass
 
 struct GenericType(SomeTrait):
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 @register_passable
 struct GenericRegType(SomeTrait):
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"destruct_generic_return
@@ -683,7 +683,7 @@ fn destruct_generic_return():
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 @register_passable
 struct RegisterExistingDtor:
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 @register_passable
@@ -965,7 +965,7 @@ fn use(x: MemExample): pass
 
 # CHECK-LABEL: lit.fn @"destroyWholeValuesIfLastReferenceWasInLoop
 fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
-                                              owned memPair: MemPair):
+                                              var memPair: MemPair):
    # Part of mempair is used in the loop, but this keeps the entire thing
    # alive during the loop.  The solution here is to destroy memPair immediately
    # before the implicit break out of the loop
@@ -1187,7 +1187,7 @@ struct A:
     var data: UnsafePointer[Int]
     fn __init__(out self):
         self.data = UnsafePointer[Int]()
-    fn __del__(owned self): pass
+    fn __del__(deinit self): pass
 
 fn use_int(a: Int): pass
 
@@ -1394,7 +1394,7 @@ fn use_parameterized_field():
 struct OuterStruct:
     var outers_field: RefResultStruct
     # CHECK: lit.fn @"__del__
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # CHECK: lit.call {{.*}}use(::String)
         use(self.outers_field.x)
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]

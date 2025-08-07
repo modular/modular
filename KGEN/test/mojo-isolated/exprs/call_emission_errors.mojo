@@ -340,7 +340,7 @@ fn call_param_inference_unrelated_error():
 struct MyRPStruct:
     var a: Int
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -349,7 +349,7 @@ struct MyRPStruct:
 struct MyRPStruct2:
     var b: MyRPStruct
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

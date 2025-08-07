@@ -12,7 +12,7 @@ struct StringNoCopy:
     fn __init__(out self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

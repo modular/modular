@@ -16,7 +16,7 @@ struct MyList[T: Copyable & Movable]:
     fn __init__(out self):
         self.data = UnsafePointer[T]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn mutate(mut self): pass
