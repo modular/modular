@@ -30,12 +30,6 @@ class AudioGenerationRequest(Request):
     capabilities of the response generation.
     """
 
-    lora: str | None = None
-    """The name of the LoRA to be used for generating audio chunks. This should match
-    the available models on the server and determines the behavior and
-    capabilities of the response generation.
-    """
-
     input: Optional[str] = None
     """The text to generate audio for. The maximum length is 4096 characters.
     """
