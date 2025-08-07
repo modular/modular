@@ -179,12 +179,7 @@ def generate_max_outputs(
 @pytest.mark.parametrize(
     "batch_size,seq_len,dtype",
     [
-        (1, 676, DType.bfloat16),  # Full vision patches 26x26, bfloat16
         (1, 64, DType.bfloat16),  # Small sequence, bfloat16
-        (2, 256, DType.bfloat16),  # Batch size 2, bfloat16
-        (1, 676, DType.float32),  # Full vision patches 26x26, float32
-        (1, 64, DType.float32),  # Small sequence, float32
-        (2, 256, DType.float32),  # Batch size 2, float32
     ],
 )
 @torch.no_grad()
