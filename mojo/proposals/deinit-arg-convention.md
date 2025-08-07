@@ -350,9 +350,15 @@ way to up-level the APIs in general to being more safe.  Mojo is getting
 ## Exotic Examples
 
 Here are a few exotic examples that came up in discussion.  These aren’t
-expected to be common, but explore some of the edge cases:
+expected to be common, but explore some of the edge cases.
 
-```cpp
+### The `self` argument of `__del__` need not be `deinit`
+
+While it will be vastly the most common thing for the `self` argument of
+`__del__` to be deinit, there is one case where you might want to define it as
+`var`: when you delegate to another destructor:
+
+```mojo
 # This shows that there are cases where it is valid for __del__ to be
 # var instead of deinit - when delegating destruction to a named destructor.
 struct DelNeedNotBeDeinit:
@@ -362,21 +368,25 @@ struct DelNeedNotBeDeinit:
 
    fn custom_del(deinit self, x: Int, message: String):
        pass # custom logic is here.
+```
 
-# This is a parser error:
-struct UserError1:
-  fn __del__(self):   # Parser rejects.
+This opens questions about how common errors are diagnosed.  We believe that the
+compiler has the right infrastructure to diagnose mistakes correctly, e.g.:
 
+```mojo
 # This is a flow-sensitive error: 'self' not being consumed in del leads
 # to a recursive call to del, which is an error.
 struct UserError2:
   fn __del__(var self):
     use(self.state)
     pass       # CheckLifetimes generates an error "declare self as deinit"
+```
 
-# We don't support parametric or conditional deinit. If you have
-# something that is conditional deinit, declare it as 'var' and delegate
-# the deinit path to a named destructor.
+We don't think there is any need to allow parametric or conditional deinit. If
+you have something that is conditional deinit, declare it as 'var' and delegate
+the deinit path to a named destructor:
+
+```mojo
 struct NoParametricDeinit:
    fn __del__(var self):
       if some_cond():
@@ -389,6 +399,51 @@ struct NoParametricDeinit:
 
     fn _actual_del(deinit self):
       pass # Stub that just drops all the elements.
+```
+
+### We can't accept `var` on `__del__` or `__moveinit__` for a while
+
+While we want to support logic like the above for full generality, we can't do
+that immediately.  The problem is that all Mojo code currently declares their
+`__del__` arguments with `owned` or `var` keywords and implicitly get `deinit`
+behavior.  It would be *extremely* hostile to 3rd party code to silently break
+all destructors by changing behavior.
+
+A better approach to phasing this in is to force the world to move to `__del__`
+in the 25.6 release (generating a warning with a fixit hint), make `var` an
+error in 25.7, and then start accepting the new behavior in a subsequent
+release like 25.8.
+
+### `deinit` is not part of the function type
+
+Because `deinit` just changes the implementation details of a function body, it
+is not part of its type, and therefore `deinit` isn't supported in function
+types:
+
+```mojo
+struct Example:
+    fn deinit_method(deinit self): ...
+    fn var_method(var self): ...
+
+fn example():
+    var fp1 : fn(var Example) -> None
+    # Both are ok.
+    fp1 = Example.deinit_method
+    fp1 = Example.var_method
+
+    # error: 'deinit' not allowed in function type, use 'var' instead.
+    var fp2 : fn(deinit Example) -> None
+```
+
+### Other minor behaviors
+
+These just show some minor behavior, but shouldn't be surprising:
+
+```mojo
+# This is a parser error: 'self' is required to be 'var' or 'deinit' in an
+# implicit destructor.
+struct UserError1:
+  fn __del__(self):   # Parser rejects.
 
 # Deinit is ASAP destruction for all the members.
 struct Thing:
