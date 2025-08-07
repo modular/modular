@@ -50,7 +50,7 @@ result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: VAR | OWNED | OUT | READ | MUT | (REF ['[' test [',' test [',']] ']'])
+convention: VAR | OWNED | OUT | READ | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
@@ -201,7 +201,7 @@ dictsetmaker: ( ((test ':' asexpr_test | test '=' asexpr_test | test | '**' expr
 classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype
-typeconv: (['*'|VAR|OWNED|READ|MUT|OUT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
+typeconv: (['*'|VAR|OWNED|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
 functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* ['[' test ']'] ['->' test]
 
 arglist: argument (',' argument)* [',']

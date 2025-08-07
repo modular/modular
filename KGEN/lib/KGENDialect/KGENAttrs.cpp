@@ -3243,19 +3243,13 @@ static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
   if (p.parseColon() || p.parseType(type))
     return failure();
 
-  if (parts.copy.callee) {
+  if (parts.copy.callee)
     copy = makeSymbol(type, parts.copy.callee, parts.copy.paramValues,
                       {ArgConvention::ReadMem, ArgConvention::ByRefResult});
-    move = makeSymbol(type, parts.move.callee, parts.move.paramValues,
-                      {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
-    del = makeSymbol(type, parts.del.callee, parts.del.paramValues,
-                     {ArgConvention::OwnedMem}, false);
-  } else {
-    move = makeSymbol(type, parts.move.callee, parts.move.paramValues,
-                      {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
-    del = makeSymbol(type, parts.del.callee, parts.del.paramValues,
-                     {ArgConvention::OwnedMem}, false);
-  }
+  move = makeSymbol(type, parts.move.callee, parts.move.paramValues,
+                    {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
+  del = makeSymbol(type, parts.del.callee, parts.del.paramValues,
+                   {ArgConvention::OwnedMem}, false);
   return success();
 }
 

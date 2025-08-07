@@ -1453,6 +1453,8 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     SyntheticNode locElExpr(loc);
     auto eltTypeAttr = emitter.emitPValue(
         {refType.getElementType(), &locElExpr}, EC_Type, eltType);
+    if (!eltTypeAttr)
+      return {};
     evaluator.appendIndexBinding(eltTypeAttr);
     typeParams[1] = eltTypeAttr.get();
 

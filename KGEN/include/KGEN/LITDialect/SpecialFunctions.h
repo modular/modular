@@ -47,25 +47,21 @@ public:
     /// This must be an instance method of a type.
     kInstMethod = 1 << 1,
 
-    /// On a method of a struct, the self must be passed as Owned argument
-    /// convention.
-    kRequiresOwnedSelfInstMethod = (1 << 2) | kInstMethod,
-
     /// This is true when this represents a "reversed" operator like __radd__.
-    kReversedOperator = 1 << 3,
+    kReversedOperator = 1 << 2,
 
     /// This is true when the operation is supposed to return None.
-    kNoneResult = 1 << 4,
+    kNoneResult = 1 << 3,
 
     /// This method must return Self.
-    kSelfResult = 1 << 5,
+    kSelfResult = 1 << 4,
 
     /// This method is a struct initializer, it is a static method that returns
     /// 'Self', which is typically spelled with an "out self" first argument.
-    kInitializer = (1 << 6) | kImplicitlyStaticMethod | kSelfResult,
+    kInitializer = (1 << 5) | kImplicitlyStaticMethod | kSelfResult,
 
     /// This method cannot be declared to raise an error.
-    kCannotRaise = 1 << 7,
+    kCannotRaise = 1 << 6,
   };
 
   /// Return true if this is any kind of instance method.
@@ -74,11 +70,6 @@ public:
   /// Return true if this special function is implicitly static, like __init__.
   bool isImplicitlyStatic() const {
     return (flags & kImplicitlyStaticMethod) != 0;
-  }
-
-  bool requiresOwnedSelfInstMethod() const {
-    return (flags & kRequiresOwnedSelfInstMethod) ==
-           kRequiresOwnedSelfInstMethod;
   }
 
   /// Return true if this is a reversed operator.

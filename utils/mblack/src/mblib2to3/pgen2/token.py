@@ -101,6 +101,7 @@ READ: Final = 68
 MUT: Final = 69
 OUT: Final = 70
 TRAIT: Final = 71
+DEINIT: Final = 72
 NT_OFFSET: Final = 256
 # --end constants--
 

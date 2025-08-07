@@ -560,6 +560,8 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                            traitFnOp.getSpecialFunctionKind(), smLocation, b,
                            wrapperSignature.getFnEffects().setUnified(false),
                            "", true, traitFnOp.getInlineLevel());
+    if (traitFnOp.getIsSelfDeinit())
+      op.setIsSelfDeinit(true);
 
     // Generate the call op by collecting the operands and rebinding the
     // signature.

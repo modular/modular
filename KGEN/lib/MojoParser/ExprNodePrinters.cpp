@@ -456,9 +456,11 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
     case ParsedArgument::kConventionMut:
       return "Mut";
     case ParsedArgument::kConventionVar:
-      return "Owned";
+      return "Var";
+    case ParsedArgument::kConventionDeinit:
+      return "Deinit";
     case ParsedArgument::kConventionRead:
-      return "Borrowed";
+      return "Read";
     case ParsedArgument::kConventionRef:
       return "Ref";
     case ParsedArgument::kConventionByRefResult:

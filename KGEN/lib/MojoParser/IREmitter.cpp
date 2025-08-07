@@ -1756,30 +1756,10 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
       value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
   }
 
-  bool markLastArgDestroyed = false;
-  switch (func.getSpecialFunctionKind()) {
-  default:
-    break;
-  /// In the __del__ method for a struct, we need to mark 'self' as being
-  /// destroyed before any return operation.
-  case SpecialFunctionKind::kDel:
-    assert(func.getBody()->getNumArguments() == 1 &&
-           "__del__ should have one argument");
-    markLastArgDestroyed = true; // Mark 'self' destroyed.
-    break;
-
-  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
-  /// being destroyed before any return operation if it is owned convention.
-  case SpecialFunctionKind::kMoveInit:
-    assert(func.getBody()->getNumArguments() == 2 &&
-           "__moveinit__ should have two arguments");
-    markLastArgDestroyed = true; // Mark 'existing' destroyed.
-    break;
-  }
-
-  if (markLastArgDestroyed) {
-    assert(signature.getArgConventions().front() == ArgConvention::OwnedMem &&
-           "Argument to be destroyed should be OwnedMem");
+  // Handle a `deinit` argument by marking it destroyed.
+  if (func.getIsSelfDeinit()) {
+    assert(!signature.getArgConventions().empty() &&
+           signature.getArgConventions().front() == ArgConvention::OwnedMem);
     Value argToDestroy = func.getBody()->getArguments().front();
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }

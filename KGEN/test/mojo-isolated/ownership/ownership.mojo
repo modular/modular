@@ -1432,14 +1432,31 @@ struct SomeValue[T: Copyable & Movable]:
 
 # This triggered a bug handling parameterized types with substitutions, reported
 # on discord.
-struct Task[T1: Movable, T2: Movable](Movable):
+# CHECK-LABEL: ParametricTask
+struct ParametricTask[T1: Movable, T2: Movable](Movable):
     var t1: T1
     var t2: T2
     fn __init__(out self, var t1: T1, var t2: T2):
         self.t1 = t1^
         self.t2 = t2^
-    fn concat(var self, var other: Self) -> Task[Self, Self]:
-        return Task(self^, other^)
+    fn concat(var self, var other: Self) -> ParametricTask[Self, Self]:
+        return ParametricTask(self^, other^)
+
+    # Verify that deinit causes the individual fields to be destroyed.
+    # CHECK: lit.fn @"explicit_destroy
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[t1]
+    # CHECK-NEXT: lit.call{{.*}}__del__
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[t2]
+    # CHECK-NEXT: lit.call{{.*}}__del__
+    fn explicit_destroy(deinit self):
+      pass
+
+    # Verify that var causes the whole thing to be destroyed.
+    # CHECK: lit.fn @"var_method
+    # CHECK-NEXT: lit.call {{.*}}ParametricTask::@"__del__
+    fn var_method(var self):
+      pass
+
 
 # https://github.com/modular/modular/issues/4518
 fn issue4518():

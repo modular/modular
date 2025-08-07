@@ -63,7 +63,7 @@ enum class ArgListKind {
 /// argument           ::= "/" | "*"
 /// argument           ::= [argument_convention] [argument_variadic] identifier
 ///                        [argument_type] ["=" expression]
-/// argument_convention ::= "var" | "read" | "mut" | "out"
+/// argument_convention ::= "var" | "read" | "mut" | "out" | "deinit"
 /// argument_variadic  ::= "*" | "**"
 /// argument_type      ::= ":" star_expression
 ///
@@ -76,11 +76,12 @@ struct ParsedArgument {
   enum PAArgConvention {
     kConventionUnspec = 0,      // Nothing specified
     kConventionMut = 1,         // mut x
-    kConventionVar = 2,         // owned x
+    kConventionVar = 2,         // var x
     kConventionRead = 3,        // read x
     kConventionRef = 4,         // ref [origin, addrspace] x
-    kConventionOut = 5,         // __init__(out self) argument
-    kConventionByRefResult = 6, // No syntax: result slot
+    kConventionOut = 5,         // out x
+    kConventionDeinit = 6,      // deinit self
+    kConventionByRefResult = 7, // No syntax: result slot
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.

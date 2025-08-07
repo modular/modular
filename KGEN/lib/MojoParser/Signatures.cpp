@@ -255,9 +255,10 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   };
 
   // Any var/read/mut/ref keyword sets convention.
-  if (p.consumeIf(Token::kw_var) || p.consumeIf(Token::kw_owned))
+  // TODO(25.7): Remove support for 'owned' keyword.
+  if (p.consumeIf(Token::kw_var) || p.consumeIf(Token::kw_owned)) {
     convention = kConventionVar;
-  else if (p.getToken().is(Token::kw_ref)) {
+  } else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
@@ -266,6 +267,14 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     handleContextualArgConvention("mut", kConventionMut);
   } else if (p.consumeIfSoftIdentifier("read")) {
     handleContextualArgConvention("read", kConventionRead);
+  } else if (p.consumeIfSoftIdentifier("deinit")) {
+    handleContextualArgConvention("deinit", kConventionDeinit);
+    if (convention == kConventionDeinit && kind != ArgListKind::kArgList) {
+      p.emitError(
+          loc, "'deinit' is not supported in function types, use 'var' instead")
+          << FixIt::replaceToken(loc, "var");
+      convention = kConventionVar;
+    }
   }
 
   while (p.getToken().isAny(Token::kw_owned, Token::kw_var, Token::kw_ref)) {
@@ -1188,14 +1197,26 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 /// their type+default value expressions as PValues, so we need to ensure that
 /// they are emitted and have declarations registered in the scope so that later
 /// lookups can find them.
-static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
-                                 ASTDecl *fnDecl,
+static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
                                  TypeCheckedFnSignature &tcSignature) {
   ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = declScope.getShared();
   IREmitter typeEmitter(declScope, EC_Type);
+
+  FnOp fnOp; // Null if type checking a function type.
+  if (fnDecl)
+    fnOp = cast<FnOp>(*fnDecl->getIfOperation());
+
+  // True if this is a static method.
+  // FIXME: This is completely wrong, @static_method decorator hasn't been
+  // applied yet.
+  //
+  // It isn't clear if this is actually that bad, maybe we should just say that
+  // first arguments in methods default to Self it they don't have type.  This
+  // could be true for static methods as well.
+  bool isStaticMethod = tcSignature.selfType && fnOp.getIsStatic();
 
   // Start by computing the declared type of the argument.
   ASTType type;
@@ -1246,9 +1267,21 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   if (auto fType = dyn_cast<FnTypeGeneratorType>(type)) {
     if (!fType.getInputParamTypes().empty()) {
       arg.isErroneous = true;
-      shared.emitError(shared.diags.translateLocation(arg.typeExpr->getLoc()),
+      shared.emitError(arg.typeExpr->getLoc(),
                        "parametric functions may not be used as arguments; "
                        "consider passing as a parameter instead");
+    }
+  }
+
+  // Type check 'deinit' arguments.
+  if (arg.convention == ParsedArgument::kConventionDeinit) {
+    if (idx != 0 || !tcSignature.selfType) {
+      shared.emitError(
+          arg.loc, "only 'self' arguments in struct methods may be 'deinit'");
+      arg.convention = ParsedArgument::kConventionVar;
+    } else if (arg.variadicKind != VariadicKind::None) {
+      shared.emitError(arg.loc, "deinit arguments may not be variadic");
+      arg.convention = ParsedArgument::kConventionVar;
     }
   }
 
@@ -1289,6 +1322,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionVar:
+  case ParsedArgument::kConventionDeinit:
     // Owned arguments are always passed in memory, allowing us to check for
     // exclusivity and other requirements.  Register passable arguments are
     // promoted to being passed in registers after elaboration.
@@ -1354,6 +1388,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     case ParsedArgument::kConventionUnspec:
     case ParsedArgument::kConventionByRefResult:
     case ParsedArgument::kConventionOut:
+    case ParsedArgument::kConventionDeinit:
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionVar:
       arg.kgenVariadicConvention = ArgConvention::OwnedMem;
@@ -1445,9 +1480,8 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // argument.  If we're generating this argument for a function, put it into
   // its entry block. Otherwise it is a function type: We allocate the argument
   // into a holding block owned by SharedState so it isn't leaked.
-  Block &blockOwningArg = fnDecl
-                              ? *cast<FnOp>(*fnDecl->getIfOperation()).getBody()
-                              : shared.getArgumentOwningBlock();
+  Block &blockOwningArg =
+      fnDecl ? *fnOp.getBody() : shared.getArgumentOwningBlock();
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
@@ -1775,20 +1809,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     fnInfo = SpecialFunctionInfo();
   }
 
-  // True if this is a static method.
-  // FIXME: This is completely wrong, @static_method decorator hasn't been
-  // applied yet.
-  //
-  // It isn't clear if this is actually that bad, maybe we should just say that
-  // first arguments in methods default to Self it they don't have type.  This
-  // could be true for static methods as well.
-  bool isStaticMethod =
-      selfType && cast<FnOp>(*fnDecl->getIfOperation()).getIsStatic();
-
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
   for (size_t i = 0, e = argList.parsedArgs.size(); i != e; ++i)
-    typeCheckOneArgument(i, isStaticMethod, fnDecl, *this);
+    typeCheckOneArgument(i, fnDecl, *this);
 
   // Compute the result type.
   typeCheckResult(argList.resultArg, fnInfo, fnDecl, *this);
@@ -1818,7 +1842,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     ASTDecl &decl, StringAttr name, SpecialFunctionInfo &fnInfo) const {
   FnOp funcOp = cast<FnOp>(*decl.getIfOperation());
 
-  ArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
+  MutableArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
   ArrayRef<Type> argTypes = this->argTypes;
   auto &shared = paramList.shared;
 
@@ -1943,11 +1967,6 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     } else if (funcOp.getIsStatic()) {
       if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
         emitError("special method may not be a static method");
-    } else if (fnInfo.requiresOwnedSelfInstMethod() &&
-               parsedArgs[kSelfArgNo].convention !=
-                   ParsedArgument::kConventionVar) {
-      emitErrorLoc(parsedArgs[kSelfArgNo].loc, "self argument must be 'owned'")
-          << FixIt::insertBeforeToken(parsedArgs[kSelfArgNo].loc, "owned ");
     }
   }
 
@@ -1972,6 +1991,34 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     }
   }
 
+  // Shared logic to diagnose the 'self' argument of __del__ and __moveinit__.
+  auto diagnoseSelfForDelAndMoveInit = [&](const char *argName) {
+    // This 'if' implements migration logic to help convert from
+    // __del__(owned self) -> __del__(deinit self).
+    // FIXME(Mojo 25.7): Reject 'var' with an error to force migration.
+    // FIXME(Mojo 25.8): Allow 'var' after the world migrates to 'deinit'.
+    if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionVar) {
+
+#if 0 // Phase this in after the codebase is migrated.
+      // TODO: Generation an insertion fixit if arg convention is missing, and
+      // make sure the location is on the arg convention, not the arg.
+      shared.emitWarning(parsedArgs[kSelfArgNo].loc,
+      "the ") << argName << "' argument should be declared 'deinit'")
+        << FixIt::replaceToken(parsedArgs[kSelfArgNo].loc, "deinit");
+#endif
+      parsedArgs[kSelfArgNo].convention = ParsedArgument::kConventionDeinit;
+    }
+
+    // This method is going to consume the passed value.
+    if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionVar &&
+        parsedArgs[kSelfArgNo].convention !=
+            ParsedArgument::kConventionDeinit) {
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc, "'")
+          << argName << "' argument must be passed as 'deinit'";
+      parsedArgs[kSelfArgNo].convention = ParsedArgument::kConventionDeinit;
+    }
+  };
+
   // Diagnose common errors and handle other special cases.
   switch (fnInfo.kind) {
   default:
@@ -1984,19 +2031,25 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       emitError() << name << " result type must be __mlir_type.i1";
     break;
   case SpecialFunctionKind::kCopyInit:
+    assert(parsedArgs.size() == 1 && "arg count already checked above");
+    if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionRead)
+      emitErrorLoc(parsedArgs[kSelfArgNo].loc,
+                   "existing value argument must be passed as 'read'");
+    break;
   case SpecialFunctionKind::kMoveInit:
     assert(parsedArgs.size() == 1 && "arg count already checked above");
-    if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
-      if (parsedArgs[0].convention != ParsedArgument::kConventionRead)
-        emitErrorLoc(parsedArgs[0].loc,
-                     "existing value argument must be passed as 'read'");
-    } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (parsedArgs[0].convention != ParsedArgument::kConventionVar)
-        emitErrorLoc(parsedArgs[0].loc,
-                     "existing value argument must be passed as 'owned'");
-    }
+    diagnoseSelfForDelAndMoveInit("existing");
+    break;
+  case SpecialFunctionKind::kDel:
+    assert(parsedArgs.size() == 1 && "arg count already checked above");
+    diagnoseSelfForDelAndMoveInit("self");
     break;
   }
+
+  // If this function had a deinit self, remember it.
+  if (parsedArgs.size() > kSelfArgNo &&
+      parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionDeinit)
+    funcOp.setIsSelfDeinit(true);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.
