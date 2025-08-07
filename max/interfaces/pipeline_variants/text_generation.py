@@ -33,7 +33,7 @@ class TextGenerationRequestFunction(TypedDict):
     name: str
     """The name of the function to be invoked."""
 
-    description: str
+    description: str | None
     """A human-readable description of the function's purpose."""
 
     parameters: dict
@@ -65,7 +65,7 @@ class TextGenerationResponseFormat(TypedDict):
 
 
 class TextGenerationRequestMessage(TypedDict):
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool", "function"]
     """
     The role of the message sender, indicating whether the message is from the system, user, or assistant.
     """
