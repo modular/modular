@@ -244,6 +244,13 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetCpu = targetCpu.str();
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
+  else {
+    ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
+        compilationOptions.targetTriple, compilationOptions.targetCpu);
+    if (featuresOr)
+      return featuresOr.takeError();
+    compilationOptions.targetFeatures = encodeFeatures(*featuresOr);
+  }
   if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();
     compilationOptions.isCrossCompilation = true;

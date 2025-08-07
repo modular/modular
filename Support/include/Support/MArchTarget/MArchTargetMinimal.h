@@ -65,6 +65,9 @@ std::string getHostCPUFeatures();
 ErrorOr<TargetInfo> getMArchTargetInfo(StringRef march, StringRef mcpu,
                                        StringRef mtune);
 
+/// Returns the CPU features for a given target triple and CPU.
+ErrorOr<std::vector<std::string>> getFeatures(StringRef triple, StringRef cpu);
+
 } // namespace M
 
 #endif // SUPPORT_MARCHTARGET_MARCHTARGETMINIMAL_H
