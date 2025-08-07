@@ -76,6 +76,25 @@ modular_cc_test(
     ],
 )
 
+# This is a temporary test for the Metal device context. It will be removed once has_gpu is updated to include metal.
+# The goal for it is to test the Metal device context implementation on macos.
+# TODO(amir): remove this test once has_gpu is updated to include metal.
+modular_cc_test(
+    name = "MetalGPUDeviceContextTest",
+    size = "small",
+    srcs = ["GPUDeviceContextTest.cpp"],
+    gpu_constraints = ["//:apple_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
+    ],
+)
+
 modular_cc_test(
     name = "CUDADeviceContextTest",
     size = "small",
