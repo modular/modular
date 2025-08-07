@@ -84,7 +84,6 @@ enum ExprContext {
   EC_Origin,               // origin specifier
   EC_TypeOf,               // __type_of(x)
   EC_PyBindGen,            // within Python binding generation
-  EC_DisableDel,           // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call
   EC_RefBinding,           // ref r = x
 };
