@@ -156,7 +156,6 @@ fn load_AB[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ],
     b_smem: LayoutTensorIter[
         b_type,
@@ -164,7 +163,6 @@ fn load_AB[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
@@ -265,7 +263,6 @@ fn consumer_main_loop[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
@@ -273,7 +270,6 @@ fn consumer_main_loop[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
@@ -410,13 +406,25 @@ fn store_C[
     var accum_phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[accum_index].wait(accum_phase)
 
+    var c_upper_pow_2_main = SIMD[
+        accum_type, main_repetition * num_regs_per_thread
+    ](0)
+    var c_lower_pow_2_main = SIMD[
+        accum_type, main_repetition * num_regs_per_thread
+    ](0)
+
+    # dummy registers for when we don't have remainder. Will get optimized away.
+    alias c_remainder_width = remainder_repetitions * num_regs_per_thread if remainder_elements > 0 else 2
+
+    var c_upper_pow_2_rem = SIMD[accum_type, c_remainder_width](0)
+    var c_lower_pow_2_rem = SIMD[accum_type, c_remainder_width](0)
+
     # warp_id 0 -> 0, 16
     # warp_id 1 -> 32, 48
     # warp_id 2 -> 64, 80
     # warp_id 3 -> 96, 112
-
     # Primary Load
-    var c_upper_pow_2_main = tcgen05_ld[
+    c_upper_pow_2_main = tcgen05_ld[
         datapaths=data_paths,
         bits=bits,
         repeat=main_repetition,
@@ -427,7 +435,7 @@ fn store_C[
 
     # Load c_frag_lower
     # Primary load
-    var c_lower_pow_2_main = tcgen05_ld[
+    c_lower_pow_2_main = tcgen05_ld[
         datapaths=data_paths,
         bits=bits,
         repeat=main_repetition,
@@ -435,6 +443,27 @@ fn store_C[
         pack=False,
         width = main_repetition * num_regs_per_thread,
     ](tmem_addr | ((warp_id * 32 + 16) << 16))
+
+    @parameter
+    if remainder_elements > 0:
+        c_upper_pow_2_rem = tcgen05_ld[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=remainder_repetitions,
+            dtype=accum_type,
+            pack=False,
+            width=c_remainder_width,
+        ](tmem_addr + 128 | ((warp_id * WARP_SIZE) << 16))
+
+        c_lower_pow_2_rem = tcgen05_ld[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=remainder_repetitions,
+            dtype=accum_type,
+            pack=False,
+            width=c_remainder_width,
+        ](tmem_addr + 128 | ((warp_id * WARP_SIZE + 16) << 16))
+
     # Remainder load happens later, only if needed
     tcgen05_load_wait()
 
@@ -521,31 +550,10 @@ fn store_C[
                     d_reg_lower_packed,
                 )
 
-    named_barrier[num_output_warps * WARP_SIZE]()
     alias RESHAPED_NUM_TILES = MMA_N // half_tma_bn
 
     @parameter
     if remainder_elements > 0:
-        var c_upper_pow_2_rem = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=remainder_repetitions,
-            dtype=accum_type,
-            pack=False,
-            width = remainder_repetitions * num_regs_per_thread,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE) << 16))
-
-        var c_lower_pow_2_rem = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=remainder_repetitions,
-            dtype=accum_type,
-            pack=False,
-            width = remainder_repetitions * num_regs_per_thread,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE + 16) << 16))
-
-        tcgen05_load_wait()
-
         var c_smem_tile_leftover_reshaped = c_smem_tile.reshape[
             Layout.row_major(BM * RESHAPED_NUM_TILES, half_tma_bn)
         ]()
@@ -616,6 +624,8 @@ fn store_C[
                     ),
                     d_reg_lower_packed_leftover,
                 )
+
+    named_barrier[num_output_warps * WARP_SIZE]()
 
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
@@ -782,7 +792,6 @@ fn blackwell_tma_pair_umma_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](
         a_smem_base.static_alignment_cast[128](),
         a_smem_size,
@@ -794,7 +803,6 @@ fn blackwell_tma_pair_umma_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-        circular=True,
     ](
         b_smem_base.static_alignment_cast[128](),
         b_smem_size,
