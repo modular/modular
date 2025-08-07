@@ -260,7 +260,7 @@ struct IntList[static_values: DimList = DimList()](
         return self.length
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         @parameter
         if not Self.has_static_length():
             if self.data != UnsafePointer[Int]():

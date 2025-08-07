@@ -46,10 +46,10 @@ struct _PythonGlobal(Defaultable, Movable):
     fn __init__(out self):
         self.cpython = CPython()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.cpython = other.cpython^
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.cpython.destroy()
 
 
@@ -115,7 +115,7 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn evaluate(
-        owned expr: String,
+        var expr: String,
         file: Bool = False,
         name: StringSlice[StaticConstantOrigin] = "__main__",
     ) raises -> PythonObject:
@@ -269,7 +269,7 @@ struct Python(Copyable, Defaultable):
     @staticmethod
     fn add_functions(
         module: PythonObject,
-        owned functions: List[PyMethodDef],
+        var functions: List[PyMethodDef],
     ) raises:
         """Adds functions to a Python module object.
 
@@ -324,7 +324,7 @@ struct Python(Copyable, Defaultable):
     @staticmethod
     fn add_object(
         module: PythonObject,
-        owned name: String,
+        var name: String,
         value: PythonObject,
     ) raises:
         """Add a new object to `module` with the given name and value.

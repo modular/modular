@@ -31,7 +31,7 @@ struct __ParameterClosureCaptureList[
         )
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         __mlir_op.`pop.aligned_free`(self.value)
 
     @always_inline("nodebug")

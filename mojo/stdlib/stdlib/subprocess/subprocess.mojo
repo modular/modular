@@ -47,7 +47,7 @@ struct _POpenHandle:
         if not self._handle:
             raise "unable to execute the command `" + cmd + "`"
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = pclose(self._handle)
 

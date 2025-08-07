@@ -341,7 +341,7 @@ struct NamedTemporaryFile:
         except:
             raise Error("Failed to create temporary file")
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
@@ -354,7 +354,7 @@ struct NamedTemporaryFile:
         if self._delete:
             os.remove(self.name)
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves constructor for the file handle.
 
         Args:

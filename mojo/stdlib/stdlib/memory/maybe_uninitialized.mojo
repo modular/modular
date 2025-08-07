@@ -62,10 +62,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
     @always_inline
     fn __init__[
         MovableType: Movable
-    ](
-        out self: UnsafeMaybeUninitialized[MovableType],
-        owned value: MovableType,
-    ):
+    ](out self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
         """The memory is now considered initialized.
 
         Parameters:
@@ -132,7 +129,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_explicit_copy(other)
 
     @always_inline
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move another object.
 
         This method should never be called as implicit moves should not
@@ -196,10 +193,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
     @always_inline
     fn write[
         MovableType: Movable
-    ](
-        mut self: UnsafeMaybeUninitialized[MovableType],
-        owned value: MovableType,
-    ):
+    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
         """Write a value into an uninitialized memory location.
 
         Calling this method assumes that the memory is uninitialized.
@@ -245,7 +239,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().destroy_pointee()
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """This is a no-op.
 
         Calling this method assumes that the memory is uninitialized.

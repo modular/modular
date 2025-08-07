@@ -24,9 +24,7 @@ from sys import CompilationTarget, external_call
 from sys.ffi import c_int
 
 
-fn setenv(
-    owned name: String, var value: String, overwrite: Bool = True
-) -> Bool:
+fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
     """Changes or adds an environment variable.
 
     Constraints:

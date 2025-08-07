@@ -163,10 +163,10 @@ struct _OwnedDLHandle(Movable):
     fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD) raises:
         self._handle = DLHandle(path, flags)
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self._handle = other._handle
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Delete the DLHandle object unloading the associated dynamic library.
         """
         self._handle.close()

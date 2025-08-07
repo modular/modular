@@ -133,7 +133,7 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    owned handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+    var handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
 
@@ -222,7 +222,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         """
         return self._result
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -312,7 +312,7 @@ struct _TaskGroupBox(Copyable, Movable):
         """
         self = other
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
@@ -356,7 +356,7 @@ struct TaskGroup(Defaultable):
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(UnsafePointer[_Chain](to=self.chain))
 
@@ -376,7 +376,7 @@ struct TaskGroup(Defaultable):
     fn create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        owned task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type],
     ):
         """Add a new task to the TaskGroup for execution.
 
@@ -390,7 +390,7 @@ struct TaskGroup(Defaultable):
     fn _create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        owned task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type],
         desired_worker_id: Int = -1,
     ):
         # TODO(MOCO-771): Enforce that `task.origins` is a subset of

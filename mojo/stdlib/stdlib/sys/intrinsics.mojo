@@ -108,7 +108,7 @@ fn _unsafe_aliasing_address_to_pointer[
 fn gather[
     dtype: DType, size: Int, //, *, invariant: Bool = False
 ](
-    owned base: SIMD[DType.index, size],
+    var base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
     alignment: Int = 0,
@@ -197,7 +197,7 @@ fn scatter[
     dtype: DType, size: Int, //
 ](
     value: SIMD[dtype, size],
-    owned base: SIMD[DType.index, size],
+    var base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
     alignment: Int = 0,
 ):

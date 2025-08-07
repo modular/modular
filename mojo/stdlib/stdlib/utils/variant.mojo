@@ -150,7 +150,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         # Delegate to explicit copy initializer.
         self = other.copy()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move initializer for the variant.
 
         Args:
@@ -167,7 +167,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
                 other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
                 return
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the variant."""
 
         @parameter

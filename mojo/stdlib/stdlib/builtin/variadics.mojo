@@ -247,7 +247,7 @@ struct VariadicListMem[
         self.value = value
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves constructor.
 
         Args:
@@ -256,7 +256,7 @@ struct VariadicListMem[
         self.value = existing.value
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
@@ -446,7 +446,7 @@ struct VariadicPack[
         self._value = value
 
     @always_inline("nodebug")
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         @parameter

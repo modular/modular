@@ -48,7 +48,7 @@ struct _OwnedStringRef(Boolable, Defaultable):
         self.data = UnsafePointer[UInt8]()
         self.length = 0
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         if self.data:
             self.data.free()
 
@@ -104,7 +104,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         self.handle = handle
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
@@ -126,7 +126,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         self.handle = OpaquePointer()
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves constructor for the file handle.
 
         Args:

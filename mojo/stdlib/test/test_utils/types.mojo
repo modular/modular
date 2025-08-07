@@ -54,7 +54,7 @@ struct MoveOnly[T: Movable](Movable):
         """
         self.data = i^
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move construct a MoveOnly from an existing variable.
 
         Args:
@@ -79,12 +79,12 @@ struct ObservableMoveOnly(Movable):
         self.value = value
         self.actions[0].append("__init__")
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.actions = existing.actions
         self.value = existing.value
         self.actions[0].append("__moveinit__")
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.actions[0].append("__del__")
 
 
@@ -142,7 +142,7 @@ struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     fn __init__(out self, *, other: Self):
         self.copy_count = other.copy_count + 1
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.copy_count = existing.copy_count
 
     fn __copyinit__(out self, existing: Self):
@@ -188,7 +188,7 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
         self.value = other.value.copy()
         self.move_count = other.move_count
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.value = existing.value^
         self.move_count = existing.move_count + 1
 
@@ -223,7 +223,7 @@ struct MoveCopyCounter(Copyable, Movable):
     fn copy(self) -> Self:
         return self
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
 
@@ -242,7 +242,7 @@ struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
         self.value = other.value
         self.destructor_counter = other.destructor_counter
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.destructor_counter[].append(self.value)
 
     fn copy(self) -> Self:
@@ -263,7 +263,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
     fn __init__(out self, *, other: Self):
         self = other
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.target.init_pointee_move(True)
 
 
@@ -276,7 +276,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 struct DelCounter(Copyable, Movable, Writable):
     var counter: UnsafePointer[Int]
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.counter[] += 1
 
     fn write_to[W: Writer](self, mut writer: W):
@@ -294,7 +294,7 @@ struct DelCounter(Copyable, Movable, Writable):
 struct AbortOnDel(Copyable, Movable):
     var value: Int
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         abort("We should never call the destructor of AbortOnDel")
 
 

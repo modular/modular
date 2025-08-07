@@ -97,7 +97,7 @@ struct OwnedPointer[T: AnyType]:
         """
         self = OwnedPointer[T](copy_value=other[])
 
-    fn __del__(owned self: OwnedPointer[T]):
+    fn __del__(deinit self: OwnedPointer[T]):
         """Destroy the OwnedPointer[]."""
         self._inner.destroy_pointee()
         self._inner.free()

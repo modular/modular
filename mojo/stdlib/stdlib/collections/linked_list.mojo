@@ -36,7 +36,7 @@ struct Node[
 
     fn __init__(
         out self,
-        owned value: ElementType,
+        var value: ElementType,
         prev: Optional[Self._NodePointer],
         next: Optional[Self._NodePointer],
     ):
@@ -202,7 +202,7 @@ struct LinkedList[
         """
         self = other.copy()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Initialize this list by moving elements from another list.
 
         Args:
@@ -215,7 +215,7 @@ struct LinkedList[
         self._tail = other._tail
         self._size = other._size
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up the list by freeing all nodes.
 
         Notes:

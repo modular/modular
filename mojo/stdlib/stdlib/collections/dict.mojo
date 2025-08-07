@@ -308,7 +308,7 @@ struct _DictIndex(Movable):
             memcpy(new_data, data, reserved)
         return index^
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.data = existing.data
 
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
@@ -339,7 +339,7 @@ struct _DictIndex(Movable):
             var data = self.data.bitcast[Int64]()
             return data.store(slot & (reserved - 1), value)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.data.free()
 
 
@@ -515,8 +515,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     @always_inline
     fn __init__(
         out self,
-        owned keys: List[K],
-        owned values: List[V],
+        var keys: List[K],
+        var values: List[V],
         __dict_literal__: (),
     ):
         """Constructs a dictionary from the given keys and values.
@@ -986,12 +986,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             entries.append(None)
         return entries
 
-    fn _insert(mut self, owned key: K, owned value: V):
+    fn _insert(mut self, var key: K, var value: V):
         self._insert(DictEntry[K, V, H](key^, value^))
 
     fn _insert[
         safe_context: Bool = False
-    ](mut self, owned entry: DictEntry[K, V, H]):
+    ](mut self, var entry: DictEntry[K, V, H]):
         @parameter
         if not safe_context:
             self._maybe_resize()
@@ -1124,7 +1124,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         """
         self._dict = existing._dict
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move data of an existing keyword dictionary into a new one.
 
         Args:

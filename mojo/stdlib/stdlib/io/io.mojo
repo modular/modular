@@ -371,7 +371,7 @@ fn print[
     sep: StaticString = " ",
     end: StaticString = "\n",
     flush: Bool = False,
-    owned file: FileDescriptor = stdout,
+    var file: FileDescriptor = stdout,
 ):
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.

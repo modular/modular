@@ -67,7 +67,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
     fn __init__(
         out self,
         *,
-        owned storage: VariadicPack[_, _, Copyable & Movable, *element_types],
+        var storage: VariadicPack[_, _, Copyable & Movable, *element_types],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -87,7 +87,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
 
         storage^.consume_elements[init_elt]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that destroys all of the elements."""
 
         # Run the destructor on each member, the destructor of !kgen.pack is
@@ -122,7 +122,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
         return self
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move construct the tuple.
 
         Args:

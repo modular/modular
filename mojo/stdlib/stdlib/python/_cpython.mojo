@@ -1605,7 +1605,7 @@ struct CPython(Defaultable, Movable):
         else:
             self._Py_Is = _Py_Is_dummy
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn destroy(mut self):
@@ -1978,7 +1978,7 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/import.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyImport_ImportModule(self, owned name: String) -> PyObjectPtr:
+    fn PyImport_ImportModule(self, var name: String) -> PyObjectPtr:
         """This is a wrapper around `PyImport_Import()` which takes a `const char*`
         as an argument instead of a `PyObject*`.
 
@@ -1989,7 +1989,7 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyImport_ImportModule(name.unsafe_cstr_ptr())
 
-    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
+    fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
         """Return the module object corresponding to a module name.
 
         Return value: Borrowed reference.

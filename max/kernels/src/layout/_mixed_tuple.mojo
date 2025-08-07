@@ -128,7 +128,7 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __init__(out self, owned *args: *element_types, __list_literal__: ()):
+    fn __init__(out self, var *args: *element_types, __list_literal__: ()):
         """Construct tuple from variadic arguments.
 
         Args:
@@ -138,7 +138,7 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
         self = Self(storage=args^)
 
     @always_inline("nodebug")
-    fn __init__(out self, owned *args: *element_types):
+    fn __init__(out self, var *args: *element_types):
         """Construct the tuple from variadic arguments.
 
         Args:
@@ -150,7 +150,7 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
     fn __init__(
         out self,
         *,
-        owned storage: VariadicPack[_, _, MixedIntTupleLike, *element_types],
+        var storage: VariadicPack[_, _, MixedIntTupleLike, *element_types],
     ):
         """Construct from a low-level variadic pack.
 
@@ -169,7 +169,7 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
 
         storage^.consume_elements[init_elt]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that destroys all elements."""
 
         @parameter

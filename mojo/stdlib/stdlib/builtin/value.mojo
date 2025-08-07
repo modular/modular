@@ -27,7 +27,7 @@ trait Movable:
         fn __init__(out self):
             pass
 
-        fn __moveinit__(out self, owned existing: Self):
+        fn __moveinit__(out self, deinit existing: Self):
             print("moving")
     ```
 
@@ -47,7 +47,7 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         """Create a new instance of the value by moving the value of another.
 
         Args:

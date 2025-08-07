@@ -213,9 +213,7 @@ fn _pad_constant_axis[
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
-    owned axis_params: StaticTuple[
-        _AxisParams[rank, dtype, paddings_type], rank
-    ],
+    var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
     ctx: DeviceContext,
 ) raises:
     @parameter

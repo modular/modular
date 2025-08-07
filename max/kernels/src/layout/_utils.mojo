@@ -211,7 +211,7 @@ struct ManagedLayoutTensor[
             self.ctx.synchronize()
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

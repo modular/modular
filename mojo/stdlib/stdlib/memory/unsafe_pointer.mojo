@@ -1048,7 +1048,7 @@ struct UnsafePointer[
         T: Movable, //,
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        owned value: T,
+        var value: T,
     ):
         """Emplace a new value into the pointer location, moving from `value`.
 

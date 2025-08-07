@@ -222,7 +222,7 @@ struct Error(
         """
         return self
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases memory if allocated."""
         if self.loaded_length < 0:
             self.data.free()

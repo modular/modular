@@ -113,7 +113,7 @@ struct _DirHandle:
         if not self._handle:
             raise "unable to open the directory '" + path + "'"
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 

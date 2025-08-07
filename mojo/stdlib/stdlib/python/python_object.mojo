@@ -380,8 +380,8 @@ struct PythonObject(
 
     fn __init__(
         out self,
-        owned keys: List[PythonObject],
-        owned values: List[PythonObject],
+        var keys: List[PythonObject],
+        var values: List[PythonObject],
         __dict_literal__: (),
     ) raises:
         """Construct a Python dictionary from a list of keys and a list of values.
@@ -417,7 +417,7 @@ struct PythonObject(
         """
         self = Self(from_borrowed=existing._obj_ptr)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the object.
 
         This decrements the underlying refcount of the pointed-to object.

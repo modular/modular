@@ -208,7 +208,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self = Self(capacity=existing.capacity)
         self.extend(Span(existing))
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""
 
         @parameter

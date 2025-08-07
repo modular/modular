@@ -105,7 +105,7 @@ struct HostNDBuffer[
         self = Self(_make_tuple[rank](dynamic_shape))
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.tensor.data.free()
 
     def copy_to_device(
@@ -271,7 +271,7 @@ struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
         for i in range(self.num_elements):
             self.ndbuffer.data[i] = other.ndbuffer.data[i]
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.ndbuffer.data.free()
 
     fn to_managed_tensor_slice(self) -> DynamicTensor[dtype, rank]:
