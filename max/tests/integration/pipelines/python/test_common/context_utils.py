@@ -18,4 +18,4 @@ def create_text_context(
         max_length=max_length,
         tokens=tokens,
     )
-    return ctx  # type: ignore
+    return ctx
