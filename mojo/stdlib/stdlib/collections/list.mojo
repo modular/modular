@@ -1122,15 +1122,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
-    ](var self) -> List[T, hint_trivial_type]:
+    ](deinit self) -> List[T, hint_trivial_type]:
         var result = List[T, hint_trivial_type]()
         result._data = self._data
         result._len = self._len
         result.capacity = self.capacity
-
-        # We stole the elements, don't destroy them.
-        __disable_del self
-
         return result^
 
 

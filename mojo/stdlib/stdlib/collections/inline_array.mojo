@@ -288,7 +288,8 @@ struct InlineArray[
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
-        __disable_del storage
+        # FIXME: Why doesn't consume_elements work here?
+        storage^._anihilate()
 
     fn copy(self, out copy: Self):
         """Creates a deep copy of the array.

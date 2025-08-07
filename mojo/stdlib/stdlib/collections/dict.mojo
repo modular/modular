@@ -237,14 +237,13 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         """
         return self
 
-    fn reap_value(var self, out result: V):
+    fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
 
         Returns:
             The value of the entry.
         """
-        result = self.value^
-        __disable_del self
+        return self.value^
 
 
 alias _EMPTY = -1
