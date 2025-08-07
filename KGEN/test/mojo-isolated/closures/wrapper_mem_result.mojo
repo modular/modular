@@ -48,7 +48,6 @@ struct MemType(Copyable, Movable):
 # CHECK-NEXT:      [[P8:%.*]] = lit.ref.struct.ger %other[call]
 # CHECK-NEXT:      [[P9:%.*]] = lit.ref.load [[P8]]
 # CHECK-NEXT:      lit.ref.store [[P9]], [[P7]]
-# CHECK-NEXT:      kgen.param.constant: none
 # CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = lit.ref.load [[EXISTING_IMPL_PTR]]
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[_copy]

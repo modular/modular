@@ -594,18 +594,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
         result,
         shared.getEvaluationContext().getBindParamsAttr(symbol, paramArgs),
         origins, operands);
-    ValueRange results = callOp.getResults();
-    // if this is a del, mark the self as destroyed. If it is a move, mark the
-    // existing as destroyed.
-    SpecialFunctionKind kind =
-        (SpecialFunctionKind)traitFnOp.getSpecialFnKind();
-    if (kind == SpecialFunctionKind::kMoveInit ||
-        kind == SpecialFunctionKind::kDel) {
-      auto arg0 = op.getBodyRegion().front().getArgument(0);
-      b.create<LIT::OwnershipMarkDestroyedOp>(arg0);
-    }
-    b.create<LIT::ReturnOp>(results);
-    b.create<LIT::EndFnOp>();
+    IREmitter::emitNormalReturn(b, callOp.getResult(0));
     return op;
   };
   DenseMap<StringRef, FnOp> nameToImpl;
@@ -723,10 +712,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                        explicitParameters, operands, origins);
   b.create<LIT::CallOp>(moveSignature.getResultType(), moveSymbol, origins,
                         operands);
-  ValueRange results =
-      b.create<ParamConstantOp>(NoneAttr::get(ctx))->getResults();
-  b.create<LIT::ReturnOp>(results);
-  b.create<LIT::EndFnOp>();
+  IREmitter::emitNormalReturn(b);
   declOp.setCanonicalTrait(traitType);
   return declOp;
 }
@@ -883,14 +869,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
       diScopeGuard = shared.diBuilder->pushScopeGuard(copyCtr.getLocScope());
-    // we want to insert before return at end of function. LIT::ReturnOp is not
-    // a terminator though, so let's find it and set it.
     ImplicitLocOpBuilder b =
         ImplicitLocOpBuilder::atBlockBegin(copyCtr.getLoc(), copyCtr.getBody());
-    auto returnOps = copyCtr.getBody()->getOps<LIT::ReturnOp>();
-    assert(std::distance(returnOps.begin(), returnOps.end()) == 1 &&
-           "copy should have exactly one return op.");
-    b.setInsertionPoint(*returnOps.begin());
     Value copySelf = copyCtr.getBody()->getArgument(1);
     Value copyExisting = copyCtr.getBody()->getArgument(0);
     Value existingImpl = loadField(b, copyExisting, impl);
@@ -1331,12 +1311,11 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared);
-  auto [initTmp, _] =
-      StructEmitter(closureDecl)
-          .addVoidMethod("__init__", argTypes, argConventions,
-                         argListAttrsOfInit, SpecialFunctionKind::kInit,
-                         initParams, paramListAttrsOfInit);
-  auto init = initTmp;
+  auto [init, _] = StructEmitter(closureDecl)
+                       .synthesizeMethodInStruct(
+                           "__init__", initParams, paramListAttrsOfInit,
+                           argTypes, argConventions, argListAttrsOfInit,
+                           shared.getNoneType(), SpecialFunctionKind::kInit);
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -1415,8 +1394,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
   // Populate copy init body.
   {
-    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(),
-                                               topLevelCopyInit.getBody());
+    builder = ImplicitLocOpBuilder::atBlockBegin(topLevelCopyInit.getLoc(),
+                                                 topLevelCopyInit.getBody());
     SmallVector<PassingKind> paramPassingKinds(topLevelParams.size(),
                                                PassingKind::PosOnly);
     Block *body = topLevelCopyInit.getBody();
@@ -1566,6 +1545,9 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     IREmitter::emitNormalReturn(builder, result);
   }
   setMember(topLevelCall, callFieldAttr, topLevelTypes.callFuncFieldType);
+
+  builder = ImplicitLocOpBuilder::atBlockEnd(init.getLoc(), init.getBody());
+  IREmitter::emitNormalReturn(builder);
   return init;
 }
 
