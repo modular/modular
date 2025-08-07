@@ -19,7 +19,6 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorOutput,
     GenerationStatus,
@@ -199,7 +198,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
 
     def next_chunk(
         self, batch: dict[str, TTSContext]
-    ) -> dict[str, AudioGenerationResponse]:
+    ) -> dict[str, AudioGeneratorOutput]:
         is_ce = next(iter(batch.values())).is_ce
 
         if is_ce:
@@ -224,14 +223,12 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
         # Generate the responses
         responses = {}
         for req_id, context in batch.items():
-            resp = AudioGenerationResponse(GenerationStatus.ACTIVE)
+            resp = AudioGeneratorOutput(GenerationStatus.ACTIVE)
             for _ in range(num_tokens):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
-                    resp = AudioGenerationResponse(
-                        GenerationStatus.MAXIMUM_LENGTH
-                    )
+                    resp = AudioGeneratorOutput(GenerationStatus.MAXIMUM_LENGTH)
 
                     # Pretend that the audio generation is done immediately when
                     # text generation is done.

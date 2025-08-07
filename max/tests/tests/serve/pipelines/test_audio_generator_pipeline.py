@@ -15,6 +15,7 @@ from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
     AudioGeneratorOutput,
+    GenerationStatus,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
@@ -63,19 +64,19 @@ def test_generate_full_audio_multiple_chunks() -> None:
         AudioGeneratorOutput(
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.1),
-            is_done=False,
+            final_status=GenerationStatus.ACTIVE,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.2),
-            is_done=False,
+            final_status=GenerationStatus.ACTIVE,
         ),
         AudioGeneratorOutput(
             audio_data=chunk3_audio,
             metadata=AudioGenerationMetadata(
                 sample_rate=44100, duration=0.3, final_chunk=True
             ),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -96,11 +97,9 @@ def test_generate_full_audio_multiple_chunks() -> None:
     np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk.
-    assert result.metadata == {
-        "sample_rate": 44100,
-        "duration": 0.3,
-        "final_chunk": True,
-    }
+    assert result.metadata == AudioGenerationMetadata(
+        sample_rate=44100, duration=0.3, final_chunk=True
+    )
 
 
 def test_generate_full_audio_single_chunk() -> None:
@@ -113,7 +112,7 @@ def test_generate_full_audio_single_chunk() -> None:
         AudioGeneratorOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050, duration=0.5),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -127,7 +126,9 @@ def test_generate_full_audio_single_chunk() -> None:
     # Verify the result
     assert result.is_done is True
     np.testing.assert_allclose(result.audio_data, chunk_audio)
-    assert result.metadata == {"sample_rate": 22050, "duration": 0.5}
+    assert result.metadata == AudioGenerationMetadata(
+        sample_rate=22050, duration=0.5
+    )
 
 
 def test_generate_full_audio_empty_chunks() -> None:
@@ -143,7 +144,7 @@ def test_generate_full_audio_empty_chunks() -> None:
     assert result.is_done is True
     expected_empty_audio = np.array([])
     np.testing.assert_allclose(result.audio_data, expected_empty_audio)
-    assert result.metadata == {}
+    assert result.metadata == AudioGenerationMetadata()
 
 
 def test_generate_full_audio_last_chunk_not_done() -> None:
@@ -156,7 +157,7 @@ def test_generate_full_audio_last_chunk_not_done() -> None:
         AudioGeneratorOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
-            is_done=False,  # This should cause the assertion to fail
+            final_status=GenerationStatus.ACTIVE,  # This should cause the assertion to fail
         ),
     ]
 
@@ -181,17 +182,17 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
         AudioGeneratorOutput(
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(chunk_id=1),
-            is_done=False,
+            final_status=GenerationStatus.ACTIVE,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(chunk_id=2),
-            is_done=False,
+            final_status=GenerationStatus.ACTIVE,
         ),
         AudioGeneratorOutput(
             audio_data=chunk3_audio,
             metadata=AudioGenerationMetadata(chunk_id=3, final_chunk=True),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -212,7 +213,9 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
     np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk.
-    assert result.metadata == {"chunk_id": 3, "final_chunk": True}
+    assert result.metadata == AudioGenerationMetadata(
+        chunk_id=3, final_chunk=True
+    )
 
 
 def test_generate_full_audio_preserves_chunk_objects() -> None:
@@ -228,7 +231,7 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
             metadata=AudioGenerationMetadata(
                 chunk_id=1, timestamp="2024-01-01"
             ),
-            is_done=False,
+            final_status=GenerationStatus.ACTIVE,
         ),
         AudioGeneratorOutput(
             audio_data=chunk2_audio,
@@ -237,7 +240,7 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
                 timestamp="2024-01-02",
                 final_chunk=True,
             ),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -256,9 +259,9 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
     np.testing.assert_allclose(result.audio_data, expected_audio)
 
     # Check that metadata comes from the last chunk (not the first).
-    assert result.metadata == {
-        "chunk_id": 2,
-        "timestamp": "2024-01-02",
-        "final_chunk": True,
-    }
-    assert result.metadata != {"chunk_id": 1, "timestamp": "2024-01-01"}
+    assert result.metadata == AudioGenerationMetadata(
+        chunk_id=2, timestamp="2024-01-02", final_chunk=True
+    )
+    assert result.metadata != AudioGenerationMetadata(
+        chunk_id=1, timestamp="2024-01-01"
+    )

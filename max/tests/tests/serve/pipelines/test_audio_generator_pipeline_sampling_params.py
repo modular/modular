@@ -17,6 +17,7 @@ from max.interfaces import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
     AudioGeneratorOutput,
+    GenerationStatus,
     SamplingParams,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
@@ -78,7 +79,7 @@ def test_pipeline_receives_sampling_params() -> None:
         AudioGeneratorOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -105,7 +106,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
         AudioGeneratorOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
@@ -163,7 +164,7 @@ def test_multiple_requests_different_sampling_params() -> None:
         AudioGeneratorOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(),
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         ),
     ]
 
