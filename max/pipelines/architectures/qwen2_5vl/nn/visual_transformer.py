@@ -26,7 +26,7 @@ from max.graph import (
     dtype_promotion,
     ops,
 )
-from max.nn import MLP, Conv3D, Linear, RMSNorm
+from max.nn import MLP, Conv3D, LayerList, Linear, RMSNorm
 from max.nn.layer import Module
 
 
@@ -518,17 +518,19 @@ class VisionTransformer(Module):
         )
 
         # Create transformer blocks
-        self.blocks = [
-            VisionBlock(
-                dtype=dtype,
-                device=device,
-                hidden_size=embed_dim,
-                num_heads=num_heads,
-                intermediate_size=intermediate_size,
-                rms_norm_eps=rms_norm_eps,
-            )
-            for _ in range(depth)
-        ]
+        self.blocks = LayerList(
+            [
+                VisionBlock(
+                    dtype=dtype,
+                    device=device,
+                    hidden_size=embed_dim,
+                    num_heads=num_heads,
+                    intermediate_size=intermediate_size,
+                    rms_norm_eps=rms_norm_eps,
+                )
+                for _ in range(depth)
+            ]
+        )
 
         # Create patch merger
         self.merger = PatchMerger(
