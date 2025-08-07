@@ -56,7 +56,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.router.json_utils import parse_json_from_text
-from max.serve.schemas.openai import (  # type: ignore
+from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
