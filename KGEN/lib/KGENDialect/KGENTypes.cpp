@@ -35,7 +35,7 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
     return "read";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
-    return "owned";
+    return "var";
   case ArgConvention::Mut:
     return "mut";
   case ArgConvention::Ref:

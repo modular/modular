@@ -225,6 +225,9 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
     pass
 
+fn take_two_owned[A: AnyType, B: AnyType](var a: A, var b: B):
+    pass
+
 fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
 
@@ -262,6 +265,10 @@ fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s.a' value is passed through aliasing 'mut' argument}}
     mutate_two(s, s.a)
+
+    # expected-error @below {{argument of 'take_two_owned' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s' value is passed through aliasing 'var' argument}}
+    take_two_owned(s^, s^)
 
     # expected-error @below {{argument of 'mutate_one_read_one' call allows reading a memory location previously writable through another aliased argument}}
     # expected-note @below {{'s.a' value is passed through aliasing 'read' argument}}
