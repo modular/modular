@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -13,7 +14,7 @@ import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
 from max.nn import ColumnParallelLinear, Linear, Signals
 
 
@@ -75,12 +76,16 @@ def _multi_gpu_linear(
 
     with Graph(
         "distributed_linear",
-        input_types=[
-            TensorType(
-                DType.float32, [batch_size, in_dim], device=DeviceRef.GPU()
-            )
-        ]
-        + signals.input_types(),
+        # https://github.com/python/mypy/issues/19413
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(
+                    DType.float32, [batch_size, in_dim], device=DeviceRef.GPU()
+                )
+            ]
+            + signals.input_types(),
+        ),
     ) as distributed_graph:
         assert isinstance(distributed_graph.inputs[0], TensorValue)
         inputs = _distribute_value(distributed_graph.inputs[0], devices)

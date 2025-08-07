@@ -17,12 +17,12 @@ def test_slice_gpu_ideal_case() -> None:
     x_input = TensorType(
         shape=("dynamic_dim", 10), dtype=DType.float32, device=device_ref
     )
-    x_slice_val = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
+    x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
     # TODO(MAXPLAT-363):
     with pytest.raises(TypeError):
         with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_val], device=device_ref
+            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
         ) as graph:
             x_tensor, x_slice_val = graph.inputs
 
@@ -38,10 +38,10 @@ def test_slice_gpu_explicit_devices() -> None:
     x_input = TensorType(
         shape=("dynamic_dim", 10), dtype=DType.float32, device=device_ref
     )
-    x_slice_val = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
+    x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
     with Graph(
-        "slice_gpu", input_types=[x_input, x_slice_val], device=device_ref
+        "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
     ) as graph:
         x_tensor, x_slice_val = graph.inputs
         out = ops.slice_tensor(
@@ -81,12 +81,12 @@ def test_slice_gpu_scalar_slice_ideal() -> None:
     x_input = TensorType(
         shape=("dynamic_dim"), dtype=DType.float32, device=device_ref
     )
-    x_slice_val = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
+    x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
     # TODO(MAXPLAT-363):
     with pytest.raises(ValueError):
         with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_val], device=device_ref
+            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
         ) as graph:
             x_tensor, x_slice_val = graph.inputs
             out = x_tensor.tensor[x_slice_val.tensor]
@@ -99,12 +99,12 @@ def test_slice_gpu_scalar_slice() -> None:
     x_input = TensorType(
         shape=("dynamic_dim"), dtype=DType.float32, device=device_ref
     )
-    x_slice_val = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
+    x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
     # TODO(MAXPLAT-363):
     with pytest.raises(ValueError):
         with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_val], device=device_ref
+            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
         ) as graph:
             x_tensor, x_slice_val = graph.inputs
             out = ops.slice_tensor(

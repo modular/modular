@@ -133,8 +133,8 @@ def generate_max_outputs(
                 (input_tensor.shape[0], config.hidden_size),
                 device=DeviceRef.GPU(),
             ),
-        ]
-        + signals.input_types(),
+            *signals.input_types(),
+        ],
     ) as graph:
         assert isinstance(graph.inputs[0], TensorValue)
         inputs = _distribute_value(graph.inputs[0], devices)
