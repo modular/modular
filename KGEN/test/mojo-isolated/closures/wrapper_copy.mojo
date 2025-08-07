@@ -23,7 +23,6 @@
 # CHECK-NEXT:   [[M8:%.*]] = lit.ref.struct.ger %other[call]
 # CHECK-NEXT:   [[M9:%.*]] = lit.ref.load [[M8]]
 # CHECK-NEXT:   lit.ref.store [[M9]], [[M7]]
-# CHECK-NEXT:   kgen.param.constant: none
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[W1:%.*]] = lit.ref.load [[W0]]
 # CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[_copy]
@@ -33,6 +32,7 @@
 # CHECK-NEXT:  [[W5:%.*]] = lit.call_indirect [[W4]]([[W1]])
 # CHECK-NEXT:  [[W3:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  store [[W5]], [[W3]]
+# CHECK-NEXT:   kgen.param.constant: none
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_fn
 

@@ -420,54 +420,6 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   return funcOp;
 }
 
-/// Given a struct and a list of arguments, generate a function. For example,
-/// given {
-///  MyStruct, "prefix", [ParamType1, ParamType2],
-///  [read_mem, read_mem], ["x","b"]
-/// }, this function produces:
-///
-/// ```
-/// lit.fn @prefixParam1Param2(%x: ParamType1 read_mem,
-///    %b : ParamType2 read_mem, %self: !kgen.pointer<@MyStruct> byref_result
-/// ) -> !kgen.none  {
-///   %0 = kgen.param.constant: none = <#kgen.none>
-///   lit.return %0 : !kgen.none
-///   lit.end_fn
-/// }
-/// ```
-std::pair<FnOp, ASTDecl *>
-StructEmitter::addVoidMethod(StringRef prefix, ArrayRef<Type> argTypes,
-                             ArrayRef<ArgConvention> argConventions,
-                             PogListAttr argListAttrs, SpecialFunctionKind kind,
-                             ArrayRef<ParamDeclAttr> params,
-                             PogListAttr paramListAttrs) {
-  auto [func, funcDecl] = synthesizeMethodInStruct(
-      prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
-      shared.getNoneType(), kind);
-  if (!func)
-    return {};
-  Block *body = func.getBody();
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushScopeGuard(func.getLocScope());
-
-  ImplicitLocOpBuilder b =
-      ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
-  IREmitter::emitNormalReturn(b);
-  return {func, funcDecl};
-}
-
-std::pair<FnOp, ASTDecl *>
-StructEmitter::addVoidMethod(StringRef prefix, ArrayRef<Type> argTypes,
-                             ArrayRef<ArgConvention> argConventions,
-                             PogListAttr argListAttrs,
-                             SpecialFunctionKind kind) {
-
-  return addVoidMethod(prefix, argTypes, argConventions, argListAttrs, kind,
-                       /*params=*/{},
-                       /*paramListAttrs=*/PogListAttr::get(getContext()));
-}
-
 FnOp StructEmitter::synthesizeEmptyDtor() {
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
@@ -521,13 +473,21 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   auto argListAttrs =
       PogListAttr::get(ctx, {existingName, b.getStringAttr("self")},
                        {PassingKind::PosOnly, PassingKind::Implicit});
-  auto [resultFn, resultDecl] = addVoidMethod(
-      name, {existingArgType, selfArgType},
-      {existingConv, ArgConvention::ByRefResult}, argListAttrs,
+  auto [resultFn, resultDecl] = synthesizeMethodInStruct(
+      name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
+      /*argTypes*/ {existingArgType, selfArgType},
+      /*argConvs*/ {existingConv, ArgConvention::ByRefResult}, argListAttrs,
+      shared.getNoneType(),
       isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
   if (!resultFn)
     return {};
   resultDecl->resolvedness = DeclResolvedness::signature;
+
+  // Add a unresolved EndFnOp to the end of the function. This makes the
+  // function able to verify clean, even if we don't body or signature resolve
+  // it.
+  OpBuilder::atBlockEnd(resultFn.getBody())
+      .create<EndFnOp>(resultFn.getLoc(), /*unresolved=*/true);
 
   // TODO: Should only do this if the type is RP or small?
   resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -553,8 +513,18 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
-  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
-      shared.translateLocation(location), fn.getBody());
+
+  // Start by emitting the return at the end of the function.  Closure emission
+  // may have emitted stuff into the body of one of these functions and the
+  // return needs to come at the end.
+  auto endFn = cast<EndFnOp>(fn.getBody()->getTerminator());
+  endFn.setUnresolved(false); // Body is resolved now.
+  ImplicitLocOpBuilder b(fn.getLoc(), endFn);
+  IREmitter::emitNormalReturn(b, Value(), /*emitEndFunc=*/false);
+
+  // Generate the copy/moves of all of the elements, emit this at the start of
+  // the function so it is ahead of whatever closure emission might generate.
+  b = ImplicitLocOpBuilder::atBlockBegin(fn.getLoc(), fn.getBody());
   IREmitter emitter(structDecl, b);
 
   assert(fn.getNumArguments() == 2 &&
@@ -603,6 +573,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
                               MLValue(targetFieldOp), EC_AttributeRefBase);
   }
+
   SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
   if (isMove)
     structDeclOp.setMoveInitAttr(ref);
