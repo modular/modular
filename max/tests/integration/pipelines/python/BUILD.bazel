@@ -68,7 +68,6 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    ignore_collisions = True,
     visibility = ["//visibility:public"],
     deps = [
         ":generate_llm_logits",
@@ -92,7 +91,6 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    ignore_collisions = True,
     main = "verify_layers/cli.py",
     visibility = ["//visibility:public"],
     deps = [
@@ -246,7 +244,6 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    ignore_collisions = True,
     imports = ["."],
     main = "generate_llm_logits.py",
     visibility = ["//visibility:public"],
@@ -286,7 +283,6 @@ modular_py_test(
         "test.resources:gpu-memory": "23",
     },
     gpu_constraints = ["//:has_gpu"],
-    ignore_collisions = True,
     tags = [
         "AITLIB-293",
         "gpu",
@@ -303,7 +299,6 @@ modular_py_test(
 modular_py_binary(
     name = "lm-eval",
     srcs = ["run_lm_eval.py"],
-    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "run_lm_eval.py",
     deps = [
         requirement("lm-eval"),
@@ -313,7 +308,6 @@ modular_py_binary(
 modular_py_binary(
     name = "mistral-eval",
     srcs = ["run_mistral_eval.py"],
-    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "run_mistral_eval.py",
     deps = [
         "@mistral-evals//:evaluate",
@@ -328,7 +322,6 @@ modular_py_binary(
         "run_lm_eval.py",
         "//SDK/integration-test/pipelines/python/eval_tasks",
     ],
-    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "pipelines_lm_eval.py",
     deps = [
         ":lm-eval",
@@ -346,7 +339,6 @@ modular_py_test(
     name = "test_pipelines_lm_eval",
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
-    ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
         "no-sandbox",
         "requires-network",
@@ -363,7 +355,6 @@ modular_py_binary(
     name = "pipelines_mteb",
     srcs = ["pipelines_mteb.py"],
     data = ["//SDK/lib/API/python/max/entrypoints:pipelines"],
-    ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/architectures",

@@ -13,7 +13,6 @@ modular_py_test(
         ["**/test_*.py"],
     ),
     data = ["//SDK:max"],
-    ignore_collisions = True,
     tags = [
         "no-sandbox",
         "requires-network",
