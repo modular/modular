@@ -442,6 +442,9 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
     return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
+  // Destructors consume their 'self' arg.
+  funcOp.setIsSelfDeinit(true);
+
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
@@ -488,6 +491,8 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   // it.
   OpBuilder::atBlockEnd(resultFn.getBody())
       .create<EndFnOp>(resultFn.getLoc(), /*unresolved=*/true);
+  if (isMove) // Move constructors consume their 'self' arg.
+    resultFn.setIsSelfDeinit(true);
 
   // TODO: Should only do this if the type is RP or small?
   resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);

@@ -471,6 +471,7 @@ def generate_tokens(
         "read": READ,
         "mut": MUT,
         "out": OUT,
+        "deinit": DEINIT,
         "trait": TRAIT,
         "ref": REF,
     }
@@ -598,7 +599,7 @@ def generate_tokens(
         def check_mojo_token():
             # Context sensitive arg conventions are only a keyword if followed
             # by an identifier letter.
-            if token not in ["out", "read", "mut"]:
+            if token not in ["out", "read", "mut", "deinit"]:
                 return True
             next_token = line[end:].lstrip()
             return next_token and next_token[0].isidentifier()

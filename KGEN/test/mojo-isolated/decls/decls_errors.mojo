@@ -105,7 +105,6 @@ struct BadInitResult:
 def defaultArgumentUntyped(a=1):
     pass
 
-
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
@@ -735,8 +734,32 @@ struct InvalidMember:
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 struct BadDtor1:
-  fn __del__(self): # expected-error {{self argument must be 'owned'}}
+  fn __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
+
+  # expected-error @+1 {{only 'self' arguments in struct methods may be 'deinit'}}
+  fn bad1(self, deinit x: Int): pass
+  # expected-error @+2 {{cannot bind type 'BadDtor1' to trait 'AnyType'}}
+  # expected-error @+1 {{deinit arguments may not be variadic}}
+  fn bad2(deinit *self): pass
+
+# expected-error @+1 {{only 'self' arguments in struct methods may be 'deinit'}}
+fn invalid_deinit(deinit self: Int):
+    pass
+
+struct GoodDtor:
+   fn __del__(deinit self): pass
+   fn explicit_dtor(deinit self): pass
+   fn normal_var(var self): pass
+
+fn test_deinit_fn_types():
+  var fp1 : fn(var self: GoodDtor) -> None
+  fp1 = GoodDtor.__del__
+  fp1 = GoodDtor.explicit_dtor
+  fp1 = GoodDtor.normal_var
+
+  # expected-error @+1 {{'deinit' is not supported in function types, use 'var' instead}}
+  var fp2 : fn(deinit self: GoodDtor) -> None
 
 @fieldwise_init
 struct CantSynthesize(Copyable, Movable):

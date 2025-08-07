@@ -107,6 +107,10 @@ struct FieldwiseInitExample1[T: Movable]:
   var x: Int
   var y: T
 
+  fn __moveinit__(out self, deinit other: Self):
+    self.x = other.x
+    self.y = other.y^
+
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
 # CHECK: lit.fn @"__init__
 # CHECK-SAME: (%x: !Int, %y: !lit.ref<:!Movable T, mut *"y`"> owned_in_mem,
