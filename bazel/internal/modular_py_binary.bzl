@@ -1,6 +1,7 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_binary")
+load("@aspect_rules_py//py:defs.bzl", "py_venv")
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -18,7 +19,6 @@ def modular_py_binary(
         imports = [],
         tags = [],
         args = [],
-        ignore_collisions = False,
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -34,7 +34,6 @@ def modular_py_binary(
         imports: See upstream py_binary docs
         tags: See upstream py_binary docs
         args: See upstream py_binary docs
-        ignore_collisions: Ignore duplicate files from multiple deps conflicting in the same final package location
         **kwargs: Extra arguments passed through to py_binary
     """
     extra_toolchains = [
@@ -79,7 +78,17 @@ def modular_py_binary(
         imports = imports,
         tags = tags,
         args = args,
-        package_collisions = "ignore" if ignore_collisions else "error",
+        **kwargs
+    )
+
+    py_venv(
+        name = name + ".venv",
+        data = extra_data + data,
+        deps = deps + extra_deps + [
+            "@//bazel/internal:bazel_sitecustomize",  # py_repl adds this automatically
+        ],
+        tags = tags + ["manual"],
+        package_collisions = "ignore",
         **kwargs
     )
 

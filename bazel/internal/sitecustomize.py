@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import sys
 
 
 def __absolutize_path(value: str) -> str:
@@ -50,6 +51,10 @@ def __absolutize_env() -> None:
             value = __absolutize_path(value)
 
         os.environ[key] = value
+
+    if "MOJO_PYTHON" not in os.environ:
+        os.environ["MOJO_PYTHON"] = sys.executable
+        os.environ["MOJO_PYTHON_LIBRARY"] = sys.executable
 
 
 __absolutize_env()

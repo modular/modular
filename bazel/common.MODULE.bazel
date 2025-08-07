@@ -44,6 +44,15 @@ single_version_override(
 )
 
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # TODO: Should we submit this upstream or force our deps to directly
+        # depend on the things that provide their pyi files?
+        "//bazel/public-patches:rules_mypy_pyi_files.patch",
+    ],
+)
 
 archive_override(
     module_name = "rules_pycross",
@@ -92,15 +101,6 @@ single_version_override(
         # TODO: Remove when this patch is in a release
         # https://github.com/protocolbuffers/protobuf/pull/22633
         "//bazel/public-patches:protobuf-platforms.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "aspect_rules_py",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/aspect-build/rules_py/pull/463
-        "//bazel/public-patches:rules_py_main.patch",
     ],
 )
 

@@ -1,6 +1,5 @@
 """Helpers for running lit tests in bazel"""
 
-load("@aspect_rules_py//py:defs.bzl", aspect_py_test = "py_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
@@ -23,7 +22,7 @@ def _lit_test(name, srcs, args = None, data = None, deps = None, **kwargs):
     args = args or []
     data = data or []
     deps = deps or []
-    aspect_py_test(
+    py_test(
         name = name,
         srcs = [Label("@llvm-project//llvm:lit"), "//bazel/internal/llvm-lit:lit_shim.py"],
         main = Label("//bazel/internal/llvm-lit:lit_shim.py"),
