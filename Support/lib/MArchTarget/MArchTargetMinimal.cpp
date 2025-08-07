@@ -84,8 +84,8 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
 
 /// Returns feature set for host, falling back to clang using triple and cpu
 /// options if the native LLVM helper fails.
-static ErrorOr<std::vector<std::string>> getHostFeatures(StringRef triple,
-                                                         StringRef cpu) {
+ErrorOr<std::vector<std::string>> M::getFeatures(StringRef triple,
+                                                 StringRef cpu) {
   auto opts = std::make_shared<clang::TargetOptions>();
   opts->Triple = triple;
   opts->CPU = cpu;
@@ -95,7 +95,8 @@ static ErrorOr<std::vector<std::string>> getHostFeatures(StringRef triple,
 ErrorOr<TargetInfo> M::getHostTargetInfo() {
   std::string hostTriple = llvm::sys::getDefaultTargetTriple();
   std::string hostCpu(llvm::sys::getHostCPUName());
-  auto featuresOr = getHostFeatures(hostTriple, hostCpu);
+  ErrorOr<std::vector<std::string>> featuresOr =
+      getFeatures(hostTriple, hostCpu);
   if (featuresOr)
     return featuresOr.takeError();
   return TargetInfo(llvm::Triple(hostTriple), hostCpu, *featuresOr);
