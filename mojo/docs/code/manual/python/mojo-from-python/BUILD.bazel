@@ -10,6 +10,7 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         "//SDK/lib/API/python/max/mojo",
     ],
 )
@@ -17,5 +18,4 @@ modular_py_binary(
 modular_run_binary_test(
     name = "factorial_test",
     binary = "factorial",
-    external_noop = True,
 )
