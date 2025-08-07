@@ -24,7 +24,7 @@ struct MemoryOnlyInt:
     # CHECK: %1 = {{.*}}constant: !Int = <{1}>
     # CHECK: lit.ref.store %1, %0
     self.x = 1
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
 
   # CHECK-LABEL: lit.fn @"__copyinit__
   fn __copyinit__(out self, other: Self):
@@ -202,7 +202,7 @@ struct RegPassable:
     self.value = value
 
   fn __copyinit__(out self, existing: Self): pass
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
   fn __neg__(self) -> Self: pass
   fn __add__(self, rhs: Self) -> Self: pass
   fn __matmul__(self, rhs: Self) -> Self: pass

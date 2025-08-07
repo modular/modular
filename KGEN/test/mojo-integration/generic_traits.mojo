@@ -104,7 +104,7 @@ fn like_father_like(value: Son):
 
 @register_passable
 struct SomeType(Copyable):
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

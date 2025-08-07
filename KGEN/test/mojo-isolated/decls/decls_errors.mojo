@@ -251,7 +251,7 @@ fn invalidParameterPack[*Ts: AnyType]():
 fn invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
-fn invalidOwned(var owned x: Int): pass
+fn invalidOwned(var var x: Int): pass
 
 # expected-note @+1 {{function declared here}}
 fn examplePack[*Ts: AnyType](*args: *Ts):
@@ -615,7 +615,7 @@ struct SpecialFunctions:
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
   # expected-error @+1 {{'__del__' cannot be declared as raising an exception}}
-  fn __del__(owned self) raises:
+  fn __del__(deinit self) raises:
      pass
 
 @register_passable
@@ -634,7 +634,7 @@ struct WrongType:
   fn __copyinit__(out self, existing: Int): pass
 
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
-  fn __moveinit__(out self, owned existing: Self): pass
+  fn __moveinit__(out self, deinit existing: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -725,11 +725,11 @@ struct OtherInMemStruct:
 struct InvalidMember:
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
-  fn __moveinit__(out self, owned existing: Self): pass
+  fn __moveinit__(out self, deinit existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
   fn __copyinit__(out self, existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
-  fn __del__(owned self): pass
+  fn __del__(deinit self): pass
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
@@ -822,7 +822,7 @@ struct Outer34551(Copyable, Movable): # expected-error {{all members of '@regist
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
     # for emission, so previously it would crash while emitting this __del__.
-    fn __del__(owned self):
+    fn __del__(deinit self):
         _ = self._inner ^
 
 @register_passable

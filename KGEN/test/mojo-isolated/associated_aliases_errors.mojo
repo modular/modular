@@ -13,7 +13,7 @@ trait Copyable:
 
 
 trait Movable:
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         ...
 
 

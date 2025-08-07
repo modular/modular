@@ -104,7 +104,7 @@ struct Error:
     fn __init__(out self, value: StringLiteral):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __copyinit__(out self, existing: Self):
@@ -467,10 +467,10 @@ struct String(KeyElement):
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(out self, owned existing: String):
+    fn __moveinit__(out self, deinit existing: String):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __len__(self) -> Int:
@@ -561,8 +561,8 @@ struct Dict[K: AnyType, V: Copyable & Movable]:
 
     fn __init__(
         out self,
-        owned keys: List[K],
-        owned values: List[V],
+        var keys: List[K],
+        var values: List[V],
         __dict_literal__: (),
     ):
         pass
@@ -595,12 +595,12 @@ trait Copyable:
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         pass
 
 
 trait Movable:
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         pass
 
 
@@ -610,7 +610,7 @@ trait ExplicitlyCopyable:
 
 
 trait AnyType:
-    fn __del__(owned self, /):
+    fn __del__(deinit self, /):
         ...
 
 
@@ -794,7 +794,7 @@ struct __ParameterClosureCaptureList[
         )
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         __mlir_op.`pop.aligned_free`(self.value)
 
     @always_inline("nodebug")
@@ -889,7 +889,7 @@ struct Tuple[*element_types: AnyType]:
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         pass
 
     fn __getitem__[i: Int](ref self) -> ref [self] element_types[i.value]:
@@ -1019,7 +1019,7 @@ fn paramfor_next_value[
 
 
 struct Optional[T: Copyable & Movable]:
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __init__(out self):
@@ -1041,7 +1041,7 @@ struct Optional[T: Copyable & Movable]:
     fn __copyinit__(out self, other: Self):
         pass
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         pass
 
     fn value(ref self) -> ref [self] T:

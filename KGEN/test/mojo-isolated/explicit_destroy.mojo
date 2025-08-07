@@ -10,7 +10,7 @@
 struct MyAffine:
     fn __init__(out self):
         pass
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 # CHECK-LABEL: @"testAffineThing
@@ -39,7 +39,7 @@ struct ImplicitlyDestructibleContainerOfExplicit:
     var m: EmptyExplicit
     fn __init__(out self):
         self.m = EmptyExplicit()
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.m^.consume()
 
 fn foo1[T: Movable](var x: T) -> T:

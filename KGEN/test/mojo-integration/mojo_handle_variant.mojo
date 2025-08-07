@@ -17,7 +17,7 @@ struct S:
         print("init", x)
         self.v = x
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("destroy", self.v)
 
     fn __copyinit__(out self, existing: Self):

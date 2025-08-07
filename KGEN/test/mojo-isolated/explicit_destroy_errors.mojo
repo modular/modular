@@ -33,7 +33,7 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
     fn __init__(out self):
         self.m = EmptyExplicit()
     # expected-error @below {{Must use consume!}}
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 # CHECK-LABEL: @"foo

@@ -43,7 +43,7 @@ struct DtorExample2(AnyType):
 struct DtorExample3(AnyType):
   var a: Int
 
-  fn __del__(owned self):
+  fn __del__(deinit self):
     pass
 
 # CHECK-LABEL: lit.struct.decl @DtorExample4

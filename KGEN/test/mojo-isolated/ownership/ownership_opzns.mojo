@@ -22,7 +22,7 @@ struct MemExample:
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.x = existing.x
 
     fn __copyinit__(out self, existing: Self):
@@ -31,7 +31,7 @@ struct MemExample:
     fn __bool__(self) -> Bool:
         return True
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -47,7 +47,7 @@ struct RegExample:
     fn noop(self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn mutate(mut self):
@@ -63,7 +63,7 @@ struct MemoryUniqueMovable:
         self.state = MemExample()
 
     # CHECK: lit.fn @"__moveinit__
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         # Mercilessly steal 'other's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[state]
@@ -85,14 +85,14 @@ struct MemoryMovableCopyable:
     fn __init__(out self):
         self.state = MemExample()
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         # Mercilessly steal 'existing's state which could be interesting.
         self.state = existing.state^
 
     fn __copyinit__(out self, existing: Self):
         self.state = existing.state
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -127,7 +127,7 @@ struct RegUniqueMovable:
     fn __init__(out self):
         return
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -139,7 +139,7 @@ struct RegMovableCopyable:
     fn __copyinit__(out self, existing: Self):
         return
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

@@ -38,7 +38,7 @@ struct MemExample:
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.x = existing.x
 
     fn __copyinit__(out self, existing: Self):
@@ -50,7 +50,7 @@ struct MemExample:
     fn unsafe_ptr(self) -> UnsafePointer[Int]:
         return UnsafePointer[Int]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -461,7 +461,7 @@ struct MyStringReturningCtx:
     fn __enter__(var self) -> Self:
         return self^
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.s = ""
 
     fn read(self) raises -> String:
@@ -685,7 +685,7 @@ struct PyObjLike:
     fn __bool__(self) raises -> Bool:
         return True
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 

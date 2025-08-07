@@ -234,7 +234,7 @@ struct CMWithoutExit:
     fn __init__(out self):
         pass
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         pass
 
     # This context manager consumes itself and returns it as the value.

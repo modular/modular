@@ -46,7 +46,7 @@ struct RegExample:
     fn noop(self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn mutate(mut self):
@@ -63,7 +63,7 @@ struct MemExample:
     fn noop(self):
         pass
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.x = existing.x
 
     fn __copyinit__(out self, existing: Self):
@@ -72,7 +72,7 @@ struct MemExample:
     fn __bool__(self) -> Bool:
         return True
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -171,7 +171,7 @@ struct ThrowingExit:
     fn __enter__(self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __exit__(self) raises:
@@ -277,7 +277,7 @@ struct MyStringReturningCtx:
     fn __enter__(var self) -> Self:
         return self^
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.s = existing.s
 
     fn read(self) raises -> String:
@@ -300,7 +300,7 @@ fn testErrorReturn() raises:
 struct Field:
     fn __copyinit__(out self, existing: Self):
         pass
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
 
@@ -390,7 +390,7 @@ fn raising_use(var value: MemExample):
 struct ThrowingSelfInit:
     var x: Int
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     # CHECK-LABEL: lit.fn @"__init__
