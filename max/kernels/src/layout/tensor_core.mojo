@@ -57,7 +57,7 @@ from sys import (
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
-from gpu.mma import ld_matrix, mma
+from gpu.mma import ld_matrix, mma, get_amd_fp8_dtype, get_amd_bf8_dtype
 from layout._utils import load_to_simd
 from layout.int_tuple import product
 from layout.layout import Layout
@@ -104,6 +104,7 @@ alias shape_16x8x32 = IndexList[3](16, 8, 32)
 # MI300x shapes
 alias shape_16x16x4 = IndexList[3](16, 16, 4)
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
+alias shape_16x16x32 = IndexList[3](16, 16, 32)
 alias shape_32x32x8 = IndexList[3](32, 32, 8)
 
 
@@ -178,10 +179,21 @@ struct TensorCore[
         == shape_16x8x16 if is_nvidia_gpu() else shape
         in (shape_16x16x16, shape_32x32x8)
     )
-    alias supported_fp8 = in_type in (
-        DType.float8_e4m3fn,
-        DType.float8_e5m2,
-    ) and shape == shape_16x8x32
+    alias supported_fp8 = (
+        in_type
+        in (
+            DType.float8_e4m3fn,
+            DType.float8_e5m2,
+        )
+        and shape == shape_16x8x32
+    ) if is_nvidia_gpu() else (
+        in_type
+        in (
+            get_amd_fp8_dtype(),
+            get_amd_bf8_dtype(),
+        )
+        and shape == shape_16x16x32
+    )
 
     # Operand register types.
     alias a_reg_type = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]
@@ -293,30 +305,35 @@ struct TensorCore[
         # For example, when loading 16x16 bfloat16 tile only 32 lanes will be active
         # when using 16B loads, so instead we load 16x32 tile in one go.
         alias k_group_size = _get_a_k_group_size[a.layout, shape]()
-        alias simd_width = reg_per_thread * k_group_size
 
         alias warp_layout = Layout.col_major(mma_m, WARP_SIZE // mma_m)
 
-        constrained[
-            in_type
-            in (
-                DType.float32,
-                DType.bfloat16,
-                DType.float16,
-            ),
-            "No valid type to load matrix fragment a",
-        ]()
+        alias fp8_dtype = get_amd_fp8_dtype()
+        alias bf8_dtype = get_amd_bf8_dtype()
 
         @parameter
-        if in_type in (DType.float32, DType.bfloat16, DType.float16):
+        if in_type in (
+            DType.float32,
+            DType.bfloat16,
+            DType.float16,
+            fp8_dtype,
+            bf8_dtype,
+        ):
             constrained[
                 (reg_per_thread in (1,) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4,)
                     and (in_type in (DType.bfloat16, DType.float16))
+                )
+                or (
+                    reg_per_thread in (8,)
+                    and (in_type in (fp8_dtype, bf8_dtype))
                 ),
                 "No valid mma shape to load matrix fragment",
             ]()
+
+            alias simd_width = reg_per_thread * k_group_size
+
             var a_reg_frags = a.vectorize[1, simd_width]().distribute[
                 warp_layout, swizzle=swizzle
             ](lane_id())
@@ -327,7 +344,10 @@ struct TensorCore[
                 "Data type ",
                 String(in_type),
                 " is not supported for loading matrix A fragments on AMD",
-                " GPUs. Only float32, bfloat16 and float16 are supported.",
+                (
+                    " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
+                    " are supported."
+                ),
             ]()
         return a_reg_tile
 
@@ -455,22 +475,36 @@ struct TensorCore[
         var b_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
         alias k_group_size = _get_b_k_group_size[b.layout, shape, transpose_b]()
-        alias simd_width = reg_per_thread * k_group_size
+
+        alias fp8_dtype = get_amd_fp8_dtype()
+        alias bf8_dtype = get_amd_bf8_dtype()
 
         alias warp_layout = Layout.col_major(
             mma_n, WARP_SIZE // mma_n
         ) if transpose_b else Layout.row_major(WARP_SIZE // mma_n, mma_n)
 
         @parameter
-        if in_type in (DType.float32, DType.bfloat16, DType.float16):
+        if in_type in (
+            DType.float32,
+            DType.bfloat16,
+            DType.float16,
+            fp8_dtype,
+            bf8_dtype,
+        ):
             constrained[
                 (reg_per_thread in (1,) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4,)
                     and (in_type in (DType.bfloat16, DType.float16))
+                )
+                or (
+                    reg_per_thread in (8,)
+                    and (in_type in (fp8_dtype, bf8_dtype))
                 ),
                 "No valid mma shape to load matrix fragment b",
             ]()
+
+            alias simd_width = reg_per_thread * k_group_size
 
             @parameter
             if transpose_b:
@@ -489,7 +523,10 @@ struct TensorCore[
                 "Data type ",
                 String(in_type),
                 " is not supported for loading matrix B fragments on AMD",
-                " GPUs. Only float32, bfloat16 and float16 are supported.",
+                (
+                    " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
+                    " are supported."
+                ),
             ]()
 
         return b_reg_tile
@@ -753,6 +790,9 @@ struct TensorCore[
             mma_tile_coord_k: The K coordinate of the MMA tile. Defaults to 0.
         """
         constrained[
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        ]()
+        constrained[
             warp_tile.address_space == AddressSpace.SHARED,
             "warp_tile must be in shared memory",
         ]()
@@ -773,8 +813,6 @@ struct TensorCore[
         fragments: LayoutTensor,
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
-        constrained[self.supported_fp32 or self.supported_half]()
-
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
@@ -802,10 +840,6 @@ struct TensorCore[
         fragments: LayoutTensor,
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
-        constrained[
-            self.supported_fp32 or self.supported_half or self.supported_fp8
-        ]()
-
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
@@ -850,6 +884,9 @@ struct TensorCore[
             The `warp_tile` must be in shared memory. For NVIDIA GPUs, `swizzle` must be `None`.
             For AMD GPUs, providing an appropriate `swizzle` pattern can improve performance.
         """
+        constrained[
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        ]()
         constrained[
             warp_tile.address_space == AddressSpace.SHARED,
             "warp_tile must be in shared memory",
@@ -916,10 +953,6 @@ struct TensorCore[
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
-        constrained[
-            self.supported_fp32 or self.supported_half or self.supported_fp8
-        ]()
-
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[in_type]()
         alias num_frags = fragments.shape[0]()

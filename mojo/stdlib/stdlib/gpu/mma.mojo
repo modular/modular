@@ -40,6 +40,14 @@ from gpu._utils import (
 )
 
 
+fn get_amd_fp8_dtype() -> DType:
+    return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
+
+
+fn get_amd_bf8_dtype() -> DType:
+    return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
+
+
 @always_inline
 fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
@@ -133,8 +141,8 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
     # Compute Project (OCP) float8 dtypes.
-    alias fp8_dtype = DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
-    alias bf8_dtype = DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
+    alias fp8_dtype = get_amd_fp8_dtype()
+    alias bf8_dtype = get_amd_bf8_dtype()
 
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
