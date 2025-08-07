@@ -17,7 +17,12 @@ from collections import InlineArray
 from collections.string.string_slice import _get_kgen_string
 from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
-from sys.info import is_amd_gpu, _is_amd_rdna, CompilationTarget
+from sys.info import (
+    is_amd_gpu,
+    _is_amd_rdna,
+    _cdna_4_or_newer,
+    CompilationTarget,
+)
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.mma_operand_descriptor import MMAOperandDescriptor
@@ -126,6 +131,11 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     alias zero: UInt32 = 0
 
+    # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
+    # Compute Project (OCP) float8 dtypes.
+    alias fp8_dtype = DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
+    alias bf8_dtype = DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
+
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
@@ -228,6 +238,43 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[c.dtype, c.size]
         ](a, b, c, zero, zero, zero)
         d = rebind[__type_of(d)](r)
+
+    # ===------------------------------------------------------------------===#
+    # F32 = FP8 * FP8 + FP32
+    # ===------------------------------------------------------------------===#
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.fp8.fp8", SIMD[c.dtype, c.size]
+        ](
+            bitcast[DType.int64, 1](a),
+            bitcast[DType.int64, 1](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
+        d = rebind[__type_of(d)](r)
+
+    # ===------------------------------------------------------------------===#
+    # F32 = BF8 * BF8 + FP32
+    # ===------------------------------------------------------------------===#
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.bf8.bf8", SIMD[c.dtype, c.size]
+        ](
+            bitcast[DType.int64, 1](a),
+            bitcast[DType.int64, 1](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
+        d = rebind[__type_of(d)](r)
+
     else:
         _unsupported_mma_op(d, a, b, c)
 
