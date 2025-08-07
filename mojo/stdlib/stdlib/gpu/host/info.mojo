@@ -932,6 +932,25 @@ fn _get_7600_target() -> _TargetType:
     ]
 
 
+fn _get_6900_target() -> _TargetType:
+    """
+    Creates an MLIR target configuration for AMD Radeon 6900 GPU.
+
+    Returns:
+        MLIR target configuration for 6900.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx1030", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
 fn _get_780m_target() -> _TargetType:
     """
     Creates an MLIR target configuration for AMD Radeon 780m GPU.
@@ -1063,6 +1082,32 @@ alias Radeon7600 = GPUInfo(
     compute=11.0,
     version="RDNA3",
     sm_count=32,
+    warp_size=32,
+    threads_per_sm=1024,
+    threads_per_warp=32,
+    warps_per_multiprocessor=32,  # 1024 threads per sm / 32 threads per warp = 32 warps per sm
+    threads_per_multiprocessor=1024,
+    thread_blocks_per_multiprocessor=2,
+    shared_memory_per_multiprocessor=32768,
+    register_file_size=32768,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=32768,
+    max_blocks_per_multiprocessor=2,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+alias Radeon6900 = GPUInfo(
+    name="Radeon 6900",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx1102",
+    compute=10.3,
+    version="RDNA2",
+    sm_count=60,
     warp_size=32,
     threads_per_sm=1024,
     threads_per_warp=32,
@@ -1225,6 +1270,8 @@ struct GPUInfo(Stringable, Writable):
             return _get_mi300x_target()
         if self.name == "Radeon 780M":
             return _get_780m_target()
+        if self.name == "Radeon 6900":
+            return _get_6900_target()
         if self.name == "Radeon 7900":
             return _get_7900_target()
         if self.name == "Radeon 7800/7700":
@@ -1800,6 +1847,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             # AMD
             StaticString("mi300x"),
             StaticString("gfx942"),
+            StaticString("gfx1030"),
             StaticString("gfx1100"),
             StaticString("gfx1101"),
             StaticString("gfx1102"),
@@ -1833,6 +1881,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return RTX5090
     elif target_arch == "gfx942" or target_arch == "mi300x":
         return MI300X
+    elif target_arch == "gfx1030":
+        return Radeon6900
     elif target_arch == "gfx1100":
         return Radeon7900
     elif target_arch == "gfx1101":
