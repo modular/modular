@@ -6861,6 +6861,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     freq_dtype: DType, //,
     *,
     interleaved: Bool,
+    has_position_ids: Bool,
     target: StaticString,
 ](
     output: ManagedTensorSlice[dtype=dtype, rank=3],
@@ -6868,20 +6869,65 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
+    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
     generic_fused_qk_rope_bshd_continuous_batch_ragged[
-        interleaved=interleaved, target=target
+        interleaved=interleaved,
+        has_position_ids=has_position_ids,
+        target=target,
     ](
         managed_tensor_slice_to_ndbuffer(q_proj),
         managed_tensor_slice_to_ndbuffer(input_row_offsets),
         kv_collection,
         managed_tensor_slice_to_ndbuffer(freqs_cis),
+        managed_tensor_slice_to_ndbuffer(position_ids),
         layer_idx,
         managed_tensor_slice_to_ndbuffer(output),
         ctx,
     )
+
+
+@compiler.register(
+    "mo.fused_qk_rope.ragged.continuous_batching.with_position_id"
+)
+struct Struct_fused_qk_rope_bshd_continuous_batch_ragged_with_position_id[
+    interleaved: Bool
+]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType,
+        num_heads: Int,
+        head_dim: Int, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        q_proj: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        ],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        position_ids: InputTensor[dtype = DType.uint32, rank=1],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            interleaved=interleaved, has_position_ids=True, target=target
+        ](
+            output,
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            position_ids,
+            layer_idx,
+            ctx,
+        )
 
 
 @compiler.register("mo.fused_qk_rope.ragged.continuous_batching")
@@ -6907,13 +6953,15 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
         ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-            interleaved=interleaved, target=target
+            interleaved=interleaved, has_position_ids=False, target=target
         ](
             output,
             q_proj,
             input_row_offsets,
             kv_collection,
             freqs_cis,
+            # Dummy position_ids - won't be used since has_position_ids=False
+            input_row_offsets,
             layer_idx,
             ctx,
         )
@@ -6925,6 +6973,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     freq_dtype: DType, //,
     *,
     interleaved: Bool,
+    has_position_ids: Bool,
     target: StaticString,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
@@ -6934,21 +6983,64 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         *_,
     ],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
+    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     context: DeviceContextPtr,
 ) raises:
     generic_fused_qk_rope_bshd_paged_ragged[
-        interleaved=interleaved, target=target
+        interleaved=interleaved,
+        has_position_ids=has_position_ids,
+        target=target,
     ](
         managed_tensor_slice_to_ndbuffer(q_proj),
         managed_tensor_slice_to_ndbuffer(input_row_offsets),
         kv_collection,
         managed_tensor_slice_to_ndbuffer(freqs_cis),
+        managed_tensor_slice_to_ndbuffer(position_ids),
         layer_idx,
         managed_tensor_slice_to_ndbuffer(output),
         context,
     )
+
+
+@compiler.register("mo.fused_qk_rope.ragged.paged.with_position_id")
+struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        q_proj: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        position_ids: InputTensor[dtype = DType.uint32, rank=1],
+        layer_idx: UInt32,
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+            interleaved=interleaved, has_position_ids=True, target=target
+        ](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            position_ids,
+            layer_idx,
+            output,
+            context,
+        )
 
 
 @compiler.register("mo.fused_qk_rope.ragged.paged")
@@ -6976,12 +7068,14 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved=interleaved, target=target
+            interleaved=interleaved, has_position_ids=False, target=target
         ](
             q_proj,
             input_row_offsets,
             kv_collection,
             freqs_cis,
+            # Dummy position_ids - won't be used since has_position_ids=False
+            input_row_offsets,
             layer_idx,
             output,
             context,

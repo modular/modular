@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import gcd
 from sys.info import _current_target, simdwidthof
 
@@ -243,6 +244,7 @@ fn fused_qk_rope_ragged[
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     freqs_cis: NDBuffer[freq_dtype, 2, *_],
+    position_ids: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: Optional[DeviceContext],
@@ -295,7 +297,7 @@ fn fused_qk_rope_ragged[
 
     @always_inline
     @parameter
-    @__copy_capture(k_cache, batch_size, input_row_offsets)
+    @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
     fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
         constrained[rank == 3, "Invalid rank passed to rope kernel"]()
 
@@ -312,7 +314,13 @@ fn fused_qk_rope_ragged[
             )
             var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
+            # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
+
+            var position_ids_idx = post_seq_idx
+            if position_ids:
+                position_ids_idx = Int(position_ids.value()[global_token_idx])
+
             var head_idx = idx[1]
             var head_dim_idx = idx[2]
 
@@ -329,11 +337,11 @@ fn fused_qk_rope_ragged[
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     var f_idx = IndexList[2](
-                        post_seq_idx, head_dim_idx - unroped_dim
+                        position_ids_idx, head_dim_idx - unroped_dim
                     )
                     f_c_temp = freqs_cis.load[width=width](f_idx)
             else:
-                var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
+                var f_idx = IndexList[2](position_ids_idx, head_dim_idx)
                 f_c_temp = freqs_cis.load[width=width](f_idx)
 
             if is_q_proj:

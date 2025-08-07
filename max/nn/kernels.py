@@ -659,21 +659,30 @@ def fused_qk_ragged_rope(
     freqs_cis: TensorValue,
     layer_idx: TensorValue,
     interleaved: bool = True,
+    position_ids: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query-key attention with rotary positional encodings and ragged inputs.
 
     Args:
+        kv_params: KV cache parameters
         input: [batch_size * seq_len, n_heads, head_dim]
-        input_row_offsets:
+        input_row_offsets: Ragged tensor offsets indicating where each batch starts and ends
+        kv_collection: KV cache collection
         freqs_cis: tensor of shape (max_seq_len * 2, head_dim)
-        layer_idx:
-        interleaved:
+        layer_idx: Layer index for KV cache
+        interleaved: Whether to use interleaved RoPE pattern
+        position_ids: Optional ragged 1D array of position IDs. If None, defaults to
+                     cache_length + token_idx for each token. Shape: [total_seq_len]
 
     `input` and `input_row_offsets` are used together to implement the ragged tensor.
     `input_row_offsets` indicates where each batch starts and ends in `input`. If `input`
     is not of the same dtype as `freqs_cis`, it will be cast to the dtype of `freqs_cis`
     for the computation, and cast back to the original dtype after the computation is
     finished.
+
+    When `position_ids` is provided, it replaces the default position calculation
+    (cache_length + token_idx) with explicit position values. This is useful for
+    3D RoPE in models like Qwen2.5-VL that need custom position encoding.
     """
 
     if input_row_offsets.dtype != DType.uint32:
@@ -681,10 +690,21 @@ def fused_qk_ragged_rope(
             "expected input_row_offsets to have dtype uint32, was"
             f" {input_row_offsets.dtype}"
         )
+        raise ValueError(msg)
 
     if layer_idx.dtype != DType.uint32:
         msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         raise ValueError(msg)
+
+    if position_ids is not None:
+        if position_ids.dtype != DType.uint32:
+            msg = f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+            raise ValueError(msg)
+        if position_ids.rank != 1:
+            msg = (
+                f"expected position_ids to be 1D, got rank {position_ids.rank}"
+            )
+            raise ValueError(msg)
 
     if kv_params.cache_strategy not in {
         KVCacheStrategy.CONTINUOUS,
@@ -703,12 +723,27 @@ def fused_qk_ragged_rope(
         parameters["page_size"] = kv_params.page_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
+
+    if position_ids is not None:
+        op_name = (
+            f"mo.fused_qk_rope.ragged.{cache_strategy_str}.with_position_id"
+        )
+        values = [
+            input,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            position_ids,
+            layer_idx,
+        ]
+    else:
+        op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
+        values = [input, input_row_offsets, kv_collection, freqs_cis, layer_idx]
 
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=[input, input_row_offsets, kv_collection, freqs_cis, layer_idx],
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device

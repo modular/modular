@@ -13,6 +13,7 @@
 
 
 from buffer import DimList, NDBuffer
+from collections import OptionalReg
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, assert_almost_equal
 from kv_cache.types import (
@@ -25,15 +26,19 @@ from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
     k_cache_input,
     k_out_golden,
+    k_out_golden_with_position_ids,
     q_input,
     q_out_golden,
+    q_out_golden_with_position_ids,
+    position_ids_input,
 )
 
 from utils import IndexList
 
 
 def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
-    """Verifies fused_qk_rope against golden values computed with PyTorch."""
+    """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
+    """
     constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
@@ -123,6 +128,15 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         input_row_offsets.tensor[i] = i * seq_len
     input_row_offsets.tensor[batch_size] = batch_size * seq_len
 
+    # Create position_ids tensor for testing explicit position encoding
+    # Total sequence length across all batches
+    position_ids_input_buffer = position_ids_input[DType.uint32]()
+    position_ids = NDBuffer[
+        DType.uint32,
+        rank=1,
+        shape = DimList(batch_size * seq_len),
+    ](position_ids_input_buffer.unsafe_ptr())
+
     q = NDBuffer[
         dtype,
         rank=3,
@@ -146,7 +160,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )  # Offset to last rope_dim elements
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[dtype]()
+    expected_q_out_buffer = q_out_golden_with_position_ids[dtype]()
     debug_assert(
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
@@ -154,7 +168,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     expected_q_out = NDBuffer[dtype, rank=3, shape = q.shape](
         expected_q_out_buffer.unsafe_ptr()
     )
-    expected_k_out_buffer = k_out_golden[dtype]()
+    expected_k_out_buffer = k_out_golden_with_position_ids[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
@@ -166,14 +180,14 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     fused_qk_rope_ragged[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
-        q_proj=q,
-        input_row_offsets=input_row_offsets.tensor,
-        kv_collection=kv_collection,
-        freqs_cis=freqs_cis_table,
-        position_ids=None,
-        output=q_out,
-        layer_idx=UInt32(0),
-        context=Optional[DeviceContext](),
+        q,
+        input_row_offsets.tensor,
+        kv_collection,
+        freqs_cis_table,
+        OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](position_ids),
+        UInt32(0),
+        q_out,
+        Optional[DeviceContext](),
     )
 
     # Compare output and expected query tensors.
@@ -242,6 +256,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     _ = q_buffer^
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
+    _ = position_ids_input_buffer^
 
 
 def main() -> None:
