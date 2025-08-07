@@ -50,6 +50,12 @@ what we publish.
 
 ### Language changes
 
+- The `__del__` and `__moveinit__` methods should now take their `self` and
+  `existing` arguments as `deinit` instead of either `owned` or `var`.
+
+- The `__disable_del` keyword and statement has been removed, use `deinit`
+  methods instead.
+
 ### Standard library changes
 
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
