@@ -15,6 +15,8 @@
 Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
+from __future__ import annotations
+
 import socket
 from enum import Enum, IntEnum
 from pathlib import Path
