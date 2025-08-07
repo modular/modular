@@ -39,6 +39,7 @@ from max.interfaces import (
     LoRAStatus,
     PipelineTokenizer,
     SamplingParams,
+    SamplingParamsInput,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
@@ -636,19 +637,21 @@ async def openai_create_chat_completion(
         )
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
-        sampling_params = SamplingParams(
-            top_k=completion_request.top_k,
-            top_p=completion_request.top_p,
-            temperature=completion_request.temperature,
-            frequency_penalty=completion_request.frequency_penalty,
-            presence_penalty=completion_request.presence_penalty,
-            repetition_penalty=completion_request.repetition_penalty,
-            max_new_tokens=completion_request.max_tokens,
-            min_new_tokens=completion_request.min_tokens,
-            ignore_eos=completion_request.ignore_eos,
-            seed=completion_request.seed or randint(0, 2**63 - 1),
-            stop_token_ids=completion_request.stop_token_ids,
-            stop=completion_request.stop,
+        sampling_params = SamplingParams.from_input(
+            SamplingParamsInput(
+                top_k=completion_request.top_k,
+                top_p=completion_request.top_p,
+                temperature=completion_request.temperature,
+                frequency_penalty=completion_request.frequency_penalty,
+                presence_penalty=completion_request.presence_penalty,
+                repetition_penalty=completion_request.repetition_penalty,
+                max_new_tokens=completion_request.max_tokens,
+                min_new_tokens=completion_request.min_tokens,
+                ignore_eos=completion_request.ignore_eos,
+                seed=completion_request.seed or randint(0, 2**63 - 1),
+                stop_token_ids=completion_request.stop_token_ids,
+                stop=completion_request.stop,
+            )
         )
         token_request = TextGenerationRequest(
             request_id=request_id,
@@ -1048,19 +1051,21 @@ async def openai_create_completion(
         token_requests = []
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
-            sampling_params = SamplingParams(
-                top_k=completion_request.top_k,
-                top_p=completion_request.top_p,
-                temperature=completion_request.temperature,
-                frequency_penalty=completion_request.frequency_penalty,
-                presence_penalty=completion_request.presence_penalty,
-                repetition_penalty=completion_request.repetition_penalty,
-                max_new_tokens=completion_request.max_tokens,
-                min_new_tokens=completion_request.min_tokens,
-                ignore_eos=completion_request.ignore_eos,
-                seed=completion_request.seed or randint(0, 2**63 - 1),
-                stop_token_ids=completion_request.stop_token_ids,
-                stop=completion_request.stop,
+            sampling_params = SamplingParams.from_input(
+                SamplingParamsInput(
+                    top_k=completion_request.top_k,
+                    top_p=completion_request.top_p,
+                    temperature=completion_request.temperature,
+                    frequency_penalty=completion_request.frequency_penalty,
+                    presence_penalty=completion_request.presence_penalty,
+                    repetition_penalty=completion_request.repetition_penalty,
+                    max_new_tokens=completion_request.max_tokens,
+                    min_new_tokens=completion_request.min_tokens,
+                    ignore_eos=completion_request.ignore_eos,
+                    seed=completion_request.seed or randint(0, 2**63 - 1),
+                    stop_token_ids=completion_request.stop_token_ids,
+                    stop=completion_request.stop,
+                )
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
