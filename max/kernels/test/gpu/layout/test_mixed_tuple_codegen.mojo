@@ -27,8 +27,8 @@ fn kernel(v: Int, ptr: UnsafePointer[Int32]):
         ptr: Output pointer to store results.
     """
     var l = MixedIntTuple(Idx[1](), MixedIntTuple(Idx(v), Idx[3]()))
-    ptr[0] = Int32(l[0].value)
-    ptr[1] = Int32(l[1][0].value)
+    ptr[0] = Int32(l[0].value())
+    ptr[1] = Int32(l[1][0].value())
 
 
 fn test_mixed_tuple_codegen_memory() raises:
