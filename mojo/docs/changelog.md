@@ -21,6 +21,33 @@ what we publish.
 
 ### Language enhancements
 
+- Methods on structs may now declare their `self` argument with a `deinit`
+  argument convention.  This argument convention is used for methods like
+  `__del__` and `__moveinit__` to indicate that they tear down the corresponding
+  value without needing its destructor to be run again. Beyond these two
+  methods, this convention can be used to declare "named" destructors, which are
+  methods that consume and destroy the value without themselves running the
+  values destructor.  For example, the standard `VariadicPack` type has these
+  methods:
+
+  ```mojo
+  struct VariadicPack[...]:
+      # implicit destructor
+      fn __del__(deinit self): ...
+      # move constructor
+      fn __moveinit__(out self, deinit existing: Self): ...
+      # custom explicit destructor that destroys "self" by transferring all of
+      # the stored elements.
+      fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](deinit self): ...
+  ```
+
+  This argument convention is a fairly narrow power-user feature that is
+  important to clarify the destruction model and make linear types fit into the
+  model better.  A linear types are just types where all of the destructors are
+  explicit - it has no `__del__`.
+
 ### Language changes
 
 ### Standard library changes
