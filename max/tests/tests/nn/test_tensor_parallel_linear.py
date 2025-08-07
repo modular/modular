@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, Weight
+from max.graph import DeviceRef, Graph, TensorType, Type, Weight
 from max.nn import Signals
 from max.nn.linear import ColumnParallelLinear
 
@@ -34,13 +36,18 @@ def test_column_parallel_linear_valid() -> None:
     linear = ColumnParallelLinear(
         in_dim=16, out_dim=32, dtype=DType.float32, devices=devices
     )
+
     with Graph(
         "column_parallel_linear",
-        input_types=[
-            TensorType(DType.float32, shape=(1, 16), device=gpu0),
-            TensorType(DType.float32, shape=(1, 16), device=gpu1),
-        ]
-        + signals.input_types(),
+        # https://github.com/python/mypy/issues/19413
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(DType.float32, shape=(1, 16), device=gpu0),
+                TensorType(DType.float32, shape=(1, 16), device=gpu1),
+            ]
+            + signals.input_types(),
+        ),
     ) as graph:
         num_devices = len(devices)
         x0, x1 = linear(
@@ -76,11 +83,15 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
 
     with Graph(
         "column_parallel_linear_tied",
-        input_types=[
-            TensorType(DType.float32, shape=(1, 16), device=gpu0),
-            TensorType(DType.float32, shape=(1, 16), device=gpu1),
-        ]
-        + signals.input_types(),
+        # https://github.com/python/mypy/issues/19413
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(DType.float32, shape=(1, 16), device=gpu0),
+                TensorType(DType.float32, shape=(1, 16), device=gpu1),
+            ]
+            + signals.input_types(),
+        ),
     ) as graph:
         num_devices = len(devices)
         x0, x1 = linear(
