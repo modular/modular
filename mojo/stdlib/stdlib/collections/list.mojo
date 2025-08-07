@@ -921,7 +921,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         return res^
 
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] T:
+    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
         """Gets the list element at the given index.
 
         Args:
@@ -937,7 +937,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         var normalized_idx = normalize_index["List", assert_always=False](
             idx, len(self)
         )
-
         return (self._data + normalized_idx)[]
 
     @always_inline

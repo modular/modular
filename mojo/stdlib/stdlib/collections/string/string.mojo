@@ -702,7 +702,9 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__[I: Indexer](self, idx: I) -> StringSlice[__origin_of(self)]:
+    fn __getitem__[
+        I: Indexer, //
+    ](self, idx: I) -> StringSlice[__origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:

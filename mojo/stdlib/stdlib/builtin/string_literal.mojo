@@ -283,13 +283,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             self.as_string_slice()
         )
 
-    fn __getitem__[
-        IndexerType: Indexer
-    ](self, idx: IndexerType) -> StaticString:
+    fn __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
 
         Parameters:
-            IndexerType: The inferred type of an indexer argument.
+            I: The inferred type of an indexer argument.
 
         Args:
             idx: The index value.

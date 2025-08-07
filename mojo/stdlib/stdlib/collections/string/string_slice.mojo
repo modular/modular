@@ -1010,7 +1010,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return CodepointSliceIter[origin, forward=False](self)
 
-    fn __getitem__[I: Indexer](self, idx: I) -> String:
+    fn __getitem__[I: Indexer, //](self, idx: I) -> String:
         """Gets the character at the specified position.
 
         Parameters:

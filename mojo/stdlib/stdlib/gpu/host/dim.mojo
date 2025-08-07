@@ -32,7 +32,7 @@ struct Dim(Stringable, Writable):
     """
 
     @implicit
-    fn __init__[I: Indexer](out self, x: I):
+    fn __init__[I: Indexer, //](out self, x: I):
         """Initializes Dim with a single indexable value for x.
 
         y and z dimensions are set to 1.
@@ -45,7 +45,7 @@ struct Dim(Stringable, Writable):
         """
         self._value = IndexList[3](index(x), 1, 1)
 
-    fn __init__[I0: Indexer, I1: Indexer](out self, x: I0, y: I1):
+    fn __init__[I0: Indexer, I1: Indexer, //](out self, x: I0, y: I1):
         """Initializes Dim with indexable values for x and y.
 
         z dimension is set to 1.
@@ -61,7 +61,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), 1)
 
     fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer
+        I0: Indexer, I1: Indexer, I2: Indexer, //
     ](out self, x: I0, y: I1, z: I2):
         """Initializes Dim with indexable values for x, y, and z.
 
@@ -78,7 +78,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), index(z))
 
     @implicit
-    fn __init__[I: Indexer & Copyable & Movable](out self, dims: (I,)):
+    fn __init__[I: Indexer & Copyable & Movable, //](out self, dims: (I,)):
         """Initializes Dim with a tuple containing a single indexable value.
 
         y and z dimensions are set to 1.
@@ -93,8 +93,7 @@ struct Dim(Stringable, Writable):
 
     @implicit
     fn __init__[
-        I0: Indexer & Copyable & Movable,
-        I1: Indexer & Copyable & Movable,
+        I0: Indexer & Copyable & Movable, I1: Indexer & Copyable & Movable, //
     ](out self, dims: (I0, I1)):
         """Initializes Dim with a tuple of two indexable values.
 
@@ -113,7 +112,7 @@ struct Dim(Stringable, Writable):
     fn __init__[
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
-        I2: Indexer & Copyable & Movable,
+        I2: Indexer & Copyable & Movable, //,
     ](out self, dims: (I0, I1, I2)):
         """Initializes Dim with a tuple of three indexable values.
 

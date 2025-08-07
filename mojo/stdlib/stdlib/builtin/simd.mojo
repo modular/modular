@@ -1559,7 +1559,8 @@ struct SIMD[dtype: DType, size: Int](
         constrained[
             dtype.is_integral(), "cannot index using a floating point type"
         ]()
-        return Int(self).value
+        # NOTE: using Int(self) here would cause an infinite recursion.
+        return self.__int__().value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:
