@@ -7,7 +7,6 @@
 from .audio_generation import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorContext,
     AudioGeneratorOutput,
@@ -27,9 +26,9 @@ from .text_generation import (
 __all__ = [
     "AudioGenerationMetadata",
     "AudioGenerationRequest",
-    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
+    "AudioGeneratorOutput",
     "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
