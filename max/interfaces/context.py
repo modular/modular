@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Optional, Protocol, TypeVar, Union, runtime_checkable
 
 import numpy as np
@@ -12,6 +12,31 @@ import numpy.typing as npt
 from .log_probabilities import LogProbabilities
 from .request import RequestID
 from .status import GenerationStatus
+
+
+@dataclass
+class SamplingParamsInput:
+    """Input dataclass for creating SamplingParams instances.
+
+    All fields are optional, allowing partial specification with None values
+    indicating "use default". This enables static type checking while maintaining
+    the flexibility to specify only the parameters you want to override.
+    """
+
+    top_k: Optional[int] = None
+    top_p: Optional[float] = None
+    min_p: Optional[float] = None
+    temperature: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    repetition_penalty: Optional[float] = None
+    max_new_tokens: Optional[Union[int, None]] = None
+    min_new_tokens: Optional[int] = None
+    ignore_eos: Optional[bool] = None
+    stop: Optional[Optional[list[str]]] = None
+    stop_token_ids: Optional[Optional[list[int]]] = None
+    detokenize: Optional[bool] = None
+    seed: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +92,30 @@ class SamplingParams:
 
     seed: int = 0
     """The seed to use for the random number generator."""
+
+    @classmethod
+    def from_input(cls, input_params: SamplingParamsInput) -> "SamplingParams":
+        """Create a SamplingParams instance from a dataclass input, using defaults for None values.
+
+        This method allows you to pass a dataclass with some parameters set to None,
+        and those None values will be replaced with the default values defined in the class.
+        The dataclass ensures static type checking for parameter names and types.
+
+        Args:
+            input_params: Dataclass containing parameter names and values. Values of None
+                will be replaced with the default values from the class definition.
+
+        Returns:
+            A new SamplingParams instance with the provided values and defaults for None.
+        """
+        # Create a new dict with None values replaced by defaults
+        resolved_params = {}
+        for field in fields(input_params):
+            value = getattr(input_params, field.name)
+            if value is not None:
+                resolved_params[field.name] = value
+
+        return cls(**resolved_params)
 
     def __post_init__(self):
         if self.min_p < 0.0 or self.min_p > 1.0:
