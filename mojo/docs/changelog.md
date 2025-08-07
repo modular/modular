@@ -87,6 +87,9 @@ what we publish.
 
 ### Tooling changes
 
+- `mojo test` now ignores folders with a leading `.` in the name. This will
+  exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
