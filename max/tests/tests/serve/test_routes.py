@@ -14,7 +14,7 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.router import openai_routes
-from max.serve.schemas.openai import InputItem, PromptItem  # type: ignore
+from max.serve.schemas.openai import InputItem, PromptItem
 
 
 class MockPipelineConfig(PipelineConfig):

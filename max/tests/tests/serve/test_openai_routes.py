@@ -20,7 +20,7 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.schemas.openai import (  # type: ignore
+from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
 )
 
