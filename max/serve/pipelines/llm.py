@@ -20,7 +20,7 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Optional
+from typing import Any, Callable, Generic
 
 import numpy as np
 from max.interfaces import (
@@ -46,21 +46,15 @@ logger = logging.getLogger("max.serve")
 @dataclass(frozen=True)
 class TokenGeneratorOutput:
     decoded_token: str
-    token_log_probabilities: Optional[list[float]] = None
-    top_log_probabilities: Optional[list[dict[str, float]]] = None
-    prompt_token_count: Optional[int] = None
-    stop_sequence: Optional[str] = None
+    token_log_probabilities: list[float] | None = None
+    top_log_probabilities: list[dict[str, float]] | None = None
+    prompt_token_count: int | None = None
+    stop_sequence: str | None = None
 
 
 @dataclass(frozen=True)
 class EmbeddingsGeneratorOutput:
     embeddings: np.ndarray
-
-
-@dataclass
-class TokenGeneratorStats:
-    token_gen_batch_size: int = 0
-    token_gen_batch_calls: int = 0
 
 
 class TokenGeneratorPipeline(Generic[BaseContextType]):
@@ -77,14 +71,12 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
             "max.serve.pipelines.TokenGeneratorPipeline"
         )
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.engine_queue = engine_queue
         self.lora_queue = lora_queue
-        self.stats = TokenGeneratorStats()
 
         self._background_tasks: set[asyncio.Task] = set()
 
@@ -128,9 +120,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
 
-            # TODO(AITLIB-319): Remove hashattr check
-            if hasattr(context, "active_length"):
-                METRICS.input_tokens(context.active_length)
+            METRICS.input_tokens(context.active_length)
 
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
@@ -215,7 +205,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
 
     async def encode(
         self, request: TextGenerationRequest
-    ) -> Optional[EmbeddingsGeneratorOutput]:
+    ) -> EmbeddingsGeneratorOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -235,6 +225,9 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
                     return EmbeddingsGeneratorOutput(
                         embeddings=response.embeddings
                     )
+                raise RuntimeError(
+                    f"No embeddings were generated for request {request.request_id}"
+                )
         finally:
             if self.debug_logging:
                 self.logger.debug(
@@ -242,7 +235,6 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
                     request.request_id,
                     total_sw.elapsed_ms,
                 )
-        return None
 
     async def __aenter__(self) -> TokenGeneratorPipeline:
         self.logger.info("%s: Starting workers:", self.model_name)
@@ -328,14 +320,12 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self.logger = logging.getLogger(
             "max.serve.pipelines.AudioGeneratorPipeline"
         )
-        self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.engine_queue = engine_queue
         self.lora_queue = lora_queue
-        self.stats = TokenGeneratorStats()
 
         self._background_tasks: set[asyncio.Task] = set()
 
