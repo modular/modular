@@ -266,21 +266,12 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __init__(out self, var *args: *element_types, __list_literal__: ()):
+    fn __init__(out self, var *args: *element_types, __list_literal__: () = ()):
         """Construct tuple from variadic arguments.
 
         Args:
             args: Values for each element.
             __list_literal__: List literal marker (unused).
-        """
-        self = Self(storage=args^)
-
-    @always_inline("nodebug")
-    fn __init__(out self, var *args: *element_types):
-        """Construct the tuple from variadic arguments.
-
-        Args:
-            args: Initial values for each element.
         """
         self = Self(storage=args^)
 
