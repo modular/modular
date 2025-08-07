@@ -449,9 +449,11 @@ class OpenAISpeechResponseGenerator:
     ) -> CreateAudioGenerationResponse:
         self.logger.debug("Streaming: Start: %s", request)
         response = await self.pipeline.generate_full_audio(request)
+        assert response.audio_data is not None
         audio_data = response.audio_data.tobytes()
         response = CreateAudioGenerationResponse(
-            audio_data=base64.b64encode(audio_data), metadata=response.metadata
+            audio_data=base64.b64encode(audio_data),
+            metadata=response.metadata.to_dict(),
         )
         return response
 

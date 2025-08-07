@@ -22,10 +22,7 @@ from collections import deque
 from collections.abc import Generator
 from typing import Any
 
-import numpy as np
 from max.interfaces import (
-    AudioGenerationMetadata,
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorOutput,
     SchedulerResult,
@@ -216,9 +213,7 @@ class AudioGenerationScheduler(Scheduler):
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
-        self.response_q = ZmqPushSocket[
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ](
+        self.response_q = ZmqPushSocket[dict[str, AudioGeneratorOutput]](
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
@@ -255,7 +250,7 @@ class AudioGenerationScheduler(Scheduler):
     def _handle_terminated_responses(
         self,
         batch: AudioGenerationSchedulerOutput,
-        responses: dict[str, AudioGenerationResponse],
+        responses: dict[str, AudioGeneratorOutput],
     ) -> None:
         """Task that handles responses"""
         if not responses:
@@ -290,42 +285,6 @@ class AudioGenerationScheduler(Scheduler):
                 self.response_q.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
                 )
-
-    @traced
-    def _stream_responses_to_frontend(
-        self,
-        responses: dict[str, AudioGenerationResponse],
-    ) -> None:
-        if not responses:
-            return
-
-        audio_responses: dict[str, SchedulerResult[AudioGeneratorOutput]] = {}
-        for req_id, response in responses.items():
-            if response.has_audio_data:
-                audio_data = response.audio_data
-            else:
-                audio_data = np.array([], dtype=np.float32)
-
-            if response.is_done:
-                audio_responses[req_id] = SchedulerResult.complete(
-                    AudioGeneratorOutput(
-                        audio_data=audio_data,
-                        metadata=AudioGenerationMetadata(),
-                        is_done=response.is_done,
-                        buffer_speech_tokens=response.buffer_speech_tokens,
-                    )
-                )
-            else:
-                audio_responses[req_id] = SchedulerResult.active(
-                    AudioGeneratorOutput(
-                        audio_data=audio_data,
-                        metadata=AudioGenerationMetadata(),
-                        is_done=response.is_done,
-                        buffer_speech_tokens=response.buffer_speech_tokens,
-                    )
-                )
-
-        self.response_q.put_nowait(audio_responses)
 
     def _create_tg_batch(
         self,
@@ -392,7 +351,18 @@ class AudioGenerationScheduler(Scheduler):
         self._handle_terminated_responses(batch, responses)
 
         # send the responses to the API process
-        self._stream_responses_to_frontend(responses)
+        def _to_sch_result(response: AudioGeneratorOutput) -> SchedulerResult:
+            if response.is_done:
+                return SchedulerResult.complete(response)
+            else:
+                return SchedulerResult.active(response)
+
+        self.response_q.put_nowait(
+            {
+                req_id: _to_sch_result(response)
+                for req_id, response in responses.items()
+            }
+        )
 
     def _create_batch_generator(
         self,

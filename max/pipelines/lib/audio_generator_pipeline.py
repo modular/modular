@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
-from max.interfaces import AudioGenerationResponse, AudioGenerator
+from max.interfaces import AudioGenerator, AudioGeneratorOutput
 from max.nn import ReturnLogits
 from max.pipelines.core import TTSContext
 
@@ -63,7 +63,7 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
 
     def next_chunk(
         self, batch: dict[str, TTSContext]
-    ) -> dict[str, AudioGenerationResponse]:
+    ) -> dict[str, AudioGeneratorOutput]:
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
         return next_chunk(batch)
 

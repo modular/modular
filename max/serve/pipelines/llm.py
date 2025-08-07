@@ -24,11 +24,11 @@ from typing import Any, Callable, Generic
 
 import numpy as np
 from max.interfaces import (
-    AudioGenerationMetadata,
     AudioGenerationRequest,
     AudioGeneratorContext,
     AudioGeneratorOutput,
     BaseContextType,
+    GenerationStatus,
     LogProbabilities,
     PipelineTokenizer,
     TextGenerationRequest,
@@ -329,16 +329,6 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self._background_tasks: set[asyncio.Task] = set()
 
-    async def _collect_audio_metadata(
-        self, response: AudioGeneratorOutput, context: AudioGeneratorContext
-    ) -> AudioGenerationMetadata:
-        # Collect metadata about generated audio like duration, sample rate etc.
-        sample_rate = getattr(response, "sample_rate", None)
-        duration = getattr(response, "duration", None)
-        return AudioGenerationMetadata(
-            sample_rate=sample_rate, duration=duration
-        )
-
     async def next_chunk(
         self, request: AudioGenerationRequest
     ) -> AsyncGenerator[AudioGeneratorOutput, None]:
@@ -358,17 +348,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):
-                    audio_metadata = await self._collect_audio_metadata(
-                        response, context
-                    )
-
-                    output = AudioGeneratorOutput(
-                        audio_data=response.audio_data,
-                        metadata=audio_metadata,
-                        is_done=response.is_done,
-                    )
-
-                    yield output
+                    yield response
         finally:
             if self.debug_logging:
                 self.logger.debug(
@@ -382,9 +362,11 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     ) -> AudioGeneratorOutput:
         """Generates complete audio for the provided request."""
         audio_chunks: list[AudioGeneratorOutput] = []
+        np_chunks: list[np.ndarray] = []
         async for chunk in self.next_chunk(request):
-            if not chunk.audio_data.size:
+            if chunk.audio_data.size == 0 or chunk.audio_data.size == 0:
                 continue
+            np_chunks.append(chunk.audio_data)
             audio_chunks.append(chunk)
 
         # We import torch here so that only folks that use the
@@ -393,14 +375,11 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
-                audio_data=np.array([], dtype=np.float32),
-                metadata=AudioGenerationMetadata(),
-                is_done=True,
+                final_status=GenerationStatus.END_OF_SEQUENCE
             )
 
         # Combine audio chunks and metadata.
         # Convert numpy arrays to torch tensors for concatenation, then back to numpy
-        np_chunks = [chunk.audio_data for chunk in audio_chunks]
         combined_audio = np.concatenate(np_chunks, axis=-1)
 
         # We should only return from the next_chunk loop when the last chunk
@@ -411,7 +390,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         return AudioGeneratorOutput(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
-            is_done=True,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
         )
 
     async def __aenter__(self):

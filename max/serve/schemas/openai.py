@@ -17,7 +17,8 @@ from pydantic import (
     RootModel,
     confloat,
     conint,
-    constr)
+    constr,
+)
 from typing_extensions import Literal
 
 
