@@ -61,13 +61,8 @@ def test_elementwise():
             rebind[IndexList[outer_rank]](out_buffer.get_shape()),
         )
 
-        ok = True
         for i2 in range(min(numelems, 64)):
-            if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):
-                ok = False
-                break
-
-        assert_true(ok)
+            assert_equal(out_buffer.data.offset(i2).load(), 2 * (i2 + 1))
 
     run_elementwise[16, 1, False](DimList(16))
     run_elementwise[16, 1, True](DimList(16))
@@ -97,13 +92,8 @@ def test_elementwise_implicit_runtime():
 
     elementwise[func, simd_width=1](20)
 
-    ok = True
     for i in range(len(vector)):
-        if Int(vector[i]) != 42:
-            ok = False
-            break
-
-    assert_true(ok)
+        assert_equal(vector[i], 42)
 
 
 def test_indices_conversion():
