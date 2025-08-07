@@ -905,6 +905,11 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return {};
   }
 
+  // If the declaration is a type check error, its error has already been
+  // diagnosed. Squelch any downstream issues.
+  if (isa<TypeCheckErrorType>(value.getRValueType()))
+    return {};
+
   // Now that we're referencing a potentially dynamic value, see if it is from
   // an outer function.  If so, record it as a capture in this nested function.
   ASTDecl *declRef = nullptr;

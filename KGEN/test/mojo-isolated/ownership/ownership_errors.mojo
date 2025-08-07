@@ -597,8 +597,8 @@ fn test_no_unused_warning() -> Int:
 @explicit_destroy("Use `consume() method` to finalize")
 @fieldwise_init
 struct LinearType:
-    fn consume(var self):
-        __disable_del self
+    fn consume(deinit self):
+        pass
 
     fn use(self): pass
 

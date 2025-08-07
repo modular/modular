@@ -16,8 +16,7 @@ struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     fn __init__(out self, handle: AnyCoroutine):
         self.value = handle
 
-    fn __await__(var self) -> T:
-        __disable_del self
+    fn __await__(deinit self) -> T:
         while __mlir_attr.true:
             pass
 
@@ -31,7 +30,6 @@ struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     fn __init__(out self, handle: AnyCoroutine):
         self.value = handle
 
-    fn __await__(var self) raises -> T:
-        __disable_del self
+    fn __await__(deinit self) raises -> T:
         while __mlir_attr.true:
             pass

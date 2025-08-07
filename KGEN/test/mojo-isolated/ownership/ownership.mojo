@@ -287,21 +287,31 @@ struct FieldSensitiveMemExample:
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
- # CHECK-LABEL: lit.fn @"mutate2
-  fn mutate2(mut self):
-    # Disable the dtor of 'self' before we overwrite it to show we can do this,
-    # both F1 and F2 need to be destroyed before being overwritten
+  # CHECK-LABEL: lit.fn @"mutate2
+  fn mutate2(deinit self):
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%self)
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
+    self = FieldSensitiveMemExample()
+
+    # This is a 'deinit' method, so both F1 and F2 need to be destroyed
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
 
-    # CHECK-NEXT: lit.ownership.mark_destroyed %self
-    __disable_del self
-
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
-    self = FieldSensitiveMemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: lit.ownership.mark_destroyed %self
+
+  # This disables the destructor of 'x' which causes the fields to be destroyed.
+  # CHECK-LABEL: lit.fn @"disableDtor
+  fn disableDtor(deinit x):
+    # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
+    # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: lit.ownership.mark_destroyed %x
+    pass
 
 
   # CHECK-LABEL: lit.fn @"__del__
@@ -312,16 +322,6 @@ struct FieldSensitiveMemExample:
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
 
-# This disables the destructor of 'x' which causes the fields to be destroyed.
-# CHECK-LABEL: lit.fn @"disableDtor
-fn disableDtor(var x: FieldSensitiveMemExample):
-  # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
-  # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
-  # CHECK-NEXT: lit.ownership.mark_destroyed %x
-  # CHECK-NEXT: kgen.param.constant: none
-  __disable_del x
 
 # CHECK-LABEL: lit.fn @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(var x: RegExample):
@@ -1026,7 +1026,7 @@ struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
     var b: T
 
 # CHECK-LABEL: lit.fn @{{.*}}reap
-    fn reap(var self, out result: T):
+    fn reap(deinit self, out result: T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
@@ -1040,10 +1040,8 @@ struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
         result = self.b^
 
         # Full object bit is explicitly destroyed.
-        # CHECK-NEXT: lit.ownership.mark_destroyed %self
-        __disable_del self
-
         # CHECK-NEXT: kgen.param.constant: none
+        # CHECK-NEXT: lit.ownership.mark_destroyed %self
         # CHECK-NEXT: kgen.return
 
 
