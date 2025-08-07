@@ -18,4 +18,4 @@ def test_setting_throws_occupied_port() -> None:
             # It's okay if it's occupied already for some reason.
             pass
         with pytest.raises(ValueError):
-            socket_settings = Settings(host="0.0.0.0", port=8000)  # type: ignore
+            socket_settings = Settings(host="0.0.0.0", port=8000)
