@@ -14,7 +14,6 @@ from .pipeline import Pipeline, PipelineOutputsDict
 from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
-    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorContext,
     AudioGeneratorOutput,
@@ -48,7 +47,6 @@ PipelinesFactory = Callable[
 __all__ = [
     "AudioGenerationMetadata",
     "AudioGenerationRequest",
-    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
     "AudioGeneratorOutput",
@@ -87,4 +85,6 @@ __all__ = [
     "TextGenerationRequestTool",
     "TextGenerationResponse",
     "TextGenerationResponseFormat",
+    "msgpack_numpy_decoder",
+    "msgpack_numpy_encoder",
 ]

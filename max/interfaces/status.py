@@ -19,6 +19,8 @@ class GenerationStatus(str, Enum):
     """The generation process has reached the end of the sequence."""
     MAXIMUM_LENGTH = "maximum_length"
     """The generation process has reached the maximum allowed length."""
+    CANCELLED = "cancelled"
+    """The generation process has been cancelled by the user."""
 
     @property
     def is_done(self) -> bool:
