@@ -47,6 +47,10 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "fused_attention",
     srcs = ["fused_attention.py"],
+    target_compatible_with = select({
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 custom_op_example_py_binary(

@@ -6,7 +6,8 @@ def custom_op_example_py_binary(
         name,
         srcs,
         extra_data = [],
-        extra_deps = []):
+        extra_deps = [],
+        target_compatible_with = None):
     modular_py_binary(
         name = name,
         srcs = srcs,
@@ -26,6 +27,7 @@ def custom_op_example_py_binary(
             "//SDK/lib/API/python/max/graph",
             requirement("numpy"),
         ] + extra_deps,
+        target_compatible_with = target_compatible_with,
     )
 
     # Run each example as a simple non-zero-exit-code test.
@@ -33,4 +35,5 @@ def custom_op_example_py_binary(
         name = name + ".example-test",
         args = [],
         binary = name,
+        tags = ["gpu"],
     )
