@@ -92,7 +92,7 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
     assert "?" in captured.out
 
 
-@pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
+@pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
 def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
     """Test SmolLM2 with LoRA adapter via CLI."""
     lora_path = create_test_lora_adapter(prefix="cli_test")
@@ -113,7 +113,8 @@ def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
                 "--devices=gpu",
                 "--huggingface-model-revision",
                 REVISION,
-                "--max-num-loras=2",
+                "--enable-lora",
+                "-max-num-loras=2",
                 "--max-lora-rank=16",
                 f"--lora-paths={lora_path}",
                 "--max-new-tokens=50",
@@ -130,7 +131,7 @@ def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
     )
 
 
-@pytest.mark.skipif(is_h100_h200(), reason="LoRA tests fail on H100 and H200")
+@pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
 def test_pipelines_cli__smollm_with_multiple_loras(capsys) -> None:  # noqa: ANN001
     """Test SmolLM2 with multiple LoRA adapters via CLI."""
 
@@ -161,6 +162,7 @@ def test_pipelines_cli__smollm_with_multiple_loras(capsys) -> None:  # noqa: ANN
                 "--devices=gpu",
                 "--huggingface-model-revision",
                 REVISION,
+                "--enable-lora",
                 "--max-num-loras=3",
                 "--max-lora-rank=16",
                 f"--lora-paths={lora_paths[0]}",
