@@ -134,7 +134,7 @@ class Qwen2_5VLInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type: ignore
+class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
     vision_model: Model

@@ -235,7 +235,7 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type: ignore[type-var]
+class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """An Idefics3 pipeline model for multimodal text generation."""
 
     vision_model: Model

@@ -1069,7 +1069,11 @@ async def openai_create_completion(
                 prompt=prompt,
                 timestamp_ns=request.state.request_timer.start_ns,
                 request_path=request.url.path,
-                logprobs=completion_request.logprobs,
+                logprobs=(
+                    completion_request.logprobs
+                    if completion_request.logprobs is not None
+                    else 0
+                ),
                 echo=completion_request.echo,
                 sampling_params=sampling_params,
             )

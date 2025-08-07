@@ -93,7 +93,7 @@ class DeepseekV2Inputs(ModelInputs):
             self.return_n_logits = return_n_logits
 
 
-class DeepseekV2Model(PipelineModel[TextContext]):  # type: ignore
+class DeepseekV2Model(PipelineModel[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

@@ -103,7 +103,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):  # type: ignore
+class PixtralModel(PipelineModel[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     model: Model

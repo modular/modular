@@ -697,7 +697,7 @@ class LlamaVisionLanguageModel(Layer):
         return ops.cast(logits, DType.float32)
 
 
-class LlamaVision(PipelineModel[TextAndVisionContext]):  # type: ignore
+class LlamaVision(PipelineModel[TextAndVisionContext]):
     """The entire (multimodal) Llama3.2 vision model.
 
     A note on multi-step and vision inputs:

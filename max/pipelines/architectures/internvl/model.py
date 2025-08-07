@@ -192,7 +192,7 @@ def _assert_image_embeddings_invariant(
         )
 
 
-class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):  # type: ignore
+class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """An InternVL pipeline model for multimodal text generation."""
 
     vision_model: Model

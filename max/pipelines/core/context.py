@@ -23,9 +23,23 @@ from typing import Any, Optional
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import GenerationStatus, LogProbabilities, SamplingParams
+from max.interfaces import (
+    GenerationStatus,
+    InputContext,
+    LogProbabilities,
+    SamplingParams,
+)
 
 CHUNK_SIZE = 128
+
+
+def _check_text_context_implements_input_context(
+    context: TextContext,
+) -> InputContext:
+    # Not used at run-time; here only for the type checker to check that
+    # TextContext properly implements InputContext.  If you get an "incompatible
+    # type" error here, you introduced an incompatibility!
+    return context
 
 
 class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
@@ -39,7 +53,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
         eos_token_ids: Set of token IDs that indicate end of sequence
-        log_probabilities: Whether to return token log probabilities (None or int)
+        log_probabilities: Whether to return token log probabilities
         log_probabilities_echo: Whether to return log probabilities for prompt tokens
         ignore_eos: Whether to ignore end of sequence tokens and continue generating
         matcher: Optional grammar matcher for constrained decoding
@@ -65,7 +79,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     tokens: np.ndarray
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
     eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
-    log_probabilities: int | None = msgspec.field(default=None)
+    log_probabilities: int = msgspec.field(default=0)
     log_probabilities_echo: bool = msgspec.field(default=False)
     ignore_eos: bool = msgspec.field(default=False)
     json_schema: str | None = msgspec.field(default=None)

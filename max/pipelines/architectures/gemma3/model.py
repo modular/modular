@@ -92,7 +92,7 @@ class Gemma3Inputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
+class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     """A Gemma 3 pipeline model for text generation.
 
     This class integrates the Gemma 3 architecture with the MAX Engine pipeline

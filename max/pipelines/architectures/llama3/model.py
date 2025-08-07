@@ -140,7 +140,7 @@ class Llama3Inputs(ModelInputs):
         self.lora_ranks = lora_ranks
 
 
-class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
+class LlamaModelBase(PipelineModel[TextContext]):
     """Base Llama pipeline model implementation."""
 
     model: Model

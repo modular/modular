@@ -88,7 +88,7 @@ class MistralInputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
 
 
-class MistralModel(PipelineModel[TextContext]):  # type: ignore
+class MistralModel(PipelineModel[TextContext]):
     model: Model
     """Compiled and initialized model ready for inference."""
 
