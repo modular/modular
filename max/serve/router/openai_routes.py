@@ -1294,7 +1294,7 @@ async def unload_lora_adapter(
                 detail="LoRA functionality is not enabled on this server. Please restart the server with LoRA enabled.",
             )
 
-        response = await app_state.pipeline.lora_queue.unload_lora(
+        response = await app_state.pipeline.lora_queue.get_response(
             request_id,
             LoRARequest(LoRAOperation.UNLOAD, unload_request.lora_name),
         )
