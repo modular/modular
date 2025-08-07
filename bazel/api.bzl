@@ -91,6 +91,9 @@ def modular_py_binary(
         deps.append("//max/entrypoints:mojo")
         data = []
         env = {}
+    if native.package_name().endswith("/custom_ops"):
+        # TODO: Fix this hack, it's part of the custom repo but it's transitively depended on by things that are in the wheel
+        deps.append("//max/entrypoints:mojo")
 
     # TODO: There is some data we can fix by pulling from the wheel
     if _has_internal_reference(deps) or _has_internal_reference(data):
@@ -129,8 +132,7 @@ def mojo_binary(
 def modular_run_binary_test(name, external_noop = False, **kwargs):
     if external_noop:
         return
-    if name.endswith(".example-test"):
-        return  # TODO: Fix custom_ops python examples
+
     binary_test(
         name = name,
         **kwargs
