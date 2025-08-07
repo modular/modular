@@ -24,6 +24,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorValue,
     Weight,
@@ -399,6 +400,7 @@ class AttentionWithRope(Module):
         ],
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        chain: ops._ChainObject | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -436,6 +438,7 @@ class AttentionWithRope(Module):
                 n_heads=self.n_heads,
                 input_scale=x_scales.to(x.device),
                 weight_scale=weight_scale.to(x.device),
+                chain=chain,
             )
         else:
             # Call into fused qkv ragged matmul.
@@ -448,6 +451,7 @@ class AttentionWithRope(Module):
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
+                chain=chain,
             )
 
         # Apply rope.
@@ -466,6 +470,7 @@ class AttentionWithRope(Module):
             freqs_cis,
             layer_idx,
             interleaved=self.rope.interleaved,
+            chain=chain,
         )
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
@@ -476,6 +481,7 @@ class AttentionWithRope(Module):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
+            chain=chain,
         )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
@@ -619,6 +625,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         ],
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        chain: ops._ChainObject | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -807,6 +814,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         ],
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        chain: ops._ChainObject | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -1014,17 +1022,28 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             raise TypeError(
                 "All elements in freqs_cis must be TensorValue instances"
             )
-        return self.allreduce(
-            inputs=[
+
+        attn_outputs = []
+        chains = [
+            ops._ChainObject(Graph.current._current_chain)
+            for _ in range(len(self.devices))
+        ]
+        for i in range(len(self.devices)):
+            attn_outputs.append(
                 self.list_of_attentions[i](
                     layer_idx,
                     x[i],
                     kv_collections[i],
                     freqs_cis[i],
                     input_row_offsets[i],
+                    chains[i],
                 )
-                for i in range(len(self.devices))
-            ],
+            )
+
+        Graph.current._merge_chains([c._val for c in chains])
+
+        return self.allreduce(
+            inputs=attn_outputs,
             signal_buffers=signal_buffers,
         )
 

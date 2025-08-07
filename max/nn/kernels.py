@@ -78,6 +78,7 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -134,7 +135,7 @@ def fused_qkv_ragged_matmul(
         op_name += ".bias"
         values.append(bias)
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=values,
@@ -146,6 +147,7 @@ def fused_qkv_ragged_matmul(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -160,6 +162,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
     bias: TensorValue | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -232,7 +235,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
 
     op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=[
@@ -252,6 +255,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -660,6 +664,7 @@ def fused_qk_ragged_rope(
     layer_idx: TensorValue,
     interleaved: bool = True,
     position_ids: TensorValue | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query-key attention with rotary positional encodings and ragged inputs.
 
@@ -740,7 +745,7 @@ def fused_qk_ragged_rope(
         op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
         values = [input, input_row_offsets, kv_collection, freqs_cis, layer_idx]
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=values,
@@ -750,6 +755,7 @@ def fused_qk_ragged_rope(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -1041,6 +1047,7 @@ def flash_attention_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -1100,7 +1107,7 @@ def flash_attention_ragged(
     )
     parameters["local_window_size"] = local_window_size
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=[
@@ -1117,6 +1124,7 @@ def flash_attention_ragged(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 

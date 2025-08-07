@@ -472,6 +472,11 @@ class Graph:
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
 
+    def _merge_chains(self, chains: list[_ChainValue]) -> None:
+        self._current_chain = cast(
+            _ChainValue, self._add_op(mo.chain_create, chains)[0]
+        )
+
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
         return state.__enter__()
