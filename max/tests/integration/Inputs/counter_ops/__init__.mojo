@@ -28,11 +28,11 @@ struct Counter[stride: Int](Movable):
         self.b = b
         print("counter init", a, b)
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.a = other.a
         self.b = other.b
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("counter del")
 
     fn bump(mut self):
