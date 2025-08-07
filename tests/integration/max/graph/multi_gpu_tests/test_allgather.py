@@ -15,12 +15,14 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
 from max.nn import Signals
 
 M = 512
@@ -31,11 +33,15 @@ def allgather_graph(signals: Signals, axis: int) -> Graph:
     devices = signals.devices
     with Graph(
         "allgather",
-        input_types=[
-            TensorType(dtype=DType.float32, shape=[M, N], device=device)
-            for device in devices
-        ]
-        + signals.input_types(),
+        # https://github.com/python/mypy/issues/19413
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(dtype=DType.float32, shape=[M, N], device=device)
+                for device in devices
+            ]
+            + signals.input_types(),
+        ),
     ) as graph:
         num_devices = len(devices)
         for input in graph.inputs[:num_devices]:
@@ -123,11 +129,15 @@ def test_allgather_execution_uneven(
     signals = Signals(devices)
     with Graph(
         "allgather_uneven",
-        input_types=[
-            TensorType(dtype=DType.float32, shape=shape, device=device)
-            for shape, device in zip(shapes, devices)
-        ]
-        + signals.input_types(),
+        # https://github.com/python/mypy/issues/19413
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(dtype=DType.float32, shape=shape, device=device)
+                for shape, device in zip(shapes, devices)
+            ]
+            + signals.input_types(),
+        ),
     ) as graph:
         allgather_outputs = ops.allgather(
             inputs=(v.tensor for v in graph.inputs[:num_gpus]),

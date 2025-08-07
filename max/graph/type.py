@@ -384,7 +384,15 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         default=None, compare=False, repr=False
     )
 
-    __init__ = _TensorTypeBase.__init__
+    def __init__(
+        self,
+        dtype: DType,
+        shape: ShapeLike,
+        device: DeviceRef,
+        _layout: FilterLayout | None = None,
+    ) -> None:
+        super().__init__(dtype, shape, device)
+        self._layout = _layout
 
     @classmethod
     def from_mlir(cls, type: mo.TensorType) -> TensorType:
