@@ -29,6 +29,7 @@ modular_py_library(
 modular_py_binary(
     name = "mblack",
     srcs = ["src/mblack/__main__.py"],
+    main = "src/mblack/__main__.py",
     tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [":mblack-lib"],
 )
