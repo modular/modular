@@ -311,12 +311,6 @@ fn testClosure(a: Bool):
 fn disableDtor(var x: MoreComplexExample):
     x.mem^.consume()
 
-
-fn badMarkDestroyed(var x: MoreComplexExample):
-    # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
-    __disable_del x.mem
-
-
 fn fieldConsumeError(
     var w: MoreComplexExample,  # expected-note {{'w' declared here}}
     # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
@@ -510,23 +504,6 @@ fn test_inout_ref(mut v: StrArray, i: Int):
     var r = Pointer(to=get_inout_ref(v[i]))
 
     _ = r[]
-
-
-# expected-note @below {{'a' declared here}}
-fn test_disable_del(var a: MemExample, var b: String, var c: MemExample):
-    # expected-warning @+1 {{assignment to 'tmp1' was never used}}
-    tmp1 = a.x
-    __disable_del a
-    # expected-error @+2 {{use of uninitialized value 'a'}}
-    # expected-warning @+1 {{assignment to 'tmp2' was never used}}
-    tmp2 = a.y
-
-    # expected-error @+1 {{can only mark directly tracked values as destroyed}}
-    __disable_del get_inout_ref(b)
-
-    # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
-    __disable_del c.x
-
 
 fn test_uninit_store_trivial():
     var example = TrivialAggregate()

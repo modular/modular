@@ -136,8 +136,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in __type_of";
   case EC_PyBindGen:
     return " in Python binding generation";
-  case EC_DisableDel:
-    return " in __disable_del operand";
   case EC_MergeWith:
     return " in implicit '__merge_with__' call";
   case EC_RefBinding:
