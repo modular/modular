@@ -48,6 +48,7 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_conv_transpose_gpu.py",
+            "test_lora_gpu.py",  # Excluded to be handled separately later
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -56,6 +57,38 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = ["gpu"],
+    deps = [
+        ":shared_conv_impl",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_lora_gpu_test_disabled_on_b200",
+    srcs = [
+        "conftest.py",
+        "test_lora_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":shared_conv_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
