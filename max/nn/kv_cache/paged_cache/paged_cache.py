@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -46,7 +46,6 @@ from max.support.math import ceildiv
 from ..cache_params import KVCacheParams
 from ..context import KVCacheAwareContext
 from ..manager import (
-    KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
@@ -517,7 +516,9 @@ class PagedKVCacheManager(KVCacheManager):
         return True
 
     @traced
-    def fetch(self, batch: list[T], num_steps: int = 1) -> list[KVCacheInputs]:
+    def fetch(
+        self, batch: Sequence[T], num_steps: int = 1
+    ) -> Sequence[RaggedKVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
         On cache hits, the input context may have their start_idx bumped upwards in order
@@ -607,11 +608,9 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
-        return cast(list[KVCacheInputs], ret_list)
+        return ret_list
 
-    def input_symbols(
-        self,
-    ) -> list[PagedCacheInputSymbols]:
+    def input_symbols(self) -> Sequence[PagedCacheInputSymbols]:
         return [
             PagedCacheInputSymbols(
                 kv_blocks=TensorType(
@@ -655,10 +654,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.release(request_id)
 
     @traced
-    def step(
-        self,
-        batch: list[T],
-    ) -> None:
+    def step(self, batch: Sequence[T]) -> None:
         """Commit new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled.
@@ -707,7 +703,7 @@ class PagedKVCacheManager(KVCacheManager):
         assert 0 <= pct <= 1
         return pct
 
-    def get_req_blocks(self, request_id: RequestID) -> list[int]:
+    def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""
         return self.block_manager.get_req_blocks(request_id)
 

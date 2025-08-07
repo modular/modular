@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -37,7 +37,6 @@ from max.graph import (
 from .cache_params import KVCacheParams
 from .context import KVCacheAwareContext
 from .manager import (
-    KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
@@ -222,10 +221,8 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         return int(available_cache_memory // cache_size_per_sequence)
 
     def fetch(
-        self,
-        batch: list[T],
-        num_steps: int = 1,
-    ) -> list[KVCacheInputs]:
+        self, batch: Sequence[T], num_steps: int = 1
+    ) -> Sequence[RaggedKVCacheInputs]:
         """Fetches the KV cache state for the given sequence IDs.
 
         This method retrieves the current cache state for a batch of sequences, including their
@@ -315,7 +312,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
             )
             for i in range(len(self.devices))
         ]
-        return cast(list[KVCacheInputs], result)
+        return result
 
     def block_shape(self, n_sequences: int) -> list[int]:
         """Returns the shape of the KV cache blocks for the given number of sequences.

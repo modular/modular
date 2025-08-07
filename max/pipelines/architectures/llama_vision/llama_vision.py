@@ -278,8 +278,8 @@ class MultimodalKVCacheManager(KVCacheManager):
 
     @final
     def fetch(
-        self, batch: list[InputContext], num_steps: int = 1
-    ) -> list[KVCacheInputs]:
+        self, batch: Sequence[InputContext], num_steps: int = 1
+    ) -> Sequence[KVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
         # its fetch metadata.
@@ -348,12 +348,10 @@ class MultimodalKVCacheManager(KVCacheManager):
         multimodal_kv_inputs = [
             MultimodalKVCacheInputs(text_fetch_results, vision_fetch_results)
         ]
-        return cast(list[KVCacheInputs], multimodal_kv_inputs)
+        return multimodal_kv_inputs
 
     @final
-    def input_symbols(
-        self,
-    ) -> Sequence[MultimodalKVCacheInputSymbols]:
+    def input_symbols(self) -> Sequence[MultimodalKVCacheInputSymbols]:
         """Returns concatenated input symbols for text and vision KV managers.
 
         This renames symbolic dimensions to avoid conflicts between text and
@@ -386,7 +384,7 @@ class MultimodalKVCacheManager(KVCacheManager):
             )
         ]
 
-    def step(self, batch: list[InputContext]) -> None:
+    def step(self, batch: Sequence[InputContext]) -> None:
         """Steps both text and vision modalities' KV managers."""
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
@@ -1086,10 +1084,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             next_tokens, next_row_offsets, prev_inputs.kv_cache_inputs
         )
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert model_inputs.kv_cache_inputs is not None, (
             "Llama Vision has KV cache inputs"
         )
@@ -1280,10 +1275,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             min(optimal_batch_size, cls._MAX_DEFAULT_BATCH_SIZE),
         )
 
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> tuple[Model, Model]:
+    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """
         Load the Llama vision multimodal model. Since this is a multimodal model,
         we have vision and language models (graph) loaded.

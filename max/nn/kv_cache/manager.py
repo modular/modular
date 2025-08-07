@@ -226,18 +226,14 @@ class KVCacheManager(ABC, Generic[T]):
 
     @abstractmethod
     def fetch(
-        self,
-        batch: list[T],
-        num_steps: int = 1,
-    ) -> list[KVCacheInputs]:
+        self, batch: Sequence[T], num_steps: int = 1
+    ) -> Sequence[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
         sequence ids and prompts."""
         ...
 
     @abstractmethod
-    def input_symbols(
-        self,
-    ) -> Sequence[KVCacheInputSymbols]:
+    def input_symbols(self) -> Sequence[KVCacheInputSymbols]:
         """Returns the input symbols for the kv cache manager."""
         ...
 
@@ -255,7 +251,7 @@ class KVCacheManager(ABC, Generic[T]):
         # Update mappings
         self._request_to_seq_id[request_id] = seq_id
 
-    def step(self, batch: list[T]) -> None:
+    def step(self, batch: Sequence[T]) -> None:
         """Commit the new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled."""
