@@ -20,7 +20,7 @@ copy_files(
 modular_py_library(
     name = "_mlir_libs",
     srcs = [":py_srcs"],
-    data = [":_mlir_pyi"],
+    pyi_srcs = [":_mlir_pyi"],
     tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
 )

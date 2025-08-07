@@ -25,6 +25,7 @@ modular_py_library(
 modular_py_binary(
     name = "_core.stubfile_generator",
     srcs = ["@nanobind//:src/stubgen.py"],
+    main = "@nanobind//:src/stubgen.py",
     tags = ["no-mypy"],
     deps = ["_core.stubfile_generator_library"],
 )
@@ -90,12 +91,10 @@ modular_genrule(
 
 modular_py_library(
     name = "_core",
-    srcs = glob([
-        "_core/**/*.pyi",
-        "_core_types/*.py",
-    ]),
+    srcs = glob(["_core_types/*.py"]),
     data = [":_core.bindings"],
     imports = [".."],
+    pyi_srcs = glob(["_core/**/*.pyi"]),
     deps = [
         "//SDK/lib/API/python/max/mlir",
         requirement("numpy"),
