@@ -169,35 +169,34 @@ def KGEN_TailKind : I32EnumAttr<"TailKind", "tail kind", [
 def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
     "Function argument convention", [
   /// This is an immutable borrow of a register-passable value in an SSA
-  /// register.  The MLIR type may be anything that can be lowered to LLVM
-  /// (but notably not a memory-only type).
+  /// register.  The caller guarantees the value is live for the duration of the
+  /// call.
   ///
-  /// The caller guarantees the value is live for the duration of the call.
+  /// The MLIR type is any non-memory type that can be lowered to LLVM.
   I32EnumAttrCase<"ReadReg", 0, "read">,
 
   /// This is an immutably borrowed memory-only value, which is passed
-  /// indirectly.
-  ///
-  /// The MLIR type is always a PointerType, and the underlying type is a
-  /// memory-only type.  The caller passes a reference to an initialized memory
+  /// indirectly.  The caller passes a reference to an initialized memory
   /// slot that may be read but not mutated by the callee.
+  ///
+  /// The MLIR type is a LIT::RefType which is lowered by LowerLIT to
+  /// KGEN::PointerType.
   I32EnumAttrCase<"ReadMem", 1, "read_mem">,
 
-  /// This is an owned register-passable value an SSA register.  The MLIR type
-  /// may be anything that can be lowered to LLVM (notably not a memory-only
-  /// type).  The Mojo parser does not use this argument convention but
-  /// LowerArgConventions produces it.
+  /// This is an owned register-passable value an SSA register.  The callee is
+  /// responsible for destroying the value before returning.  The Mojo parser
+  /// does not use this argument convention but LowerArgConventions produces it.
   ///
-  /// The callee is responsible for destroying the value before returning.
+  /// The MLIR type is any non-memory type that can be lowered to LLVM.
   I32EnumAttrCase<"OwnedReg", 2, "owned">,
 
-  /// This is an owned memory-only value, which is passed indirectly.
+  /// This is an owned 'var' memory value, which is passed indirectly. The
+  /// caller initializes the memory slot and the callee destroys it, returning
+  /// with it uninitialized.  The callee is responsible for destroying the value
+  /// before returning.
   ///
-  /// The MLIR type is always a PointerType, and the underlying type is a
-  /// memory-only type.  The caller initializes the memory slot and the callee
-  /// destroys it, returning with it uninitialized.
-  ///
-  /// The callee is responsible for destroying the value before returning.
+  /// The MLIR type is a LIT::RefType which is lowered by LowerLIT to
+  /// KGEN::PointerType.
   I32EnumAttrCase<"OwnedMem", 3, "owned_in_mem">,
 
   /// This is used for mut arguments like `fn x(mut a: Int)`.
@@ -220,18 +219,17 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"MutRef", 6, "mutref">,
 
   /// This is used on the last argument of a function that returns a
-  /// memory-only value, requiring it to be returned through memory.
+  /// memory-only value, requiring it to be returned through memory. The value
+  /// is uninitialized on entry to the function and defined on exit from the
+  /// function if it returns.  The caller is responsible for destroying the
+  /// value.
   ///
-  /// The MLIR type is always a PointerType, and the underlying type can be
-  /// anything.  The value is uninitialized on entry to the function and defined
-  /// on exit from the function if it returns.
-  ///
-  /// The caller is responsible for destroying the value.
+  /// The MLIR type is a RefType or PointerType.
   I32EnumAttrCase<"ByRefResult", 7, "byref_result">,
 
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
-  I32EnumAttrCase<"ByRefError", 9, "byref_error">,
+  I32EnumAttrCase<"ByRefError", 8, "byref_error">,
 ]> {
   let cppNamespace = "M::KGEN";
 }
