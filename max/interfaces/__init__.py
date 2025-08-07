@@ -7,7 +7,13 @@
 
 from typing import Callable, Union
 
-from .context import BaseContext, BaseContextType, InputContext, SamplingParams
+from .context import (
+    BaseContext,
+    BaseContextType,
+    InputContext,
+    SamplingParams,
+    SamplingParamsInput,
+)
 from .log_probabilities import LogProbabilities
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import Pipeline, PipelineOutputsDict
@@ -72,6 +78,7 @@ __all__ = [
     "Request",
     "RequestID",
     "SamplingParams",
+    "SamplingParamsInput",
     "SchedulerResult",
     "SchedulerStatus",
     "SharedMemoryArray",
