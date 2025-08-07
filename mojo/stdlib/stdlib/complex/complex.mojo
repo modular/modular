@@ -258,6 +258,15 @@ struct ComplexSIMD[dtype: DType, size: Int](Stringable, Writable, _Expable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
+    fn conj(self) -> Self:
+        """Return the complex conjugate of self.
+
+        Returns:
+            The complex conjugate of self.
+        """
+        return Self(self.re, -self.im)
+
+    @always_inline
     fn norm(self) -> SIMD[dtype, size]:
         """Returns the magnitude of the complex value.
 
