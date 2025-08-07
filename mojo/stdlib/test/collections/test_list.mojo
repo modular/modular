@@ -866,10 +866,11 @@ def test_indexing():
 def test_list_dtor():
     var dtor_count = 0
 
-    var l = List[DelCounter]()
+    var ptr = UnsafePointer[mut=False](to=dtor_count)
+    var l = List[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
-    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
     l^.__del__()
@@ -880,8 +881,9 @@ def test_list_dtor():
 def test_destructor_trivial_elements():
     var dtor_count = 0
 
-    var l = List[DelCounter, hint_trivial_type=True]()
-    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    var ptr = UnsafePointer[mut=False](to=dtor_count)
+    var l = List[DelCounter[ptr.origin], hint_trivial_type=True]()
+    l.append(DelCounter(ptr))
 
     l^.__del__()
 
