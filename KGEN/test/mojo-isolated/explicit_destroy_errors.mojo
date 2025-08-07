@@ -14,8 +14,8 @@ from builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 struct EmptyExplicit:
     fn __init__(out self):
         pass
-    fn consume(var self):
-        __disable_del self
+    fn consume(deinit self):
+        pass
 
 fn errorExample():
     # expected-error @below {{Must use consume!}}

@@ -25,9 +25,9 @@ struct EmptyExplicit:
         pass
 
     # CHECK-LABEL: @"consume
-    fn consume(var self):
+    fn consume(deinit self):
         # CHECK: lit.ownership.mark_destroyed %self
-        __disable_del self
+        pass
         # CHECK-NOT: lit.call {{.*}}__del__
 
 fn correctUseExample():
