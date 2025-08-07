@@ -1475,7 +1475,7 @@ class ArgConvention(enum.Enum):
 
     byref_result = 7
 
-    byref_error = 9
+    byref_error = 8
 
 class ArgConventionAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
