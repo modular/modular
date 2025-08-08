@@ -63,7 +63,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
     alias num_heads = 2
-    alias dim = 64
+    alias dim = 128
     alias head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
@@ -73,8 +73,10 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     alias block_shape = IndexList[6](
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
-    alias mrope_section = IntTuple(16, 24, 32)  # The testdata is generated with
-    # mrope_section = (8, 4, 4) but this is multiplied by 2.
+    # The testdata is generated with mrope_section = (16, 8, 8),
+    # but the expected input for the kernel is the original mrope_section
+    # multiplied by 2, and prefix-summed.
+    alias mrope_section = IntTuple(32, 48, 64)
     alias mrope_section_size = len(mrope_section)
 
     # Construct backing buffer and the KV cache itself.
@@ -276,4 +278,4 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
 def main() -> None:
     # Full head RoPE
-    test_fused_qk_rope[32, DType.float32]()
+    test_fused_qk_rope[64, DType.float32]()
