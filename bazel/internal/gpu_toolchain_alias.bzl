@@ -15,12 +15,18 @@ def _gpu_toolchain_alias_impl(ctx):
         brand = toolchain_info.brand
         gpu_cache_env = "{}-{}-{}".format(toolchain_info.name, toolchain_info.multi_gpu, toolchain_info.has_4_gpus)
 
+    lit_prefix = brand.upper()
+    if brand == "amdgpu":
+        lit_prefix = "AMD"
+    elif brand == "metal":
+        lit_prefix = "APPLE"
+
     return [
         platform_common.TemplateVariableInfo({
             "GPU_ASAN_OPTIONS": _NVIDIA_ASAN_OPTIONS if brand == "nvidia" else _DEFAULT_ASAN_OPTIONS,
             "GPU_CACHE_ENV": gpu_cache_env,
             "GPU_LIT_FEATURE": "{}-GPU".format(name.upper()),
-            "GPU_BRAND_LIT_FEATURE": "{}-GPU".format("AMD" if brand == "amdgpu" else brand.upper()),
+            "GPU_BRAND_LIT_FEATURE": "{}-GPU".format(lit_prefix),
         }),
     ]
 
