@@ -91,7 +91,7 @@ class PipelineParallelLlama3(Transformer):
         logger.info(
             f"[PP Debug] Initializing Pipeline Parallel Llama3 with {pp_degree} stages"
         )
-        logger.info(f"[PP Debug] Devices: {[d.id for d in config.devices]}")
+        logger.debug(f"[PP Debug] Devices: {[d.id for d in config.devices]}")
 
         # Store pipeline parallel configuration
         self.pp_degree = pp_degree
@@ -100,9 +100,9 @@ class PipelineParallelLlama3(Transformer):
             config.num_hidden_layers, pp_degree
         )
 
-        logger.info("[PP Debug] Layer distribution:")
+        logger.debug("[PP Debug] Layer distribution:")
         for stage_idx, (start, end) in enumerate(self.stage_assignments):
-            logger.info(
+            logger.debug(
                 f"[PP Debug]   Stage {stage_idx} (layers {start}-{end - 1}): {self.devices[stage_idx]}"
             )
 
@@ -143,7 +143,7 @@ class PipelineParallelLlama3(Transformer):
             logits_postprocessor=config.logits_postprocessor,
         )
 
-        logger.info(
+        logger.debug(
             "[PP Debug] Pipeline parallel model created with simplified KV cache"
         )
 

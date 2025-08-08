@@ -12,7 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import llama_arch
+from .distributed_llama import DistributedLlama3
+from .llama3 import Llama3
 from .model_config import Llama3Config
+from .pipeline_parallel_llama3 import PipelineParallelLlama3
 
 
 def create_llama3_model(config: Llama3Config):
@@ -39,18 +42,12 @@ def create_llama3_model(config: Llama3Config):
 
     if config.pipeline_parallel_degree > 1:
         # Pipeline parallel model
-        from .pipeline_parallel_llama3 import PipelineParallelLlama3
-
         return PipelineParallelLlama3(config)
     elif config.tensor_parallel_degree > 1:
         # Tensor parallel model
-        from .distributed_llama import DistributedLlama3
-
         return DistributedLlama3(config)
     else:
         # Single-GPU model
-        from .llama3 import Llama3
-
         return Llama3(config)
 
 

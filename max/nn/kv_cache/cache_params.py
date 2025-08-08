@@ -45,7 +45,6 @@ class KVCacheParams:
     cache_strategy: KVCacheStrategy = KVCacheStrategy.CONTINUOUS
     page_size: Optional[int] = None
     n_devices: int = 1
-    # New fields for pipeline parallelism
     pipeline_parallel_degree: int = 1
     stage_id: Optional[int] = None  # Which pipeline stage this cache serves
     total_num_layers: Optional[int] = None  # Total layers in the model

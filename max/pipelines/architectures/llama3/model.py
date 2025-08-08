@@ -57,6 +57,7 @@ from transformers import AutoConfig
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
 from .model_config import Llama3Config
+from .pipeline_parallel_llama3 import PipelineParallelLlama3
 
 logger = logging.getLogger("max.pipelines")
 
@@ -492,36 +493,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         logger.info(f"Building graph took {after_build - before:.6f} seconds")
 
-        # Debug: Check for potential weight registry issues before loading
-        logger.debug(
-            f"[DEBUG] About to load graph with {len(self.state_dict)} weights in registry"
-        )
-        logger.debug(
-            f"[DEBUG] Sample weights in registry: {list(self.state_dict.keys())[:10]}..."
-        )
-
-        # Check if graph has _weights attribute for debugging
-        if hasattr(graph, "_weights"):
-            logger.debug(
-                f"[DEBUG] Graph has {len(graph._weights)} weight definitions"
-            )
-            logger.debug(
-                f"[DEBUG] Graph weight names: {list(graph._weights.keys())[:10]}..."
-            )
-
-            # Check for mismatches
-            graph_weights = set(graph._weights.keys())
-            registry_weights = set(self.state_dict.keys())
-
-            missing_from_registry = graph_weights - registry_weights
-            if missing_from_registry:
-                logger.error(
-                    f"[DEBUG] PROBLEM: Graph weights NOT in registry: {missing_from_registry}"
-                )
-                logger.error(
-                    "[DEBUG] This will cause 'Weight not in weights registry' error"
-                )
-
         before_compile = time.perf_counter()
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
@@ -602,8 +573,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
         num_layers = model_config.num_hidden_layers
 
         # Use shared helper method from pipeline_parallel_llama3
-        from .pipeline_parallel_llama3 import PipelineParallelLlama3
-
         stage_assignments = PipelineParallelLlama3._compute_stage_assignments(
             num_layers, pp_degree
         )
@@ -629,6 +598,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
             # Create stage manager internally
+            # Ensure available cache memory has been inferred
+            stage_available_cache_memory = (
+                self.kv_cache_config._available_cache_memory
+            )
+            if not stage_available_cache_memory:
+                raise ValueError("Can't infer memory consumption")
+
             stage_kv_manager = load_kv_manager(
                 params=stage_kv_params,
                 max_batch_size=self.pipeline_config.max_batch_size,
@@ -638,11 +614,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 ),
                 num_layers=num_layers_in_stage,
                 devices=[stage_device],
-                available_cache_memory=15
-                * 1024
-                * 1024
-                * 1024
-                // pp_degree,  # Split memory
+                available_cache_memory=stage_available_cache_memory,
                 page_size=self.kv_cache_config.kv_cache_page_size,
                 session=session,
             )
@@ -685,7 +657,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
             stage_kv_collections.append(kv_collection_func)
 
-            logger.info(
+            logger.debug(
                 f"[PP] Stage {stage_idx}: {num_layers_in_stage} layers "
                 f"(layers {start_layer}-{end_layer - 1}), "
                 f"device {stage_device.id}, {len(list(stage_kv_inputs))} KV inputs"
@@ -726,11 +698,11 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         pp_graph_inputs = tuple(pp_input_types)
 
-        logger.info(f"[PP] Self-contained graph inputs: {len(pp_graph_inputs)}")
+        logger.debug(
+            f"[PP] Self-contained graph inputs: {len(pp_graph_inputs)}"
+        )
 
         # Create PP model without session dependency
-        from .pipeline_parallel_llama3 import PipelineParallelLlama3
-
         pp_model: PipelineParallelLlama3 = PipelineParallelLlama3(model_config)
 
         # Load weights internally
@@ -778,7 +750,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 )
                 stage_kv_caches.append(kv_collection)
 
-            logger.info(
+            logger.debug(
                 f"[PP] Self-contained graph created {len(stage_kv_caches)} stage KV caches"
             )
 
