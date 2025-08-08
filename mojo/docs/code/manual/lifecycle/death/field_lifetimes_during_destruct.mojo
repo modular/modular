@@ -21,11 +21,11 @@ struct TwoStrings:
     var str1: String
     var str2: String
 
-    fn __moveinit__(out self, var existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.str1 = existing.str1^
         self.str2 = existing.str2^
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         self.dump()  # Self is still whole here
         # Mojo calls self.str2.__del__() since str2 isn't used anymore
 

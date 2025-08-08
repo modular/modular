@@ -422,8 +422,8 @@ struct DeviceContextSHMEM:
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.

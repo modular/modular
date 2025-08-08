@@ -51,7 +51,10 @@ what we publish.
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
-  `existing` arguments as `deinit` instead of either `owned` or `var`.
+  `existing` arguments as `deinit` instead of either `owned`.
+
+- The Mojo compiler now warns about use of the deprecated `owned` keyword,
+  please move to `var` or `deinit` as the warning indicates.
 
 - The `__disable_del` keyword and statement has been removed, use `deinit`
   methods instead.

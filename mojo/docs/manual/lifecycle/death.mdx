@@ -26,7 +26,7 @@ struct Balloon(Writable):
     fn write_to[W: Writer](self, mut writer: W) -> None:
         writer.write(String("a ", self.color, " balloon"))
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         print("Destroyed", String(self))
 
 
@@ -172,7 +172,7 @@ struct HeapArray(Writable):
                 writer.write(", ")
         writer.write("]")
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()
@@ -218,7 +218,7 @@ struct Balloons:
     var color: String
     var count: Int
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         # Mojo destroys all the fields when they're last used
         pass
 ```
@@ -317,9 +317,9 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, var existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         # Initializes a new `self` by consuming the contents of `existing`
-    fn __del__(var self):
+    fn __del__(deinit self):
         # Destroys all resources in `self`
 ```
 
@@ -363,7 +363,7 @@ struct TwoStrings(Copyable, Movable):
     var str1: String
     var str2: String
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         self.dump()  # Self is still whole here
         # Mojo calls self.str2.__del__() since str2 isn't used anymore
 
