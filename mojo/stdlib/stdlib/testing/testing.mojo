@@ -187,7 +187,7 @@ fn assert_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    if any(lhs != rhs):
+    if any(lhs.ne(rhs)):
         raise _assert_cmp_error["`left == right` comparison"](
             String(lhs),
             String(rhs),
@@ -465,7 +465,7 @@ fn assert_not_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    if all(lhs == rhs):
+    if all(lhs.eq(rhs)):
         raise _assert_cmp_error["`left != right` comparison"](
             String(lhs),
             String(rhs),

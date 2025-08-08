@@ -90,15 +90,15 @@ def test_compare():
             for k in values:
                 var s_k = S(k)
                 var s_k_1 = S(k - 1)
-                assert_equal(S(-1), is_true[D](s_k == s_k))
-                assert_equal(S(-1), is_true[D](-s_k == -s_k))
-                assert_equal(S(-1), is_true[D](s_k != s_k_1))
-                assert_equal(S(-1), is_true[D](-s_k != s_k_1))
-                assert_equal(S(-1), is_true[D](s_k > s_k_1))
-                assert_equal(S(-1), is_true[D](s_k_1 > -s_k))
-                assert_equal(S(-1), is_true[D](-s_k >= -s_k))
-                assert_equal(S(-1), is_true[D](-s_k < s_k_1))
-                assert_equal(S(-1), is_true[D](-s_k <= -s_k))
+                assert_equal(S(-1), is_true[D](s_k.eq(s_k)))
+                assert_equal(S(-1), is_true[D]((-s_k).eq(-s_k)))
+                assert_equal(S(-1), is_true[D](s_k.ne(s_k_1)))
+                assert_equal(S(-1), is_true[D]((-s_k).ne(s_k_1)))
+                assert_equal(S(-1), is_true[D](s_k.gt(s_k_1)))
+                assert_equal(S(-1), is_true[D](s_k_1.gt(-s_k)))
+                assert_equal(S(-1), is_true[D]((-s_k).ge(-s_k)))
+                assert_equal(S(-1), is_true[D]((-s_k).lt(s_k_1)))
+                assert_equal(S(-1), is_true[D]((-s_k).le(-s_k)))
 
 
 def main():

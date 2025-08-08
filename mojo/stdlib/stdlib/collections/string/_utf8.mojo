@@ -144,7 +144,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
         var current_bytes = (ptr + i).load[width=simd_size]()
         var has_error = validate_chunk(current_bytes, previous)
         previous = current_bytes
-        if any(has_error != 0):
+        if any(has_error.ne(0)):
             return False
         i += simd_size
 
@@ -159,7 +159,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
         # Add a chunk of 0s to the end to validate continuations bytes
         has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
 
-    return all(has_error == 0)
+    return all(has_error.eq(0))
 
 
 fn _is_valid_utf8(span: Span[Byte]) -> Bool:
@@ -199,7 +199,7 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
 fn _is_utf8_continuation_byte[
     w: Int
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
+    return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
 
 fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
@@ -237,7 +237,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
     )
-    return Int(count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]())
+    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
 
 
 fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):

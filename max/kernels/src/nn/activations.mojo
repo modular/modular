@@ -66,7 +66,7 @@ fn sign[
         The result of the sign operation.
     """
     var is_neg_mask = _is_neg(x)
-    var is_zero_mask = x == 0
+    var is_zero_mask = x.eq(0)
     return is_neg_mask.select[dtype](-1, is_zero_mask.select[dtype](0, 1))
 
 
@@ -91,7 +91,7 @@ fn elu[
     Returns:
         The result of the ELU operation.
     """
-    return (x >= 0).select(x, math.expm1(x))
+    return x.ge(0).select(x, math.expm1(x))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -258,4 +258,4 @@ fn leaky_relu[
         dtype.is_floating_point(),
         "dtype must be a floating point dtype",
     ]()
-    return (x >= 0).select(x, negative_slope * x)
+    return x.ge(0).select(x, negative_slope * x)

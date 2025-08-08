@@ -43,7 +43,7 @@ fn _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 fn _unsafe_normalize_neg_index[
     dtype: DType, width: Int, out_type: DType = DType.index
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
-    return (idx < 0).select(
+    return idx.lt(0).select(
         idx.cast[out_type]() + dim_size, idx.cast[out_type]()
     )
 
@@ -75,9 +75,9 @@ fn normalize_neg_index[
         "normalize_neg_index expects index to be an integral dtype",
     ]()
 
-    if all(-SIMD[out_type, width](dim_size) <= idx.cast[out_type]()) and all(
-        idx.cast[out_type]() < SIMD[out_type, width](dim_size)
-    ):
+    var indices = idx.cast[out_type]()
+    var bounds = SIMD[out_type, width](dim_size)
+    if all(indices.ge(-bounds) & indices.lt(bounds)):
         return _unsafe_normalize_neg_index[out_type=out_type](idx, dim_size)
 
     raise Error("indices must be in range [-dim_size, dim_size)")

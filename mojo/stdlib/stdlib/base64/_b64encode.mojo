@@ -38,7 +38,7 @@ fn _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
     alias mask = iota[DType.uint8, simd_width]()
-    return mask < UInt8(nb_value_to_load)
+    return mask.lt(UInt8(nb_value_to_load))
 
 
 # |                |---- byte 2 ----|---- byte 1 ----|---- byte 0 ----|
@@ -112,7 +112,7 @@ alias END_SECOND_RANGE = 51
 fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
-    var offset_indices = (abcd <= END_FIRST_RANGE).select(13, target_indices)
+    var offset_indices = abcd.le(END_FIRST_RANGE).select(13, target_indices)
     return abcd + OFFSETS._dynamic_shuffle(offset_indices)
 
 

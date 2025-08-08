@@ -15,15 +15,15 @@
 def main():
     simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
     simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1 > simd2  # SIMD[DType.bool, 4]
+    simd3 = simd1.gt(simd2)  # SIMD[DType.bool, 4]
     print(simd3)
 
     simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd5 = simd4 > 2  # SIMD[DType.bool, 4]
+    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
     print(simd5)
 
     simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd7 = simd6 > 0.5  # SIMD[DType.bool, 4]
+    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
     print(simd7)
 
     var float1: Float16 = 12.345  # SIMD[DType.float16, 1]

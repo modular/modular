@@ -76,9 +76,10 @@ fn bench_add[
     alias nelts = simdwidthof[type]()
     for i in range(0, size, nelts):
         if not (
-            output_ptr_host.load[width=nelts](i)
-            == input0_ptr_host.load[width=nelts](i)
-            + input1_ptr_host.load[width=nelts](i)
+            output_ptr_host.load[width=nelts](i).eq(
+                input0_ptr_host.load[width=nelts](i)
+                + input1_ptr_host.load[width=nelts](i)
+            )
         ).reduce_and():
             raise Error(String("mismatch at flattened idx ", i))
 

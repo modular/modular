@@ -244,6 +244,8 @@ fn _has_native_f8_support() -> Bool:
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct SIMD[dtype: DType, size: Int](
+    # TODO: add Comparable when migration is complete.
+    Floorable,
     Absable,
     Boolable,
     CeilDivable,
@@ -253,7 +255,6 @@ struct SIMD[dtype: DType, size: Int](
     Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
-    Floorable,
     Hashable,
     Indexer,
     Movable,
@@ -673,7 +674,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool and int_dtype in (DType.uint8, DType.int8):
-            return (value != 0)._refine[dtype]()
+            return value.ne(0)._refine[dtype]()
         else:
             return bitcast[dtype, size](value)
 
@@ -714,7 +715,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             Whether the vector contains the value.
         """
-        return (self == value).reduce_or()
+        return self.eq(value).reduce_or()
 
     @always_inline("nodebug")
     fn __add__(self, rhs: Self) -> Self:
@@ -805,11 +806,11 @@ struct SIMD[dtype: DType, size: Int](
         elif dtype.is_unsigned():
             return div
         else:
-            if all((self > 0) & (rhs > 0)):
+            if all(self.gt(0) & rhs.gt(0)):
                 return div
 
             var mod = self - div * rhs
-            var mask = ((rhs < 0) ^ (self < 0)) & (mod != 0)
+            var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
             return div - mask.cast[dtype]()
 
     @always_inline("nodebug")
@@ -841,7 +842,7 @@ struct SIMD[dtype: DType, size: Int](
                 )
 
             var mod = self - div * rhs
-            var mask = ((rhs < 0) ^ (self < 0)) & (mod != 0)
+            var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
             return mod + mask.select(rhs, Self(0))
 
     @always_inline("nodebug")
@@ -872,120 +873,6 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
         return _pow(self, exp)
-
-    @always_inline("nodebug")
-    fn __lt__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using less-than comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] < rhs[i]`.
-        """
-
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](
-            self.value, rhs.value
-        )
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using less-than-or-equal comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] <= rhs[i]`.
-        """
-
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](
-            self.value, rhs.value
-        )
-
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using equal-to comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] == rhs[i]`.
-        """
-
-        # TODO(KERN-228): support BF16 on neon systems.
-        # As a workaround, we roll our own implementation
-        @parameter
-        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits() == rhs.to_bits()
-        else:
-            return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-                self.value, rhs.value
-            )
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using not-equal comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] != rhs[i]`.
-        """
-
-        # TODO(KERN-228): support BF16 on neon systems.
-        # As a workaround, we roll our own implementation.
-        @parameter
-        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits() != rhs.to_bits()
-        else:
-            return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                self.value, rhs.value
-            )
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using greater-than comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] > rhs[i]`.
-        """
-
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](
-            self.value, rhs.value
-        )
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: Self) -> Self._Mask:
-        """Compares two SIMD vectors using greater-than-or-equal comparison.
-
-        Args:
-            rhs: The rhs of the operation.
-
-        Returns:
-            A new bool SIMD vector of the same size whose element at position
-            `i` is True or False depending on the expression
-            `self[i] >= rhs[i]`.
-        """
-
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
-            self.value, rhs.value
-        )
 
     @always_inline("nodebug")
     fn __pos__(self) -> Self:
@@ -1078,9 +965,10 @@ struct SIMD[dtype: DType, size: Int](
             `self << rhs`.
         """
         constrained[dtype.is_integral(), "must be an integral type"]()
-        debug_assert(all(rhs >= 0), "unhandled negative value")
+        debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs < bitwidthof[dtype]()), "unhandled value greater than size"
+            all(rhs.lt(bitwidthof[dtype]())),
+            "unhandled value greater than size",
         )
         return __mlir_op.`pop.shl`(self.value, rhs.value)
 
@@ -1098,9 +986,10 @@ struct SIMD[dtype: DType, size: Int](
             `self >> rhs`.
         """
         constrained[dtype.is_integral(), "must be an integral type"]()
-        debug_assert(all(rhs >= 0), "unhandled negative value")
+        debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs < bitwidthof[dtype]()), "unhandled value greater than size"
+            all(rhs.lt(bitwidthof[dtype]())),
+            "unhandled value greater than size",
         )
         return __mlir_op.`pop.shr`(self.value, rhs.value)
 
@@ -1124,6 +1013,231 @@ struct SIMD[dtype: DType, size: Int](
             return self.select(False, True)._refine[dtype]()
         else:
             return self ^ -1
+
+    # ===------------------------------------------------------------------=== #
+    # Boolean comparison operations.
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
+        """Compares two SIMD vectors for equality.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            True if all elements of the SIMD vectors are equal, False otherwise.
+        """
+
+        constrained[
+            size == 1,
+            "TODO: remove this constraint when migration is complete.",
+        ]()
+        return Bool(self.eq(rhs))
+
+    @always_inline
+    fn __ne__(self, rhs: Self) -> Bool:
+        """Compares two SIMD vectors for inequality.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            True if any elements of the SIMD vectors are not equal, False
+            otherwise.
+        """
+        # TODO: remove this implementation once we have default traits methods.
+        return not self == rhs
+
+    @always_inline
+    fn __gt__(self, rhs: Self) -> Bool:
+        """Compares two Scalars using greater-than comparison.
+
+        Args:
+            rhs: The Scalar to compare with.
+
+        Returns:
+            True if `self` is greater than `rhs`, False otherwise.
+        """
+        constrained[
+            size == 1,
+            (
+                "Strict inequality is only defined for `Scalar`s; "
+                "did you mean to use `SIMD.gt(...)?"
+            ),
+        ]()
+        return Bool(self.gt(rhs))
+
+    @always_inline
+    fn __ge__(self, rhs: Self) -> Bool:
+        """Compares two Scalars using greater-than-or-equal comparison.
+
+        Args:
+            rhs: The Scalar to compare with.
+
+        Returns:
+            True if `self` is greater than or equal to `rhs`, False otherwise.
+        """
+        constrained[
+            size == 1,
+            (
+                "Greater than or equal is only defined for `Scalar`s; "
+                "did you mean to use `SIMD.ge(...)?"
+            ),
+        ]()
+        return Bool(self.ge(rhs))
+
+    @always_inline
+    fn __lt__(self, rhs: Self) -> Bool:
+        """Compares two Scalars using less-than comparison.
+
+        Args:
+            rhs: The Scalar to compare with.
+
+        Returns:
+            True if `self` is less than `rhs`, False otherwise.
+        """
+        constrained[
+            size == 1,
+            (
+                "Strict inequality is only defined for `Scalar`s; "
+                "did you mean to use `SIMD.lt(...)?"
+            ),
+        ]()
+        return Bool(self.lt(rhs))
+
+    @always_inline
+    fn __le__(self, rhs: Self) -> Bool:
+        """Compares two Scalars using less-than-or-equal comparison.
+
+        Args:
+            rhs: The Scalar to compare with.
+
+        Returns:
+            True if `self` is less than or equal to `rhs`, False otherwise.
+        """
+        constrained[
+            size == 1,
+            (
+                "Less than or equal is only defined for `Scalar`s; "
+                "did you mean to use `SIMD.le(...)?"
+            ),
+        ]()
+        return Bool(self.le(rhs))
+
+    # ===------------------------------------------------------------------=== #
+    # Elementwise comparison operations.
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline("nodebug")
+    fn eq(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise equality.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] == rhs[i]`.
+        """
+
+        # TODO(KERN-228): support BF16 on neon systems.
+        # As a workaround, we roll our own implementation
+        @parameter
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
+            return self.to_bits() == rhs.to_bits()
+        else:
+            return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+                self.value, rhs.value
+            )
+
+    @always_inline("nodebug")
+    fn ne(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise inequality.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] != rhs[i]`.
+        """
+
+        # TODO(KERN-228): support BF16 on neon systems.
+        # As a workaround, we roll our own implementation.
+        @parameter
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
+            return self.to_bits() != rhs.to_bits()
+        else:
+            return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+                self.value, rhs.value
+            )
+
+    @always_inline("nodebug")
+    fn gt(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise greater-than comparison.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] > rhs[i]`.
+        """
+
+        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](
+            self.value, rhs.value
+        )
+
+    @always_inline("nodebug")
+    fn ge(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise greater-than-or-equal
+        comparison.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] >= rhs[i]`.
+        """
+
+        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
+            self.value, rhs.value
+        )
+
+    @always_inline("nodebug")
+    fn lt(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise less-than comparison.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] < rhs[i]`.
+        """
+
+        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](
+            self.value, rhs.value
+        )
+
+    @always_inline("nodebug")
+    fn le(self, rhs: Self) -> Self._Mask:
+        """Compares two SIMD vectors using elementwise less-than-or-equal
+        comparison.
+
+        Args:
+            rhs: The SIMD vector to compare with.
+
+        Returns:
+            A new bool SIMD vector of the same size whose element at position
+            `i` is the value of `self[i] <= rhs[i]`.
+        """
+
+        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](
+            self.value, rhs.value
+        )
 
     # ===------------------------------------------------------------------=== #
     # In place operations.
@@ -1515,6 +1629,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if the SIMD scalar is non-zero and False otherwise.
         """
+        # TODO: relax this constraint once migration is complete.
         constrained[
             size == 1,
             (
@@ -1643,7 +1758,7 @@ struct SIMD[dtype: DType, size: Int](
         if dtype.is_unsigned() or dtype is DType.bool:
             return self
         elif dtype.is_integral():
-            return (self < 0).select(-self, self)
+            return self.lt(0).select(-self, self)
         else:
 
             @parameter
@@ -1859,7 +1974,7 @@ struct SIMD[dtype: DType, size: Int](
         if dtype is DType.bool:
             return self.select[target](1, 0)
         elif target is DType.bool:
-            return (self != 0)._refine[target]()
+            return self.ne(0)._refine[target]()
 
         @parameter
         if dtype is DType.bfloat16 and (
@@ -1901,9 +2016,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_unsigned():
-            return pop_count(self) == 1
+            return pop_count(self).eq(1)
         else:
-            return (self > 0) & (self & (self - 1) == 0)
+            return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -3004,9 +3119,9 @@ fn _pow[
         return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
-        if all(exp == 2):
+        if all(exp.eq(2)):
             return base * base
-        if all(exp == 3):
+        if all(exp.eq(3)):
             return base * base * base
 
         var result = __type_of(base)()
@@ -3286,9 +3401,9 @@ fn _convert_f32_to_float8_scalar[
         var rshift: Int32 = FP8_MIN_EXPONENT - exp
         if rshift < FP32_NUM_BITS:
             mantissa |= 1 << FP32_NUM_MANTISSA_BITS
-            sticky_bit = ((mantissa & ((1 << rshift) - 1)) != 0).cast[
-                DType.int32
-            ]()
+            sticky_bit = (
+                (mantissa & ((1 << rshift) - 1)).ne(0).cast[DType.int32]()
+            )
             mantissa = mantissa >> rshift
             u = (
                 mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
@@ -3302,9 +3417,9 @@ fn _convert_f32_to_float8_scalar[
         FP8_NUM_MANTISSA_BITS + 1
     )
     var round_bit: Int32 = (mantissa >> NUM_BITS_SHIFT) & 1
-    sticky_bit |= ((mantissa & ((1 << NUM_BITS_SHIFT) - 1)) != 0).cast[
-        DType.int32
-    ]()
+    sticky_bit |= (
+        (mantissa & ((1 << NUM_BITS_SHIFT) - 1)).ne(0).cast[DType.int32]()
+    )
 
     if (round_bit and sticky_bit) or (round_bit and (u & 1)):
         u = (u + 1).cast[DType.uint8]()
@@ -3591,7 +3706,7 @@ fn _floor(x: SIMD) -> __type_of(x):
 
     var bits = x._to_bits_signed()
     var e = ((bits & mask) >> mantissa_width) - bias
-    bits = (e < shift_factor).select(
+    bits = e.lt(shift_factor).select(
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
     )

@@ -61,6 +61,11 @@ what we publish.
 
 ### Standard library changes
 
+- The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
+  return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
+  has explicit elementwise comparisons that return boolean masks, e.g. `eq()`
+  and `le()`.
+
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the
   Python equivalent function.

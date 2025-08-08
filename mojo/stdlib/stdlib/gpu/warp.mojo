@@ -319,7 +319,7 @@ fn _shuffle_up_amd[
     var lane: Int32 = lane_id()
     var t0 = lane - offset.cast[DType.int32]()
     var t1 = lane & -WARP_SIZE
-    var dst_lane = (t0 < t1).select(lane, t0)
+    var dst_lane = t0.lt(t1).select(lane, t0)
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
 
@@ -414,7 +414,7 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = lane_id()
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset > _WIDTH_MASK).select(0, offset) + lane
+    var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
 
@@ -506,7 +506,7 @@ fn _shuffle_xor_amd[
     var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap
     var t2 = t1 + WARP_SIZE
-    var dst_lane = (t0 < t2).select(t0, lane)
+    var dst_lane = t0.lt(t2).select(t0, lane)
     return _shuffle_amd_helper(dst_lane, val)
 
 

@@ -920,7 +920,7 @@ struct Equal(ElementwiseBinaryComparisonOp):
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
-        return lhs == rhs
+        return lhs.eq(rhs)
 
 
 @compiler.register("mo.greater")
@@ -932,7 +932,7 @@ struct Greater(ElementwiseBinaryComparisonOp):
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
-        return lhs > rhs
+        return lhs.gt(rhs)
 
 
 @compiler.register("mo.greater_equal")
@@ -944,7 +944,7 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
-        return lhs >= rhs
+        return lhs.ge(rhs)
 
 
 @compiler.register("mo.not_equal")
@@ -956,7 +956,7 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
-        return lhs != rhs
+        return lhs.ne(rhs)
 
 
 @compiler.register("mo.and")

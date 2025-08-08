@@ -102,9 +102,9 @@ fn _argn[
         ]:
             @parameter
             if is_max:
-                return a <= b
+                return a.le(b)
             else:
-                return a >= b
+                return a.ge(b)
 
         @parameter
         @always_inline
@@ -173,7 +173,7 @@ fn _argn[
 
             # handle the case where min wasn't in trailing values
             if not found_min:
-                var matching = global_values == global_val
+                var matching = global_values.eq(global_val)
                 var min_indices = matching.select(
                     global_indices, Scalar[output.dtype].MAX
                 )

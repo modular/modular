@@ -40,9 +40,9 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
     """
     return (isnan(x) | isnan(y)).select(
         nan[x.dtype](),
-        ((x > 0) & (y > 0)).select(
+        (x.gt(0) & y.gt(0)).select(
             x * log(x / y) - x + y,
-            ((x == 0) & (y >= 0)).select(y, inf[x.dtype]()),
+            (x.eq(0) & y.ge(0)).select(y, inf[x.dtype]()),
         ),
     )
 

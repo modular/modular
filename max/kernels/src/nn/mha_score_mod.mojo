@@ -109,7 +109,7 @@ struct AlibiScoreMod[
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
         var score_mod_vec = (
-            q_idx >= (k_idx + iota[coords_dtype, width]())
+            q_idx.ge(k_idx + iota[coords_dtype, width]())
         ).select(
             score_vec
             + self._generate_alibi_bias[coords_dtype, dtype, width](

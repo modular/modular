@@ -1438,7 +1438,7 @@ fn partial_simd_load[
     var effective_lbound = max(0, lbound)
     var effective_rbound = min(width, rbound)
     var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_load[width](storage, mask, pad_value)
 
@@ -1477,7 +1477,7 @@ fn partial_simd_store[
     var effective_lbound = max(0, lbound)
     var effective_rbound = min(width, rbound)
     var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     # Rebind for the inconsistency between (1) `ptr: UnsafePointer` deduces
     # address_space as ptr1 and (2) `UnsafePointer[Scalar[dtype]]` sets address_space to

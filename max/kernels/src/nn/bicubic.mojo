@@ -98,7 +98,7 @@ fn cubic_kernel(x: SIMD) -> __type_of(x):
     var case_2 = a * abs_x_cubed - 5 * a * abs_x_squared + 8 * a * abs_x - 4 * a
     var case_3 = __type_of(x)(0)
 
-    return (abs_x <= 1).select(case_1, (abs_x < 2).select(case_2, case_3))
+    return abs_x.le(1).select(case_1, abs_x.lt(2).select(case_2, case_3))
 
 
 fn cpu_bicubic_kernel[

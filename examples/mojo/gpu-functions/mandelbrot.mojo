@@ -93,7 +93,7 @@ fn mandelbrot(
     for _ in range(MAX_ITERATIONS):
         if not any(in_set_mask):
             break
-        in_set_mask = z.squared_norm() <= 4
+        in_set_mask = z.squared_norm().le(4)
         iters = in_set_mask.select(iters + 1, iters)
         z = z.squared_add(c)
 
