@@ -30,8 +30,8 @@ from utils.config_loader import ConfigNames, get_config_loader
 from utils.weight_converter import convert_hf_to_max_weights
 from utils.weight_generator import get_weight_generator
 
-RTOL = 1e-2
-ATOL = 1e-2
+RTOL = 8e-3
+ATOL = 1e-3
 
 
 @torch.no_grad()
