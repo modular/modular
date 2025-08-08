@@ -93,6 +93,31 @@ def constant(
     )[0].tensor
 
 
+def constant_external(name: str, type: TensorType) -> TensorValue:
+    """Registers an external constant (weight) in the graph of a given type.
+
+    Two external constants with the same name and type refer to the same weight.
+
+    Two external constants with the same name and different types are
+    incompatible and will fail compilation.
+
+    Args:
+        name: The name of the external constant.
+            This should be the fully-qualified weight name and must be unique.
+        type: The type of the constant value.
+    Returns:
+        A tensor value of the specified type, representing the weight value
+        associated with the name at compile time.
+    """
+    return Graph.current._add_op(
+        mo.constant_external,
+        result=type,
+        name=name,
+        device=type.device.to_mlir(),
+        align=type.dtype.align,
+    )[0]
+
+
 # For each DType, this is the full range of representable values.
 # Since constant and scalar have explicit users dtypes, we trust that the specified dtype is wanted.
 # We still error is a value does not fit in these ranges.
