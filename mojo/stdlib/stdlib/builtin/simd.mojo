@@ -60,7 +60,7 @@ from sys import (
     sizeof,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 from sys.intrinsics import _type_is_eq
 
 from bit import bit_width, byte_swap, pop_count
@@ -3316,6 +3316,74 @@ fn _convert_f32_to_float8_scalar[
             return bitcast[target](UInt8(0))
 
     return bitcast[target](sign | u)
+
+
+@always_inline
+fn _convert_f32_to_float8_ue8m0_scalar[
+    dtype: DType, //,
+    target: DType,
+](x: Scalar[dtype]) -> Scalar[target]:
+    if _isnan(x) or _isinf(x):
+        return Scalar[target](0xFF)
+
+    var x_uint32: UInt32 = bitcast[DType.uint32, 1](x)
+    var exp: UInt8 = UInt8(
+        (x_uint32 >> 23) & 0xFF
+    )  # Extract the 8 bit exponent
+    var mant: UInt32 = x_uint32 & 0x7FFFFF  # Extract the 23 bit mantissa
+
+    if (mant > 0) and (exp != 0xFE) and (not (exp == 0 and mant <= 0x00400000)):
+        exp = exp + 1
+
+    return bitcast[target, 1](exp)
+
+
+@always_inline
+fn _convert_f32_to_float8_ue8m0[
+    dtype: DType,
+    size: Int, //,
+    target: DType,
+](val: SIMD[dtype, size],) -> SIMD[target, size]:
+    constrained[target == DType.uint8, "target must be uint8"]()
+
+    @parameter
+    if is_nvidia_gpu() and _is_sm_100x_or_newer():
+        alias asm_prefix = "cvt.rp.satfinite.ue8m0x2.f32"
+
+        @parameter
+        if size > 1:
+            var res = SIMD[target, size]()
+
+            @parameter
+            for i in range(0, size, 2):
+                var f8x2_f32x2 = inlined_assembly[
+                    asm_prefix + " $0, $1, $2;",
+                    Scalar[DType.uint16],
+                    constraints="=h,f,f",
+                    has_side_effect=False,
+                ](val[i + 1], val[i])
+                var ui8x2 = bitcast[target, 2](f8x2_f32x2)
+                res = res.insert[offset=i](ui8x2)
+            return res
+        else:
+            var f8x2_f32x2 = inlined_assembly[
+                asm_prefix + " $0, $1, $2;",
+                Scalar[DType.uint16],
+                constraints="=h,f,f",
+                has_side_effect=False,
+            ](Float32(0.0), val[0])
+            var ui8x2 = bitcast[target, 2](f8x2_f32x2)
+            return ui8x2[0]
+    else:
+
+        @always_inline
+        @parameter
+        fn wrapper_fn[
+            input_dtype: DType, result_dtype: DType
+        ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
+            return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
+
+        return _simd_apply[wrapper_fn, target, size](val)
 
 
 # ===----------------------------------------------------------------------=== #

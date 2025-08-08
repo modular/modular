@@ -31,3 +31,15 @@ mojo_filecheck_test(
         "@mojo//:stdlib",
     ],
 )
+
+mojo_filecheck_test(
+    name = "test_ue8m0_conversion.mojo.test",
+    srcs = ["test_ue8m0_conversion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:b200_gpu",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
