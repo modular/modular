@@ -112,7 +112,7 @@ class MAXModelConfig(MAXModelConfigBase):
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     use_subgraphs: bool = True
-    """Whether to use subgraphs for the model."""
+    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
 
     tensor_parallel_degree: int = 1
     """Number of tensor-parallel replicas."""
@@ -840,6 +840,9 @@ class MAXModelConfig(MAXModelConfigBase):
             "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
+            "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
+            "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
+            "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
             "tensor_parallel_degree": "Number of tensor-parallel replicas (default: 1).",
             "pipeline_parallel_degree": "Number of pipeline stages (default: 1).",
         }
