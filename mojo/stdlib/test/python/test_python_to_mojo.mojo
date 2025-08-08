@@ -12,18 +12,28 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python, PythonObject
-from testing import assert_equal, assert_false, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_true,
+    assert_equal_pyobj,
+    assert_raises,
+)
 
 
-fn test_string_to_python_to_mojo(mut python: Python) raises:
+def test_string():
     var py_string = PythonObject("mojo")
     var py_string_capitalized = py_string.capitalize()
 
     var cap_mojo_string = String(py_string_capitalized)
     assert_equal(cap_mojo_string, "Mojo")
+    assert_equal_pyobj(cap_mojo_string.to_python_object(), PythonObject("Mojo"))
+
+    var os = Python.import_module("os")
+    assert_true(String(os.environ).startswith("environ({"))
 
 
-fn test_range() raises:
+def test_range():
     var array_size: PythonObject = 2
 
     # we check that the numbers appear in order
@@ -50,37 +60,40 @@ fn test_range() raises:
     assert_false(expected)
 
 
-fn test_python_to_string() raises:
-    var os = Python.import_module("os")
-    assert_true(String(os.environ).startswith("environ({"))
+def test_int():
+    assert_equal(Int(PythonObject(5)), 5)
+    assert_equal(Int(PythonObject(-1)), -1)
+
+    # Test error trying conversion from Python '"str"'
+    with assert_raises(contains="invalid literal for int()"):
+        _ = Int(PythonObject("str"))
+
+    assert_equal_pyobj(Int(5).to_python_object(), PythonObject(5))
+    assert_equal_pyobj(Int(-1).to_python_object(), PythonObject(-1))
 
 
-fn test_python_to_int() raises:
-    var py_int = PythonObject(1)
-    var mojo_int = Int(1)
-    assert_equal(Int(py_int), mojo_int)
-
-
-fn test_python_to_float() raises:
+def test_float():
     var py_float = PythonObject(1.0)
     var mojo_float = Float64(1.0)
     assert_equal(Float64(py_float), mojo_float)
 
 
-fn test_python_to_bool() raises:
-    var py_bool = PythonObject(True)
-    var mojo_bool = Bool(True)
-    assert_equal(Bool(py_bool), mojo_bool)
+def test_bool():
+    assert_true(Bool(PythonObject(True)))
+    assert_false(Bool(PythonObject(False)))
+
+    assert_equal_pyobj(Bool(True).to_python_object(), PythonObject(True))
+    assert_equal_pyobj(Bool(False).to_python_object(), PythonObject(False))
 
 
-fn test_python_numpy_int_to_mojo_int() raises:
+def test_numpy_int():
     var np = Python.import_module("numpy")
     var py_numpy_int = np.int64(1)
     var mojo_int = Int(1)
     assert_equal(Int(py_numpy_int), mojo_int)
 
 
-fn test_python_numpy_float_to_mojo_float() raises:
+def test_numpy_float():
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)
     var mojo_float = Float64(1.0)
@@ -88,12 +101,10 @@ fn test_python_numpy_float_to_mojo_float() raises:
 
 
 def main():
-    var python = Python()
-    test_string_to_python_to_mojo(python)
+    test_string()
     test_range()
-    test_python_to_string()
-    test_python_to_int()
-    test_python_to_float()
-    test_python_to_bool()
-    test_python_numpy_int_to_mojo_int()
-    test_python_numpy_float_to_mojo_float()
+    test_int()
+    test_float()
+    test_bool()
+    test_numpy_int()
+    test_numpy_float()

@@ -229,18 +229,6 @@ def test_float_conversion():
     assert_equal(Float64(Int(45)), Float64(45))
 
 
-def test_conversion_from_python():
-    # Test conversion from Python '5'
-    assert_equal(Int(PythonObject(5)), 5)
-
-    # Test error trying conversion from Python '"str"'
-    with assert_raises(contains="invalid literal for int()"):
-        _ = Int(PythonObject("str"))
-
-    # Test conversion from Python '-1'
-    assert_equal(Int(PythonObject(-1)), -1)
-
-
 def test_is_power_of_two():
     assert_equal(Int.MIN.is_power_of_two(), False)
     assert_equal(Int(-(2**59)).is_power_of_two(), False)
@@ -277,5 +265,4 @@ def main():
     test_comparison()
     test_int_uint()
     test_float_conversion()
-    test_conversion_from_python()
     test_is_power_of_two()

@@ -26,20 +26,6 @@ _LIT_TESTS = [
     "test_uint_error.mojo",
 ]
 
-_NO_ASAN = [
-    "test_bool.mojo",
-    "test_format_float.mojo",
-    "test_int.mojo",
-]
-
-_PLATFORM_CONSTRAINTS = {
-    src: select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    })
-    for src in _NO_ASAN
-}
-
 _MOJO_COMPILE_OPTS = {
     "test_debug_assert_mode_none.mojo": [
         "-D",
@@ -73,7 +59,6 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -91,7 +76,6 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = _DATA + [src],  # NOTE: some tests attempt to read their source files
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

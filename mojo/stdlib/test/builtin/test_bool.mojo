@@ -149,17 +149,6 @@ def test_float_conversion():
     assert_equal((False).__float__(), 0.0)
 
 
-def test_from_python():
-    assert_true(Bool(PythonObject(True)))
-    assert_false(Bool(PythonObject(False)))
-
-
-def test_to_python_object():
-    assert_true(Bool(True).to_python_object() == PythonObject(True))
-    assert_true(Bool(False).to_python_object() == PythonObject(False))
-    assert_false(Bool(True).to_python_object() == PythonObject(False))
-
-
 def main():
     test_default()
     test_min_max()
@@ -171,5 +160,3 @@ def main():
     test_indexer()
     test_comparisons()
     test_float_conversion()
-    test_from_python()
-    test_to_python_object()
