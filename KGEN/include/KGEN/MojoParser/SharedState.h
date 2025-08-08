@@ -45,6 +45,7 @@ struct ParserConfig;
 class CachedOriginFinder;
 class TraitDeclOp;
 enum class CallSyntax : uint8_t;
+enum class CaptureConvention : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
 /// parent function.
@@ -57,18 +58,20 @@ enum class CallSyntax : uint8_t;
 /// for a borrowed argument reference, etc.
 class Capture {
 public:
-  /// Whether this capture is a reference or copy into the closure.  The "move"
-  /// closure kind just does a transfer when the closure is formed.
-  enum Kind { kRef, kCopy };
-
-  Capture(CValue value, Kind kind) : value(value), kind(kind) {}
+  Capture(CValue value, CaptureConvention kind, StringRef spelling)
+      : value(value), kind(kind), spelling(spelling) {}
   CValue getValue() const { return value; }
-  bool isCopy() const { return kind == kCopy; }
-  bool isRef() const { return kind == kRef; }
+  bool isCopy() const;
+  bool isRef() const;
+  /// The name of the capture
+  StringRef getSpelling() const { return spelling; }
+  CaptureConvention getCaptureConvention() const { return kind; }
 
 private:
   CValue value;
-  Kind kind;
+  CaptureConvention kind;
+  /// Store the name of the capture so we can emit meaningful error messages.
+  StringRef spelling;
 };
 
 /// This enum indicates how much parsing and type checking has been done on

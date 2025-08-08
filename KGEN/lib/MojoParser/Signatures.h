@@ -57,6 +57,14 @@ enum class ArgListKind {
   kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
 };
 
+enum class CaptureConvention : uint8_t {
+  kConventionMove = 0,
+  kConventionMut = 1,
+  kConventionCopy = 2,
+  kConventionRead = 3,
+  kConventionTrivialCopy = 4
+};
+
 /// Parsing support for a function argument and parameter:
 ///
 /// argument_list      ::= argument ("," argument)*

@@ -14,6 +14,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "ParserEvaluationContext.h"
+#include "Signatures.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
@@ -2541,4 +2542,10 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   // If there is no block terminator then we have malformed IR, presumably
   // due to an already-diagnosed issue.
   return {};
+}
+
+bool Capture::isCopy() const { return !isRef(); }
+bool Capture::isRef() const {
+  return kind == CaptureConvention::kConventionRead ||
+         kind == CaptureConvention::kConventionMut;
 }
