@@ -289,7 +289,12 @@ TelemetryContext::TelemetryContext(Config &settings) {
 
   // Check if telemetry is enabled. Note that currently users have to opt out
   // of telemetry, so it is enabled unless the user explicitly disables.
-  bool enabled = settings.getValueAsBool("telemetry.enabled", true);
+  bool enabled = settings.getValueAsBool("telemetry.enabled",
+#ifdef MODULAR_PRODUCTION
+                                         true);
+#else
+                                         false);
+#endif // MODULAR_PRODUCTION
 
   // Get telemetry level.
   auto level = settings.getValue("telemetry.level");
