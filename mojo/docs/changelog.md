@@ -69,6 +69,8 @@ what we publish.
     the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
     algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
     i.e. `SIMD` conforms to `Comparable` when the size is 1.
+  - As a consequence, `SIMD.__bool__` no longer needs to be restricted to
+    scalars, and instead performs an `any` reduction on the elements of vectors.
 
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the

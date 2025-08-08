@@ -1624,16 +1624,12 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if the SIMD scalar is non-zero and False otherwise.
         """
-        # TODO: relax this constraint once migration is complete.
-        constrained[
-            size == 1,
-            (
-                "The truth value of a SIMD vector with more than one element is"
-                " ambiguous. Use the builtin `any()` or `all()` functions"
-                " instead."
-            ),
-        ]()
-        return self._refine[size=1]().cast[DType.bool]().value
+
+        @parameter
+        if size == 1:
+            return self._refine[size=1]().cast[DType.bool]().value
+        else:
+            return Bool(self.reduce_or())
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

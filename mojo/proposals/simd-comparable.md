@@ -2,7 +2,7 @@
 
 Author: Laszlo Kindrat
 Date: Aug 6, 2025
-Status: Accepted.
+Status: Implemented.
 
 This document proposes a path forward to make the `SIMD` type conform to
 comparison traits (e.g. `EqualityComparable`). While this document uses

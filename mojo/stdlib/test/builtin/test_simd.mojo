@@ -1843,6 +1843,10 @@ def test_comparison():
         if dtype.is_signed():
             var simd_val = X4(-10, -8, -6, -4)
 
+            assert_true(simd_val == simd_val)
+            assert_false(simd_val == X4(0))
+            assert_true(simd_val != X4(0))
+            assert_false(simd_val != simd_val)
             assert_true(simd_val[0] < simd_val[1])
             assert_true(simd_val[0] <= simd_val[1])
             assert_false(simd_val[2] >= simd_val[3])
@@ -1900,6 +1904,10 @@ def test_comparison():
         if dtype.is_numeric():
             var simd_val = X4(1, 2, 3, 4)
 
+            assert_true(simd_val == simd_val)
+            assert_false(simd_val == X4(0))
+            assert_true(simd_val != X4(0))
+            assert_false(simd_val != simd_val)
             assert_true(simd_val[0] < simd_val[1])
             assert_true(simd_val[0] <= simd_val[1])
             assert_false(simd_val[2] >= simd_val[3])
@@ -1959,6 +1967,10 @@ def test_comparison():
             var all_false = SIMD[DType.bool, 4](False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)
 
+            assert_true(all_true == all_true)
+            assert_false(all_true == all_false)
+            assert_true(all_true != all_false)
+            assert_false(all_true != all_true)
             assert_false(mixed[0] < mixed[1])
             assert_true(mixed[0] <= mixed[1])
             assert_true(mixed[2] >= mixed[3])
