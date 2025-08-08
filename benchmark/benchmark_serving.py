@@ -1471,13 +1471,15 @@ def main(args: argparse.Namespace) -> None:
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
+        if output_lengths:
+            ValueError(
+                "Arxiv summarization dataset does not support --output-lengths. Please use --max-output-len"
+            )
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             input_len=args.arxiv_summarization_input_len,
-            output_lengths=output_lengths,
-            shuffle=(
-                args.output_lengths is None and not args.record_output_lengths
-            ),
+            max_output_len=args.max_output_len,
+            shuffle=not args.record_output_lengths,
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
