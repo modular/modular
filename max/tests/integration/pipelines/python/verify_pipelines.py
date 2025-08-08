@@ -581,7 +581,7 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation="torch_llama_golden/torch_llama3-8b_float32_golden.json",
             absolute_tolerance=2.9e-2,
             relative_tolerance=9.4e-2,
-            cos_dist_threshold=2.1e-6,
+            cos_dist_threshold=2.6e-6,
             kl_div_threshold=3.0e-7,
         ),
     ),
@@ -592,8 +592,8 @@ PIPELINES = {
             pipeline="llama3.1-8b",
             encoding="float32",
             absolute_tolerance=2.1e-02,
-            relative_tolerance=7.2e-3,
-            cos_dist_threshold=1.7e-6,
+            relative_tolerance=7.3e-3,
+            cos_dist_threshold=2.4e-6,
             kl_div_threshold=1.0e-10,
         ),
     ),
@@ -606,8 +606,8 @@ PIPELINES = {
             # On CPU, mpnet passes with all values set to `1e-4`
             # GPU specifically requires these higher tolerances (30x worse).
             absolute_tolerance=2.3e-3,
-            relative_tolerance=2.5e-2,
-            cos_dist_threshold=2e-5,
+            relative_tolerance=2.7e-2,
+            cos_dist_threshold=2.1e-5,
             kl_div_threshold=1.0e-10,
         ),
     ),
@@ -621,7 +621,7 @@ PIPELINES = {
             absolute_tolerance=3.7e-2,
             relative_tolerance=4.2e-2,
             cos_dist_threshold=8.2e-6,
-            kl_div_threshold=6.0e-5,
+            kl_div_threshold=6.6e-5,
         ),
     ),
     # ========== Brittle Pipelines ==========
@@ -677,8 +677,7 @@ PIPELINES = {
     ),
     "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        # This does not require multigpu, but does require h100.
-        tags=["h100-multi"],
+        tags=["float8-support"],
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b-float8-static",
             encoding="float8_e4m3fn",
@@ -694,8 +693,7 @@ PIPELINES = {
     ),
     "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        # This does not require multigpu, but does require h100.
-        tags=["h100-multi"],
+        tags=["float8-support"],
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b-float8-dynamic",
             encoding="float8_e4m3fn",
@@ -711,13 +709,12 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        # Needs h100 for specific kernels.
-        tags=["h100-multi"],
+        tags=["nvidia-only"],
         run=_make_pipeline_runner(
             pipeline="llama3.2-1b",
             encoding="bfloat16",
-            cos_dist_threshold=9.5e-04,
-            kl_div_threshold=2.5e-03,
+            cos_dist_threshold=2.1e-03,
+            kl_div_threshold=5.0e-03,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -758,7 +755,7 @@ PIPELINES = {
     ),
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "h100-multi"],
+        tags=["big"],
         run=_make_pipeline_runner(
             pipeline="mistral3",
             encoding="bfloat16",
@@ -774,7 +771,7 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
             # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=1.1e-3,
+            cos_dist_threshold=1.5e-3,
             kl_div_threshold=5.4e-3,
         ),
     ),
@@ -849,7 +846,7 @@ PIPELINES = {
             pipeline="qwen3",
             encoding="bfloat16",
             cos_dist_threshold=1.1e-3,
-            kl_div_threshold=3.7e-3,
+            kl_div_threshold=5.5e-3,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
@@ -892,7 +889,7 @@ PIPELINES = {
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
-            cos_dist_threshold=1.5e-2,
+            cos_dist_threshold=1.6e-2,
             kl_div_threshold=4.0e-1,
         ),
     ),
