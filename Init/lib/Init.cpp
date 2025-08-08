@@ -83,9 +83,15 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   if (!caInfo.empty())
     httpCtx->setCAInfo(std::string(caInfo));
 
+  bool enabled = settings.getValueAsBool("crash_reporting.enabled",
+#ifdef MODULAR_PRODUCTION
+                                         true);
+#else
+                                         false);
+#endif // MODULAR_PRODUCTION
+
   // Enable crash logging, if appropriate.
-  if (!options.forceDisableCrashReporting &&
-      settings.getValueAsBool("crash_reporting.enabled", true)) {
+  if (!options.forceDisableCrashReporting && enabled) {
     initCrashpadForProgram(programName, &settings);
     registerSignalHandler(programName);
   }
