@@ -732,7 +732,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
         // contexts.
-        if (isa<FnOp>(op))
+        if (isa<FnOp, LIT::ClosureInitOp>(op))
           return WalkResult::skip();
 
         // All the ops that define trackable values have a single result.
