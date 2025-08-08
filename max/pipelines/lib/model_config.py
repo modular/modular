@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MAX config classes."""
+"""MAX model config classes."""
 
 from __future__ import annotations
 
@@ -139,6 +139,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KVCache config."""
+
+    _config_file_section_name: str = "model_config"
+    """The section name to use when loading this config from a MAXConfig file.
+    This is used to differentiate between different config sections in a single
+    MAXConfig file."""
 
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /

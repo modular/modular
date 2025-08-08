@@ -158,6 +158,11 @@ class PipelineConfig(MAXConfig):
     _lora_config: Optional[LoRAConfig] = None
     """The LoRA config."""
 
+    _config_file_section_name: str = "pipeline_config"
+    """The section name to use when loading this config from a MAXConfig file.
+    This is used to differentiate between different config sections in a single
+    MAXConfig file."""
+
     @staticmethod
     def _extract_kwargs_for_config(
         kwargs: dict[str, Any],

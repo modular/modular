@@ -5,6 +5,9 @@ package(default_visibility = ["//visibility:public"])
 modular_py_library(
     name = "lib",
     srcs = glob(["**/*.py"]),
+    data = [
+        ":base_max_config_yaml_files",
+    ],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -28,9 +31,15 @@ modular_py_library(
 
 pkg_files(
     name = "python_files",
-    srcs = glob([
-        "**/*.py",
-    ]),
+    srcs = glob(["**/*.py"]),
+    prefix = "lib",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "base_max_config_yaml_files",
+    srcs = glob(["configs/**/*.yaml"]),
     prefix = "lib",
     strip_prefix = strip_prefix.from_pkg(""),
     visibility = ["//visibility:public"],
