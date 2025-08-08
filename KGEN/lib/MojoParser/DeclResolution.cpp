@@ -691,7 +691,9 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
     // Both move and copy captures are the same here - a move capture just does
     // the transfer above to generate its RValue.
     shared.addCaptureToScope(decl, decls.front(),
-                             Capture(captureRVal, Capture::kCopy));
+                             Capture(captureRVal,
+                                     CaptureConvention::kConventionCopy,
+                                     declRef->spelling));
   }
 }
 
