@@ -87,14 +87,6 @@ public:
   /// Get all the values contained in the config.
   const llvm::StringMap<std::string> &getAllValues() const { return kv; }
 
-  /// Populate the env overrides for any configuration that has one. Does
-  /// nothing if env overrides are disabled.
-  void populateEnvOverrides();
-
-  // Enable or disable the functionality that allows environment variables to
-  // override the existing variables on read.
-  void setEnvOverride(bool newVal);
-
   /// Get the path to the canonical modular home directory.
   ///
   /// If create is true, then this directory will be created if it does not
@@ -134,7 +126,6 @@ private:
   /// notation. This is a map of property -> value, with each property prefixed
   /// by its section.
   llvm::StringMap<std::string> kv;
-  bool allowEnvOverride = true;
 };
 
 /// Given a file name, find that file in one of the modular search paths. If the

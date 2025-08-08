@@ -32,8 +32,6 @@ public:
 
     filePathKey = ("telemetry.exporters." + signalType + ".file_path").str();
     httpUrlKey = ("telemetry.exporters." + signalType + ".http_endpoint").str();
-
-    cfg.setEnvOverride(false);
   }
 
   /// NOTE: This config stays in-memory and is passed to the TelemetryContext

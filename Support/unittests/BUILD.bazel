@@ -170,6 +170,7 @@ modular_cc_test(
 modular_cc_test(
     name = "TelemetryTest",
     srcs = ["TelemetryTest.cpp"],
+    env = {"MODULAR_TELEMETRY_ENABLED": "true"},
     deps = ["//Support:Telemetry"],
 )
 
