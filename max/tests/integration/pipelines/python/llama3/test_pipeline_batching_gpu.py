@@ -7,7 +7,6 @@
 import logging
 from typing import Any
 
-import hf_repo_lock
 import pytest
 from max.interfaces import TextGenerationRequest
 from max.pipelines import (
@@ -17,73 +16,44 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.lib import generate_local_model_path
 from test_common.evaluate import next_token_with_logits
 from test_common.test_data import DEFAULT_PROMPTS
-
-REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 logger = logging.getLogger("max.pipelines")
 
 
-@pytest.fixture(scope="session")
-def pipeline_config() -> PipelineConfig:
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(REPO_ID, REVISION)
-    except FileNotFoundError:
-        logger.warning(
-            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
-        )
-        model_path = REPO_ID
-
+@pytest.fixture
+def pipeline_config(smollm2_135m_local_path: str) -> PipelineConfig:
     return PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.float32,
+        model_path=smollm2_135m_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=4,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(REPO_ID, REVISION)
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {REPO_ID} as config to PipelineConfig"
-        )
-        model_path = REPO_ID
-
-    pipeline_config = PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.float32,
-    )
     return TextTokenizer(
         pipeline_config.model_config.model_path,
         revision=pipeline_config.model_config.huggingface_model_revision,
         max_length=pipeline_config.max_length,
         max_new_tokens=pipeline_config.max_new_tokens,
         trust_remote_code=pipeline_config.model_config.trust_remote_code,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
 
-@pytest.fixture(scope="session")
-def pipeline(
-    pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
-) -> TextGenerationPipeline:
+@pytest.fixture
+def pipeline(pipeline_config: PipelineConfig) -> TextGenerationPipeline:
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, TextGenerationPipeline)
     return pipeline
 
 
-@pytest.mark.skip("AITLIB-336: Bug that causes a mismatch in matmul dimensions")
+@pytest.mark.skip(
+    "AITLIB-336: ValueError: Attempted to release request ID but it is not claimed"
+)
 @pytest.mark.asyncio
 async def test_pipeline_heterogeneous_batch_logits(
     pipeline: TextGenerationPipeline,

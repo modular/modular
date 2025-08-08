@@ -22,6 +22,9 @@ LLAMA_3_1_LORA_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     LLAMA_3_1_LORA_HF_REPO_ID
 )
 
+SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+SMOLLM2_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM2_HF_REPO_ID)
+
 pytest_plugins = "test_common.registry"
 
 # When running in CI, graph tests can take around 300ms for a single run.
@@ -85,4 +88,22 @@ def llama_3_1_8b_lora_local_path():
             f"Falling back to repo_id: {LLAMA_3_1_LORA_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = LLAMA_3_1_LORA_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def smollm2_135m_local_path():
+    assert isinstance(SMOLLM2_HF_REVISION, str), (
+        "SMOLLM2_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            SMOLLM2_HF_REPO_ID, SMOLLM2_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {SMOLLM2_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = SMOLLM2_HF_REPO_ID
     return model_path
