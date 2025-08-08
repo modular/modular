@@ -20,16 +20,15 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import IntTuple
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from testdata.fused_qk_rope_goldens import (
+from testdata.fused_qk_rope_3d_goldens import (
     freqs_cis_table_input,
     k_cache_input,
     k_out_golden,
-    k_out_golden_with_position_ids,
     q_input,
     q_out_golden,
-    q_out_golden_with_position_ids,
     position_ids_input,
 )
 
@@ -37,7 +36,8 @@ from utils import IndexList
 
 
 def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
-    """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
+    """Verifies fused_qk_rope_ragged with 3D position_ids and mrope sections
+    against golden values computed with PyTorch.
     """
     constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
@@ -63,7 +63,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         "KV cache size smaller than sum of sequence length and start pos",
     ]()
     alias num_heads = 2
-    alias dim = 16
+    alias dim = 64
     alias head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
@@ -73,6 +73,9 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     alias block_shape = IndexList[6](
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
+    alias mrope_section = IntTuple(16, 24, 32)  # The testdata is generated with
+    # mrope_section = (8, 4, 4) but this is multiplied by 2.
+    alias mrope_section_size = len(mrope_section)
 
     # Construct backing buffer and the KV cache itself.
     kv_cache_block_buffer = List[Scalar[dtype]](
@@ -134,7 +137,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     position_ids = NDBuffer[
         DType.uint32,
         rank=2,
-        shape = DimList(1, batch_size * seq_len),
+        shape = DimList(3, batch_size * seq_len),
     ](position_ids_input_buffer.unsafe_ptr())
 
     q = NDBuffer[
@@ -147,7 +150,14 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     debug_assert(
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
-        "invalid freqs_cis_table init",
+        "invalid freqs_cis_table init"
+        + String(len(freqs_cis_table_buffer))
+        + " != "
+        + String(2)
+        + " * "
+        + String(max_seq_len)
+        + " * "
+        + String(head_dim),
     )
     # Create a view into freqs_cis tensor that only includes the roped dimensions
     freqs_cis_table = NDBuffer[
@@ -160,7 +170,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )  # Offset to last rope_dim elements
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden_with_position_ids[dtype]()
+    expected_q_out_buffer = q_out_golden[dtype]()
     debug_assert(
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
@@ -168,17 +178,21 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     expected_q_out = NDBuffer[dtype, rank=3, shape = q.shape](
         expected_q_out_buffer.unsafe_ptr()
     )
-    expected_k_out_buffer = k_out_golden_with_position_ids[dtype]()
+    expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
+    print("Created freqs_cis_table_buffer", flush=True)
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
     q_out = NDBuffer[dtype, rank=3](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType,
+        interleaved=False,
+        target = StaticString("cpu"),
+        mrope_section=mrope_section,
     ](
         q,
         input_row_offsets.tensor,
@@ -190,6 +204,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         Optional[DeviceContext](),
     )
 
+    print("Created freqs_cis_table_buffer", flush=True)
     # Compare output and expected query tensors.
     for batch_idx in range(batch_size):
         for seq_idx in range(seq_len):
@@ -261,6 +276,4 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
 def main() -> None:
     # Full head RoPE
-    test_fused_qk_rope[8, DType.float32]()
-    # Partial RoPE (last 4 elements of each head)
-    test_fused_qk_rope[4, DType.float32]()
+    test_fused_qk_rope[32, DType.float32]()

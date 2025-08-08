@@ -22,6 +22,7 @@ from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
+from layout import IntTuple
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from utils import IndexList
@@ -239,12 +240,13 @@ fn fused_qk_rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
+    mrope_section: Optional[IntTuple] = None,
 ](
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     freqs_cis: NDBuffer[freq_dtype, 2, *_],
-    position_ids: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]],
+    position_ids: OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: Optional[DeviceContext],
@@ -313,16 +315,31 @@ fn fused_qk_rope_ragged[
                 input_row_offsets, global_token_idx
             )
             var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+            var head_idx = idx[1]
+            var head_dim_idx = idx[2]
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             var position_ids_idx = post_seq_idx
             if position_ids:
-                position_ids_idx = Int(position_ids.value()[global_token_idx])
 
-            var head_idx = idx[1]
-            var head_dim_idx = idx[2]
+                @parameter
+                if mrope_section:
+                    var section_idx = 0
+
+                    @parameter
+                    for i in range(len(mrope_section.value())):
+                        if head_dim_idx < mrope_section.value().value(i):
+                            section_idx = i
+                            break
+                    position_ids_idx = Int(
+                        position_ids.value()[section_idx, global_token_idx]
+                    )
+                else:
+                    position_ids_idx = Int(
+                        position_ids.value()[0, global_token_idx]
+                    )
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -378,6 +395,17 @@ fn fused_qk_rope_ragged[
     ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[dtype, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, rope_dim)
+
+    @parameter
+    if mrope_section:
+
+        @parameter
+        for i in range(len(mrope_section.value())):
+            constrained[
+                mrope_section.value().value(i) % kernel_simd_width == 0,
+                "mrope_section must be divisible by rope kernel simd_width",
+            ]()
+
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter

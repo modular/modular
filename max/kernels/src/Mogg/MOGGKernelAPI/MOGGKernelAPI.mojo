@@ -60,6 +60,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from layout import IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.distributed_matmul import matmul_allreduce
@@ -687,6 +688,34 @@ fn reduce_shape[
     var output_shape = input_buf.shape()
     output_shape[normalize_neg_index(axis, input_rank)] = 1
     return output_shape
+
+
+@always_inline
+fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
+    """
+    Convert a string of integers separated by "_" to an IntTuple.
+
+    Parameters:
+        str_slice: The string of integers separated by "_".
+
+    Returns:
+        The IntTuple.
+    """
+    var int_tuple = IntTuple()
+    alias size = len(str_slice.split("_"))
+
+    @parameter
+    for i in range(size):
+        alias sub_string = str_slice.split("_")[i]
+        alias str_len = sub_string.byte_length()
+        var result = 0
+
+        @parameter
+        for pos in range(str_len):
+            result = result * 10 + (ord(sub_string[pos]) - ord("0"))
+        int_tuple.append(result)
+
+    return int_tuple
 
 
 # ===----------------------------------------------------------------------===#
@@ -6863,13 +6892,14 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
+    mrope_section: Optional[IntTuple] = None,
 ](
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
-    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
@@ -6877,6 +6907,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
         interleaved=interleaved,
         has_position_ids=has_position_ids,
         target=target,
+        mrope_section=mrope_section,
     ](
         managed_tensor_slice_to_ndbuffer(q_proj),
         managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -6901,7 +6932,8 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged_with_position_id[
         dtype: DType,
         freq_dtype: DType,
         num_heads: Int,
-        head_dim: Int, //,
+        head_dim: Int,
+        mrope_section: StaticString, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -6912,12 +6944,17 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged_with_position_id[
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
-        position_ids: InputTensor[dtype = DType.uint32, rank=1],
+        position_ids: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-            interleaved=interleaved, has_position_ids=True, target=target
+            interleaved=interleaved,
+            has_position_ids=True,
+            target=target,
+            mrope_section = Optional[IntTuple](
+                _unsafe_str_to_int_tuple[mrope_section]()
+            ),
         ](
             output,
             q_proj,
@@ -6952,6 +6989,10 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        # Dummy position_ids - won't be used since has_position_ids=False
+        var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
+            UnsafePointer[UInt32](), IndexList[2](0)
+        )
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
             interleaved=interleaved, has_position_ids=False, target=target
         ](
@@ -6960,8 +7001,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
             input_row_offsets,
             kv_collection,
             freqs_cis,
-            # Dummy position_ids - won't be used since has_position_ids=False
-            input_row_offsets,
+            dummy_position_ids,
             layer_idx,
             ctx,
         )
@@ -6975,6 +7015,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
+    mrope_section: Optional[IntTuple] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6983,7 +7024,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         *_,
     ],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
-    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3],
     context: DeviceContextPtr,
@@ -6992,6 +7033,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         interleaved=interleaved,
         has_position_ids=has_position_ids,
         target=target,
+        mrope_section=mrope_section,
     ](
         managed_tensor_slice_to_ndbuffer(q_proj),
         managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -7013,7 +7055,8 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         freq_dtype: DType,
         num_heads: Int,
         head_dim: Int,
-        page_size: Int, //,
+        page_size: Int,
+        mrope_section: StaticString, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7025,12 +7068,17 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             page_size,
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
-        position_ids: InputTensor[dtype = DType.uint32, rank=1],
+        position_ids: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved=interleaved, has_position_ids=True, target=target
+            interleaved=interleaved,
+            has_position_ids=True,
+            target=target,
+            mrope_section = Optional[IntTuple](
+                _unsafe_str_to_int_tuple[mrope_section]()
+            ),
         ](
             q_proj,
             input_row_offsets,
@@ -7067,6 +7115,10 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
+        # Dummy position_ids - won't be used since has_position_ids=False
+        var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
+            UnsafePointer[UInt32](), IndexList[2](0)
+        )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved=interleaved, has_position_ids=False, target=target
         ](
@@ -7074,8 +7126,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             input_row_offsets,
             kv_collection,
             freqs_cis,
-            # Dummy position_ids - won't be used since has_position_ids=False
-            input_row_offsets,
+            dummy_position_ids,
             layer_idx,
             output,
             context,
