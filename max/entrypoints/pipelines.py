@@ -196,7 +196,7 @@ def cli_serve(
     if sim_failure > 0:
         failure_percentage = sim_failure
 
-    if headless or pipeline_config.pipeline_role.is_headless:
+    if headless:
         serve_model_worker(
             pipeline_config=pipeline_config,
             pipeline_task=PipelineTask(task),

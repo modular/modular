@@ -62,20 +62,6 @@ class PipelineRole(str, Enum):
     DecodeOnly = "decode_only"
 
     @property
-    def is_headless(self) -> bool:
-        """
-        Indicates whether the pipeline is running in headless mode.
-
-        In headless mode, only the model worker is launched and the API server is not
-        actively deployed. This is typically used for scenarios where the inference backend
-        operates independently, without serving HTTP API endpoints.
-
-        Returns:
-            bool: True if the pipeline is in prefill-only (headless) mode, False otherwise.
-        """
-        return self == PipelineRole.PrefillOnly
-
-    @property
     def uses_dispatch_service(self) -> bool:
         """Whether the scheduler needs a dispatcher client to be started.
 
