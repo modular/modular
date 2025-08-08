@@ -328,18 +328,7 @@ fn test[
 
     @parameter
     fn get_rtol() -> Float64:
-        @parameter
-        if has_amd_gpu_accelerator():
-            if num_partitions.value() >= 16:
-                return 4e-2
-            elif num_partitions.value() >= 4:
-                return 3e-2
-            elif num_partitions.value() >= 2:
-                return 2.5e-2
-            else:
-                return 1e-2
-        else:
-            return 2e-2 if num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions.value() >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
