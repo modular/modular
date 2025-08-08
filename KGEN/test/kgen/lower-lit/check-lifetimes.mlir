@@ -356,3 +356,26 @@ module {
     lit.struct.field a : index
   }
 }
+
+// -----
+
+// COM: Ensure that the value set for uninitialized values is specific to the closure
+
+// COM: The expectation is that this function does not error out.
+
+#type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !kgen.type
+module {
+  // CHECK: lit.fn @make_closure()
+  lit.fn @make_closure() {
+    %0 = lit.closure.init[#type_value]()[imm W](%a: index, %arg1: !lit.ref<@S, mut lt> byref_result) -> index {
+      lit.ownership.mark_initialized %arg1 : <@S, mut lt>
+      kgen.return %a : index
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm C>
+
+    kgen.return
+  }
+  lit.struct.decl @S
+   destructor :!lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none> @S::@__del__ {
+    lit.struct.field a : index
+  }
+}
