@@ -179,14 +179,12 @@ std::optional<StringRef> Config::maybeGetValue(StringRef key) {
       upper.begin(), upper.end(),
       [](char c) { return (c == '.') || (c == '-'); }, '_');
 
-  if (allowEnvOverride) {
-    // Check for this environment variable.
-    auto envOr = llvm::sys::Process::GetEnv("MODULAR_" + upper);
-    // If we have this env variable, save it in the map. We don't care if it
-    // overrides something.
-    if (envOr)
-      kv[key.lower()] = *envOr;
-  }
+  // Check for this environment variable.
+  auto envOr = llvm::sys::Process::GetEnv("MODULAR_" + upper);
+  // If we have this env variable, save it in the map. We don't care if it
+  // overrides something.
+  if (envOr)
+    kv[key.lower()] = *envOr;
 
   if (auto iter = kv.find(key.lower()); iter != kv.end())
     return iter->second;
@@ -226,12 +224,6 @@ bool Config::getValueAsBool(StringRef key, bool defaultValue) {
 
 void Config::setValue(StringRef key, StringRef value) {
   kv[key.lower()] = value;
-}
-
-void Config::populateEnvOverrides() {
-  if (allowEnvOverride)
-    for (const auto &[k, _] : kv)
-      getValue(k);
 }
 
 /// Get the list of search paths, in order of preference.
@@ -400,8 +392,6 @@ ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
     return configFolderOr.takeError();
   return *configFolderOr / kModularConfigFileName.str();
 }
-
-void Config::setEnvOverride(bool newVal) { allowEnvOverride = newVal; }
 
 std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   SmallVector<std::filesystem::path, 4> searchPaths;
