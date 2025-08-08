@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import pytest
 import yaml
+from conftest import assert_help_covers_all_public_fields
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
@@ -482,6 +483,9 @@ class TestBuiltinConfigClasses:
         # Test section name.
         assert config._config_file_section_name == "kv_cache_config"
 
+        # Test that help method covers all public fields.
+        assert_help_covers_all_public_fields(config, "KVCacheConfig")
+
     def test_sampling_config(self) -> None:
         """Test SamplingConfig functionality."""
         config = SamplingConfig()
@@ -493,6 +497,9 @@ class TestBuiltinConfigClasses:
         # Test section name.
         assert config._config_file_section_name == "sampling_config"
 
+        # Test that help method covers all public fields.
+        assert_help_covers_all_public_fields(config, "SamplingConfig")
+
     def test_profiling_config(self) -> None:
         """Test ProfilingConfig functionality."""
         config = ProfilingConfig()
@@ -502,6 +509,9 @@ class TestBuiltinConfigClasses:
 
         # Test section name.
         assert config._config_file_section_name == "profiling_config"
+
+        # Test that help method covers all public fields.
+        assert_help_covers_all_public_fields(config, "ProfilingConfig")
 
     def test_lora_config(self) -> None:
         """Test LoRAConfig functionality."""
@@ -515,18 +525,5 @@ class TestBuiltinConfigClasses:
         # Test section name.
         assert config._config_file_section_name == "lora_config"
 
-    def test_lora_config_help_has_same_number_of_fields_as_config_fields(
-        self,
-    ) -> None:
-        """Test that LoRAConfig help has the same number of fields as public config fields."""
-        config = LoRAConfig()
-        help_dict = config.help()
-
-        # Count only public fields (not starting with underscore).
-        public_fields = {
-            name
-            for name in config.__dataclass_fields__
-            if not name.startswith("_")
-        }
-
-        assert len(help_dict) == len(public_fields)
+        # Test that help method covers all public fields.
+        assert_help_covers_all_public_fields(config, "LoRAConfig")

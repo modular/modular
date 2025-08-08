@@ -2,7 +2,8 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "lib",
-    srcs = glob(["test_*.py"]),
+    srcs = glob(["test_*.py"]) + ["conftest.py"],
+    imports = ["."],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
