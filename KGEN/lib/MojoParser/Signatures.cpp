@@ -237,7 +237,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 //===----------------------------------------------------------------------===//
 
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                                  ArgListKind kind) {
+                                  ArgListKind kind, bool isMoveInitOrDel) {
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
@@ -256,8 +256,15 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   // Any var/read/mut/ref keyword sets convention.
   // TODO(25.7): Remove support for 'owned' keyword.
-  if (p.consumeIf(Token::kw_var) || p.consumeIf(Token::kw_owned)) {
+  if (p.consumeIf(Token::kw_var)) {
     convention = kConventionVar;
+  } else if (p.consumeIf(Token::kw_owned)) {
+    // TODO: Remove 'isMoveInitOrDel' when this logic gets dropped.
+    const char *replacement = isMoveInitOrDel ? "deinit" : "var";
+    auto diag = p.emitWarning(loc, "'owned' has been deprecated")
+                << ", use '" << replacement << "' instead"
+                << FixIt::replaceToken(loc, replacement);
+    convention = isMoveInitOrDel ? kConventionDeinit : kConventionVar;
   } else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
@@ -429,7 +436,8 @@ PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
 /// arguments.
 static ParseResult
 parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
-                    ParsedArgument *resultArg, ArgListKind kind) {
+                    ParsedArgument *resultArg, ArgListKind kind,
+                    bool isMoveInitOrDel) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -554,7 +562,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker, kind))
+    if (arg.parse(p, marker, kind, isMoveInitOrDel))
       return failure();
 
     // If we have a **arg then it must be the last argument.
@@ -903,7 +911,8 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind))
+  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind,
+                          /*isMoveInitOrDel=*/false))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -915,19 +924,21 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 
 /// Parse an argument list, including the parentheses around them.  This also
 /// parses 'raises' and other effects.
-ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
-                                                            ArgListKind kind) {
+ParseResult
+ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
+                                                bool isMoveInitOrDel) {
 
   // If this is a bare lambda argument list, it won't be parenthesized and won't
   // have effects.
   if (kind == ArgListKind::kBareLambdaArgList)
-    return parseArgOrParamList(p, parsedArgs, &resultArg, kind);
+    return parseArgOrParamList(p, parsedArgs, &resultArg, kind,
+                               isMoveInitOrDel);
 
   if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
     return failure();
 
   if (!p.consumeIf(Token::r_paren)) {
-    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind) ||
+    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind, isMoveInitOrDel) ||
         p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
   }
@@ -1994,18 +2005,11 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // Shared logic to diagnose the 'self' argument of __del__ and __moveinit__.
   auto diagnoseSelfForDelAndMoveInit = [&](const char *argName) {
     // This 'if' implements migration logic to help convert from
-    // __del__(owned self) -> __del__(deinit self).
-    // FIXME(Mojo 25.7): Reject 'var' with an error to force migration.
-    // FIXME(Mojo 25.8): Allow 'var' after the world migrates to 'deinit'.
+    // __del__(var self) -> __del__(deinit self).
+    // FIXME(Mojo 25.7): Allow 'var' after the world migrates to 'deinit'.
     if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionVar) {
-
-#if 0 // Phase this in after the codebase is migrated.
-      // TODO: Generation an insertion fixit if arg convention is missing, and
-      // make sure the location is on the arg convention, not the arg.
-      shared.emitWarning(parsedArgs[kSelfArgNo].loc,
-      "the ") << argName << "' argument should be declared 'deinit'")
-        << FixIt::replaceToken(parsedArgs[kSelfArgNo].loc, "deinit");
-#endif
+      shared.emitError(parsedArgs[kSelfArgNo].loc, "the '")
+          << argName << "' argument should be declared 'deinit'";
       parsedArgs[kSelfArgNo].convention = ParsedArgument::kConventionDeinit;
     }
 

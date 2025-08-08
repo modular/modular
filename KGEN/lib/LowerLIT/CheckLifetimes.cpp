@@ -2574,7 +2574,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   if (!moveCtor)
     return CopyInitSuccess::Failed;
 
-    // moveCtor must have __moveinit__(out self, var existing: Self) type.
+    // moveCtor must have __moveinit__(out self, deinit existing: Self) type.
 #ifndef NDEBUG
   FuncType moveSig = cast<FuncTypeGeneratorType>(moveCtor.getType()).getBody();
   assert(moveSig.getNumArguments() == 2);

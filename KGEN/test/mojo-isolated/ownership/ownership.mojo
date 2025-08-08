@@ -1298,7 +1298,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.fn @"testConds3
 fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
-              owned m: RegExample, var n: RegExample):
+              var m: RegExample, var n: RegExample):
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
