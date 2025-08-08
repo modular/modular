@@ -30,14 +30,15 @@ from ..value import BufferValue, TensorValue, Value
 def while_loop(
     initial_values: Iterable[Value] | Value,
     predicate: Callable[..., TensorValue],
-    body: Callable[..., Iterable[Value]],
+    body: Callable[..., Value | Iterable[Value]],
 ) -> list[TensorValue]:
     """Execute a loop until the predicate evaluates to false.
 
     Both the predicate and body functions must take in as arguments the same
     number and types of values as specified in the init_args. The predication
     function must return only a boolean scalar tensor of type :class:`DType.bool`.
-    The body function must return a list of values matching the types of init_args.
+    The body function must return a list of values matching the types of init_args,
+    (or may return a value directly if there is only one).
 
     The following example demonstrates a basic while loop with a single argument:
 

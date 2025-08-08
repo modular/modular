@@ -20,7 +20,15 @@ import pytest
 from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -32,10 +40,10 @@ def test_while_loop(session: InferenceSession) -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred_fn(x):  # noqa: ANN001
+        def pred_fn(x: TensorValue) -> TensorValue:
             return x < 10
 
-        def body_fn(x):  # noqa: ANN001
+        def body_fn(x: TensorValue) -> TensorValue:
             return x + 1
 
         results = ops.while_loop(x, pred_fn, body_fn)
