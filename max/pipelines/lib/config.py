@@ -116,9 +116,6 @@ class PipelineConfig(MAXConfig):
     configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
     models)."""
 
-    pad_to_multiple_of: int = 2
-    """Pad input tensors to be a multiple of value provided."""
-
     target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
     """The target number of un-encoded tokens to include in each batch.
     This value is used for chunked prefill and memory estimation."""
@@ -594,7 +591,6 @@ class PipelineConfig(MAXConfig):
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
-            "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
         }

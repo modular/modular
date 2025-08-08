@@ -13,15 +13,12 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 
 def causal_attention_mask(
     original_start_pos: list[int],
     original_seq_len: list[int],
-    pad_to_multiple_of: int = 1,
 ) -> np.ndarray:
     # Each example in the batch has a "start position", which is the length
     # of the previously encoded tokens ("context"), and a "sequence length",
@@ -40,16 +37,8 @@ def causal_attention_mask(
     start_pos: np.ndarray = np.array(original_start_pos, dtype=np.int64)
     seq_len: np.ndarray = np.array(original_seq_len, dtype=np.int64)
 
-    # Provided `pad_to_multiple_of` ensure the padded_length is cleanly divisible
-    # by this multiple.
-    # If max_len is 1, we are presumably in a token generation phase batch.
-    # W scenario, padding from 1 -> 2, does not result in a performance gain.
-    if seq_len.max() == 1:
-        padded_length = 1
-    else:
-        padded_length = (
-            math.ceil(seq_len.max() / pad_to_multiple_of) * pad_to_multiple_of
-        )
+    # Use the maximum sequence length as the padded length
+    padded_length = seq_len.max()
 
     # Mask shape: for each token being generated, attend to tokens _before_ it
     # in the entire sequence including context. Pad all values to the longest

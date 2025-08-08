@@ -159,7 +159,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             tokens,
             pad_value=pad_value,
             batch_size=len(tokens),
-            pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
         )
 
         # Compute attention mask.
