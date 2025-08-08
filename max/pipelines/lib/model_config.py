@@ -740,9 +740,12 @@ class MAXModelConfig(MAXModelConfigBase):
             # This is a bit hacky, but seems like we need it for now.
             # This warning is for the MAX pipeline to alert users about a GPTQ format we don't support yet.
             # Instead of running our GPTQ pipeline on this unsupported format and outputting gibberish, we exit early with a clear error message.
-            if str(self.huggingface_config.torch_dtype) != "torch.float16":
+            if str(self.huggingface_config.torch_dtype) not in [
+                "float16",
+                "torch.float16",
+            ]:
                 raise ValueError(
-                    "bfloat16 scales are not supported for GPTQ-quantized models."
+                    f"{self.huggingface_config.torch_dtype} scales are not supported for GPTQ-quantized models."
                 )
             default_quantization_config = QuantizationConfig(
                 quant_method=hf_quant_config["quant_method"],
