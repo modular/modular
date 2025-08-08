@@ -1113,7 +1113,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   if (paramList.parseParametersIfPresent(*this,
                                          ArgListKind::kFnTypeParamList) ||
       fnSignature.parseArgumentListAndEffects(*this,
-                                              ArgListKind::kFnTypeArgList))
+                                              ArgListKind::kFnTypeArgList,
+                                              /*isMoveInitOrDel=*/false))
     return failure();
 
   // Parse the capture origin set if present.
@@ -1155,7 +1156,8 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
     // otherwise a bare identifier list.
     auto kind = getToken().is(Token::l_paren) ? ArgListKind::kArgList
                                               : ArgListKind::kBareLambdaArgList;
-    if (parsedSignature.parseArgumentListAndEffects(*this, kind))
+    if (parsedSignature.parseArgumentListAndEffects(*this, kind,
+                                                    /*isMoveInitOrDel=*/false))
       return failure();
   }
 

@@ -109,7 +109,7 @@ struct ParsedArgument {
   KWArgHandling kwArgHandling = KWArgHandling::kPositionalOrKeyword;
 
   ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                    ArgListKind kind);
+                    ArgListKind kind, bool isMoveInitOrDel);
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
   PassingKind getKWArgHandlingAsPassingKind() const;
@@ -182,7 +182,8 @@ public:
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
-  ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);
+  ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
+                                          bool isMoveInitOrDel);
 
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,

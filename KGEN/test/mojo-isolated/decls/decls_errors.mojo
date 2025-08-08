@@ -618,6 +618,24 @@ struct SpecialFunctions:
   fn __del__(deinit self) raises:
      pass
 
+struct TestOwnedDeinitWarnings:
+  # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
+  fn __del__(owned self): pass
+
+  # expected-warning @+1 {{'owned' has been deprecated, use 'deinit' instead}}
+  fn __moveinit__(out self, owned x: String): pass
+
+  # expected-warning @+1 {{'owned' has been deprecated, use 'var' instead}}
+  fn method(owned x): pass
+
+struct TestVarDeinitErrors:
+  # expected-error @+1 {{the 'self' argument should be declared 'deinit'}}
+  fn __del__(var self): pass
+
+  # expected-error @+1 {{the 'existing' argument should be declared 'deinit'}}
+  fn __moveinit__(out self, var x: String): pass
+
+
 @register_passable
 struct WrongType:
   # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
