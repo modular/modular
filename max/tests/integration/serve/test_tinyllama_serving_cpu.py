@@ -13,7 +13,7 @@ from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
-from max.serve.schemas.openai import (  # type: ignore
+from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
 )
@@ -75,11 +75,11 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: AN
                 "/v1/completions",
                 json={"model": MODEL_NAME, "prompt": prompt},
             )
-            response = CreateCompletionResponse.model_validate(
+            response2 = CreateCompletionResponse.model_validate(
                 raw_response.json()
             )
-            assert len(response.choices) == n_prompts
-            assert response.choices[0].finish_reason == "stop"
+            assert len(response2.choices) == n_prompts
+            assert response2.choices[0].finish_reason == "stop"
 
 
 @pytest.mark.asyncio

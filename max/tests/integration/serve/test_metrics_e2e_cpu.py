@@ -14,9 +14,7 @@ from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.serve.config import MetricRecordingMethod
-from max.serve.schemas.openai import (  # type: ignore
-    CreateChatCompletionResponse,
-)
+from max.serve.schemas.openai import CreateChatCompletionResponse
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 

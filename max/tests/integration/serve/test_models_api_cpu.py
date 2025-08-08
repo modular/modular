@@ -9,7 +9,7 @@ from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
-from max.serve.schemas.openai import ListModelsResponse, Model  # type: ignore
+from max.serve.schemas.openai import ListModelsResponse, Model
 
 
 @pytest.mark.asyncio()
@@ -39,6 +39,6 @@ async def test_serve_models(app) -> None:  # noqa: ANN001
 
         raw_response = await client.get("/v1/models/SmolLM-135M")
 
-        response = Model.model_validate(raw_response.json())
+        response2 = Model.model_validate(raw_response.json())
 
-        assert response.id == "HuggingFaceTB/SmolLM-135M"
+        assert response2.id == "HuggingFaceTB/SmolLM-135M"

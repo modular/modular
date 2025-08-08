@@ -14,7 +14,7 @@ from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.schemas.openai import (  # type: ignore
+from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
 )

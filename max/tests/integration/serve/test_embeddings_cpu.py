@@ -8,7 +8,7 @@ import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
-from max.serve.schemas.openai import CreateEmbeddingResponse  # type: ignore
+from max.serve.schemas.openai import CreateEmbeddingResponse
 
 
 @pytest.mark.asyncio
