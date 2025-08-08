@@ -71,11 +71,11 @@ def test_count():
     var a = ArcPointer(10)
     var b = a.copy()
     var c = a
-    assert_equal(3, a.count())
+    assert_equal(UInt64(3), a.count())
     _ = b^
-    assert_equal(2, a.count())
+    assert_equal(UInt64(2), a.count())
     _ = c
-    assert_equal(1, a.count())
+    assert_equal(UInt64(1), a.count())
 
 
 def main():

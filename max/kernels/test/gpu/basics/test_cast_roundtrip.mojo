@@ -13,9 +13,9 @@
 
 from gpu import *
 from gpu.host import DeviceContext
-from testing import assert_equal
+from testing import assert_equal, assert_true
 
-from utils.numerics import inf, nan, neg_inf
+from utils.numerics import inf, nan, neg_inf, isnan
 
 
 fn id(
@@ -75,7 +75,10 @@ fn run_vec_add(ctx: DeviceContext) raises:
     with out_device.map_to_host() as out_host:
         for i in range(10):
             print("at index", i, "the value is", out_host[i])
-            assert_equal(expected[i], out_host[i])
+            if isnan(expected[i]):
+                assert_true(isnan(out_host[i]))
+            else:
+                assert_equal(expected[i], out_host[i])
 
     _ = in_device
 

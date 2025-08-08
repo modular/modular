@@ -244,17 +244,17 @@ fn _has_native_f8_support() -> Bool:
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct SIMD[dtype: DType, size: Int](
-    # TODO: add Comparable when migration is complete.
-    Floorable,
     Absable,
     Boolable,
     CeilDivable,
     Ceilable,
+    Comparable,
     ConvertibleToPython,
     Copyable,
     Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
+    Floorable,
     Hashable,
     Indexer,
     Movable,
@@ -1028,12 +1028,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if all elements of the SIMD vectors are equal, False otherwise.
         """
-
-        constrained[
-            size == 1,
-            "TODO: remove this constraint when migration is complete.",
-        ]()
-        return Bool(self.eq(rhs))
+        return Bool(self.eq(rhs).reduce_and())
 
     @always_inline
     fn __ne__(self, rhs: Self) -> Bool:

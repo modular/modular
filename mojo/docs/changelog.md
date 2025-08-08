@@ -65,6 +65,10 @@ what we publish.
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
   has explicit elementwise comparisons that return boolean masks, e.g. `eq()`
   and `le()`.
+  - This allows `SIMD` to conform to the `EqualityComparable` trait, enabling
+    the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
+    algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
+    i.e. `SIMD` conforms to `Comparable` when the size is 1.
 
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the

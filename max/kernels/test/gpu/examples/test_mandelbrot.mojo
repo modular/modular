@@ -110,11 +110,11 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var accum = SIMD[int_type, 1](0)
+    var accum = Scalar[int_type](0)
     for i in range(width):
         for j in range(height):
             accum += out_host[i * width + j]
-    assert_equal(4687767697, accum)
+    assert_equal(Scalar[int_type](4687767697), accum)
 
     _ = out_device
 

@@ -1619,7 +1619,7 @@ def test_pow():
     assert_equal(f32x4_val.__pow__(0.0), F32x4(1.0, 1.0, 1.0, 1.0))
     assert_equal(F32x4(1, 1, 1, 1).__pow__(100.0), F32x4(1.0, 1.0, 1.0, 1.0))
     assert_equal(
-        F32x4(inf, -inf, nan, 1).__pow__(3.0), F32x4(inf, -inf, nan, 1.0)
+        String(F32x4(inf, -inf, nan, 1).__pow__(3.0)), "[inf, -inf, nan, 1.0]"
     )
     assert_almost_equal(
         f32x4_val.__pow__(0.5), F32x4(0.0, 1.0, 1.414213562, 1.732050808)
@@ -1649,8 +1649,10 @@ def test_pow():
     )
 
     assert_equal(
-        F32x4(inf, neg_inf, nan, 1.0).__pow__(F32x4(2.0, 3.0, 2.0, 0.0)),
-        F32x4(inf, neg_inf, nan, 1.0),
+        String(
+            F32x4(inf, neg_inf, nan, 1.0).__pow__(F32x4(2.0, 3.0, 2.0, 0.0))
+        ),
+        "[inf, -inf, nan, 1.0]",
     )
 
     assert_equal(
