@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import math
 
 import numpy as np
 from hypothesis import given, settings
@@ -13,7 +12,6 @@ from max.pipelines.dataprocessing import causal_attention_mask
 
 MAX_BATCH_SIZE = 32
 MAX_SEQUENCE_LENGTH = 1024
-PAD_MULTIPLES = [2, 1, 128]
 batch_sizes = st.shared(st.integers(1, MAX_BATCH_SIZE))
 start_positions = st.integers(0, MAX_SEQUENCE_LENGTH // 2)
 seq_lens = st.integers(1, MAX_SEQUENCE_LENGTH // 2)
@@ -36,23 +34,16 @@ def lists_of_size(strategy, size_strategy):  # noqa: ANN001
 def test_causal_mask__shape(start_pos: list[int], seq_len: list[int]) -> None:
     assert len(start_pos) == len(seq_len)
 
-    for pad_to_multiple_of in PAD_MULTIPLES:
-        mask = causal_attention_mask(start_pos, seq_len, pad_to_multiple_of)
-        assert len(mask.shape) == 3
-        assert mask.shape[0] == len(start_pos)
+    mask = causal_attention_mask(start_pos, seq_len)
+    assert len(mask.shape) == 3
+    assert mask.shape[0] == len(start_pos)
 
-        if max(seq_len) == 1:
-            padded_length = 1
-        else:
-            padded_length = (
-                math.ceil(max(seq_len) / pad_to_multiple_of)
-                * pad_to_multiple_of
-            )
-            assert mask.shape[1] % pad_to_multiple_of == 0
-            assert mask.shape[1] >= pad_to_multiple_of
+    # The padded length should be the maximum sequence length
+    padded_length = max(seq_len)
+    assert mask.shape[1] == padded_length
 
-        post_seq_len = max([(pos + padded_length) for pos in start_pos])
-        assert mask.shape[2] == post_seq_len
+    post_seq_len = max([(pos + padded_length) for pos in start_pos])
+    assert mask.shape[2] == post_seq_len
 
 
 @settings(deadline=None)
