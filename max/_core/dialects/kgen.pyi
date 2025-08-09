@@ -4160,7 +4160,15 @@ class PointerType(max._core.Type):
     def address_space(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncTypeGeneratorType(GeneratorType):
-    pass
+    def __init__(
+        self,
+        input_param_types: Sequence[max._core.Type],
+        fn_type: max._core.dialects.builtin.FunctionType,
+        arg_convs: Sequence[ArgConvention] = [],
+        effects: FnEffects = FnEffects.none,
+        fn_metadata: max._core.Attribute = ...,
+        gen_metadata: max._core.Attribute = ...,
+    ) -> None: ...
 
 class _KGENDType:
     pass
