@@ -214,7 +214,6 @@ async def async_request_openai_completions(
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         payload = {
             "model": request_func_input.model,
-            "lora": request_func_input.lora,
             "prompt": request_func_input.prompt,
             "temperature": request_func_input.temperature,
             "best_of": 1,
@@ -222,6 +221,9 @@ async def async_request_openai_completions(
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.lora is not None:
+            payload["lora"] = request_func_input.lora
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
@@ -318,12 +320,14 @@ async def async_request_openai_chat_completions(
         payload = {
             "model": request_func_input.model,
             "messages": messages_data,
-            "lora": request_func_input.lora,
             "temperature": request_func_input.temperature,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.lora is not None:
+            payload["lora"] = request_func_input.lora
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
