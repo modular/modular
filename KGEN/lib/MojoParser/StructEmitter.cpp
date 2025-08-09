@@ -642,6 +642,12 @@ FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
       /*resultType=*/mlirReturnType);
 
   funcDecl->resolvedness = DeclResolvedness::signature;
+
+  // FIXME(MOCO-2288):
+  //  This is a hack to get `Copyable(ExplicitlyCopyable)` inheritance
+  //  to work. We should not have to early populate `copy()` here.
+  populateExplicitCopy(*funcDecl);
+
   return copyFunc;
 }
 

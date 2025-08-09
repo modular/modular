@@ -1252,8 +1252,17 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
       if (llvm::is_contained({SpecialFunctionKind::kMoveInit,
                               SpecialFunctionKind::kCopyInit,
                               SpecialFunctionKind::kDel},
-                             SpecialFunctionInfo::getKind(name)))
+                             SpecialFunctionInfo::getKind(name))) {
         continue;
+      }
+      // MLIR types can conform to the `copy()` method of `ExplicitlyCopyable`.
+      // NOTE: This only works for `ExplicitlyCopyable` because `__MLIRType`
+      //       only explicitly conforms to `ExplicitlyCopyable`, so its OK that
+      //       this doesn't validate the signature of this `copy()` method.
+      if (name == "copy") {
+        continue;
+      }
+
       return false;
     }
   }
