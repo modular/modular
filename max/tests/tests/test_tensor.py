@@ -7,11 +7,13 @@
 
 import asyncio
 
+import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.driver import Tensor as DriverTensor
 from max.dtype import DType
-from max.experimental.tensor import Tensor, TensorType
+from max.experimental import random
+from max.experimental.tensor import Tensor, TensorType, driver_tensor_type
 from max.graph import DeviceRef
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
@@ -69,3 +71,30 @@ def test_compilation_failure() -> None:
     c = b + 1
     asyncio.run(c.realize)
     assert c.real
+
+
+def test_tensor_dlpack() -> None:
+    data = DriverTensor.zeros([5, 5], DType.float32, CPU())
+    t = Tensor(storage=data)
+    assert t.type == driver_tensor_type(data)
+    assert t.real
+    npt = np.from_dlpack(t)
+    assert npt.dtype == t.dtype.to_numpy()
+    assert list(npt.shape) == t.shape
+
+
+def test_tensor_eager_dlpack() -> None:
+    expected_type = TensorType(DType.float32, [5, 5], DeviceRef.CPU())
+    t = random.normal_like(expected_type)
+    assert not t.real
+    npt = np.from_dlpack(t)
+    assert npt.dtype == t.dtype.to_numpy()
+    assert list(npt.shape) == t.shape
+
+
+def test_tensor_from_dlpack() -> None:
+    npt = np.random.normal([5, 5])
+    t = Tensor.from_dlpack(npt)
+    assert t.real
+    assert npt.dtype == t.dtype.to_numpy()
+    assert list(npt.shape) == t.shape
