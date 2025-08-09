@@ -125,7 +125,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
-    total_bytes = int(0.5 * GB)
+    total_bytes = int(12 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
