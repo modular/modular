@@ -46,13 +46,13 @@ def max_group_norm(
 
 def torch_group_norm(
     input_tensor: torch.Tensor,
-    num_groups,  # noqa: ANN001
-    num_channels,  # noqa: ANN001
-    eps,  # noqa: ANN001
-    affine=False,  # noqa: ANN001
-    weight=None,  # noqa: ANN001
-    bias=None,  # noqa: ANN001
-):
+    num_groups: int,
+    num_channels: int,
+    eps: float,
+    affine: bool = False,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+) -> torch.Tensor:
     layer = torch.nn.GroupNorm(num_groups, num_channels, eps, affine)
     layer = layer.to(input_tensor.device)
 

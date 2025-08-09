@@ -38,14 +38,9 @@ class LlamaStyleRMSNorm(RMSNorm):
         super().__init__(*args, **kwargs)
         self.multiply_before_cast = False
 
-    def __call__(self, x):  # noqa: ANN001
-        return super().__call__(x)
-
 
 def generate_max_outputs(
-    config: LlamaConfig,
-    input_tensor: torch.Tensor,
-    rms_weight: torch.Tensor,
+    config: LlamaConfig, input_tensor: torch.Tensor, rms_weight: torch.Tensor
 ) -> torch.Tensor:
     layer = LlamaStyleRMSNorm(
         dim=config.hidden_size,
@@ -84,21 +79,13 @@ def llama_config() -> LlamaConfig:
 @pytest.fixture
 def input_tensor(llama_config: LlamaConfig) -> torch.Tensor:
     torch.manual_seed(0)
-    return torch.randn(
-        1,
-        7,
-        llama_config.hidden_size,
-        dtype=torch.bfloat16,
-    )
+    return torch.randn(1, 7, llama_config.hidden_size, dtype=torch.bfloat16)
 
 
 @pytest.fixture
 def rms_weight(llama_config: LlamaConfig) -> torch.Tensor:
     torch.manual_seed(42)
-    return torch.randn(
-        llama_config.hidden_size,
-        dtype=torch.float32,
-    )
+    return torch.randn(llama_config.hidden_size, dtype=torch.float32)
 
 
 def test_rms_norm(

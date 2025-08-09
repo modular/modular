@@ -15,6 +15,7 @@ from max.interfaces import TextGenerationRequest
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from PIL import Image
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio
@@ -65,7 +66,9 @@ async def test_internvl_tokenizer_with_image() -> None:
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_apply_chat_template(mocker) -> None:  # noqa: ANN001
+async def test_internvl_tokenizer_apply_chat_template(
+    mocker: MockerFixture,
+) -> None:
     """Test that InternVL tokenizer's apply_chat_template handles multimodal content correctly.
 
     This test verifies that the InternVL processor can handle messages with multimodal

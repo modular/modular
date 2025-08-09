@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any, Optional
 
 import numpy as np
@@ -15,8 +16,14 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import InputContext, RequestID
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedKVCacheManager,
+    RaggedKVCacheInputs,
+)
 from max.nn.kv_cache.paged_cache import block_utils
+from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 
 block_utils.ENABLE_MOJO_BLOCK_HASHER = True
@@ -27,17 +34,17 @@ def gen_prompt(length: int) -> np.ndarray:
     return np.random.randint(0, 2, size=length)
 
 
-def get_blocks_from_kv_tuple(kv_tuple) -> list[list[int]]:  # noqa: ANN001
+def get_blocks_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[list[int]]:
     return kv_tuple[2].to_numpy().tolist()
 
 
 def get_uncommitted_and_committed_block_counts(
-    kv_tuple,  # noqa: ANN001
+    kv_tuple: RaggedKVCacheInputs,
 ) -> list[list[int]]:
     return kv_tuple[3].to_numpy().tolist()
 
 
-def get_cache_lengths_from_kv_tuple(kv_tuple) -> list[int]:  # noqa: ANN001
+def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
     return kv_tuple[1].to_numpy().tolist()
 
 
@@ -113,10 +120,7 @@ async def test_prefix_caching_basic() -> None:
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
-        ] == [
-            1,
-            5 + i + 1,
-        ]
+        ] == [1, 5 + i + 1]
         batch[0].update(toks[i + 1])
         kv_manager.step(batch)
 
@@ -145,10 +149,7 @@ async def test_prefix_caching_basic() -> None:
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
-        ] == [
-            1,
-            len(initial_prompt_2) + i + 1,
-        ]
+        ] == [1, len(initial_prompt_2) + i + 1]
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
         batch[0].update(toks[i + 1])
         kv_manager.step(batch)
@@ -234,7 +235,9 @@ async def test_prefix_caching_with_no_release() -> None:
         (128, 10),
     ],
 )
-async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:  # noqa: ANN001
+async def test_prefix_caching_with_random_prompts(
+    page_size: int, num_steps: int
+) -> None:
     np.random.seed(12345)
 
     num_blocks = 128
@@ -419,8 +422,12 @@ class FakeModel:
 
         fake_model = self
 
+        # Monkey patch the memcpy_d2d method to use our mock method.
+        block_copy_engine = kv_manager.block_copy_engine
+        assert block_copy_engine is not None
+        orig_memcpy_d2d = block_copy_engine.memcpy_d2d
+
         def mock_memcpy_d2d(
-            self,  # noqa: ANN001
             dst: int,
             src: int,
             num_tokens: int,
@@ -432,19 +439,14 @@ class FakeModel:
                     fake_model.block_projections[src][token]
                 )
 
-            self._orig_memcpy_d2d(dst, src, num_tokens)
+            orig_memcpy_d2d(dst, src, num_tokens)
 
-        # Monkey patch the memcpy_d2d method to use our mock method.
-        block_copy_engine = kv_manager.block_copy_engine
-        block_copy_engine._orig_memcpy_d2d = block_copy_engine.memcpy_d2d  # type: ignore
-        block_copy_engine.memcpy_d2d = mock_memcpy_d2d.__get__(  # type: ignore
-            block_copy_engine
-        )
+        block_copy_engine.memcpy_d2d = mock_memcpy_d2d  # type: ignore[method-assign]
 
     def run(
         self,
         request_ids_and_prompts: dict[RequestID, np.ndarray],
-        fetch_kv_tuple,  # noqa: ANN001
+        fetch_kv_tuple: Sequence[RaggedKVCacheInputs],
         num_steps: int,
         request_ids_and_new_tokens: Optional[
             dict[RequestID, np.ndarray]
@@ -557,7 +559,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # run CE on 15 batches of batch_size requests each
     num_batches = 15
-    batch: dict[RequestID, InputContext] = {}
+    batch: dict[RequestID, TextContext] = {}
     for b in range(num_batches):
         for r in range(batch_size):
             request_index = b * batch_size + r
@@ -701,7 +703,7 @@ async def test_prefix_caching_cow() -> None:
     prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     run_forward(model, kv_manager, ctx, prompt_1, 42)
 
-    def run_forward_cow(prompt, cache_idx) -> None:  # noqa: ANN001
+    def run_forward_cow(prompt: np.ndarray, cache_idx: int) -> None:
         ctx = create_text_context(np.array([]))
         kv_manager.external_claim(ctx.request_id)
         run_forward(

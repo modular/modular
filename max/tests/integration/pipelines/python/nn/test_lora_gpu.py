@@ -70,7 +70,7 @@ def to_max_weight(
 
 
 def create_lora_buffers(
-    weight_shape,  # noqa: ANN001
+    weight_shape: tuple[int, ...],
     lora_A: torch.Tensor,
     lora_B: torch.Tensor,
     device: Device,
@@ -318,7 +318,9 @@ class TorchRoPEAttentionWithLoRA(nn.Module):
         cos_sin = self._cos_sin_cached[:seq_len].to(device)
         return cos_sin
 
-    def _apply_rotary_pos_emb(self, x, cos_sin):  # noqa: ANN001
+    def _apply_rotary_pos_emb(
+        self, x: torch.Tensor, cos_sin: torch.Tensor
+    ) -> torch.Tensor:
         cos_sin = cos_sin.unsqueeze(0).unsqueeze(0)  # Add batch and head dims
 
         # Extract interleaved cos and sin values

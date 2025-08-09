@@ -7,7 +7,11 @@
 package reference implementation.
 """
 
+from collections.abc import Callable, Sequence
+
 import pytest
+import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -47,7 +51,11 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
 
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+        def test_correctness(
+            execute: Callable[[Sequence[Tensor]], Tensor],
+            inputs: Sequence[Tensor],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 

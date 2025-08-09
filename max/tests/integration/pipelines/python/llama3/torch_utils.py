@@ -8,20 +8,21 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-def torch_linear(weight, **kwargs):  # noqa: ANN001
+def torch_linear(weight: torch.Tensor, **kwargs: Any) -> nn.Linear:
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     return linear
 
 
 class TorchVisionEncoderMLP(nn.Module):
-    def __init__(self, w1, w2) -> None:  # noqa: ANN001
+    def __init__(self, w1: torch.Tensor, w2: torch.Tensor) -> None:
         super().__init__()
         self.fc1 = torch_linear(w1, bias=False)
         self.fc2 = torch_linear(w2, bias=False)
@@ -35,10 +36,7 @@ class TorchVisionEncoderMLP(nn.Module):
 
 class TorchVisionAttention(nn.Module):
     def __init__(
-        self,
-        attn_weight,  # noqa: ANN001
-        hidden_size: int,
-        attention_heads: int,
+        self, attn_weight: torch.Tensor, hidden_size: int, attention_heads: int
     ) -> None:
         super().__init__()
 

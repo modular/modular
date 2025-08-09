@@ -9,9 +9,11 @@
 import os
 import tempfile
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
@@ -54,7 +56,9 @@ def create_test_image_bytes() -> bytes:
     ],
     indirect=True,
 )
-async def test_chat_completion_with_file_uri(app, tmp_path) -> None:  # noqa: ANN001
+async def test_chat_completion_with_file_uri(
+    app: FastAPI, tmp_path: Path
+) -> None:
     """Test chat completion with file:// URI for images."""
     # Create a valid test image file in /tmp (which is in allowed roots)
     image_path = tmp_path / "test_image.jpg"
@@ -104,7 +108,7 @@ async def test_chat_completion_with_file_uri(app, tmp_path) -> None:  # noqa: AN
     ],
     indirect=True,
 )
-async def test_file_uri_security_check(app, tmp_path) -> None:  # noqa: ANN001
+async def test_file_uri_security_check(app: FastAPI, tmp_path: Path) -> None:
     """Test that file URIs are rejected when no roots are allowed."""
     # Create a valid test image file
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Iterable
-from typing import Any, Optional, TypedDict
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Callable, Optional, TypedDict
 
 import numpy as np
 import requests
@@ -242,12 +242,12 @@ def next_token_with_logits(
 
 
 def compare_values(
-    actual,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    actual: Sequence[Mapping[str, Any]],
+    expected: Sequence[Mapping[str, Any]],
     *,
-    rtol=1e-2,  # noqa: ANN001
-    atol=1e-5,  # noqa: ANN001
-    compare_fn=None,  # noqa: ANN001
+    rtol: float = 1e-2,
+    atol: float = 1e-5,
+    compare_fn: Callable[[Any, Any, str], None] | None = None,
 ) -> None:
     """Compares two dictionaries of values."""
     keys = expected[0].keys()
@@ -267,12 +267,12 @@ def compare_values(
 
 
 def compare_text_generation(
-    actual,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    actual: Sequence[Mapping[str, Any]],
+    expected: Sequence[Mapping[str, Any]],
     *,
-    rtol=1e-2,  # noqa: ANN001
-    atol=1e-5,  # noqa: ANN001
-    compare_fn=None,  # noqa: ANN001
+    rtol: float = 1e-2,
+    atol: float = 1e-5,
+    compare_fn: Callable[[Any, Any, str], None] | None = None,
 ) -> None:
     """Compares the values between two computed logits.
 
@@ -337,12 +337,12 @@ def compare_text_generation(
 
 
 def compare_embeddings(
-    actual,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    actual: Sequence[Mapping[str, Any]],
+    expected: Sequence[Mapping[str, Any]],
     *,
-    rtol=1e-2,  # noqa: ANN001
-    atol=1e-5,  # noqa: ANN001
-    compare_fn=None,  # noqa: ANN001
+    rtol: float = 1e-2,
+    atol: float = 1e-5,
+    compare_fn: Callable[[Any, Any, str], None] | None = None,
 ) -> None:
     """Compares the values between two computed embeddings.
 

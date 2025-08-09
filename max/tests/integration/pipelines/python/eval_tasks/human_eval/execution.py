@@ -15,15 +15,30 @@ import os
 import platform
 import signal
 import tempfile
-from typing import NoReturn, Optional
+from collections.abc import Generator
+from typing import Any, NoReturn, Optional, TypedDict
+
+
+class Problem(TypedDict):
+    task_id: str
+    prompt: str
+    test: str
+    entry_point: str
+
+
+class CheckResult(TypedDict):
+    task_id: str
+    passed: bool
+    result: str
+    completion_id: Optional[int]
 
 
 def check_correctness(
-    problem: dict,
+    problem: Problem,
     completion: str,
     timeout: float,
     completion_id: Optional[int] = None,
-) -> dict:
+) -> CheckResult:
     """
     Evaluates the functional correctness of a completion by running the test
     suite provided in the problem.
@@ -102,8 +117,8 @@ def check_correctness(
 
 
 @contextlib.contextmanager
-def time_limit(seconds: float):
-    def signal_handler(signum, frame) -> NoReturn:  # noqa: ANN001
+def time_limit(seconds: float) -> Generator[None, None, None]:
+    def signal_handler(signum: int, frame: Any) -> NoReturn:
         raise TimeoutException("Timed out!")
 
     signal.setitimer(signal.ITIMER_REAL, seconds)
@@ -115,7 +130,7 @@ def time_limit(seconds: float):
 
 
 @contextlib.contextmanager
-def swallow_io():
+def swallow_io() -> Generator[None, None, None]:
     stream = WriteOnlyStringIO()
     with contextlib.redirect_stdout(stream):
         with contextlib.redirect_stderr(stream):
@@ -124,7 +139,7 @@ def swallow_io():
 
 
 @contextlib.contextmanager
-def create_tempdir():
+def create_tempdir() -> Generator[None, None, None]:
     with tempfile.TemporaryDirectory() as dirname:
         with chdir(dirname):
             yield dirname
@@ -156,7 +171,7 @@ class redirect_stdin(contextlib._RedirectStream):  # type: ignore
 
 
 @contextlib.contextmanager
-def chdir(root):  # noqa: ANN001
+def chdir(root: str) -> Generator[None, None, None]:
     if root == ".":
         yield
         return

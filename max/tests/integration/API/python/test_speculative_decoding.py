@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
 from max.driver import DeviceSpec, Tensor
-from max.interfaces import TextGenerationInputs
+from max.interfaces import PipelineTokenizer, TextGenerationInputs
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
@@ -23,8 +23,24 @@ from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 
+@dataclass
+class SpeculativeDecodingSetup:
+    model_name: str
+    tokenizer: PipelineTokenizer
+    pipeline: SpeculativeDecodingTextGenerationPipeline
+    context1: TextContext
+    context2: TextContext
+    req_id1: str
+    req_id2: str
+    pipeline_request: dict[str, TextContext]
+    context_batch: list[TextContext]
+    num_steps: int
+
+
 @pytest.fixture(scope="session")
-def setup_speculative_decoding_pipeline(num_steps: int = 10):
+def setup_speculative_decoding_pipeline(
+    num_steps: int = 10,
+) -> SpeculativeDecodingSetup:
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
@@ -79,24 +95,24 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
-    return {
-        "model_name": model_name,
-        "tokenizer": tokenizer,
-        "pipeline": pipeline,
-        "context1": context1,
-        "context2": context2,
-        "req_id1": req_id1,
-        "req_id2": req_id2,
-        "pipeline_request": pipeline_request,
-        "context_batch": context_batch,
-        "num_steps": num_steps,
-    }
+    return SpeculativeDecodingSetup(
+        model_name=model_name,
+        tokenizer=tokenizer,
+        pipeline=pipeline,
+        context1=context1,
+        context2=context2,
+        req_id1=req_id1,
+        req_id2=req_id2,
+        pipeline_request=pipeline_request,
+        context_batch=context_batch,
+        num_steps=num_steps,
+    )
 
 
 @pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 @prepare_registry
 def test_config__validate_device_and_encoding_combinations(
-    smollm_135m_local_path,  # noqa: ANN001
+    smollm_135m_local_path: str,
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
@@ -112,10 +128,10 @@ def test_config__validate_device_and_encoding_combinations(
 @pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 @prepare_registry
 def test_config__validate_target_and_draft_architecture(
-    smollm_135m_local_path,  # noqa: ANN001
-    deepseek_r1_distill_llama_8b_local_path,  # noqa: ANN001
-    lmstudio_deepseek_r1_distill_llama_8b_local_path,  # noqa: ANN001
-    gemma_3_1b_it_local_path,  # noqa: ANN001
+    smollm_135m_local_path: str,
+    deepseek_r1_distill_llama_8b_local_path: str,
+    lmstudio_deepseek_r1_distill_llama_8b_local_path: str,
+    gemma_3_1b_it_local_path: str,
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
@@ -155,14 +171,13 @@ def test_config__validate_target_and_draft_architecture(
 
 @pytest.mark.skip("TODO: Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_no_rejection(
-    setup_speculative_decoding_pipeline,  # noqa: ANN001
+    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
 ) -> None:
-    data: dict[str, Any] = setup_speculative_decoding_pipeline
-    pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
-    context_batch: list[TextContext] = data["context_batch"]
-    context1: TextContext = data["context1"]
-    context2: TextContext = data["context2"]
-    num_steps: int = data["num_steps"]
+    pipeline = setup_speculative_decoding_pipeline.pipeline
+    context_batch = setup_speculative_decoding_pipeline.context_batch
+    context1 = setup_speculative_decoding_pipeline.context1
+    context2 = setup_speculative_decoding_pipeline.context2
+    num_steps = setup_speculative_decoding_pipeline.num_steps
 
     assert context1.start_idx == 0
     assert context2.start_idx == 0
@@ -229,14 +244,13 @@ def test_speculative_decoding_no_rejection(
 
 @pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_partial_rejection(
-    setup_speculative_decoding_pipeline,  # noqa: ANN001
+    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
 ) -> None:
-    data: dict[str, Any] = setup_speculative_decoding_pipeline
-    pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
-    context_batch: list[TextContext] = data["context_batch"]
-    context1: TextContext = data["context1"]
-    context2: TextContext = data["context2"]
-    num_steps: int = data["num_steps"]
+    pipeline = setup_speculative_decoding_pipeline.pipeline
+    context_batch = setup_speculative_decoding_pipeline.context_batch
+    context1 = setup_speculative_decoding_pipeline.context1
+    context2 = setup_speculative_decoding_pipeline.context2
+    num_steps = setup_speculative_decoding_pipeline.num_steps
 
     assert context1.start_idx == 0
     assert context2.start_idx == 0
@@ -328,14 +342,13 @@ def test_speculative_decoding_partial_rejection(
 
 @pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_multiple_token_without_rejection(
-    setup_speculative_decoding_pipeline,  # noqa: ANN001
+    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
 ) -> None:
-    data: dict[str, Any] = setup_speculative_decoding_pipeline
-    pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
-    context1: TextContext = data["context1"]
-    context2: TextContext = data["context2"]
-    pipeline_request: dict[str, TextContext] = data["pipeline_request"]
-    num_steps: int = data["num_steps"]
+    pipeline = setup_speculative_decoding_pipeline.pipeline
+    context1 = setup_speculative_decoding_pipeline.context1
+    context2 = setup_speculative_decoding_pipeline.context2
+    pipeline_request = setup_speculative_decoding_pipeline.pipeline_request
+    num_steps = setup_speculative_decoding_pipeline.num_steps
 
     context1_len = context1.current_length
     context2_len = context2.current_length
@@ -355,17 +368,16 @@ def test_speculative_decoding_multiple_token_without_rejection(
 
 @pytest.mark.skip("TODO: E2EOPT-403 Re-enable Speculative Decoding Tests")
 def test_speculative_decoding_context_update(
-    setup_speculative_decoding_pipeline,  # noqa: ANN001
+    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
 ) -> None:
-    data: dict[str, Any] = setup_speculative_decoding_pipeline
-    pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
-    context1: TextContext = data["context1"]
-    context2: TextContext = data["context2"]
-    req_id1: str = data["req_id1"]
-    req_id2: str = data["req_id2"]
-    pipeline_request: dict[str, TextContext] = data["pipeline_request"]
-    context_batch: list[TextContext] = data["context_batch"]
-    num_steps: int = data["num_steps"]
+    pipeline = setup_speculative_decoding_pipeline.pipeline
+    context1 = setup_speculative_decoding_pipeline.context1
+    context2 = setup_speculative_decoding_pipeline.context2
+    req_id1 = setup_speculative_decoding_pipeline.req_id1
+    req_id2 = setup_speculative_decoding_pipeline.req_id2
+    pipeline_request = setup_speculative_decoding_pipeline.pipeline_request
+    context_batch = setup_speculative_decoding_pipeline.context_batch
+    num_steps = setup_speculative_decoding_pipeline.num_steps
 
     draft_tokens = np.array(
         [
@@ -397,7 +409,7 @@ def test_speculative_decoding_context_update(
     )
 
     # The index bump hack from generate_draft_tokens()
-    for i, context in enumerate(context_batch):  # noqa: B007
+    for context in context_batch:
         context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
 
     pipeline.update_contexts(

@@ -46,7 +46,7 @@ def sdk_test_inputs_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
-def custom_ops_package_path(request) -> Path:  # noqa: ANN001
+def custom_ops_package_path(request: pytest.FixtureRequest) -> Path:
     return Path(
         os.getenv("CUSTOM_OPS_PATH")
         or request.config.getoption("--custom-ops-path")

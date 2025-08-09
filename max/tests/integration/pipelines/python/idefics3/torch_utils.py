@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any
 
 import torch
 from test_common.test_data import MockTextGenerationRequest
@@ -22,21 +21,6 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 from transformers.image_utils import load_image
-
-
-def default_image_text_processor(
-    data_processor: PreTrainedTokenizer
-    | PreTrainedTokenizerFast
-    | MllamaProcessor
-    | PixtralProcessor,
-    image: Any,
-    prompt: str,
-    device: torch.device,
-) -> dict[str, torch.Tensor]:
-    """Default image+text processing for most vision-language models."""
-    return data_processor(images=image, text=prompt, return_tensors="pt").to(
-        device
-    )
 
 
 def run_text_generation(

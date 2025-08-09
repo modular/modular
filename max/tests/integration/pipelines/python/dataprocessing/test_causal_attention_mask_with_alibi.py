@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from typing import TypeVar
 
 import numpy as np
 from hypothesis import given, settings
@@ -21,8 +22,12 @@ seq_lens = st.integers(1, MAX_SEQUENCE_LENGTH // 2)
 # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
 FILL_VAL = -10000.0
 
+_T = TypeVar("_T")
 
-def lists_of_size(strategy, size_strategy):  # noqa: ANN001
+
+def lists_of_size(
+    strategy: st.SearchStrategy[_T], size_strategy: st.SearchStrategy[int]
+) -> st.SearchStrategy[list[_T]]:
     return size_strategy.flatmap(
         lambda length: st.lists(strategy, min_size=length, max_size=length)
     )

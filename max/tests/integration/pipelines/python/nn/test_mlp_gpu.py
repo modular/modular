@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from typing import Any
+
 import numpy as np
 import pytest
 import torch
@@ -17,20 +21,22 @@ from max.nn import MLPV1, LinearV1
 from modular_graph_test import are_all_tensor_values
 
 
-def torch_linear(weight, **kwargs):  # noqa: ANN001
+def torch_linear(weight: torch.Tensor, **kwargs: Any) -> nn.Linear:
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     return linear
 
 
 class TorchMLP(nn.Module):
-    def __init__(self, w1, w2, w3) -> None:  # noqa: ANN001
+    def __init__(
+        self, w1: torch.Tensor, w2: torch.Tensor, w3: torch.Tensor
+    ) -> None:
         super().__init__()
         self.gate_proj = torch_linear(w1, bias=False)
         self.down_proj = torch_linear(w2, bias=False)
         self.up_proj = torch_linear(w3, bias=False)
 
-    def forward(self, x):  # noqa: ANN001
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 

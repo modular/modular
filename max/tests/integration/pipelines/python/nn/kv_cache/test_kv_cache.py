@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import numpy as np
 import pytest
 from max.driver import CPU
@@ -28,7 +30,11 @@ from test_common.context_utils import create_text_context
         (KVCacheStrategy.PAGED, FetchPagedKVCacheCollection),
     ],
 )
-async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:  # noqa: ANN001
+async def test_kv_collection_constructor(
+    cache_strategy: KVCacheStrategy,
+    fetch_cls: type[FetchContinuousBatchingKVCacheCollection]
+    | type[FetchPagedKVCacheCollection],
+) -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.float32,

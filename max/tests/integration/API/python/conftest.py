@@ -170,7 +170,7 @@ def named_inputs_path(modular_path: Path) -> Path:
     )
 
 
-def pytest_addoption(parser) -> None:  # noqa: ANN001
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--custom-ops-path",
         type=str,
@@ -190,7 +190,7 @@ def session() -> InferenceSession:
     return InferenceSession(devices=devices)
 
 
-def pytest_collection_modifyitems(items) -> None:  # noqa: ANN001
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # Prevent pytest from trying to collect Click commands and dataclasses as tests
     for item in items:
         if item.name.startswith("Test"):
@@ -206,7 +206,7 @@ def graph_testdata() -> Path:
 
 
 @pytest.fixture
-def llama_3_1_8b_instruct_local_path():
+def llama_3_1_8b_instruct_local_path() -> str:
     assert isinstance(LLAMA_3_1_HF_REVISION, str), (
         "LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -224,7 +224,7 @@ def llama_3_1_8b_instruct_local_path():
 
 
 @pytest.fixture
-def smollm_135m_local_path():
+def smollm_135m_local_path() -> str:
     assert isinstance(SMOLLM_HF_REVISION, str), (
         "SMOLLM_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -242,7 +242,7 @@ def smollm_135m_local_path():
 
 
 @pytest.fixture
-def smollm2_135m_local_path():
+def smollm2_135m_local_path() -> str:
     assert isinstance(SMOLLM2_HF_REVISION, str), (
         "SMOLLM2_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -260,7 +260,7 @@ def smollm2_135m_local_path():
 
 
 @pytest.fixture
-def deepseek_r1_distill_llama_8b_local_path():
+def deepseek_r1_distill_llama_8b_local_path() -> str:
     assert isinstance(DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION, str), (
         "DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -279,7 +279,7 @@ def deepseek_r1_distill_llama_8b_local_path():
 
 
 @pytest.fixture
-def lmstudio_deepseek_r1_distill_llama_8b_local_path():
+def lmstudio_deepseek_r1_distill_llama_8b_local_path() -> str:
     assert isinstance(LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION, str), (
         "LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -299,7 +299,7 @@ def lmstudio_deepseek_r1_distill_llama_8b_local_path():
 
 
 @pytest.fixture
-def modular_ai_llama_3_1_local_path():
+def modular_ai_llama_3_1_local_path() -> str:
     assert isinstance(MODULAR_AI_LLAMA_3_1_HF_REVISION, str), (
         "MODULAR_AI_LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -317,7 +317,7 @@ def modular_ai_llama_3_1_local_path():
 
 
 @pytest.fixture
-def tiny_random_llama_local_path():
+def tiny_random_llama_local_path() -> str:
     assert isinstance(TINY_RANDOM_LLAMA_HF_REVISION, str), (
         "TINY_RANDOM_LLAMA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -335,7 +335,7 @@ def tiny_random_llama_local_path():
 
 
 @pytest.fixture
-def gemma_3_1b_it_local_path():
+def gemma_3_1b_it_local_path() -> str:
     assert isinstance(GEMMA_3_1B_IT_HF_REVISION, str), (
         "GEMMA_3_1B_IT_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -353,7 +353,7 @@ def gemma_3_1b_it_local_path():
 
 
 @pytest.fixture
-def llama_3_1_8b_lora_local_path():
+def llama_3_1_8b_lora_local_path() -> str:
     assert isinstance(LLAMA_3_1_LORA_HF_REVISION, str), (
         "LLAMA_3_1_LORA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -371,7 +371,7 @@ def llama_3_1_8b_lora_local_path():
 
 
 @pytest.fixture
-def tiny_llama_1_1b_chat_v1_0_local_path():
+def tiny_llama_1_1b_chat_v1_0_local_path() -> str:
     assert isinstance(TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION, str), (
         "TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -390,7 +390,7 @@ def tiny_llama_1_1b_chat_v1_0_local_path():
 
 
 @pytest.fixture
-def tiny_random_llama_for_causal_lm_local_path():
+def tiny_random_llama_for_causal_lm_local_path() -> str:
     assert isinstance(TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION, str), (
         "TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -409,7 +409,7 @@ def tiny_random_llama_for_causal_lm_local_path():
 
 
 @pytest.fixture
-def qwen_32b_preview_local_path():
+def qwen_32b_preview_local_path() -> str:
     assert isinstance(QWEN_32B_PREVIEW_HF_REVISION, str), (
         "QWEN_32B_PREVIEW_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -427,7 +427,7 @@ def qwen_32b_preview_local_path():
 
 
 @pytest.fixture
-def mistral_nemo_instruct_2407_local_path():
+def mistral_nemo_instruct_2407_local_path() -> str:
     assert isinstance(MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION, str), (
         "MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )

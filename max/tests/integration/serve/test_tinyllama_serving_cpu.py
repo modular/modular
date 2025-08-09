@@ -7,9 +7,11 @@
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
@@ -41,7 +43,7 @@ pipeline_config = PipelineConfig(
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: ANN001
+async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
@@ -88,8 +90,8 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:  # noqa: AN
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_completions_cpu(app) -> None:  # noqa: ANN001
-    def openai_completion_request(content):  # noqa: ANN001
+async def test_tinyllama_serve_v1_completions_cpu(app: FastAPI) -> None:
+    def openai_completion_request(content: str) -> dict[str, Any]:
         """Create the json request for /v1/completion (not chat)."""
         return {
             "model": MODEL_NAME,
@@ -97,7 +99,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app) -> None:  # noqa: ANN001
             "temperature": 0.7,
         }
 
-    async def main_stream(client, msg: str):  # noqa: ANN001
+    async def main_stream(client: TestClient, msg: str) -> str:
         print(f"Generated request with prompt :{msg}")
         r = await client.post(
             "/v1/completions",

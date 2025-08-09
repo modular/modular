@@ -6,7 +6,7 @@
 
 import asyncio
 import time
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 import pytest
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
@@ -302,7 +302,7 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
         # Client handlers
         for i, client in enumerate(clients):
 
-            def make_handler(client_idx):  # noqa: ANN001
+            def make_handler(client_idx: int) -> Callable[[Any], None]:
                 def handle_client_reply(payload: Any) -> None:
                     client_replies[client_idx].append(payload)
 

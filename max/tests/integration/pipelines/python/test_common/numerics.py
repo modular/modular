@@ -7,14 +7,19 @@
 
 import functools
 import threading
+from typing import Callable, TypeVar
 
 import torch
+from typing_extensions import ParamSpec
 
 # Add a lock for thread safety
 _tf32_lock = threading.RLock()
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
-def pytorch_disable_tf32_dtype(func):  # noqa: ANN001
+
+def pytorch_disable_tf32_dtype(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """Thread-safe decorator which disables TF32 for PyTorch code.
 
     PyTorch uses the TensorFloat32 precision by default on modern NVIDIA GPUs.
@@ -26,7 +31,7 @@ def pytorch_disable_tf32_dtype(func):  # noqa: ANN001
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with _tf32_lock:
             # Store original flag values
             original_matmul_tf32 = torch.backends.cuda.matmul.allow_tf32

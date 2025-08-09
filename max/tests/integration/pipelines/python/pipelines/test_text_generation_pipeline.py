@@ -7,7 +7,7 @@
 
 import asyncio
 import logging
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import hf_repo_lock
 from max.driver import DeviceSpec
@@ -60,7 +60,9 @@ def test_mock_text_tokenizer() -> None:
 
 @patch("max.pipelines.lib.pipeline.load_weights")
 @patch("max.pipelines.lib.pipeline.weights_format")
-def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:  # noqa: ANN001
+def test_text_generation_pipeline(
+    mock_load_weights: MagicMock, weights_format: MagicMock
+) -> None:
     mock_load_weights.return_value = None
     weights_format.return_value = None
     max_length = 512

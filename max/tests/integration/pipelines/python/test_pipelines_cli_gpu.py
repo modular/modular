@@ -24,7 +24,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
-def test_pipelines_cli__smollm_bfloat16(capsys) -> None:  # noqa: ANN001
+def test_pipelines_cli__smollm_bfloat16(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -56,7 +58,7 @@ def test_pipelines_cli__smollm_bfloat16(capsys) -> None:  # noqa: ANN001
 
 @pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
-    capsys,  # noqa: ANN001
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
@@ -93,7 +95,9 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
 
 
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
-def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
+def test_pipelines_cli__smollm_with_lora(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test SmolLM2 with LoRA adapter via CLI."""
     lora_path = create_test_lora_adapter(prefix="cli_test")
     model_path = REPO_ID
@@ -132,7 +136,9 @@ def test_pipelines_cli__smollm_with_lora(capsys) -> None:  # noqa: ANN001
 
 
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
-def test_pipelines_cli__smollm_with_multiple_loras(capsys) -> None:  # noqa: ANN001
+def test_pipelines_cli__smollm_with_multiple_loras(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test SmolLM2 with multiple LoRA adapters via CLI."""
 
     # Create multiple LoRA adapters

@@ -112,7 +112,7 @@ def find_matching_layers(
     execution_order = load_execution_order(layer_data_path)
 
     # Sort by execution order, fallback to normalized name if not found in execution order
-    def get_sort_key(match_tuple):  # noqa: ANN001
+    def get_sort_key(match_tuple: tuple[str, str, str]) -> int | float:
         normalized_name = match_tuple[2]
         # Return execution order index if found, otherwise return a large number to put it at the end
         return execution_order.get(normalized_name, float("inf"))

@@ -5,9 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
+from typing import Callable
 
+import httpx
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 
 request = {
     "model": "echo",
@@ -23,7 +26,7 @@ request = {
 
 
 @pytest.mark.asyncio
-async def test_stop_sequence(echo_app) -> None:  # noqa: ANN001
+async def test_stop_sequence(echo_app: FastAPI) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post("/v1/chat/completions", json=request)
@@ -40,8 +43,8 @@ async def test_stop_sequence(echo_app) -> None:  # noqa: ANN001
 @pytest.mark.skip(reason="Flaky test -- MAXSERV-947")
 @pytest.mark.asyncio
 async def test_stop_sequence_streaming(
-    echo_app,  # noqa: ANN001
-    reset_sse_starlette_appstatus_event,  # noqa: ANN001
+    echo_app: FastAPI,
+    reset_sse_starlette_appstatus_event: Callable[[], None],
 ) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
@@ -62,10 +65,10 @@ async def test_stop_sequence_streaming(
         )
 
 
-async def _stream_response(raw_response):  # noqa: ANN001
+async def _stream_response(raw_response: httpx.Response) -> str:
     response_text = ""
-    async for response in raw_response.iter_content(1024 * 20):
-        response = response.decode("utf-8").strip()
+    async for response_bytes in raw_response.aiter_bytes(1024 * 20):
+        response = response_bytes.decode("utf-8").strip()
         if response.startswith("data: [DONE]"):
             break
         try:

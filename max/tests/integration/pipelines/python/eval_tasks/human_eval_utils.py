@@ -6,23 +6,27 @@
 """Functions for processing and evaluating the HumanEval dataset."""
 
 import json
+from typing import Any
 
+from human_eval.execution import Problem
 from human_eval.execution import check_correctness as _check_correctness
 
 
-def doc_to_text(doc):  # noqa: ANN001
+def doc_to_text(doc: dict[str, Any]) -> str:
     return doc["prompt"]
 
 
-def doc_to_target(doc):  # noqa: ANN001
+def doc_to_target(doc: dict[str, Any]) -> str:
     return json.dumps(doc)
 
 
-def check_correctness(references, predictions, **kwargs):  # noqa: ANN001
+def check_correctness(
+    references: list[Problem], predictions: list[str], **kwargs: Any
+) -> dict[str, float]:
     correct = _check_correctness(
-        references,
-        filter_code(predictions[0]),
-        3.0,
+        problem=references,
+        completion=filter_code(predictions[0]),
+        timeout=3.0,
     )
 
     return {"pass@1": float(correct["passed"])}

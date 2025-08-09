@@ -6,6 +6,7 @@
 
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
@@ -28,7 +29,7 @@ from max.serve.schemas.openai import ListModelsResponse, Model
     ],
     indirect=True,
 )
-async def test_serve_models(app) -> None:  # noqa: ANN001
+async def test_serve_models(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         raw_response = await client.get("/v1/models")
 

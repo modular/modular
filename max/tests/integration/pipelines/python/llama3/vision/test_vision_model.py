@@ -412,9 +412,7 @@ class WrappedVisionModel:
 
 
 def _construct_transformer_weights_registry(
-    prefix: str,
-    layers: torch.nn.ModuleList,
-    is_gated=False,  # noqa: ANN001
+    prefix: str, layers: torch.nn.ModuleList, is_gated: bool = False
 ) -> dict[str, torch.Tensor]:
     curr_weights_registry: dict[str, torch.Tensor] = {}
 

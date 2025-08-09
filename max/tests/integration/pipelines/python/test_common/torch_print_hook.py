@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from typing import Any
 
 import torch
@@ -23,7 +24,7 @@ class TorchPrintHook(BasePrintHook):
     def __init__(self, export_path: str | None = None) -> None:
         super().__init__(export_path)
         self._handle = torch.nn.modules.module.register_module_forward_hook(
-            self
+            self._torch_forward_hook
         )
 
         if export_path := self.export_path:
@@ -41,8 +42,10 @@ class TorchPrintHook(BasePrintHook):
             return None
         return os.path.join(self._export_path, str(self._current_step))
 
-    def __call__(self, module, args, outputs) -> None:  # type: ignore  # noqa: ANN001
-        super().__call__(module, args, kwargs={}, outputs=outputs)
+    def _torch_forward_hook(
+        self, module: torch.nn.Module, args: Sequence[Any], outputs: Any
+    ) -> None:
+        self(module, args, kwargs={}, outputs=outputs)
 
     def print_value(self, name: str, value: Any) -> bool:
         if isinstance(value, torch.Tensor):

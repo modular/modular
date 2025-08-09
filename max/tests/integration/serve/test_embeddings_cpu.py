@@ -6,6 +6,7 @@
 
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.serve.schemas.openai import CreateEmbeddingResponse
@@ -23,7 +24,7 @@ from max.serve.schemas.openai import CreateEmbeddingResponse
     ],
     indirect=True,
 )
-async def test_serve_embeddings(app) -> None:  # noqa: ANN001
+async def test_serve_embeddings(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         raw_response = await client.post(
             "/v1/embeddings",

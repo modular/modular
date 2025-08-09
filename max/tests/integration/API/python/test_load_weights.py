@@ -5,17 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 """Test the Python weight loading interface."""
 
+from __future__ import annotations
+
 import platform
+from pathlib import Path
 
 import numpy as np
 import torch
 from max.driver import CPU, Tensor, accelerator_count
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Weight
 from max.graph.weights import GGUFWeights, PytorchWeights, SafetensorWeights
 
 
-def test_weight(session) -> None:  # noqa: ANN001
+def test_weight(session: InferenceSession) -> None:
     """Tests adding an external weight to a graph."""
     with Graph("graph_with_weights") as graph:
         weight_shape = [5, 10]
@@ -43,7 +47,7 @@ def test_weight(session) -> None:  # noqa: ANN001
         np.testing.assert_array_equal(weight * 2, output1.to_numpy())
 
 
-def test_weight_offset(session) -> None:  # noqa: ANN001
+def test_weight_offset(session: InferenceSession) -> None:
     """Tests adding an external weight to a graph."""
     with Graph("graph_with_offset_weights") as graph:
         weight_shape = [5, 10]
@@ -67,7 +71,7 @@ def test_weight_offset(session) -> None:  # noqa: ANN001
         np.testing.assert_array_equal(weight, output0.to_numpy())
 
 
-def _test_data():
+def _test_data() -> dict[str, torch.Tensor | np.ndarray]:
     # supported on all platforms
     data = {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
@@ -93,7 +97,7 @@ def _test_data():
     return data
 
 
-def test_load_pytorch(session, graph_testdata) -> None:  # noqa: ANN001
+def test_load_pytorch(session: InferenceSession, graph_testdata: Path) -> None:
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
     # pytorch weights file does not currently contain float8 weights
@@ -115,10 +119,13 @@ def test_load_pytorch(session, graph_testdata) -> None:  # noqa: ANN001
         output = compiled.execute()
 
         assert len(expected) == len(output)
-        for n, expected_tensor in enumerate(expected):
+        for n, (expected_tensor, actual_tensor) in enumerate(
+            zip(expected, output)
+        ):
+            assert isinstance(actual_tensor, Tensor)
             if flat_keys[n] == "bf16":
                 assert torch.equal(
-                    expected_tensor, torch.from_dlpack(output[n].to(CPU()))
+                    expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))
                 )
             elif any(
                 flat_keys[n].endswith(suffix)
@@ -126,15 +133,17 @@ def test_load_pytorch(session, graph_testdata) -> None:  # noqa: ANN001
             ):
                 assert torch.equal(
                     expected_tensor.view(torch.uint8),
-                    torch.from_dlpack(output[n].to(CPU()).view(DType.uint8)),
+                    torch.from_dlpack(
+                        actual_tensor.to(CPU()).view(DType.uint8)
+                    ),
                 )
             else:
                 np.testing.assert_array_equal(
-                    expected_tensor, output[n].to_numpy()
+                    expected_tensor, actual_tensor.to_numpy()
                 )
 
 
-def test_load_gguf(session, graph_testdata) -> None:  # noqa: ANN001
+def test_load_gguf(session: InferenceSession, graph_testdata: Path) -> None:
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
     # gguf weights file does not currently contain float8 weights
@@ -160,10 +169,13 @@ def test_load_gguf(session, graph_testdata) -> None:  # noqa: ANN001
         output = compiled.execute()
 
         assert len(expected) == len(output)
-        for n, expected_tensor in enumerate(expected):
+        for n, (expected_tensor, actual_tensor) in enumerate(
+            zip(expected, output)
+        ):
+            assert isinstance(actual_tensor, Tensor)
             if flat_keys[n] == "bf16":
                 assert torch.equal(
-                    expected_tensor, torch.from_dlpack(output[n].to(CPU()))
+                    expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))
                 )
             elif any(
                 flat_keys[n].endswith(suffix)
@@ -171,15 +183,19 @@ def test_load_gguf(session, graph_testdata) -> None:  # noqa: ANN001
             ):
                 assert torch.equal(
                     expected_tensor.view(torch.uint8),
-                    torch.from_dlpack(output[n].to(CPU()).view(DType.uint8)),
+                    torch.from_dlpack(
+                        actual_tensor.to(CPU()).view(DType.uint8)
+                    ),
                 )
             else:
                 np.testing.assert_array_equal(
-                    expected_tensor, output[n].to_numpy()
+                    expected_tensor, actual_tensor.to_numpy()
                 )
 
 
-def test_load_safetensors(session, graph_testdata) -> None:  # noqa: ANN001
+def test_load_safetensors(
+    session: InferenceSession, graph_testdata: Path
+) -> None:
     """Tests adding an external weight to a graph."""
     expected_base_dict = _test_data()
     expected_dict = {
@@ -209,10 +225,13 @@ def test_load_safetensors(session, graph_testdata) -> None:  # noqa: ANN001
 
         output = compiled.execute()
         assert len(expected) == len(output)
-        for n, expected_tensor in enumerate(expected):
+        for n, (expected_tensor, actual_tensor) in enumerate(
+            zip(expected, output)
+        ):
+            assert isinstance(actual_tensor, Tensor)
             if flat_keys[n].endswith("bf16"):
                 assert torch.equal(
-                    expected_tensor, torch.from_dlpack(output[n].to(CPU()))
+                    expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))
                 )
             elif any(
                 flat_keys[n].endswith(suffix)
@@ -220,9 +239,11 @@ def test_load_safetensors(session, graph_testdata) -> None:  # noqa: ANN001
             ):
                 assert torch.equal(
                     expected_tensor.view(torch.uint8),
-                    torch.from_dlpack(output[n].to(CPU()).view(DType.uint8)),
+                    torch.from_dlpack(
+                        actual_tensor.to(CPU()).view(DType.uint8)
+                    ),
                 )
             else:
                 np.testing.assert_array_equal(
-                    expected_tensor, output[n].to_numpy()
+                    expected_tensor, actual_tensor.to_numpy()
                 )

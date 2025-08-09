@@ -4,15 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Sequence
+from typing import Callable
+
 import numpy as np
+import torch
+from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import LinearV1
 from max.nn.sequential import Sequential
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 
-def test_sequential__one_linear_layer(session) -> None:  # noqa: ANN001
+def test_sequential__one_linear_layer(session: InferenceSession) -> None:
     dtype = DType.float32
 
     with Graph(
@@ -35,7 +41,11 @@ def test_sequential__one_linear_layer(session) -> None:  # noqa: ANN001
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+        def test_correctness(
+            execute: Callable[[Sequence[Tensor]], Tensor],
+            inputs: Sequence[Tensor],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
             result = execute(inputs).to_numpy()
             x, w1 = torch_inputs
 
@@ -46,7 +56,7 @@ def test_sequential__one_linear_layer(session) -> None:  # noqa: ANN001
             )
 
 
-def test_sequential__two_linear_layers(session) -> None:  # noqa: ANN001
+def test_sequential__two_linear_layers(session: InferenceSession) -> None:
     dtype = DType.float32
 
     with Graph(
@@ -72,7 +82,11 @@ def test_sequential__two_linear_layers(session) -> None:  # noqa: ANN001
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+        def test_correctness(
+            execute: Callable[[Sequence[Tensor]], Tensor],
+            inputs: Sequence[Tensor],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 
@@ -84,7 +98,9 @@ def test_sequential__two_linear_layers(session) -> None:  # noqa: ANN001
             )
 
 
-def test_sequential__two_linear_layers_with_activation(session) -> None:  # noqa: ANN001
+def test_sequential__two_linear_layers_with_activation(
+    session: InferenceSession,
+) -> None:
     dtype = DType.float32
 
     with Graph(
@@ -109,7 +125,11 @@ def test_sequential__two_linear_layers_with_activation(session) -> None:  # noqa
             graph,
             max_magnitude=1 / 64,
         )
-        def test_correctness(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+        def test_correctness(
+            execute: Callable[[Sequence[Tensor]], Tensor],
+            inputs: Sequence[Tensor],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 

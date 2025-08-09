@@ -19,7 +19,9 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def test_pipelines_speculative_decoding_gpu(capsys) -> None:  # noqa: ANN001
+def test_pipelines_speculative_decoding_gpu(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )

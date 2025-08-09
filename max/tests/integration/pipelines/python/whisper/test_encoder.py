@@ -37,7 +37,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 @pytest.fixture
-def whisper_large_v3_local_path():
+def whisper_large_v3_local_path() -> str:
     assert isinstance(WHISPER_LARGE_V3_HF_REVISION, str), (
         "WHISPER_LARGE_V3_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -55,7 +55,7 @@ def whisper_large_v3_local_path():
 
 
 @pytest.fixture
-def torch_inputs(whisper_large_v3_local_path):  # noqa: ANN001
+def torch_inputs(whisper_large_v3_local_path: str) -> torch.Tensor:
     """Returns 2 audio files in a tensor of shape = (batch_size=2, n_features=128, seq_length=3000)"""
     ds = load_dataset(
         "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
@@ -74,17 +74,18 @@ def torch_inputs(whisper_large_v3_local_path):  # noqa: ANN001
     )
 
     input_features = inputs["input_features"]
-    attention_mask = inputs["attention_mask"]
     return input_features
 
 
 @pytest.fixture
-def graph_api_inputs(torch_inputs):  # noqa: ANN001
+def graph_api_inputs(torch_inputs: torch.Tensor) -> torch.Tensor:
     """Returns 2 audio files in a tensor of shape = (batch_size=2, seq_length=3000, n_features=128)"""
     return torch.permute(torch_inputs, (0, 2, 1)).contiguous()
 
 
-def graph_api_whisper_encoder(weights_registry, model):  # noqa: ANN001
+def graph_api_whisper_encoder(
+    weights_registry: dict[str, torch.Tensor], model: AutoModelForSpeechSeq2Seq
+) -> WhisperEncoder:
     graph_api_conv1 = Conv1DV1(
         filter=Weight(
             "conv1_weight",
@@ -338,9 +339,9 @@ def graph_api_whisper_encoder(weights_registry, model):  # noqa: ANN001
     reason="We decided to postpone finishing Whisper bring up. Should debug if we come back to it."
 )
 def test_encoder_stem(
-    torch_inputs,  # noqa: ANN001
-    graph_api_inputs,  # noqa: ANN001
-    whisper_large_v3_local_path,  # noqa: ANN001
+    torch_inputs: torch.Tensor,
+    graph_api_inputs: torch.Tensor,
+    whisper_large_v3_local_path: str,
 ) -> None:
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
         whisper_large_v3_local_path
@@ -464,9 +465,9 @@ def test_encoder_stem(
     reason="We decided to postpone finishing Whisper bring up. Should debug if we come back to it."
 )
 def test_whisper_encoder(
-    torch_inputs,  # noqa: ANN001
-    graph_api_inputs,  # noqa: ANN001
-    whisper_large_v3_local_path,  # noqa: ANN001
+    torch_inputs: torch.Tensor,
+    graph_api_inputs: torch.Tensor,
+    whisper_large_v3_local_path: str,
 ) -> None:
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
         whisper_large_v3_local_path
@@ -558,8 +559,7 @@ def test_whisper_encoder(
             ),
         ),
     ) as graph:
-        graph_api_output = graph_api_model(graph.inputs[0].tensor)[0]
-        graph.output(graph_api_output)
+        graph.output(graph_api_model(graph.inputs[0].tensor)[0])
 
     compiled = session.load(graph, weights_registry=weights_registry)
 

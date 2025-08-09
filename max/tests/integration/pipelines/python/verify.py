@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 import click
 import numpy as np
@@ -52,12 +52,12 @@ from test_common.verify_utils import construct_validator
 
 
 class VerificationError(click.ClickException):
-    def __init__(self, message) -> None:  # noqa: ANN001
+    def __init__(self, message: str) -> None:
         super().__init__(message)
 
 
 class AccuracyError(VerificationError):
-    def __init__(self, message) -> None:  # noqa: ANN001
+    def __init__(self, message: str) -> None:
         super().__init__(message)
         self.exit_code = 2
 
@@ -172,6 +172,7 @@ def main(
     )
 
     if not result.passed:
+        assert result.error_message is not None
         raise AccuracyError(result.error_message)
 
 
@@ -300,7 +301,9 @@ def verify(
     results = []
     any_failed = False
 
-    def compare(pipeline_value, torch_value, description) -> None:  # noqa: ANN001
+    def compare(
+        pipeline_value: Any, torch_value: Any, description: str
+    ) -> None:
         nonlocal any_failed
 
         # TODO: These assertions assume we're working with LLMs

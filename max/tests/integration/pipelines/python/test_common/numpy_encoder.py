@@ -7,12 +7,13 @@
 
 import base64
 from json import JSONDecoder, JSONEncoder
+from typing import Any
 
 import numpy as np
 
 
 class NumpyEncoder(JSONEncoder):
-    def default(self, obj):  # noqa: ANN001
+    def default(self, obj: Any) -> Any:
         if isinstance(obj, np.ndarray):
             return {
                 "__np__": base64.b64encode(obj.tobytes()).decode("ascii"),
@@ -25,7 +26,7 @@ class NumpyEncoder(JSONEncoder):
 
 
 class NumpyDecoder(JSONDecoder):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         JSONDecoder.__init__(
             self,
             object_hook=self.object_hook,
@@ -33,7 +34,7 @@ class NumpyDecoder(JSONDecoder):
             **kwargs,
         )
 
-    def object_hook(self, dct):  # noqa: ANN001
+    def object_hook(self, dct: Any) -> Any:
         if "__np__" in dct:
             shape = dct["shape"]
             dtype = np.dtype(dct["dtype"])

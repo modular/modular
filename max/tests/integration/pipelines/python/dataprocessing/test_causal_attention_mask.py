@@ -4,11 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from typing import TypeVar
 
 import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from max.pipelines.dataprocessing import causal_attention_mask
+
+_T = TypeVar("_T")
 
 MAX_BATCH_SIZE = 32
 MAX_SEQUENCE_LENGTH = 1024
@@ -20,7 +23,9 @@ seq_lens = st.integers(1, MAX_SEQUENCE_LENGTH // 2)
 FILL_VAL = -10000.0
 
 
-def lists_of_size(strategy, size_strategy):  # noqa: ANN001
+def lists_of_size(
+    strategy: st.SearchStrategy[_T], size_strategy: st.SearchStrategy[int]
+) -> st.SearchStrategy[list[_T]]:
     return size_strategy.flatmap(
         lambda length: st.lists(strategy, min_size=length, max_size=length)
     )
@@ -72,7 +77,7 @@ def test_causal_mask__masks_current_and_later_tokens(
 ) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask(start_pos, seq_len)
-    for m, sp, sl in zip(mask, start_pos, seq_len):  # noqa: B007
+    for m, sp in zip(mask, start_pos):
         for pos, sequence_mask in enumerate(m):
             # Check that all tokens _after_ this one are masked.
             assert np.all(sequence_mask[sp + pos + 1 :] == FILL_VAL)
@@ -88,6 +93,6 @@ def test_causal_mask__does_not_mask_prior_tokens(
 ) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask(start_pos, seq_len)
-    for m, sp, sl in zip(mask, start_pos, seq_len):  # noqa: B007
+    for m, sp in zip(mask, start_pos):
         for pos, sequence_mask in enumerate(m):
             assert np.all(sequence_mask[: sp + pos + 1] == 0.0)

@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import os
-import typing
 from functools import wraps
+from typing import Any, Callable, TypeVar
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
@@ -24,8 +24,12 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from transformers import AutoConfig
+from typing_extensions import ParamSpec
 
 from .memory_estimation import mock_estimate_memory_footprint
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class DummyMAXModelConfig(MAXModelConfig):
@@ -95,13 +99,13 @@ class DummyPipelineConfig(PipelineConfig):
         self.eos_token = eos_token
 
 
-def mock_huggingface_config(func):  # noqa: ANN001
+def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """Mock HuggingFace config to return correct architectures for test models."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         def mock_from_pretrained(
-            model_name_or_path: typing.Union[str, os.PathLike[str]], **kwargs
+            model_name_or_path: str | os.PathLike[str], **kwargs: Any
         ):
             # Create a mock config with the correct architectures based on model
             mock_config = MagicMock()
@@ -135,25 +139,31 @@ def mock_huggingface_config(func):  # noqa: ANN001
     return wrapper
 
 
-def mock_huggingface_hub_repo_exists_with_retry(func):  # noqa: ANN001
+def mock_huggingface_hub_repo_exists_with_retry(
+    func: Callable[_P, _R],
+) -> Callable[_P, _R]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch("huggingface_hub.revision_exists", return_value=True):
             return func(*args, **kwargs)
 
     return wrapper
 
 
-def mock_huggingface_hub_file_exists(func):  # noqa: ANN001
+def mock_huggingface_hub_file_exists(
+    func: Callable[_P, _R],
+) -> Callable[_P, _R]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch("huggingface_hub.file_exists", return_value=True):
             return func(*args, **kwargs)
 
     return wrapper
 
 
-def mock_pipeline_config_hf_dependencies(func):  # noqa: ANN001
+def mock_pipeline_config_hf_dependencies(
+    func: Callable[_P, _R],
+) -> Callable[_P, _R]:
     """Decorator that combines multiple mock decorators for pipeline testing.
 
     Combines:
@@ -172,9 +182,9 @@ def mock_pipeline_config_hf_dependencies(func):  # noqa: ANN001
 # This is a helper decorator to mock the PipelineConfig.resolve() method.
 # In practice, it is used to skip all the other validation and resolution steps.
 # We're just testing if the config fields are set correctly.
-def mock_pipeline_config_resolve(func):  # noqa: ANN001
+def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch(
             "max.pipelines.lib.config.PipelineConfig.resolve", return_value=None
         ):

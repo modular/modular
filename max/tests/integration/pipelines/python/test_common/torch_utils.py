@@ -24,18 +24,6 @@ from transformers import (
 from test_common.test_data import MockTextGenerationRequest
 
 
-def default_image_text_processor(
-    data_processor,  # noqa: ANN001
-    image,  # noqa: ANN001
-    prompt: str,
-    device: torch.device,
-) -> dict[str, torch.Tensor]:
-    """Default image+text processing for most vision-language models."""
-    return data_processor(images=image, text=prompt, return_tensors="pt").to(
-        device
-    )
-
-
 def _create_logits_store() -> tuple[list[dict], Callable]:
     """Create a logits storage function and container.
 

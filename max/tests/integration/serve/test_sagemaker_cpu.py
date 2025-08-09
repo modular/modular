@@ -11,6 +11,7 @@ logging.basicConfig(
 )
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 
 request = {
     "model": "echo",
@@ -25,7 +26,7 @@ request = {
 
 
 @pytest.mark.asyncio
-async def test_invocations(echo_app) -> None:  # noqa: ANN001
+async def test_invocations(echo_app: FastAPI) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         raw_response = await client.post(
             "/invocations",

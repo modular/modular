@@ -14,10 +14,13 @@ import pytest
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
 from PIL import Image
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:  # noqa: ANN001
+async def test_internvl_tokenizer_new_context_smoke(
+    mocker: MockerFixture,
+) -> None:
     """Smoke test to ensure new_context() doesn't raise"""
     # Create minimal mocks
     mock_tokenizer = MagicMock()
@@ -54,7 +57,9 @@ async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:  # noqa: AN
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_image_token_indices(mocker) -> None:  # noqa: ANN001
+async def test_internvl_tokenizer_image_token_indices(
+    mocker: MockerFixture,
+) -> None:
     """Test that the tokenizer correctly computes image token indices."""
     # Create minimal mocks
     mock_tokenizer = MagicMock()
@@ -126,7 +131,9 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:  # noqa: 
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_image_placement(mocker) -> None:  # noqa: ANN001
+async def test_internvl_tokenizer_image_placement(
+    mocker: MockerFixture,
+) -> None:
     """Test that image tokens are correctly placed in a multi-turn conversation."""
     # Create minimal mocks
     mock_tokenizer = MagicMock()

@@ -251,10 +251,7 @@ TEST_COMMANDS = [
     "--idx",
     type=int,
 )
-def testing(
-    idx,  # noqa: ANN001
-    **config_kwargs,
-) -> None:
+def testing(idx: int, **config_kwargs) -> None:
     PIPELINE_REGISTRY.register(llama3_arch.llama_arch, allow_override=True)
     PIPELINE_REGISTRY.register(internvl_arch.internvl_arch, allow_override=True)
 
@@ -322,7 +319,7 @@ def testing(
 )
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli_commands(command, idx) -> None:  # noqa: ANN001
+def test_cli_commands(command: CLITestCommand, idx: int) -> None:
     """
     Test individual CLI commands
 

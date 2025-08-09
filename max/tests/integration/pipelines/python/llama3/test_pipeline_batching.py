@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
 from typing import Any
 
 import pytest
@@ -52,11 +51,11 @@ def pipeline(pipeline_config: PipelineConfig) -> TextGenerationPipeline:
     return pipeline
 
 
+# Please also fix the typing TODO when re-enabling!
 @pytest.mark.skip("Disabling temporarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_same_output(
-    pipeline,  # noqa: ANN001
-    pipeline_tokenizer,  # noqa: ANN001
+    pipeline: TextGenerationPipeline, pipeline_tokenizer: TextTokenizer
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -68,6 +67,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     """
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline._pipeline_config.max_batch_size
+    assert batch_size is not None
     context_batch = {}
     for i in range(batch_size):
         context = await pipeline_tokenizer.new_context(
@@ -81,15 +81,16 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     # Execute these batches until they are complete
     for _ in range(context.current_length, context.max_length):
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        response = pipeline.execute(inputs)[0]
-        assert context_batch.keys() == response.keys()
-        response_tokens = list(response.values())
+        # TODO: Fix typing when this test is re-enabled!
+        response = pipeline.execute(inputs)[0]  # type: ignore
+        assert context_batch.keys() == response.keys()  # type: ignore
+        response_tokens = list(response.values())  # type: ignore
         assert all(response_tokens[0] == t for t in response_tokens)
 
     # The last execution must complete all batches
     assert len(context_batch) == batch_size
     inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-    last = pipeline.execute(inputs)[0]
+    last = pipeline.execute(inputs)[0]  # type: ignore
     assert not last
 
     # We should be resetting the cache
@@ -100,8 +101,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 @pytest.mark.skip("flaky")
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
-    pipeline,  # noqa: ANN001
-    pipeline_tokenizer,  # noqa: ANN001
+    pipeline: TextGenerationPipeline, pipeline_tokenizer: TextTokenizer
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     HOWEVER, we set different max-new-tokens for each batch
@@ -113,12 +113,13 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     """
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline._pipeline_config.max_batch_size
+    assert batch_size is not None
+    max_length = pipeline._pipeline_config.max_length
+    assert max_length is not None
 
     context_batch = {}
     for i in range(batch_size):
-        max_new_tokens = int(
-            (pipeline._pipeline_config.max_length / batch_size) * (i + 1)
-        )
+        max_new_tokens = int((max_length / batch_size) * (i + 1))
         sampling_params = SamplingParams(max_new_tokens=max_new_tokens)
         context = await pipeline_tokenizer.new_context(
             TextGenerationRequest(
@@ -134,13 +135,13 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     max_tokens = max(c.max_length for c in context_batch.values())
 
     # Execute batches until they are complete
-    for i in range(context.current_length, max_tokens):  # noqa: B007
+    for _ in range(context.current_length, max_tokens):
         batch_ids_with_lengths = {
             batch_id: c.current_length for batch_id, c in context_batch.items()
         }
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        response = pipeline.execute(inputs)[0]
-        completed_batch_ids = context_batch.keys() - response.keys()
+        response = pipeline.execute(inputs)[0]  # type: ignore
+        completed_batch_ids = context_batch.keys() - response.keys()  # type: ignore
         for batch_id in completed_batch_ids:
             context = context_batch[batch_id]
             assert context.current_length > context.max_length
@@ -149,16 +150,11 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     # The last execution must complete all batches
     assert len(context_batch) == 1
     inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-    last = pipeline.execute(inputs)[0]
+    last = pipeline.execute(inputs)[0]  # type: ignore
     assert not last
 
     for context in context_batch.values():
         pipeline.release(context.request_id)
-
-
-@pytest.fixture(scope="session")
-def batch_sizes(request):  # noqa: ANN001
-    return request.param
 
 
 @pytest.mark.skip("Disabling temporarily to update llama3 in a separate commit")
@@ -170,12 +166,11 @@ def batch_sizes(request):  # noqa: ANN001
         ([4, 7, 1, 8],),
     ],
     ids=lambda x: str(x),
-    indirect=True,
 )
 async def test_pipeline_dynamic_batch_same_prompt_same_output(
-    pipeline,  # noqa: ANN001
-    pipeline_tokenizer,  # noqa: ANN001
-    batch_sizes,  # noqa: ANN001
+    pipeline: TextGenerationPipeline,
+    pipeline_tokenizer: TextTokenizer,
+    batch_sizes: list[int],
 ) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -186,6 +181,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     """
     prompt = "Repeat this sentence forever and forever."
     max_batch_size = pipeline._pipeline_config.max_batch_size
+    assert max_batch_size is not None
 
     for batch_size in batch_sizes:
         assert batch_size > 0
@@ -207,15 +203,15 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         # Execute these batches until they are complete
         for _ in range(context.current_length, max_tokens):
             inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-            response = pipeline.execute(inputs)[0]
-            assert context_batch.keys() == response.keys()
-            response_tokens = list(response.values())
+            response = pipeline.execute(inputs)[0]  # type: ignore
+            assert context_batch.keys() == response.keys()  # type: ignore
+            response_tokens = list(response.values())  # type: ignore
             assert all(response_tokens[0] == t for t in response_tokens)
 
         # The last execution must complete all batches
         assert len(context_batch) == batch_size
         inputs = TextGenerationInputs(batch=context_batch, num_steps=1)
-        last = pipeline.execute(inputs)[0]
+        last = pipeline.execute(inputs)[0]  # type: ignore
         assert not last
 
         for context in context_batch.values():
@@ -227,8 +223,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 )
 @pytest.mark.asyncio
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline,  # noqa: ANN001
-    pipeline_tokenizer,  # noqa: ANN001
+    pipeline: TextGenerationPipeline, pipeline_tokenizer: TextTokenizer
 ) -> None:
     """Execute a batch with prompts with different lengths and validates the
     logits.

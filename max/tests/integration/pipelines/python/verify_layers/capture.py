@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import traceback
+from collections.abc import Sequence
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
@@ -23,7 +24,7 @@ from max._core.engine import PrintStyle
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorValue, ops
-from max.interfaces import TextGenerationRequest
+from max.interfaces import InputContext, TextGenerationRequest
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.nn.layer import Module
 from test_common.evaluate import ModelOutput
@@ -188,7 +189,7 @@ class LayerIOCapture:
         layer_capture = self
 
         @wraps(original_call)
-        def wrapped_call(module_self, *args, **kwargs):  # noqa: ANN001
+        def wrapped_call(module_self: Module, *args: Any, **kwargs: Any) -> Any:
             # Generate layer name - try to get meaningful name from layer weights
             layer_name = f"layer_{layer_capture.layer_count:03d}_{type(module_self).__name__}"
 
@@ -488,10 +489,14 @@ class TorchLayerIOCapture:
 
         return metadata
 
-    def _make_hook(self, module_name: str, module: torch.nn.Module):
+    def _make_hook(
+        self, module_name: str, module: torch.nn.Module
+    ) -> Callable[[torch.nn.Module, Sequence[Any], Any], None]:
         """Create a forward hook for a specific module."""
 
-        def hook_fn(module, inputs, outputs) -> None:  # noqa: ANN001
+        def hook_fn(
+            module: torch.nn.Module, inputs: Sequence[Any], outputs: Any
+        ) -> None:
             # Use the original module name, replacing dots with underscores for valid filenames
             layer_name = module_name
             self.layer_count += 1
@@ -610,14 +615,15 @@ def capture_max_layer_outputs(
     # Monkey patch InferenceSession to set debug print options on all new sessions
     original_init = InferenceSession.__init__
 
-    def patched_init(self, *args, **kwargs) -> None:  # noqa: ANN001
+    def patched_init(self: InferenceSession, *args: Any, **kwargs: Any) -> Any:
         # Call original init
-        original_init(self, *args, **kwargs)
+        orig_result = original_init(self, *args, **kwargs)
         # Set debug print options on this session
         self.set_debug_print_options(
             style=PrintStyle.BINARY_MAX_CHECKPOINT,
             output_directory=str(max_layers_export_path),
         )
+        return orig_result
 
     try:
         # Apply the monkey patch using setattr to avoid mypy errors
@@ -635,7 +641,7 @@ def capture_max_layer_outputs(
         )
 
         # Create input context for MAX
-        async def create_max_context():
+        async def create_max_context() -> InputContext:
             return await max_pipeline_data.tokenizer.new_context(
                 TextGenerationRequest(
                     request_id="test",

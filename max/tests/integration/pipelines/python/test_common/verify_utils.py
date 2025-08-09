@@ -151,8 +151,8 @@ class ValidatorBase(ABC):
     @abstractmethod
     def validate(
         self,
-        target,  # noqa: ANN001
-        reference,  # noqa: ANN001
+        target: numpy.typing.NDArray,
+        reference: numpy.typing.NDArray,
         **kwargs,
     ) -> ValidationResultCollection:
         """Performs the validation with the given metric.
@@ -315,8 +315,8 @@ class MultiValidator(ValidatorBase):
 
     def validate(
         self,
-        target,  # noqa: ANN001
-        reference,  # noqa: ANN001
+        target: numpy.typing.NDArray,
+        reference: numpy.typing.NDArray,
         **kwargs,
     ) -> ValidationResultCollection:
         overall_result = ValidationResultCollection()
@@ -352,7 +352,7 @@ class ToleranceValidator(ValidatorBase):
     _ATOL_IDX = 2
     _RTOL_IDX = 3
 
-    def __init__(self, atol, rtol, **kwargs) -> None:  # noqa: ANN001
+    def __init__(self, atol: float, rtol: float, **kwargs) -> None:
         super().__init__(**kwargs)
         self._atol = atol
         self._rtol = rtol
@@ -409,8 +409,8 @@ class ToleranceValidator(ValidatorBase):
 
     def validate(
         self,
-        target,  # noqa: ANN001
-        reference,  # noqa: ANN001
+        target: numpy.typing.NDArray,
+        reference: numpy.typing.NDArray,
         **kwargs,
     ) -> ValidationResultCollection:
         isoff = np.logical_not(
@@ -467,7 +467,7 @@ class DistanceValidatorBase(ValidatorBase, ABC):
     Child classes must implement `_compute_distance` and `threshold_str`.
     """
 
-    def __init__(self, threshold, **kwargs) -> None:  # noqa: ANN001
+    def __init__(self, threshold: float, **kwargs) -> None:
         super().__init__(**kwargs)
         self._threshold = threshold
 
@@ -488,7 +488,9 @@ class DistanceValidatorBase(ValidatorBase, ABC):
         )
 
     @abstractmethod
-    def _compute_distance(self, target, reference) -> numpy.typing.NDArray:  # noqa: ANN001
+    def _compute_distance(
+        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
+    ) -> numpy.typing.NDArray:
         raise NotImplementedError()
 
     @staticmethod
@@ -502,8 +504,8 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     def validate(
         self,
-        target,  # noqa: ANN001
-        reference,  # noqa: ANN001
+        target: numpy.typing.NDArray,
+        reference: numpy.typing.NDArray,
         **kwargs,
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
@@ -546,7 +548,7 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 class CosineSimilarityValidator(DistanceValidatorBase):
     """Validator to check Cosine similarity"""
 
-    def __init__(self, cos_threshold, **kwargs) -> None:  # noqa: ANN001
+    def __init__(self, cos_threshold: float, **kwargs) -> None:
         super().__init__(cos_threshold, **kwargs)
 
     @staticmethod
@@ -560,7 +562,9 @@ class CosineSimilarityValidator(DistanceValidatorBase):
     def threshold_str(self) -> str:
         return f"cos_similarity={self._threshold}"
 
-    def _compute_distance(self, target, reference):  # noqa: ANN001
+    def _compute_distance(
+        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
+    ) -> numpy.typing.NDArray:
         flat_target = target.reshape((-1, target.shape[-1]))
         flat_ref = reference.reshape((-1, reference.shape[-1]))
         flat_distance = np.zeros(flat_ref.shape[:-1], dtype=reference.dtype)
@@ -575,7 +579,7 @@ class CosineSimilarityValidator(DistanceValidatorBase):
 class KLDivergenceValidator(DistanceValidatorBase):
     """Validator to check KLDivergence of output distributions"""
 
-    def __init__(self, kl_div_threshold, **kwargs) -> None:  # noqa: ANN001
+    def __init__(self, kl_div_threshold: float, **kwargs) -> None:
         super().__init__(kl_div_threshold, **kwargs)
 
     @staticmethod
@@ -589,7 +593,9 @@ class KLDivergenceValidator(DistanceValidatorBase):
     def threshold_str(self) -> str:
         return f"kl_div={self._threshold}"
 
-    def _compute_distance(self, target, reference):  # noqa: ANN001
+    def _compute_distance(
+        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
+    ) -> numpy.typing.NDArray:
         eps = 1e-9
         result = rel_entr(
             softmax(reference, -1), softmax(target, -1) + eps
@@ -668,14 +674,16 @@ def _print_pareto_tolerances(
             rtol_mul = 99
             rtol_step /= 10
 
-    def within_tolerance(atol, rtol):  # noqa: ANN001
-        return np.all(
-            _is_close(
-                a,
-                b,
-                atol,
-                rtol,
-                equal_nan=True,
+    def within_tolerance(atol: float, rtol: float) -> bool:
+        return bool(
+            np.all(
+                _is_close(
+                    a,
+                    b,
+                    atol,
+                    rtol,
+                    equal_nan=True,
+                )
             )
         )
 
@@ -699,7 +707,7 @@ def _print_pareto_tolerances(
     valid_arr = np.array(valid)
     pareto = valid_arr[_is_pareto(valid_arr)]
 
-    def percent_passing_rtol_only(vals):  # noqa: ANN001
+    def percent_passing_rtol_only(vals: tuple[float, float]) -> float:
         (atol, rtol) = vals
         return (
             np.sum(
@@ -749,7 +757,7 @@ def _is_pareto(costs: np.typing.NDArray) -> np.typing.NDArray:
     return is_efficient
 
 
-def _lookup(value, keys) -> list[Any]:  # noqa: ANN001
+def _lookup(value: dict[str, Any], keys: Sequence[str]) -> list[Any]:
     return [value[k] for k in keys]
 
 

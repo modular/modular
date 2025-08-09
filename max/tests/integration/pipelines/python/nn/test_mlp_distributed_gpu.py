@@ -3,9 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
 import math
 from collections.abc import Sequence
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import pytest
 import torch
@@ -51,7 +54,9 @@ def generate_tensor(
     return torch.randn(shape, dtype=dtype) * (1.0 / math.sqrt(hidden_dim))
 
 
-def torch_linear(weight, bias_tensor=None, **kwargs) -> nn.Linear:  # noqa: ANN001
+def torch_linear(
+    weight: torch.Tensor, bias_tensor: torch.Tensor | None = None, **kwargs: Any
+) -> nn.Linear:
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     if bias_tensor is not None:
@@ -102,10 +107,10 @@ class WrapModuleForSubgraph(Module):
         # The name of the variable is used to determine the prefix of the weights in the Module class
         self.prefix = module
 
-    def __call__(self, *args):
+    def __call__(self, *args: Any) -> Value | list[Value] | list[TensorValue]:
         subgraph_arg_types: list[Type] = []
 
-        def flatten(t, result) -> None:  # noqa: ANN001
+        def flatten(t: Any, result: list[Type]) -> None:
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -140,7 +145,7 @@ def mlp_output(
     bias: Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
     use_subgraphs: bool = True,
     enable_matmul_allreduce: bool = False,
-):
+) -> Sequence[Tensor]:
     # Initialize the device-contexts
     devices: list[Device] = (
         [Accelerator(id) for id in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
@@ -208,6 +213,7 @@ def mlp_output(
         graph_input, *graph_signal_buffers = graph.inputs
         assert isinstance(graph_input, TensorValue)
         assert are_all_buffer_values_sequence(graph_signal_buffers)
+        graph_output: Value | list[Value] | list[TensorValue]
         if n_gpus <= 1:
             graph_output = mlp(graph_input)
         else:
@@ -237,7 +243,12 @@ def mlp_output(
         for dev in devices
     ]
 
-    return compiled.execute(x, *signal_buffers)
+    returned = compiled.execute(x, *signal_buffers)
+    returned_tensors = []
+    for tensor in returned:
+        assert isinstance(tensor, Tensor)
+        returned_tensors.append(tensor)
+    return returned_tensors
 
 
 def compare_mlp_outputs(

@@ -28,7 +28,7 @@ def test_huggingface_repo__local_path() -> None:
 
 
 def test_huggingface_repo__file_exists(
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+    llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
@@ -43,9 +43,9 @@ def test_huggingface_repo__file_exists(
 
 
 def test_huggingface_repo__formats_available(
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
-    tiny_llama_1_1b_chat_v1_0_local_path,  # noqa: ANN001
-    tiny_random_llama_for_causal_lm_local_path,  # noqa: ANN001
+    llama_3_1_8b_instruct_local_path: str,
+    tiny_llama_1_1b_chat_v1_0_local_path: str,
+    tiny_random_llama_for_causal_lm_local_path: str,
 ) -> None:
     # Test a GGUF repo
     hf_repo = HuggingFaceRepo(
@@ -63,8 +63,8 @@ def test_huggingface_repo__formats_available(
 
 
 def test_huggingface_repo__encodings_supported(
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
-    tiny_llama_1_1b_chat_v1_0_local_path,  # noqa: ANN001
+    llama_3_1_8b_instruct_local_path: str,
+    tiny_llama_1_1b_chat_v1_0_local_path: str,
 ) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
@@ -78,9 +78,9 @@ def test_huggingface_repo__encodings_supported(
 
 
 def test_huggingface_repo__get_files_for_encoding(
-    tiny_llama_1_1b_chat_v1_0_local_path,  # noqa: ANN001
-    qwen_32b_preview_local_path,  # noqa: ANN001
-    mistral_nemo_instruct_2407_local_path,  # noqa: ANN001
+    tiny_llama_1_1b_chat_v1_0_local_path: str,
+    qwen_32b_preview_local_path: str,
+    mistral_nemo_instruct_2407_local_path: str,
 ) -> None:
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
@@ -129,9 +129,9 @@ def test_huggingface_repo__get_files_for_encoding(
 
 
 def test_huggingface_repo__encoding_for_file(
-    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
-    tiny_llama_1_1b_chat_v1_0_local_path,  # noqa: ANN001
-    qwen_32b_preview_local_path,  # noqa: ANN001
+    llama_3_1_8b_instruct_local_path: str,
+    tiny_llama_1_1b_chat_v1_0_local_path: str,
+    qwen_32b_preview_local_path: str,
 ) -> None:
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)

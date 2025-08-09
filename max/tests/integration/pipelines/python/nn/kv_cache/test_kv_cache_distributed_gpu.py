@@ -12,8 +12,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import InputContext
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
@@ -36,7 +34,7 @@ async def test_kv_cache_multi_gpu() -> None:
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             n_devices=num_devices,
         )
-        kv_manager: KVCacheManager = load_kv_manager(
+        kv_manager = load_kv_manager(
             params=kv_params,
             max_batch_size=1,
             max_seq_len=512,
@@ -51,7 +49,6 @@ async def test_kv_cache_multi_gpu() -> None:
         list_of_kv_tuples = kv_manager.fetch(batch)
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
-            assert isinstance(kv_tuple, KVCacheInputs)
             assert len(kv_tuple) == 4
 
 

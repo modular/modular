@@ -18,7 +18,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def test_pipelines_multi_gpu_smoke(capsys) -> None:  # noqa: ANN001
+def test_pipelines_multi_gpu_smoke(capsys: pytest.CaptureFixture[str]) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -44,7 +44,9 @@ def test_pipelines_multi_gpu_smoke(capsys) -> None:  # noqa: ANN001
     assert len(captured.out) > 0
 
 
-def test_pipelines_multi_gpu_smoke_with_subgraphs(capsys) -> None:  # noqa: ANN001
+def test_pipelines_multi_gpu_smoke_with_subgraphs(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )

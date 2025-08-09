@@ -5,11 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """Unit test to test generate_llm_logits functionality"""
 
+from pathlib import Path
+
 import generate_llm_logits
 from click.testing import CliRunner
 
 
-def test_generate_llm_logits_smollm(tmp_path) -> None:  # noqa: ANN001
+def test_generate_llm_logits_smollm(tmp_path: Path) -> None:
     runner = CliRunner()
     output_file = tmp_path / "output_goldens.json"
     result = runner.invoke(

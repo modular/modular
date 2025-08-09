@@ -4,8 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -26,6 +30,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
+from max.pipelines import TextContext
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -37,9 +42,7 @@ class KeyOrValue(Enum):
 
 
 def _dump_k_cache_to_torch_tensor(
-    cache: PagedKVCacheManager,
-    ctx,  # noqa: ANN001
-    device_id: int = 0,
+    cache: PagedKVCacheManager, ctx: TextContext, device_id: int = 0
 ) -> torch.Tensor:
     """
     Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
@@ -52,9 +55,7 @@ def _dump_k_cache_to_torch_tensor(
 
 
 def _dump_v_cache_to_torch_tensor(
-    cache: PagedKVCacheManager,
-    ctx,  # noqa: ANN001
-    device_id: int = 0,
+    cache: PagedKVCacheManager, ctx: TextContext, device_id: int = 0
 ) -> torch.Tensor:
     """
     Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
@@ -68,7 +69,7 @@ def _dump_v_cache_to_torch_tensor(
 
 def _dump_k_or_v_cache_to_torch_tensor(
     cache: PagedKVCacheManager,
-    ctx,  # noqa: ANN001
+    ctx: TextContext,
     device_id: int = 0,
     key_or_value: KeyOrValue = KeyOrValue.KEY,
 ) -> torch.Tensor:
@@ -241,7 +242,11 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             6: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:  # noqa: ANN001
+    def test_runs_without_nan(
+        execute: Callable[[Sequence[Tensor]], Tensor],
+        inputs: Sequence[Tensor],
+        torch_inputs: Sequence[torch.Tensor],
+    ) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)

@@ -10,6 +10,7 @@ import time
 import pytest
 import requests
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
@@ -46,7 +47,7 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
     ],
     indirect=True,
 )
-async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
+async def test_metrics_e2e_v1(app: FastAPI) -> None:
     # Method 2: Using client tuple (host, port)
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint exists
@@ -108,7 +109,7 @@ async def test_metrics_e2e_v1(app) -> None:  # noqa: ANN001
     ],
     indirect=True,
 )
-async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
+async def test_metrics_e2e_v0(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint exists
         raw_response = await client.get("/metrics")
@@ -174,7 +175,7 @@ async def test_metrics_e2e_v0(app) -> None:  # noqa: ANN001
     ],
     indirect=True,
 )
-async def test_metrics_e2e_validate_disable_works_v1(app) -> None:  # noqa: ANN001
+async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Endpoint won't exist
         with pytest.raises(requests.exceptions.ConnectionError):
