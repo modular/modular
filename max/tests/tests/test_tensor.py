@@ -66,9 +66,6 @@ def test_compilation_failure() -> None:
     del a, a_plus_1
 
     b = Tensor(storage=b_data)
-    # TODO(MAXPLAT-317): We should be pruning these but we're not.
-    # c = b + 1
-    # asyncio.run(c.realize)
-    # assert c.real
-
-    _ = b + 1
+    c = b + 1
+    asyncio.run(c.realize)
+    assert c.real
