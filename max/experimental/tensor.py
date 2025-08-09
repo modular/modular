@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from itertools import chain
 
 import numpy as np
+from max.driver import DLPackArray
 
 # For clarity, since there are several Tensor and Device types
 # around, only directly import types which are concretely used
@@ -90,6 +91,10 @@ class Tensor:
     def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
         _ = repr(value), repr(GRAPH.graph)
         return cls(value=value)
+
+    @classmethod
+    def from_dlpack(cls, array: DLPackArray) -> Tensor:
+        return Tensor(storage=driver.Tensor.from_dlpack(array))
 
     @classmethod
     def constant(cls, value, dtype, device) -> Tensor:  # noqa: ANN001
@@ -210,6 +215,16 @@ class Tensor:
 
     def __hash__(self):
         return id(self)
+
+    def __dlpack__(self, stream: int | None = None):
+        self._sync_realize()
+        assert self._storage is not None
+        return self._storage.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        self._sync_realize()
+        assert self._storage is not None
+        return self._storage.__dlpack_device__()
 
     @classmethod
     def arange(
