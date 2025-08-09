@@ -109,6 +109,10 @@ what we publish.
 
 - Added support for AMD RX 6900 XT consumer-grade GPU.
 
+- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
+`gfx1151`, and `gfx1152` architectures. Representative configurations have been
+added for AMD Radeon 860M, 880M, and 8060S GPUs.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
