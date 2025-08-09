@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import gc
+import sys
 import weakref
 from collections.abc import Iterable
 from contextvars import ContextVar
@@ -19,10 +21,10 @@ import numpy as np
 # around, only directly import types which are concretely used
 # by max.Tensor.
 from .. import _core, driver, engine, graph, mlir
-from .._core.dialects import builtin, mo
+from .._core.dialects import builtin, kgen, mo
 from ..driver import CPU, Device
 from ..dtype import DType
-from ..graph import TensorType, TensorValueLike, ops
+from ..graph import TensorType, TensorValueLike, Value, ops
 from ..graph.graph import _location
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
@@ -86,6 +88,7 @@ class Tensor:
 
     @classmethod
     def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
+        _ = repr(value), repr(GRAPH.graph)
         return cls(value=value)
 
     @classmethod
@@ -141,6 +144,7 @@ class Tensor:
         """Force the tensor to realize if it is not already."""
         yield from asyncio.create_task(GRAPH.evaluate(self))
         assert self.real
+        _ = repr(self), repr(GRAPH.graph)
         return self
 
     @property
@@ -291,11 +295,28 @@ class ComputeGraph:
         - Some other previously unrealized tensors may be realized
         - Any realized tensors with live references will not be unrealized.
         """
+        # Single-global-graph is (unsurprisingly) causing the spooky action at a distance :(
+        # - Specifically, bad things give a nice compiler error!
+        #   ... but then the exception hangs around, which holds a traceback
+        #   which holds the call frame which holds the tensors that caused the error.
+        # - Since these tensors don't get garbage collected they survive as unrealized
+        # - Then the next evaluate call tries to realize again and necessarily
+        #   will have the same error.
+        # - HACK/workaround: running tensor evaluation clears the last exception.
+        # This also means a user needs to explicitly drop any references to the
+        # offending tensors. Ultimately this feels like a strong case for only
+        # running partial graphs.
+        sys.last_value = None
+        sys.last_traceback = None
+        gc.collect()
+
         # create strong references during execution
         unrealized = list(self.unrealized)
         with self.graph:
+            # peek rather than next! If the seed is rotated but compilation
+            # or execute fails, we need the seed to not rotate.
             self.graph.output(
-                ops.random._next_seed(), *map(graph.TensorValue, unrealized)
+                ops.random._peek_seed(), *map(graph.TensorValue, unrealized)
             )
         # Remove dead values and inputs
         module: builtin.ModuleOp = _core.Operation._from_cmlir(
@@ -303,9 +324,9 @@ class ComputeGraph:
         )  # type: ignore
         # Remove sources that no longer exist from the graph
         _core.lower(module, [builtin.passes.RemoveDeadValues()])
-        # Handling seeds is really awkward, and might have some catastrophic failures
-        # mixing calls to random between a hand-constructed graph and usage of max.Tensor.
-        # First output is always seed:
+        # The graph symbol is public, so RemoveDeadValues won't remove
+        # unused arguments. Do that explicitly.
+        _remove_unused_arguments(self.graph)
         inputs = [
             self.sources[input._mlir_value] for input in self.graph.inputs
         ]
@@ -315,12 +336,15 @@ class ComputeGraph:
             # This will become an await when `model` supports it
             seed, *results = model(*(input.driver_tensor for input in inputs))
             assert isinstance(seed, driver.Tensor)
-        except:
+        except BaseException as e:
             # If we've tried and failed to compile the graph, remove its
             # terminator so future ops can modify the graph.
             #  - Can failed lowerings leave the module in a partially lowered state?
             self.graph._erase_output_if_present()
-            raise
+            raise RuntimeError(
+                "Failed to compile and execute graph! Please file an issue. "
+                "This error should have been caught at op creation time."
+            ) from e
 
         for tensor, storage in zip(unrealized, results):
             # This will eventually support Mojo values also.
@@ -333,7 +357,7 @@ class ComputeGraph:
             context=self.graph._context,
             # - Re-add any sources that still have live references
             # - All evaluated tensors become realized sources of a new graph
-            sources=chain(inputs, unrealized),
+            sources=chain(self.sources.values(), unrealized),
             seed=seed.item(),
         )
 
@@ -341,6 +365,7 @@ class ComputeGraph:
         op = _core.Operation._from_cmlir(self.graph._mlir_op)
         assert isinstance(op, mo.GraphOp)
         block = op.regions[0].front
+        # Update the GraphOP to reflect the new argument
         with self.graph:
             type = driver_tensor_type(tensor.driver_tensor).to_mlir()
             inputs = op.function_type.inputs
@@ -349,6 +374,34 @@ class ComputeGraph:
                 block.add_argument(type, _location())
             )
         self.sources[tensor._value._mlir_value] = tensor
+
+
+def _remove_unused_arguments(graph: graph.Graph):
+    # Obviously this is deeply tied to the implementation of Graph.
+    #  - GraphOp should be simplified to have a single API for managing arguments
+    #  - Graph should expose this behavior
+    op = _core.Operation._from_cmlir(graph._mlir_op)
+    assert isinstance(op, mo.GraphOp)
+
+    block = op.regions[0].front
+    # reverse so indices don't during iteration+mutation
+    for i, input in reversed(list(enumerate(graph.inputs))):
+        if not input._mlir_value.num_uses:
+            block.erase_argument(i)
+
+    # graph.inputs is a cached_property, so reset it
+    graph.inputs = [Value.from_mlir(arg) for arg in block.arguments]
+
+    # update the graph op to correctly reflect the input changes
+    with graph:
+        op.function_type = builtin.FunctionType(  # type: ignore
+            [input.type.to_mlir() for input in graph.inputs],
+            op.function_type.results,
+        )
+        op.signature = kgen.FuncTypeGeneratorType([], op.function_type)  # type: ignore
+        op.discardable_attributes["argument_names"] = builtin.ArrayAttr(
+            [builtin.StringAttr(f"input{i}") for i in range(len(graph.inputs))]
+        )
 
 
 def functional(op):  # noqa: ANN001
