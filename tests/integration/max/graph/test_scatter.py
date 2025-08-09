@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+from __future__ import annotations
+
 import numpy as np
 import pytest
 from max.driver import Tensor, accelerator_count
@@ -43,32 +45,34 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 )
 def test_scatter(
     session: InferenceSession,
-    input,  # noqa: ANN001
-    updates,  # noqa: ANN001
-    indices,  # noqa: ANN001
-    axis,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    input: list[list[float]],
+    updates: list[list[float]],
+    indices: list[list[int]],
+    axis: int,
+    expected: list[list[float]],
 ) -> None:
-    input = np.array(input, dtype=np.float32)
-    input_type = TensorType(DType.float32, input.shape, device_ref)
+    input_np = np.array(input, dtype=np.float32)
+    input_type = TensorType(DType.float32, input_np.shape, device_ref)
     with Graph("scatter", input_types=[input_type]) as graph:
         input_val = graph.inputs[0].tensor
-        updates = ops.constant(
+        updates_val = ops.constant(
             np.array(updates), DType.float32, device=device_ref
         )
-        indices = ops.constant(
+        indices_val = ops.constant(
             np.array(indices), DType.int32, device=device_ref
         )
-        out = ops.scatter(input_val, updates, indices, axis)
+        out = ops.scatter(input_val, updates_val, indices_val, axis)
         graph.output(out)
 
     model = session.load(graph)
-    input_tensor = Tensor.from_numpy(input).to(model.input_devices[0])
+    input_tensor = Tensor.from_numpy(input_np).to(model.input_devices[0])
 
     result = model.execute(input_tensor)[0]
     assert isinstance(result, Tensor)
 
-    np.testing.assert_equal(result.to_numpy(), np.float32(expected))
+    np.testing.assert_equal(
+        result.to_numpy(), np.array(expected, dtype=np.float32)
+    )
 
 
 @pytest.mark.parametrize(
@@ -106,10 +110,10 @@ def test_scatter(
 )
 def test_scatter_nd(
     session: InferenceSession,
-    input_data,  # noqa: ANN001
-    updates_data,  # noqa: ANN001
-    indices_data,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    input_data: list[float] | list[list[float]],
+    updates_data: list[float] | list[list[float]],
+    indices_data: list[list[int]] | np.ndarray,
+    expected: list[float] | list[list[float]],
 ) -> None:
     """Test scatter_nd operation with various input configurations."""
     input_array = np.array(input_data, dtype=np.float32)
@@ -136,4 +140,6 @@ def test_scatter_nd(
     result = model.execute(input_tensor)[0]
     assert isinstance(result, Tensor)
 
-    np.testing.assert_equal(result.to_numpy(), np.float32(expected))
+    np.testing.assert_equal(
+        result.to_numpy(), np.array(expected, dtype=np.float32)
+    )

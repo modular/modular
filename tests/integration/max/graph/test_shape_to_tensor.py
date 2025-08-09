@@ -15,10 +15,11 @@
 import numpy as np
 from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 
 
-def test_shape_to_tensor_static(session) -> None:  # noqa: ANN001
+def test_shape_to_tensor_static(session: InferenceSession) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=[2, 4], device=DeviceRef.CPU()
     )
@@ -32,11 +33,12 @@ def test_shape_to_tensor_static(session) -> None:  # noqa: ANN001
     output = compiled.execute(
         Tensor.from_numpy(x).to(compiled.input_devices[0])
     )
+    assert isinstance(output[0], Tensor)
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
 
-def test_shape_to_tensor_dynamic(session) -> None:  # noqa: ANN001
+def test_shape_to_tensor_dynamic(session: InferenceSession) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
@@ -50,11 +52,12 @@ def test_shape_to_tensor_dynamic(session) -> None:  # noqa: ANN001
     output = compiled.execute(
         Tensor.from_numpy(x).to(compiled.input_devices[0])
     )
+    assert isinstance(output[0], Tensor)
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
 
-def test_shape_to_tensor_solo_dim(session) -> None:  # noqa: ANN001
+def test_shape_to_tensor_solo_dim(session: InferenceSession) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
@@ -68,6 +71,7 @@ def test_shape_to_tensor_solo_dim(session) -> None:  # noqa: ANN001
     output = compiled.execute(
         Tensor.from_numpy(x).to(compiled.input_devices[0])
     )
+    assert isinstance(output[0], Tensor)
 
     # Output is only a scalar
     assert output[0].shape == ()

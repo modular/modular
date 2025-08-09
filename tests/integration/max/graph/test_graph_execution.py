@@ -24,7 +24,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def create_test_graph():
+def create_test_graph() -> Graph:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
@@ -33,7 +33,7 @@ def create_test_graph():
     return graph
 
 
-def test_max_graph(session) -> None:  # noqa: ANN001
+def test_max_graph(session: InferenceSession) -> None:
     graph = create_test_graph()
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)
@@ -41,10 +41,11 @@ def test_max_graph(session) -> None:  # noqa: ANN001
     a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
     b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
     output = compiled.execute(a, b)
+    assert isinstance(output[0], Tensor)
     assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
-def test_max_graph_export(session) -> None:  # noqa: ANN001
+def test_max_graph_export(session: InferenceSession) -> None:
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     check to ensure that the file contents are non-empty."""
 
@@ -55,7 +56,7 @@ def test_max_graph_export(session) -> None:  # noqa: ANN001
         assert os.path.getsize(mef_file.name) > 0
 
 
-def test_max_graph_export_import_mef(session) -> None:  # noqa: ANN001
+def test_max_graph_export_import_mef(session: InferenceSession) -> None:
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     loads the mef. Both the original model from the max-graph and the model
     from the mef are executed to ensure that they produce the same output."""
@@ -68,16 +69,20 @@ def test_max_graph_export_import_mef(session) -> None:  # noqa: ANN001
         b_np = np.ones((1, 1)).astype(np.float32)
         a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
         b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
-        output = compiled.execute(a, b)[0].to_numpy()
-        assert np.allclose((a_np + b_np), output)
+        output = compiled.execute(a, b)[0]
+        assert isinstance(output, Tensor)
+        output_numpy = output.to_numpy()
+        assert np.allclose((a_np + b_np), output_numpy)
         compiled2 = session.load(mef_file.name)
         # Executing a mef-loaded model with a device tensor seems to not work.
-        output2 = compiled2.execute(a, b)[0].to_numpy()
-        assert np.allclose((a_np + b_np), output2)
-        assert np.allclose(output, output2)
+        output2 = compiled2.execute(a, b)[0]
+        assert isinstance(output2, Tensor)
+        output2_numpy = output2.to_numpy()
+        assert np.allclose((a_np + b_np), output2_numpy)
+        assert np.allclose(output_numpy, output2_numpy)
 
 
-def test_max_graph_device(session) -> None:  # noqa: ANN001
+def test_max_graph_device(session: InferenceSession) -> None:
     graph = create_test_graph()
     device = CPU()
     session = InferenceSession(devices=[device])
@@ -85,7 +90,7 @@ def test_max_graph_device(session) -> None:  # noqa: ANN001
     assert str(device) == str(compiled.devices[0])
 
 
-def test_identity(session) -> None:  # noqa: ANN001
+def test_identity(session: InferenceSession) -> None:
     # Create identity graph.
     graph = Graph(
         "identity",
@@ -99,10 +104,11 @@ def test_identity(session) -> None:  # noqa: ANN001
     output = model.execute(input.to(model.input_devices[0]))
     # Test that using output's storage is still valid after destroying input.
     del input
+    assert isinstance(output[0], Tensor)
     _ = output[0].to(CPU())[0]
 
 
-def test_max_graph_export_import_mlir(session) -> None:  # noqa: ANN001
+def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
     """Creates a graph via max-graph API, exports the mlir to a tempfile, and
     loads the mlir. Both the original model from the max-graph and the model
     from the mlir are executed to ensure that they produce the same output."""
@@ -115,20 +121,24 @@ def test_max_graph_export_import_mlir(session) -> None:  # noqa: ANN001
         b_np = np.ones((1, 1)).astype(np.float32)
         a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
         b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
-        output = compiled.execute(a, b)[0].to_numpy()
-        assert output == a_np + b_np
+        output = compiled.execute(a, b)[0]
+        assert isinstance(output, Tensor)
+        output_np = output.to_numpy()
+        assert output_np == a_np + b_np
 
         mlir_file.flush()
 
         # Now load the model from mlir.
         graph2 = Graph(name="add", path=Path(mlir_file.name))
         compiled2 = session.load(graph2)
-        output2 = compiled2.execute(a, b)[0].to_numpy()
-        assert output2 == a_np + b_np
-        assert output == output2
+        output2 = compiled2.execute(a, b)[0]
+        assert isinstance(output2, Tensor)
+        output2_np = output2.to_numpy()
+        assert output2_np == a_np + b_np
+        assert output_np == output2_np
 
 
-def test_no_output_error_message(session) -> None:  # noqa: ANN001
+def test_no_output_error_message(session: InferenceSession) -> None:
     with Graph("test", input_types=()) as graph:
         pass
 

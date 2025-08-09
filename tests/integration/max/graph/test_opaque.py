@@ -121,7 +121,7 @@ def test_opaque_introspection(
 def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,
-    monkeypatch,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     result_type = TensorType(DType.int32, [12], device=DeviceRef.CPU())
 

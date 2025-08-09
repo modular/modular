@@ -14,11 +14,14 @@
 import pytest
 from max.driver import CPU, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
 
 
 @pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
-def test_rebind__new_parameter_expression__not_divisible_by_4(session) -> None:  # noqa: ANN001
+def test_rebind__new_parameter_expression__not_divisible_by_4(
+    session: InferenceSession,
+) -> None:
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -34,7 +37,9 @@ def test_rebind__new_parameter_expression__not_divisible_by_4(session) -> None: 
 
 
 @pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
-def test_rebind__new_parameter_expression__divisible_by_4(session) -> None:  # noqa: ANN001
+def test_rebind__new_parameter_expression__divisible_by_4(
+    session: InferenceSession,
+) -> None:
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -46,10 +51,13 @@ def test_rebind__new_parameter_expression__divisible_by_4(session) -> None:  # n
 
     model = session.load(graph)
     result = model.execute(input)[0]
+    assert isinstance(result, Tensor)
     assert result.shape == (2, 4, 4)
 
 
-def test_rebind__no_new_parameter__not_divisible_by_4(session) -> None:  # noqa: ANN001
+def test_rebind__no_new_parameter__not_divisible_by_4(
+    session: InferenceSession,
+) -> None:
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -64,7 +72,9 @@ def test_rebind__no_new_parameter__not_divisible_by_4(session) -> None:  # noqa:
         model.execute(input)
 
 
-def test_rebind__no_new_parameter__divisible_by_4(session) -> None:  # noqa: ANN001
+def test_rebind__no_new_parameter__divisible_by_4(
+    session: InferenceSession,
+) -> None:
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -76,4 +86,5 @@ def test_rebind__no_new_parameter__divisible_by_4(session) -> None:  # noqa: ANN
 
     model = session.load(graph)
     result = model.execute(input)[0]
+    assert isinstance(result, Tensor)
     assert result.shape == (2, 4, 4)

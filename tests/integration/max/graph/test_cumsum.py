@@ -18,11 +18,12 @@ import pytest
 import torch
 from max.driver import Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
-def test_cumsum(session, dtype) -> None:  # noqa: ANN001
+def test_cumsum(session: InferenceSession, dtype: DType) -> None:
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("BF16 is not supported on ARM CPU architecture")
 
@@ -40,14 +41,15 @@ def test_cumsum(session, dtype) -> None:  # noqa: ANN001
     max_result = model(
         Tensor.from_dlpack(input_data).to(model.input_devices[0])
     )[0]
-    max_result = max_result.to_numpy()
+    assert isinstance(max_result, Tensor)
+    max_result_np = max_result.to_numpy()
 
     torch_result = (
         torch.cumsum(input_data, dim=0).to(dtype=torch.float32).cpu().numpy()
     )
 
     np.testing.assert_allclose(
-        max_result,
+        max_result_np,
         torch_result,
         rtol=1e-6,
         atol=1e-6,
