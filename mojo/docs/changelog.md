@@ -48,6 +48,14 @@ what we publish.
   model better.  A linear types are just types where all of the destructors are
   explicit - it has no `__del__`.
 
+- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
+  all types that can be implicitly copied may also be copied using an explicit
+  `.copy()` method call.
+
+  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
+  implementation is not provided by the type, a default implementation will be
+  synthesized by the compiler.
+
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
