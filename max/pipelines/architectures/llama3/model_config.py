@@ -671,6 +671,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
+            # Force-disable matmul-allreduce overlap for llama FP8.
+            # TODO: GEX-2388: Figure out the issue and re-enable this.
             pipeline_parallel_degree=pipeline_parallel_degree,
             tensor_parallel_degree=tensor_parallel_degree,
             dist_gemm_config=DistributedGemmConfig(

@@ -15,7 +15,7 @@
 from typing import NoReturn
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 def test_while_loop_basic() -> None:
@@ -26,10 +26,10 @@ def test_while_loop_basic() -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred(x):  # noqa: ANN001
+        def pred(x: TensorValue) -> TensorValue:
             return x < 10
 
-        def body(x):  # noqa: ANN001
+        def body(x: TensorValue) -> TensorValue:
             return x + 1
 
         results = ops.while_loop(x, pred, body)
@@ -52,10 +52,10 @@ def test_while_loop_multiple_args() -> None:
     ) as graph:
         x, y = graph.inputs
 
-        def pred(x, y):  # noqa: ANN001
+        def pred(x: TensorValue, y: TensorValue) -> TensorValue:
             return x < 10 and y < 10
 
-        def body(x, y):  # noqa: ANN001
+        def body(x: TensorValue, y: TensorValue) -> list[TensorValue]:
             return [x + 1, y + 1]
 
         results = ops.while_loop((x, y), pred, body)
@@ -86,10 +86,10 @@ def test_while_loop_type_check() -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred(x):  # noqa: ANN001
+        def pred(x: TensorValue) -> TensorValue:
             return x < 10
 
-        def body(x):  # noqa: ANN001
+        def body(x: TensorValue) -> TensorValue:
             # Return wrong type
             return ops.cast(x + 1, DType.float32)
 
@@ -111,10 +111,10 @@ def test_while_loop_with_raising() -> None:
         x = graph.inputs[0]
         chain = graph._current_chain
 
-        def pred(x):  # noqa: ANN001
+        def pred(x: TensorValue) -> TensorValue:
             return x < 10
 
-        def body(x) -> NoReturn:  # noqa: ANN001
+        def body(x: TensorValue) -> NoReturn:
             raise Exception("raising")
 
         try:
@@ -134,12 +134,12 @@ def test_while_loop_with_pred_block_chain_mutation() -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred(x):  # noqa: ANN001
+        def pred(x: TensorValue) -> TensorValue:
             # print mutates the chain
             x.print()
             return x < 10
 
-        def body(x):  # noqa: ANN001
+        def body(x: TensorValue) -> TensorValue:
             return x + 1
 
         try:

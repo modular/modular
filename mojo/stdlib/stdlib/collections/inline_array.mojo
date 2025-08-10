@@ -61,7 +61,7 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
     size: Int,
     *,
     run_destructors: Bool = False,

@@ -998,7 +998,7 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         input_len: int,
-        output_lengths: Sequence[int] | None,
+        max_output_len: int | None,
         shuffle: bool,
         tokenizer: PreTrainedTokenizerBase,
     ) -> Sequence[SampledRequest]:
@@ -1019,10 +1019,6 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         # Shuffle the dataset indices
         indices = list(range(len(dataset)))  # type: ignore[arg-type]
         if shuffle:
-            if output_lengths is not None:
-                raise NotImplementedError(
-                    "TODO: Add support for shuffling + pinned output lengths"
-                )
             random.shuffle(indices)
 
         # Create a summarization prompt
@@ -1041,7 +1037,7 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         max_article_len = input_len - len(prefix_tokens) - len(suffix_tokens)
 
         sampled_requests: list[SampledRequest] = []
-        for i, idx in enumerate(indices):
+        for idx in indices:
             if len(sampled_requests) >= num_requests:
                 break
 
@@ -1080,8 +1076,16 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
                 tokenizer(prompt_formatted, add_special_tokens=False).input_ids
             )
 
-            # Retrieve output length
-            output_len = None if output_lengths is None else output_lengths[i]
+            # Tokenize the abtsract to get output length.
+            abstract = item["abstract"]
+            abstract_tokens = tokenizer(
+                abstract, add_special_tokens=False
+            ).input_ids
+            output_len = len(abstract_tokens)
+
+            # Skip outputs that are too large.
+            if max_output_len and output_len > max_output_len:
+                continue
 
             sampled_requests.append(
                 SampledRequest(prompt_formatted, prompt_len, output_len, None)

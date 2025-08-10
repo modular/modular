@@ -43,12 +43,17 @@ def assert_scalar(value: TensorValueLike) -> None:
 
 def _next_seed():
     graph = Graph.current
-    try:
-        seed = SEEDS[graph]
-    except LookupError:
-        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
+    seed = _peek_seed()
     SEEDS[graph] = _rotate_seed(seed)
     return seed
+
+
+def _peek_seed():
+    graph = Graph.current
+    try:
+        return SEEDS[graph]
+    except LookupError:
+        raise RuntimeError("No seed set! Set with `ops.random.set_seed`.")  # noqa: B904
 
 
 def set_seed(seed: TensorValue | int = 0) -> None:

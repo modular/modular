@@ -56,7 +56,7 @@ trait Movable:
         ...
 
 
-trait Copyable:
+trait Copyable(ExplicitlyCopyable):
     """The Copyable trait denotes a type whose value can be copied.
 
     Example implementing the `Copyable` trait on `Foo` which requires the `__copyinit__`

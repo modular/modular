@@ -16,7 +16,7 @@ import re
 import numpy as np
 from hypothesis import assume, given
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_constant() -> None:
@@ -60,3 +60,10 @@ def test_scalar_constant(dtype: DType) -> None:
         else:
             expected = rf"mo.constant {{value = #M.dense_array<7> : tensor<{dtype._mlir}>}}"
         assert re.search(expected, str(graph._mlir_op))
+
+
+@given(name=..., type=...)
+def test_constant_external(name: str, type: TensorType):
+    with Graph("constants", input_types=()) as graph:
+        weight = ops.constant_external(name, type)
+        assert weight.type == type

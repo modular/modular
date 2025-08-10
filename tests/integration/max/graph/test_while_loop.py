@@ -20,7 +20,15 @@ import pytest
 from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -32,10 +40,10 @@ def test_while_loop(session: InferenceSession) -> None:
     ) as graph:
         x = graph.inputs[0]
 
-        def pred_fn(x):  # noqa: ANN001
+        def pred_fn(x: TensorValue) -> TensorValue:
             return x < 10
 
-        def body_fn(x):  # noqa: ANN001
+        def body_fn(x: TensorValue) -> TensorValue:
             return x + 1
 
         results = ops.while_loop(x, pred_fn, body_fn)
@@ -95,18 +103,17 @@ def custom_ops_path() -> Path:
     reason="Buffer operations are currently not supported in while loops"
 )
 def test_while_loop_inplace_user_supplied(
-    custom_ops_path,  # noqa: ANN001
-    session: InferenceSession,
+    custom_ops_path: Path, session: InferenceSession
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:
         buffer: BufferValue = graph.inputs[0].buffer
 
-        def pred_fn(_):  # noqa: ANN001
+        def pred_fn(_x: TensorValue) -> TensorValue:
             return buffer[0, 0] < 10
 
-        def body_fn(_):  # noqa: ANN001
+        def body_fn(_x: TensorValue) -> TensorValue:
             ops.inplace_custom(
                 "mutable_test_op", device=buffer.device, values=[buffer]
             )
@@ -115,7 +122,7 @@ def test_while_loop_inplace_user_supplied(
         _ = ops.while_loop(buffer[0, 0], pred_fn, body_fn)
         graph.output()
 
-    compiled = session.load(graph, custom_ops_path=custom_ops_path)
+    compiled = session.load(graph, custom_extensions=[custom_ops_path])
     rawbuffer = np.ones((2, 2), dtype=np.float32)
     compiled.execute(Tensor.from_dlpack(rawbuffer))
     actual = np.array([[10, 1], [1, 1]], dtype=np.float32)

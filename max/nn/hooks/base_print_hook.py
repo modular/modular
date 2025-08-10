@@ -17,6 +17,7 @@ import dataclasses
 import os
 from abc import ABC, abstractmethod
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,7 +62,7 @@ class BasePrintHook(ABC):
         # Maps step number -> [list of printed tensors]
         self._recorded_prints: dict[int, list[str]] = {}
 
-    def add_layer(self, layer, name) -> None:  # noqa: ANN001
+    def add_layer(self, layer: Any, name: str) -> None:
         self._known_layers[layer] = LayerInfo(name)
 
     @property
@@ -83,7 +84,13 @@ class BasePrintHook(ABC):
 
         self.write_keys_file()
 
-    def __call__(self, layer, args, kwargs, outputs):  # noqa: ANN001
+    def __call__(
+        self,
+        layer: Any,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+        outputs: Any,
+    ) -> None:
         """Print all TensorValues."""
         if layer not in self._known_layers:
             # If layer is not yet named, use the class name.

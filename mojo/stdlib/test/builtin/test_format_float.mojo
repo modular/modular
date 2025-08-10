@@ -13,7 +13,6 @@
 
 from builtin._format_float import _write_float
 from testing import assert_equal
-from testing import assert_equal
 
 
 def test_float64():

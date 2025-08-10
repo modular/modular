@@ -121,7 +121,7 @@ struct ImplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, *, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.value = other.value
         self.copy_count = other.copy_count + 1
 

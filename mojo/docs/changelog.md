@@ -61,6 +61,18 @@ what we publish.
 
 ### Standard library changes
 
+- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
+  all types that can be implicitly copied may also be copied using an explicit
+  `.copy()` method call.
+
+  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
+  implementation is not provided by the type, a default implementation will be
+  synthesized by the compiler.
+
+  - The following standard library types now require only `ExplicitlyCopyable`,
+    enabling their use with types that are not implicitly copyable:
+    `List`, `Span`, `InlineArray`, `Optional`, `Variant`.
+
 - The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
   has explicit elementwise comparisons that return boolean masks, e.g. `eq()`
@@ -100,6 +112,10 @@ what we publish.
   ```
 
 - Added support for AMD RX 6900 XT consumer-grade GPU.
+
+- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
+`gfx1151`, and `gfx1152` architectures. Representative configurations have been
+added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 ### Tooling changes
 

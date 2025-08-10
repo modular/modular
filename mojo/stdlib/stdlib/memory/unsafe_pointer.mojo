@@ -1071,7 +1071,7 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_copy[
-        T: Copyable, //,
+        T: ExplicitlyCopyable, //,
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
         value: T,
@@ -1093,7 +1093,7 @@ struct UnsafePointer[
             value: The value to emplace.
         """
         constrained[mut, _must_be_mut_err]()
-        __get_address_as_uninit_lvalue(self.address) = value
+        __get_address_as_uninit_lvalue(self.address) = value.copy()
 
     @always_inline
     fn init_pointee_explicit_copy[

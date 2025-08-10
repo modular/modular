@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+from __future__ import annotations
+
 import numpy as np
 import pytest
 from max.driver import Tensor, accelerator_count
@@ -57,20 +59,24 @@ from max.graph import DeviceRef, Graph, ops
 )
 def test_masked_scatter(
     session: InferenceSession,
-    input,  # noqa: ANN001
-    mask,  # noqa: ANN001
-    updates,  # noqa: ANN001
-    expected,  # noqa: ANN001
+    input: list[list[int]],
+    mask: list[int] | list[list[int]],
+    updates: list[int] | list[list[int]],
+    expected: list[list[int]],
 ) -> None:
     with Graph("masked_scatter", input_types=[]) as graph:
-        input = ops.constant(
+        input_val = ops.constant(
             np.array(input), DType.int32, device=DeviceRef.CPU()
         )
-        mask = ops.constant(np.array(mask), DType.bool, device=DeviceRef.CPU())
-        updates = ops.constant(
+        mask_val = ops.constant(
+            np.array(mask), DType.bool, device=DeviceRef.CPU()
+        )
+        updates_val = ops.constant(
             np.array(updates), DType.int32, device=DeviceRef.CPU()
         )
-        out = ops.masked_scatter(input, mask, updates, out_dim="masked")
+        out = ops.masked_scatter(
+            input_val, mask_val, updates_val, out_dim="masked"
+        )
         graph.output(out)
 
     model = session.load(graph)
