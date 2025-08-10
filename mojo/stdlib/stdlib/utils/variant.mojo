@@ -47,7 +47,9 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
+struct Variant[*Ts: ExplicitlyCopyable & Movable](
+    Copyable, ExplicitlyCopyable, Movable
+):
     """A runtime-variant type.
 
     Data for this type is stored internally. Currently, its size is the
@@ -109,7 +111,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @implicit
-    fn __init__[T: Copyable & Movable](out self, var value: T):
+    fn __init__[T: Movable](out self, var value: T):
         """Create a variant with one of the types.
 
         Parameters:
@@ -137,7 +139,9 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         for i in range(len(VariadicList(Ts))):
             alias T = Ts[i]
             if copy._get_discr() == i:
-                copy._get_ptr[T]().init_pointee_move(self._get_ptr[T]()[])
+                copy._get_ptr[T]().init_pointee_move(
+                    self._get_ptr[T]()[].copy()
+                )
                 return
 
     fn __copyinit__(out self, other: Self):
@@ -180,7 +184,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: Copyable & Movable](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -206,7 +210,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: Copyable & Movable](self) -> UnsafePointer[T]:
+    fn _get_ptr[T: AnyType](self) -> UnsafePointer[T]:
         alias idx = Self._check[T]()
         constrained[idx != Self._sentinel, "not a union element type"]()
         var ptr = UnsafePointer(to=self._impl).address
@@ -224,7 +228,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
-    fn take[T: Copyable & Movable](mut self) -> T:
+    fn take[T: Movable](mut self) -> T:
         """Take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -245,7 +249,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         return self.unsafe_take[T]()
 
     @always_inline
-    fn unsafe_take[T: Copyable & Movable](mut self) -> T:
+    fn unsafe_take[T: Movable](mut self) -> T:
         """Unsafely take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -267,9 +271,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
-    fn replace[
-        Tin: Copyable & Movable, Tout: Copyable & Movable
-    ](mut self, var value: Tin) -> Tout:
+    fn replace[Tin: Movable, Tout: Movable](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -295,7 +297,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
 
     @always_inline
     fn unsafe_replace[
-        Tin: Copyable & Movable, Tout: Copyable & Movable
+        Tin: Movable, Tout: Movable
     ](mut self, var value: Tin) -> Tout:
         """Unsafely replace the current value of the variant with the provided type.
 
@@ -322,7 +324,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         self.set[Tin](value^)
         return x^
 
-    fn set[T: Copyable & Movable](mut self, var value: T):
+    fn set[T: Movable](mut self, var value: T):
         """Set the variant value.
 
         This will call the destructor on the old value, and update the variant's
@@ -336,7 +338,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         """
         self = Self(value^)
 
-    fn isa[T: Copyable & Movable](self) -> Bool:
+    fn isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.
 
         Parameters:
@@ -348,7 +350,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         alias idx = Self._check[T]()
         return self._get_discr() == idx
 
-    fn unsafe_get[T: Copyable & Movable](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -369,7 +371,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         return self._get_ptr[T]()[]
 
     @staticmethod
-    fn _check[T: Copyable & Movable]() -> Int:
+    fn _check[T: AnyType]() -> Int:
         @parameter
         for i in range(len(VariadicList(Ts))):
             if _type_is_eq[Ts[i], T]():
@@ -377,7 +379,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
         return Self._sentinel
 
     @staticmethod
-    fn is_type_supported[T: Copyable & Movable]() -> Bool:
+    fn is_type_supported[T: AnyType]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:

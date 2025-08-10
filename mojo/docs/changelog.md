@@ -71,7 +71,7 @@ what we publish.
 
   - The following standard library types now require only `ExplicitlyCopyable`,
     enabling their use with types that are not implicitly copyable:
-    `List`, `Span`, `InlineArray`.
+    `List`, `Span`, `InlineArray`, `Optional`, `Variant`.
 
 - The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
