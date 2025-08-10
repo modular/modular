@@ -305,7 +305,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
 
         # Construct general input types
         return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+            DType.int64, shape=["return_n_logits"], device=device_ref
         )
 
         kv_inputs = self.kv_manager.input_symbols()
