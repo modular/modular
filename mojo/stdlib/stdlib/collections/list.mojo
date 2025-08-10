@@ -33,7 +33,7 @@ from .optional import Optional
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
@@ -77,10 +77,10 @@ struct _ListIter[
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__()
+        return self.__next_ref__().copy()
 
 
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
+struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """The `List` type is a dynamically-allocated list.
@@ -121,7 +121,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         var copy = Self(capacity=self.capacity)
         for e in self:
-            copy.append(e)
+            copy.append(e.copy())
         return copy^
 
     fn __init__(out self, *, capacity: Int):
@@ -185,7 +185,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(capacity=len(span))
         for value in span:
-            self.append(value)
+            self.append(value.copy())
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
@@ -917,7 +917,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         var res = Self(capacity=len(r))
         for i in r:
-            res.append(self[i])
+            res.append(self[i].copy())
 
         return res^
 

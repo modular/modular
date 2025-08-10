@@ -30,7 +30,7 @@ from memory import Pointer
 @fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -79,7 +79,7 @@ struct _SpanIter[
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -488,7 +488,7 @@ struct Span[
         """
         debug_assert(len(self) == len(other), "Spans must be of equal length")
         for i in range(len(self)):
-            self[i] = other[i]
+            self[i] = other[i].copy()
 
     fn __bool__(self) -> Bool:
         """Check if a span is non-empty.
@@ -566,7 +566,7 @@ struct Span[
             value: The value to assign to each element.
         """
         for ref element in self:
-            element = value
+            element = value.copy()
 
     fn swap_elements(
         self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt

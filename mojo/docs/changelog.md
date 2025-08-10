@@ -48,14 +48,6 @@ what we publish.
   model better.  A linear types are just types where all of the destructors are
   explicit - it has no `__del__`.
 
-- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
-  all types that can be implicitly copied may also be copied using an explicit
-  `.copy()` method call.
-
-  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
-  implementation is not provided by the type, a default implementation will be
-  synthesized by the compiler.
-
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
@@ -68,6 +60,18 @@ what we publish.
   methods instead.
 
 ### Standard library changes
+
+- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
+  all types that can be implicitly copied may also be copied using an explicit
+  `.copy()` method call.
+
+  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
+  implementation is not provided by the type, a default implementation will be
+  synthesized by the compiler.
+
+  - The following standard library types now require only `ExplicitlyCopyable`,
+    enabling their use with types that are not implicitly copyable:
+    `List`, `Span`, `InlineArray`.
 
 - The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
