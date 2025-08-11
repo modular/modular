@@ -689,6 +689,7 @@ struct Trace[
         else:
             return ""
 
+    @always_inline
     fn start(mut self):
         """Start recording trace event.
 
@@ -696,6 +697,7 @@ struct Trace[
         """
         self.__enter__()
 
+    @always_inline
     fn end(mut self):
         """End recording trace event.
 
