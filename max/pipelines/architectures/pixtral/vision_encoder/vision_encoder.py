@@ -71,8 +71,6 @@ class VisionEncoder(Module):
         """
         imgs: list of images of shape = (height, width, num_channels)
         """
-        print("In vision encoder")
-        print(f"imgs: {TensorValue(imgs[0]).shape}")
         # Images go through a convolution independently to get patched.
         # Returns a list of [batch_size, hidden_size, height/patch_size, width/patch_size] tensors
         patch_embeds_list = [
