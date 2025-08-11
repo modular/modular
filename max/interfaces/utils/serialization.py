@@ -130,3 +130,49 @@ def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
             raise
 
     return obj
+
+
+def msgpack_eq(a: Any, b: Any) -> bool:
+    """
+    Compare two msgpack-serializable objects for equality. This should really
+    only be used in tests.
+
+    Args:
+        a: The first object to compare
+        b: The second object to compare
+    """
+    if not isinstance(b, type(a)):
+        return False
+
+    # Get all fields from msgspec
+    fields = msgspec.structs.fields(type(a))
+
+    # Compare all attributes
+    for field in fields:
+        field_name = field.name
+        self_val = getattr(a, field_name)
+        other_val = getattr(b, field_name)
+
+        # Handle numpy arrays
+        if isinstance(self_val, np.ndarray):
+            if not np.array_equal(self_val, other_val):
+                return False
+        # Handle lists
+        elif isinstance(self_val, list) or isinstance(self_val, tuple):
+            if len(self_val) != len(other_val):
+                return False
+            for s, o in zip(self_val, other_val):
+                if isinstance(s, np.ndarray):
+                    if not np.array_equal(s, o):
+                        return False
+                elif s != o:
+                    return False
+        # Handle sets
+        elif isinstance(self_val, set):
+            if self_val != other_val:
+                return False
+        # Handle all other types
+        elif self_val != other_val:
+            return False
+
+    return True
