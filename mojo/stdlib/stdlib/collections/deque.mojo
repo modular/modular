@@ -29,7 +29,7 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable & Movable](
+struct Deque[ElementType: ExplicitlyCopyable & Movable](
     Boolable, ExplicitlyCopyable, Movable, Sized
 ):
     """Implements a double-ended queue.
@@ -220,7 +220,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         new = self.copy()
         for element in other:
-            new.append(element)
+            new.append(element.copy())
         return new^
 
     fn __iadd__(mut self, other: Self):
@@ -230,7 +230,7 @@ struct Deque[ElementType: Copyable & Movable](
             other: Deque whose elements will be appended to self.
         """
         for element in other:
-            self.append(element)
+            self.append(element.copy())
 
     fn __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
@@ -251,7 +251,7 @@ struct Deque[ElementType: Copyable & Movable](
         new = self.copy()
         for _ in range(n - 1):
             for element in self:
-                new.append(element)
+                new.append(element.copy())
         return new^
 
     fn __imul__(mut self, n: Int):
@@ -267,10 +267,10 @@ struct Deque[ElementType: Copyable & Movable](
         orig = self.copy()
         for _ in range(n - 1):
             for element in orig:
-                self.append(element)
+                self.append(element.copy())
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
@@ -295,7 +295,7 @@ struct Deque[ElementType: Copyable & Movable](
         return True
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
@@ -312,7 +312,7 @@ struct Deque[ElementType: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
@@ -401,7 +401,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn write_to[
-        T: Representable & Copyable & Movable,
+        T: Representable & ExplicitlyCopyable & Movable,
         WriterType: Writer,
     ](self: Deque[T], mut writer: WriterType):
         """Writes `my_deque.__str__()` to a `Writer`.
@@ -424,7 +424,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn __str__[
-        T: Representable & Copyable & Movable, //
+        T: Representable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -452,7 +452,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn __repr__[
-        T: Representable & Copyable & Movable, //
+        T: Representable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -529,7 +529,7 @@ struct Deque[ElementType: Copyable & Movable](
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
@@ -617,7 +617,7 @@ struct Deque[ElementType: Copyable & Movable](
             (src + i).move_pointee_into(self._data + self._head)
 
     fn index[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -711,7 +711,7 @@ struct Deque[ElementType: Copyable & Movable](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
@@ -767,7 +767,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._physical_index(self._tail - 1))[]
+        return (self._data + self._physical_index(self._tail - 1))[].copy()
 
     fn peekleft(self) raises -> ElementType:
         """Inspect the first (leftmost) element of the deque without removing it.
@@ -781,7 +781,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._head)[]
+        return (self._data + self._head)[].copy()
 
     fn pop(mut self) raises -> ElementType:
         """Removes and returns the element from the right side of the deque.
@@ -805,7 +805,7 @@ struct Deque[ElementType: Copyable & Movable](
         ):
             self._realloc(self._capacity >> 1)
 
-        return element
+        return element^
 
     fn popleft(mut self) raises -> ElementType:
         """Removes and returns the element from the left side of the deque.
@@ -829,7 +829,7 @@ struct Deque[ElementType: Copyable & Movable](
         ):
             self._realloc(self._capacity >> 1)
 
-        return element
+        return element^
 
     fn reverse(mut self):
         """Reverses the elements of the deque in-place."""
@@ -983,7 +983,7 @@ struct Deque[ElementType: Copyable & Movable](
 @fieldwise_init
 struct _DequeIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
 ](Copyable, Iterator, Movable):
@@ -1023,4 +1023,4 @@ struct _DequeIter[
             return self.src[][self.index]
 
     fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__()
+        return self.__next_ref__().copy()

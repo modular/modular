@@ -17,7 +17,7 @@ from os import abort
 
 
 struct Node[
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
 ](Copyable, Movable):
     """A node in a linked list data structure.
 
@@ -52,8 +52,18 @@ struct Node[
         self.prev = prev.value() if prev else Self._NodePointer()
         self.next = next.value() if next else Self._NodePointer()
 
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of the given node.
+
+        Args:
+            existing: The node to copy.
+        """
+        self.value = existing.value.copy()
+        self.prev = existing.prev
+        self.next = existing.next
+
     fn __str__[
-        ElementType: Copyable & Movable & Writable
+        ElementType: ExplicitlyCopyable & Movable & Writable
     ](self: Node[ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -68,7 +78,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        ElementType: Copyable & Movable & Writable, W: Writer
+        ElementType: ExplicitlyCopyable & Movable & Writable, W: Writer
     ](self: Node[ElementType], mut writer: W):
         """Write this node's value to the given writer.
 
@@ -86,7 +96,7 @@ struct Node[
 @fieldwise_init
 struct _LinkedListIter[
     mut: Bool, //,
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
 ](Copyable, Iterator, Movable):
@@ -123,11 +133,11 @@ struct _LinkedListIter[
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__()
+        return self.__next_ref__().copy()
 
 
 struct LinkedList[
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
 ](Boolable, Copyable, Defaultable, Movable, Sized):
     """A doubly-linked list implementation.
 
@@ -301,7 +311,8 @@ struct LinkedList[
         if not elem:
             raise "Pop on empty list."
 
-        var value = elem[].value
+        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
+        var value = elem[].value.copy()
         self._tail = elem[].prev
         self._size -= 1
         if self._size == 0:
@@ -365,7 +376,8 @@ struct LinkedList[
         var elem = self._tail
         if not elem:
             return Optional[ElementType]()
-        var value = elem[].value
+        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
+        var value = elem[].value.copy()
         self._tail = elem[].prev
         self._size -= 1
         if self._size == 0:
@@ -445,7 +457,7 @@ struct LinkedList[
         var new = Self()
         var curr = self._head
         while curr:
-            new.append(curr[].value)
+            new.append(curr[].value.copy())
             curr = curr[].next
         return new^
 
@@ -541,7 +553,7 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        ElementType: EqualityComparable & Copyable & Movable, //
+        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: LinkedList[ElementType], read elem: ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
@@ -569,7 +581,7 @@ struct LinkedList[
         return count
 
     fn __contains__[
-        ElementType: EqualityComparable & Copyable & Movable, //
+        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: LinkedList[ElementType], value: ElementType) -> Bool:
         """Checks if the list contains `value`.
 
@@ -595,7 +607,7 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        ElementType: EqualityComparable & Copyable & Movable, //
+        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](
         read self: LinkedList[ElementType], read other: LinkedList[ElementType]
     ) -> Bool:
@@ -630,7 +642,7 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        ElementType: EqualityComparable & Copyable & Movable, //
+        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: LinkedList[ElementType], other: LinkedList[ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 
@@ -771,7 +783,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        ElementType: Copyable & Movable & Writable
+        ElementType: ExplicitlyCopyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -790,7 +802,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        ElementType: Copyable & Movable & Writable
+        ElementType: ExplicitlyCopyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -809,7 +821,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        W: Writer, ElementType: Copyable & Movable & Writable
+        W: Writer, ElementType: ExplicitlyCopyable & Movable & Writable
     ](self: LinkedList[ElementType], mut writer: W):
         """Write the list to the given writer.
 
@@ -828,7 +840,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, ElementType: Copyable & Movable & Writable
+        W: Writer, ElementType: ExplicitlyCopyable & Movable & Writable
     ](
         self: LinkedList[ElementType],
         mut writer: W,

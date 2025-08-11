@@ -73,7 +73,7 @@ what we publish.
     `ExplicitlyCopyable`, enabling their use with types that are not implicitly
     copyable:
     `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
-    `Set`, `Counter`, `reversed`.
+    `Set`, `Counter`, `LinkedList`, `Deque`, `reversed`.
 
     Additionally, the following traits now require `ExplicitlyCopyable` instead
     of implicit `Copyable`:
