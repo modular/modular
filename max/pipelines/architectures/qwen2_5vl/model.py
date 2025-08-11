@@ -30,7 +30,6 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
     KVCacheParams,
-    KVCacheStrategy,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -589,9 +588,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
-        if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
-            msg = "Qwen2.5VL only supports continuous batching"
-            raise ValueError(msg)
 
         # Prepare vision inputs
         vision_inputs = self._prepare_vision_inputs(context_batch)
