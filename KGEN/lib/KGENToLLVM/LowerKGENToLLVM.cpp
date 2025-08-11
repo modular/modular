@@ -526,6 +526,9 @@ public:
       funcOp->setAttr(func.getCoroutineTypeAttrName(), TypeAttr::get(coroType));
     }
 
+    if (func.isConvergent())
+      funcOp.setConvergent(true);
+
     // Propagate InlineLevel as a passthrough LLVM attribute.
     convertInlineLevel(funcOp, func.getInlineLevel());
 

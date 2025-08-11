@@ -85,7 +85,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
-    UnitAttr:$isExtern,
+    UnitAttr:$isExtern, UnitAttr:$convergent,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
     DefaultValuedAttr<DictArrayAttr, "std::nullopt">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
@@ -115,6 +115,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     Attribute removeResAttrsAttr() { return nullptr; }
 
     bool isExternal() { return getIsExtern(); }
+    bool isConvergent() { return getConvergent(); }
   }];
 
   let builders = [
@@ -124,6 +125,7 @@ def KGEN_FuncOp : KGENOp<"func", [
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"bool", "false">:$isExtern,
+                   CArg<"bool", "false">:$convergent,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
@@ -133,7 +135,7 @@ def KGEN_FuncOp : KGENOp<"func", [
         llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, sigGen, decorators, inlineLevel,
-            exportKind, isExtern, llvmMetadata, llvmArgMetadata,
+            exportKind, isExtern, convergent, llvmMetadata, llvmArgMetadata,
             /*crossDeviceCaptures=*/{}, /*coroutineType=*/{});
     }]>,
   ];

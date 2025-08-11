@@ -1100,3 +1100,17 @@ def KGENVerifierPass : Pass<"kgen-verifier"> {
     settings.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// InferFunctionAttrs pass
+//===----------------------------------------------------------------------===//
+
+def InferFunctionAttrs : Pass<"infer-function-attrs", "ModuleOp"> {
+  let summary = "Infer function attributes";
+  let description = [{
+    A pass that infers function attributes based on its body. For example,
+    infer `convergent` attribute if function body contains any operation
+    with `convergent` attribute (like `nvvm.barrier0`).
+    That is needed to make optimizations correct or more efficient.
+  }];
+}
