@@ -7,7 +7,7 @@
 import sys
 import unittest
 
-import max.mojo.importer  # noqa
+import mojo.importer  # noqa
 import numpy as np
 
 # Put the current directory (containing mojo_module.mojo) on the Python module

@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 from IPython.testing.globalipapp import start_ipython
 from IPython.utils.capture import capture_output
-from max.support.paths import MojoCompilationError
+from mojo.paths import MojoCompilationError
 
 
 @pytest.fixture(scope="session")
 def ipython():
     ipython = start_ipython()
-    import max.support.notebook  # noqa
+    import mojo.notebook  # noqa
 
     yield ipython
 

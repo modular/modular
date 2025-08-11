@@ -20,7 +20,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/mojo",
+        "//open-source/max/mojo/python/mojo",
         requirement("numpy"),
     ],
 )
