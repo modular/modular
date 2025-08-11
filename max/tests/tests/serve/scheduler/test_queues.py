@@ -10,6 +10,7 @@ import uuid
 import numpy as np
 from max.interfaces import (
     SharedMemoryArray,
+    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -38,7 +39,8 @@ def test_serialization_and_deserialization_through_queue_with_pickle() -> None:
     push_socket.put(context)
     received_context = pull_socket.get()
 
-    assert context == received_context
+    assert context[0] == received_context[0]
+    assert msgpack_eq(context[1], received_context[1])
 
 
 def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
@@ -60,7 +62,8 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     push_socket.put(context)
     received_context = pull_socket.get()
 
-    assert context == received_context
+    assert context[0] == received_context[0]
+    assert msgpack_eq(context[1], received_context[1])
 
 
 def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
