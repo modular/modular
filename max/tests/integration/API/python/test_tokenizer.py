@@ -298,6 +298,37 @@ def test_tokenizer_encode_stop_criteria(
 
 
 @pytest.mark.asyncio
+async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+) -> None:
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[
+                {"type": "text", "text": "Hello, how are you"},
+                {"type": "text", "text": "today?"},
+            ],
+        ),
+        TextGenerationRequestMessage(
+            role="assistant",
+            content="I'm doing well, thank you!",
+        ),
+    ]
+    prompt_text = tokenizer.apply_chat_template(messages, tools=None)
+    expected_prompt_text = (
+        "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+        "Cutting Knowledge Date: December 2023\n"
+        "Today Date: 26 Jul 2024\n\n"
+        "<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
+        "Hello, how are you\ntoday?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        "I'm doing well, thank you!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
+    assert prompt_text == expected_prompt_text
+
+
+@pytest.mark.asyncio
 async def test_tokenizer__generate_prompt_and_token_ids(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
