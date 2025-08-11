@@ -579,9 +579,6 @@ fn _reduce_generator_gpu[
         len(shape) + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
-    if reduce_dim_normalized != len(shape) - 1:
-        raise "GPU reduction currently limited to inner axis."
-
     reduce_launch[
         num_reductions,
         input_0_fn,

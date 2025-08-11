@@ -34,20 +34,22 @@ fn fused_reduce_inner_test[
     expected_vals1: List[Float32],
     ctx: DeviceContext,
     offset: Int = 1,
+    axis: Int = rank - 1,
 ) raises:
-    var axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
 
     var in_size = shape.flattened_length()
     var out_size = out_shape.flattened_length()
 
-    debug_assert(
-        len(expected_vals0) == out_size,
+    assert_equal(
+        len(expected_vals0),
+        out_size,
         "expected vals must match output shape",
     )
-    debug_assert(
-        len(expected_vals1) == out_size,
+    assert_equal(
+        len(expected_vals1),
+        out_size,
         "expected vals must match output shape",
     )
 
@@ -130,17 +132,17 @@ fn reduce_inner_test[
     expected_vals: List[Scalar[expected_vals_type]],
     ctx: DeviceContext,
     offset: Int = 1,
+    axis: Int = rank - 1,
 ) raises:
     alias num_reductions = 1
 
-    var axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
 
     var in_size = shape.flattened_length()
     var out_size = shape.flattened_length() // shape[axis]
-    debug_assert(
-        len(expected_vals) == out_size, "expected vals must match output shape"
+    assert_equal(
+        len(expected_vals), out_size, "expected vals must match output shape"
     )
 
     var vec_device = ctx.enqueue_create_buffer[dtype](in_size)
@@ -256,6 +258,40 @@ def main():
                 8232.0,
             ),
             ctx,
+        )
+
+        reduce_inner_test[reduce_add](
+            IndexList[3](5, 3, 2),
+            Float32(0),
+            List[Float32](
+                15.0,
+                16.0,
+                17.0,
+                18.0,
+                19.0,
+                20.0,
+            ),
+            ctx,
+            axis=0,
+        )
+
+        reduce_inner_test[reduce_add](
+            IndexList[3](5, 3, 2),
+            Float32(0),
+            List[Float32](
+                4.0,
+                5.0,
+                10.0,
+                11.0,
+                16.0,
+                17.0,
+                22.0,
+                23.0,
+                28.0,
+                29.0,
+            ),
+            ctx,
+            axis=1,
         )
 
         reduce_inner_test[reduce_max](
