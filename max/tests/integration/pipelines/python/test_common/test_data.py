@@ -63,16 +63,16 @@ MULTIMODAL_PROMPT = (
 )
 
 
-MULTIMODAL_IMAGE = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+MULTIMODAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/multimodal_image.jpg"
 
 PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
-PIXTRAL_IMAGE = "https://picsum.photos/id/237/400/300"
+PIXTRAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/pixtral_image.jpg"
 
 INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|>\nDescribe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
-INTERNVL_INSTRUCT_IMAGE = "https://cdn-uploads.huggingface.co/production/uploads/632698f75cf955bfbbe727a9/L9E3YzvMo2B_XvloSx5ud.jpeg"
+INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
 IDEFICS3_INSTRUCT_PROMPT = "<image> Describe the image:"
-IDEFICS3_INSTRUCT_IMAGE = "https://cdn.britannica.com/47/195447-050-51296461/Masjed-e-Jomeh-Yazd-Iran.jpg"
+IDEFICS3_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/idefics3_instruct_image.jpg"
 
 
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]

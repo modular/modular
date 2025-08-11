@@ -29,6 +29,7 @@ modular_py_library(
         ":pipeline_model_dummy",
         ":process_isolation",
         ":registry",
+        ":storage",
         ":test_data",
         ":torch_hooks",
         ":torch_utils",
@@ -76,9 +77,9 @@ modular_py_library(
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
+        ":storage",
         ":test_data",
         requirement("numpy"),
-        requirement("requests"),
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
@@ -256,5 +257,16 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/nn/hooks:base_print_hook",
         requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("boto3"),
+        requirement("pillow"),
     ],
 )

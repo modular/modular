@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 import torch
+from test_common.storage import load_image
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store
 from transformers import (
@@ -20,7 +21,6 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
-from transformers.image_utils import load_image
 
 
 def run_text_generation(

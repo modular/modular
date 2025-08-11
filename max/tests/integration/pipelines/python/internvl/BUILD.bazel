@@ -14,7 +14,6 @@ modular_py_library(
         "//SDK/integration-test/pipelines/python/test_common",
         requirement("numpy"),
         requirement("pillow"),
-        requirement("requests"),
         requirement("torch"),
         requirement("torchvision"),
         requirement("transformers"),

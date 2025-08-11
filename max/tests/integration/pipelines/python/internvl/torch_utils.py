@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-import requests
 import torch
 import torchvision.transforms as T
 from max.pipelines.architectures.internvl.tokenizer import (
@@ -22,6 +21,7 @@ from max.pipelines.architectures.internvl.tokenizer import (
     crop_into_patches,
 )
 from PIL import Image
+from test_common.storage import load_image
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import (
     run_text_generation_with_custom_image_processing,
@@ -31,17 +31,6 @@ from transformers import PreTrainedModel
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-
-
-def load_pil_image_from_url(image_file: str) -> Image.Image:
-    """Load PIL image from URL, file path, or existing PIL image."""
-    if isinstance(image_file, str) and image_file.startswith("http"):
-        return Image.open(requests.get(image_file, stream=True).raw).convert(
-            "RGB"
-        )
-    else:
-        # Handle local files.
-        return Image.open(image_file).convert("RGB")
 
 
 def build_transform(input_size: int) -> T.Compose:
@@ -97,7 +86,7 @@ def run_text_generation(
     ) -> dict[str, torch.Tensor]:
         if len(request.images) > 0:
             assert len(request.images) == 1
-            pil_image = load_pil_image_from_url(request.images[0])
+            pil_image = load_image(request.images[0])
 
             # Use InternVLProcessor for text formatting.
             result = processor(text=request.prompt, images=[pil_image])

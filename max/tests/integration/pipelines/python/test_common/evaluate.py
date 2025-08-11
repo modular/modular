@@ -13,12 +13,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Callable, Optional, TypedDict
 
 import numpy as np
-import requests
 from max.interfaces import PipelineTokenizer, TextGenerationRequest
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
 from typing_extensions import NotRequired
 
+from .storage import load_bytes
 from .test_data import MockTextGenerationRequest
 
 
@@ -45,10 +45,6 @@ class ModelOutput(TypedDict):
 
 
 NUM_STEPS = 10
-
-
-def resolve_image_from_url(image_ref: str) -> bytes:
-    return requests.get(image_ref).content
 
 
 def run_model(
@@ -134,11 +130,7 @@ async def run_model_async(
                 request_id="",
                 prompt=request.prompt,
                 model_name="llama3",
-                # Download images for this specific request.
-                images=[
-                    resolve_image_from_url(image_url)
-                    for image_url in request.images
-                ],
+                images=[load_bytes(image_url) for image_url in request.images],
             )
         )
         batch_prompts[curr_req_id] = request.prompt
