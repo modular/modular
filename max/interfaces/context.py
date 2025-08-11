@@ -154,14 +154,15 @@ class BaseContext(Protocol):
         """Current generation status of the request."""
         ...
 
+    @status.setter
+    def status(self, status: GenerationStatus) -> None:
+        """Update the generation status of the request."""
+        ...
+
     @property
     def is_done(self) -> bool:
         """Whether the request has completed generation."""
         return self.status.is_done
-
-    def update_status(self, status: GenerationStatus) -> None:
-        """Update the generation status of the request."""
-        ...
 
 
 BaseContextType = TypeVar("BaseContextType", bound=BaseContext)
@@ -217,17 +218,6 @@ class InputContext(Protocol):
         """
         ...
 
-    def update_status(self, status: GenerationStatus) -> None:
-        """Update the current generation status of this context.
-
-        This method transitions the context to a new generation state, such as
-        moving from encoding to generating or marking completion.
-
-        Args:
-            status: The new ``GenerationStatus`` to assign to this context.
-        """
-        ...
-
     @property
     def status(self) -> GenerationStatus:
         """The current generation status of this context.
@@ -235,6 +225,18 @@ class InputContext(Protocol):
         Returns:
             The ``GenerationStatus`` indicating the current state of generation
             (e.g., encoding, generating, completed, or error).
+        """
+        ...
+
+    @status.setter
+    def status(self, status: GenerationStatus) -> None:
+        """Update the current generation status of this context.
+
+        This method transitions the context to a new generation state, such as
+        moving from encoding to generating or marking completion.
+
+        Args:
+            status: The new ``GenerationStatus`` to assign to this context.
         """
         ...
 
