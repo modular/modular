@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import functools
 import os
 import sys
@@ -35,6 +36,7 @@ from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from test_common import (
     evaluate,
     evaluate_embeddings,
@@ -44,6 +46,7 @@ from test_common import (
 )
 from test_common.evaluate import ModelOutput
 from test_common.github_utils import github_log_group
+from test_common.storage import load_image
 from test_common.torch_utils import MockTextGenerationRequest
 from typing_extensions import ParamSpec
 
@@ -407,6 +410,114 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
         """Run text generation using Idefics3-specific preprocessing logic."""
 
         return idefics3_torch_utils.run_text_generation(
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=device,
+            textgen_requests=self.inputs,
+            print_outputs=True,
+            use_cache=self.use_cache,
+        )
+
+
+class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
+    """Pipeline oracle for Qwen2.5VL architectures."""
+
+    hf_repo_id: str
+    """ID of the Hugging Face repository."""
+
+    def __init__(self, hf_repo_id: str) -> None:
+        super().__init__()
+        self.hf_repo_id = hf_repo_id
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        """Input requests for Qwen2.5VL."""
+
+        multi_modal_requests = copy.deepcopy(qwen2_5vl_utils.INSTRUCT_REQUESTS)
+
+        # Download images from s3 and update the messages.
+        for request in multi_modal_requests:
+            for message in request.messages:
+                for content in message["content"]:
+                    if content["type"] == "image":
+                        content["image"] = load_image(content["image"])
+
+        # Torch model tries to return EOT for the default long text prompt,
+        # so add another bullet point to get it to generate more tokens.
+        long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
+        text_only_prompts = [long_prompt] + list(test_data.SHORT_TEXT_PROMPTS)
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in text_only_prompts
+        ]
+        return multi_modal_requests + text_only_requests
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        max_length = 8192
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=KVCacheStrategy.PAGED,
+            model_path=self.hf_repo_id,
+            huggingface_model_revision=revision,
+            max_length=max_length,
+            trust_remote_code=True,
+            # Chunked prefill is not supported for image prompts.
+            # (technically, this script doesn't go through the scheduler so
+            # it's not a problem, but it's a good idea to disable it anyway.)
+            enable_chunked_prefill=False,
+            # TODO(GEX-2365): Handle this in model memory estimation.
+            device_memory_utilization=0.8,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        processor = transformers.AutoProcessor.from_pretrained(
+            self.hf_repo_id, revision=revision
+        )
+        model = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            self.hf_repo_id,
+            revision=revision,
+            config=config,
+            device_map=device,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+    def run_torch_text_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+    ) -> list[dict]:
+        """Run text generation using Qwen2.5VL-specific preprocessing logic."""
+
+        return qwen2_5vl_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
@@ -886,6 +997,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "qwen2.5-vl-3b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-3B-Instruct"),
     "qwen3": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
@@ -1157,7 +1269,6 @@ def generate_llm_logits(
     similarity.
 
     """
-
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
 

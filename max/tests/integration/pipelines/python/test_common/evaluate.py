@@ -10,10 +10,15 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict, cast
 
 import numpy as np
-from max.interfaces import PipelineTokenizer, TextGenerationRequest
+from max.interfaces import (
+    PipelineTokenizer,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
+from max.interfaces.tokenizer import TokenizerEncoded, UnboundContextType
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
 from typing_extensions import NotRequired
@@ -68,6 +73,30 @@ def run_model(
             reference=reference,
         )
     )
+
+
+async def _create_context(
+    request: MockTextGenerationRequest,
+    tokenizer: PipelineTokenizer[
+        UnboundContextType, TokenizerEncoded, TextGenerationRequest
+    ],
+) -> UnboundContextType:
+    if request.messages:
+        messages = cast(list[TextGenerationRequestMessage], request.messages)
+        return await tokenizer.new_context(
+            TextGenerationRequest(
+                request_id="", model_name="", messages=messages
+            )
+        )
+    else:
+        return await tokenizer.new_context(
+            TextGenerationRequest(
+                request_id="",
+                model_name="",
+                prompt=request.prompt,
+                images=[load_bytes(image_url) for image_url in request.images],
+            )
+        )
 
 
 async def run_model_async(
@@ -125,14 +154,7 @@ async def run_model_async(
     for i, request in enumerate(requests):
         curr_req_id = str(uuid.uuid4())
 
-        context = await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id="",
-                prompt=request.prompt,
-                model_name="llama3",
-                images=[load_bytes(image_url) for image_url in request.images],
-            )
-        )
+        context = await _create_context(request, tokenizer)
         batch_prompts[curr_req_id] = request.prompt
         batch_contexts[curr_req_id] = context
         if reference:

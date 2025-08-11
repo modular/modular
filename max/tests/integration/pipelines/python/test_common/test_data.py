@@ -11,6 +11,7 @@ Separates test data from business logic for better maintainability.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -23,22 +24,42 @@ class MockTextGenerationRequest:
     images: list[str]
     """List of image URLs or file paths. Empty for text-only requests."""
 
-    @property
-    def is_multimodal(self) -> bool:
-        """Returns True if this request includes images."""
-        return len(self.images) > 0
+    messages: list[dict[str, Any]]
+    """List of messages to be processed by the model. If this is provided, the
+    prompt is used to identify the request, while the messages are processed by
+    the model."""
+
+    is_multimodal: bool
 
     @classmethod
     def text_only(cls, prompt: str) -> MockTextGenerationRequest:
         """Creates a text-only generation request."""
-        return cls(prompt=prompt, images=[])
+        return cls(prompt=prompt, images=[], messages=[], is_multimodal=False)
 
     @classmethod
     def with_images(
         cls, prompt: str, images: list[str]
     ) -> MockTextGenerationRequest:
         """Creates a multimodal generation request."""
-        return cls(prompt=prompt, images=images)
+        return cls(
+            prompt=prompt, images=images, messages=[], is_multimodal=True
+        )
+
+    @classmethod
+    def with_messages(
+        cls, prompt: str, messages: list[dict[str, Any]], is_multimodal: bool
+    ) -> MockTextGenerationRequest:
+        """Creates a generation request with messages.
+
+        Note that the prompt still needs to be passed in since it is used to
+        identify the request.
+        """
+        return cls(
+            prompt=prompt,
+            images=[],
+            messages=messages,
+            is_multimodal=is_multimodal,
+        )
 
 
 # Existing test data extracted from evaluate.py

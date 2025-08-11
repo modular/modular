@@ -2,6 +2,7 @@
 
 load(
     "//bazel:api.bzl",
+    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
@@ -62,5 +63,20 @@ modular_py_test(
         "//SDK/lib/API/python/max/pipelines/architectures",
         requirement("torch"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "generate_utils",
+    srcs = ["generate_utils.py"],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+        requirement("qwen-vl-utils"),  # Used by qwen2.5-vl.
     ],
 )

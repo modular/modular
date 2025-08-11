@@ -40,4 +40,26 @@ def load_bytes(file_path: str, cache_dir: str | None = None) -> bytes:
 
 
 def load_image(image_path: str, cache_dir: str | None = None) -> Image.Image:
-    return Image.open(load_from_s3(image_path, cache_dir)).convert("RGB")
+    return _convert_image_mode(
+        Image.open(load_from_s3(image_path, cache_dir)), "RGB"
+    )
+
+
+def _rgba_to_rgb(
+    image: Image.Image,
+    background_color=(255, 255, 255),  # noqa: ANN001
+) -> Image.Image:
+    """Convert an RGBA image to RGB with filled background color."""
+    assert image.mode == "RGBA"
+    converted = Image.new("RGB", image.size, background_color)
+    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+    return converted
+
+
+def _convert_image_mode(image: Image.Image, to_mode: str):
+    if image.mode == to_mode:
+        return image
+    elif image.mode == "RGBA" and to_mode == "RGB":
+        return _rgba_to_rgb(image)
+    else:
+        return image.convert(to_mode)
