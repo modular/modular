@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class MockContext:
+class MockContext(Mock):
     """Mock context that implements BaseContext protocol."""
 
     request_id: RequestID
@@ -44,12 +45,6 @@ class MockContext:
     def is_done(self) -> bool:
         """Whether the request has completed generation."""
         return self.status.is_done
-
-    def update_status(self, status: GenerationStatus) -> None:
-        """Update the generation status of the request."""
-        # Since this is a frozen dataclass, we can't actually update the status
-        # In a real implementation, this would be handled differently
-        pass
 
 
 class MockPipelineConfig(PipelineConfig):

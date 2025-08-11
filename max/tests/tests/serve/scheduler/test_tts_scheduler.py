@@ -232,7 +232,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
 
                     # Pretend that the audio generation is done immediately when
                     # text generation is done.
-                    context.update_audio_generation_status(
+                    context.audio_generation_status = (
                         GenerationStatus.MAXIMUM_LENGTH
                     )
 
