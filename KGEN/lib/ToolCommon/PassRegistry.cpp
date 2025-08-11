@@ -81,4 +81,5 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();
   KGEN::registerResolveCompilerPromises();
+  KGEN::registerInferFunctionAttrs();
 }

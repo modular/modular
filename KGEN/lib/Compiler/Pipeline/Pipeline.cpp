@@ -176,6 +176,8 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createEnsureNoParameters());
 #endif
 
+  pm.addPass(createInferFunctionAttrs());
+
   // Run the AutomaticInline pass with an inner function pass pipeline.
   auto buildAutomaticInlineFuncPasses = [options](mlir::OpPassManager &pm) {
     if (options.optimizationLevel < 1)
