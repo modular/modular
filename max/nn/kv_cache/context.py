@@ -47,9 +47,6 @@ class KVCacheAwareContext(Protocol):
     def end_idx(self) -> int: ...
 
     @property
-    def committed_idx(self) -> int: ...
-
-    @property
     def current_length(self) -> int:
         """The current length of the sequence, including completed and active tokens."""
         ...
@@ -86,7 +83,6 @@ class KVCacheAwareContext(Protocol):
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
-        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         ...
@@ -96,7 +92,6 @@ class KVCacheAwareContext(Protocol):
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         ...

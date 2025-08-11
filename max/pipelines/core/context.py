@@ -68,7 +68,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         _completion_start_idx: Start index of completion tokens
         _completion_end_idx: End index of completion tokens
         _prompt_len: Length of original prompt
-        _committed_idx: Index up to which tokens are committed
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
@@ -96,7 +95,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     _completion_start_idx: int = msgspec.field(default=-1)
     _completion_end_idx: int = msgspec.field(default=-1)
     _prompt_len: int = msgspec.field(default=-1)
-    _committed_idx: int = msgspec.field(default=0)
     _log_probabilities_data: dict[int, LogProbabilities] = msgspec.field(
         default_factory=dict
     )
@@ -231,10 +229,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def end_idx(self) -> int:
         return self._end_idx
 
-    @property
-    def committed_idx(self) -> int:
-        return self._committed_idx
-
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
@@ -314,19 +308,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
-        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         new_start_idx = start_idx + self._start_idx
         new_active_idx = active_idx + self._active_idx
         new_end_idx = end_idx + self._end_idx
-        new_committed_idx = committed_idx + self._committed_idx
 
         self.set_token_indices(
             start_idx=new_start_idx,
             active_idx=new_active_idx,
             end_idx=new_end_idx,
-            committed_idx=new_committed_idx,
         )
 
     def set_token_indices(
@@ -334,7 +325,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         new_start_idx = start_idx if start_idx is not None else self._start_idx
@@ -342,9 +332,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             active_idx if active_idx is not None else self._active_idx
         )
         new_end_idx = end_idx if end_idx is not None else self._end_idx
-        new_committed_idx = (
-            committed_idx if committed_idx is not None else self._committed_idx
-        )
 
         if new_start_idx >= new_active_idx:
             msg = f"""
@@ -363,7 +350,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx
         self._end_idx = new_end_idx
-        self._committed_idx = new_committed_idx
 
     @property
     def next_tokens(self) -> np.ndarray:
@@ -507,7 +493,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
         self._start_idx = 0
-        self._committed_idx = 0
 
         self._is_initial_prompt = True
 
