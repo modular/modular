@@ -815,7 +815,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                 current_length = context.start_idx + 1
 
                 if current_length >= context_max_length:
-                    context.update_status(GenerationStatus.MAXIMUM_LENGTH)
+                    context.status = GenerationStatus.MAXIMUM_LENGTH
                     final_status = context.status
                     tokens.append(token)
                     if log_probs is not None:

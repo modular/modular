@@ -273,8 +273,8 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
                 context.update(new_token=next_token)
 
-                res[request_id].final_status = context.speech_token_status
-                if context.speech_token_status.is_done:
+                res[request_id].final_status = context.status
+                if context.status.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.

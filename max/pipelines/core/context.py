@@ -20,6 +20,7 @@ import time
 import uuid
 from typing import Any, Optional
 
+import llguidance
 import msgspec
 import numpy as np
 import numpy.typing as npt
@@ -87,7 +88,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     )
     model_name: str = msgspec.field(default="")
     _matcher: Any | None = msgspec.field(default=None)
-    _status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
+    status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
     _size: int = msgspec.field(default=-1)
     _start_idx: int = msgspec.field(default=0)
     _active_idx: int = msgspec.field(default=-1)
@@ -205,12 +206,8 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.tokens[: self.end_idx]
 
     @property
-    def status(self) -> GenerationStatus:
-        return self._status
-
-    @property
     def is_done(self) -> bool:
-        return self._status.is_done
+        return self.status.is_done
 
     @property
     def start_idx(self) -> int:
@@ -259,11 +256,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         return ret_list
 
-    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:  # type: ignore
+    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
         self._matcher = matcher
 
     @property
-    def matcher(self) -> Optional[llguidance.LLMatcher]:  # type: ignore
+    def matcher(self) -> llguidance.LLMatcher | None:
         return self._matcher
 
     def rollback(self, idx: int) -> None:
@@ -286,8 +283,8 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         if self._active_idx < self._completion_end_idx:
             self._completion_end_idx = new_active_idx
 
-            if self._status == GenerationStatus.END_OF_SEQUENCE:
-                self._status = GenerationStatus.ACTIVE
+            if self.status == GenerationStatus.END_OF_SEQUENCE:
+                self.status = GenerationStatus.ACTIVE
 
     @property
     def current_length(self) -> int:
@@ -421,9 +418,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         return False
 
-    def update_status(self, status: GenerationStatus) -> None:
-        self._status = status
-
     def update(
         self,
         new_token: int,
@@ -451,13 +445,13 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._end_idx += 1
 
         if self._is_eos(new_token):
-            self._status = GenerationStatus.END_OF_SEQUENCE
+            self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.active_idx >= self.max_length:
-            self._status = GenerationStatus.MAXIMUM_LENGTH
+            self.status = GenerationStatus.MAXIMUM_LENGTH
             # We must return the last token that fits in max length.
             self._completion_end_idx += 1
 
-        if self._status == GenerationStatus.ACTIVE:
+        if self.status == GenerationStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -479,9 +473,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._end_idx += 1
 
         if is_eos:
-            self._status = GenerationStatus.END_OF_SEQUENCE
+            self.status = GenerationStatus.END_OF_SEQUENCE
 
-        if self._status == GenerationStatus.ACTIVE:
+        if self.status == GenerationStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -516,7 +510,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             )
 
         self._completion_start_idx = self._completion_end_idx
-        self._status = GenerationStatus.ACTIVE
+        self.status = GenerationStatus.ACTIVE
 
         return res
 
@@ -639,46 +633,17 @@ class TTSContext(TextContext):
             SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
         )
     )
-    _decoded_index: int = msgspec.field(default=0)
+    decoded_index: int = msgspec.field(default=0)
     _block_counter: int = msgspec.field(default=0)
     _arrival_time: float = msgspec.field(default_factory=lambda: time.time())
 
-    _audio_generation_status: GenerationStatus = msgspec.field(
+    audio_generation_status: GenerationStatus = msgspec.field(
         default=GenerationStatus.ACTIVE
     )
 
     @property
     def is_done(self) -> bool:
-        return self._audio_generation_status.is_done
-
-    @property
-    def audio_generation_status(self) -> GenerationStatus:
-        return self._audio_generation_status
-
-    def update_audio_generation_status(self, status: GenerationStatus) -> None:
-        self._audio_generation_status = status
-
-    @property
-    def speech_token_status(self) -> GenerationStatus:
-        """Returns the status of the speech token generation."""
-        # Note that `_status` is used here instead of creating a new attribute,
-        # because this class inherits from `TextContext`, which updates
-        # `_status` when EOS is reached.
-        return self._status
-
-    def update_speech_token_status(self, status: GenerationStatus) -> None:
-        self._status = status
-
-    @property
-    def status(self) -> GenerationStatus:
-        raise ValueError(
-            "Please call `speech_token_status` or `audio_generation_status` instead."
-        )
-
-    def update_status(self, status: GenerationStatus) -> None:
-        raise ValueError(
-            "Please call `update_speech_token_status` or `update_audio_generation_status` instead."
-        )
+        return self.audio_generation_status.is_done
 
     @property
     def speech_tokens(self) -> np.ndarray:
@@ -687,13 +652,6 @@ class TTSContext(TextContext):
     @property
     def block_counter(self) -> int:
         return self._block_counter
-
-    @property
-    def decoded_index(self) -> int:
-        return self._decoded_index
-
-    def set_decoded_index(self, idx: int) -> None:
-        self._decoded_index = idx
 
     def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
         """Updates the next_tokens"""
@@ -720,7 +678,7 @@ class TTSContext(TextContext):
         """Returns a chunk of the next unseen speech tokens.
 
         Calling this function will *not* update the index of the last seen
-        token. This must be done by calling `set_decoded_index` after the chunk
+        token. This must be done by setting `decoded_index` after the chunk
         is processed.
 
         Args:
@@ -731,14 +689,14 @@ class TTSContext(TextContext):
         Returns:
             A tuple of (chunk of speech tokens, buffer).
         """
-        start_idx = self._decoded_index
+        start_idx = self.decoded_index
         if buffer is not None:
             buffer = min(buffer, start_idx)
             start_idx = max(0, start_idx - buffer)
 
         end_idx = self._speech_token_end_idx
         if audio_chunk_size is not None:
-            end_idx = min(end_idx, self._decoded_index + audio_chunk_size)
+            end_idx = min(end_idx, self.decoded_index + audio_chunk_size)
 
         chunk = self._speech_tokens[start_idx:end_idx]
 
@@ -757,4 +715,4 @@ class TTSContext(TextContext):
             True if there are undecoded speech tokens (excluding the last n tokens),
             False otherwise.
         """
-        return self._decoded_index < self._speech_token_end_idx - exclude_last_n
+        return self.decoded_index < self._speech_token_end_idx - exclude_last_n

@@ -8,6 +8,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/interfaces",
         requirement("numpy"),
         requirement("msgspec"),
+        requirement("llguidance"),
     ],
 )
 
