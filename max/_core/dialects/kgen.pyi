@@ -2275,6 +2275,7 @@ class FuncOp(max._core.Operation):
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
         is_extern: max._core.dialects.builtin.UnitAttr,
+        convergent: max._core.dialects.builtin.UnitAttr,
         _llvm_metadata: max._core.dialects.builtin.DictionaryAttr,
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
@@ -2290,6 +2291,7 @@ class FuncOp(max._core.Operation):
         inline_level: InlineLevel = InlineLevel.automatic,
         export_kind: ExportKind = ExportKind.not_exported,
         is_extern: bool = False,
+        convergent: bool = False,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -2322,6 +2324,12 @@ class FuncOp(max._core.Operation):
     def is_extern(self) -> bool: ...
     @is_extern.setter
     def is_extern(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
+    @property
+    def convergent(self) -> bool: ...
+    @convergent.setter
+    def convergent(
         self, arg: max._core.dialects.builtin.UnitAttr, /
     ) -> None: ...
     @property
