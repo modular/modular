@@ -308,7 +308,7 @@ def run_swizzle_copy_tests(ctx: DeviceContext):
 
 
 # ----------------------------------------------------------------------
-# partial copy_dram_to_sram tests
+# partial copy_dram_to_sram_async tests
 # ----------------------------------------------------------------------
 
 
@@ -317,7 +317,11 @@ fn partial_copy_dram_to_sram_async_kernel[
     layout: Layout,
     thread_layout: Layout,
     num_threads: Int,
-](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
+    block_dim_count: Int,
+](
+    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+):
     var smem_tile = (
         LayoutTensor[
             DType.float32,
@@ -330,14 +334,20 @@ fn partial_copy_dram_to_sram_async_kernel[
     )
 
     copy_dram_to_sram_async[
-        thread_layout=thread_layout, num_threads=num_threads
+        thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
     ](smem_tile.vectorize[1, 4](), input.vectorize[1, 4]())
 
     async_copy_commit_group()
     async_copy_wait_all()
 
-    copy_sram_to_dram[thread_layout=thread_layout](
-        input.vectorize[1, 4](),
+    copy_sram_to_dram[
+        thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
+    ](
+        output.vectorize[1, 4](),
         smem_tile.vectorize[1, 4](),
     )
 
@@ -345,7 +355,10 @@ fn partial_copy_dram_to_sram_async_kernel[
 fn test_partial_copy_dram_to_sram_async[
     layout: Layout,
     thread_layout: Layout,
-    num_threads: Int,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
 ](ctx: DeviceContext) raises:
     print("=== test_partial_copy_dram_to_sram_async")
 
@@ -356,29 +369,155 @@ fn test_partial_copy_dram_to_sram_async[
 
     arange(input.tensor())
 
-    alias kernel_type = partial_copy_dram_to_sram_async_kernel[
+    var output = ManagedLayoutTensor[
+        DType.float32,
         layout,
-        thread_layout,
-        num_threads,
+    ](ctx)
+
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
+    alias kernel_type = partial_copy_dram_to_sram_async_kernel[
+        layout, thread_layout, num_threads, block_dim_count
     ]
     ctx.enqueue_function[kernel_type](
-        input.device_tensor(), grid_dim=(1,), block_dim=(num_threads,)
+        input.device_tensor(),
+        output.device_tensor(),
+        grid_dim=(1,),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
 
     ctx.synchronize()
 
-    print(input.tensor())
+    print(output.tensor())
 
     _ = input^
+    _ = output^
 
 
-def run_partial_copy_dram_to_sram_async(ctx: DeviceContext):
+def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext):
+    # CHECK: === test_partial_copy_dram_to_sram_async
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
     test_partial_copy_dram_to_sram_async[
         layout = Layout.row_major(2, 16),
         thread_layout = Layout.row_major(2, 4),
-        num_threads=32,
+        block_dim_x=32,
+    ](ctx)
+
+    # CHECK: === test_partial_copy_dram_to_sram_async
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    test_partial_copy_dram_to_sram_async[
+        layout = Layout.row_major(2, 16),
+        thread_layout = Layout.row_major(2, 4),
+        block_dim_x=2,
+        block_dim_y=2,
+        block_dim_z=32,
+        block_dim_count=3,
+    ](ctx)
+
+
+# ----------------------------------------------------------------------
+# copy_dram_to_sram tests
+# ----------------------------------------------------------------------
+
+
+@always_inline
+fn copy_dram_to_sram_kernel[
+    layout: Layout,
+    thread_layout: Layout,
+    num_threads: Int,
+    block_dim_count: Int,
+](
+    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+):
+    var smem_tile = (
+        LayoutTensor[
+            DType.float32,
+            layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .fill(-1.0)
+    )
+
+    copy_dram_to_sram[
+        thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
+    ](smem_tile.vectorize[1, 4](), input.vectorize[1, 4]())
+
+    barrier()
+
+    copy_sram_to_dram[
+        thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
+    ](
+        output.vectorize[1, 4](),
+        smem_tile.vectorize[1, 4](),
+    )
+
+
+fn test_copy_dram_to_sram[
+    layout: Layout,
+    thread_layout: Layout,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
+](ctx: DeviceContext) raises:
+    print("=== test_copy_dram_to_sram")
+
+    var input = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ](ctx)
+
+    arange(input.tensor())
+
+    var output = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ](ctx)
+
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
+    alias kernel_type = copy_dram_to_sram_kernel[
+        layout, thread_layout, num_threads, block_dim_count
+    ]
+    ctx.enqueue_function[kernel_type](
+        input.device_tensor(),
+        output.device_tensor(),
+        grid_dim=(1,),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
+    )
+
+    ctx.synchronize()
+
+    print(output.tensor())
+
+    _ = input^
+    _ = output^
+
+
+def run_copy_dram_to_sram_tests(ctx: DeviceContext):
+    # CHECK: === test_copy_dram_to_sram
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    test_copy_dram_to_sram[
+        layout = Layout.row_major(8, 8),
+        thread_layout = Layout.row_major(4, 2),
+        block_dim_x=2,
+        block_dim_y=2,
+        block_dim_z=2,
+        block_dim_count=3,
     ](ctx)
 
 
@@ -393,10 +532,15 @@ fn copy_sram_to_dram_kernel[
     layout: Layout,
     M: Int,
     N: Int,
+    num_threads: Int,
+    block_dim_count: Int,
     binary_op: OptionalReg[binary_op_type] = None,
 ](input: LayoutTensor[dtype, layout, MutableAnyOrigin]):
     alias simd_size = simdwidthof[dtype]()
-    alias thread_layout = Layout.row_major(simd_size, N // simd_size)
+
+    alias thread_layout = Layout.row_major(
+        num_threads // (M // simd_size), N // simd_size
+    )
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -406,7 +550,11 @@ fn copy_sram_to_dram_kernel[
     ].stack_allocation()
     arange(smem_tile)
 
-    copy_sram_to_dram[thread_layout=thread_layout, binary_op=binary_op](
+    copy_sram_to_dram[
+        thread_layout=thread_layout,
+        block_dim_count=block_dim_count,
+        binary_op=binary_op,
+    ](
         input.vectorize[1, simd_size](),
         smem_tile.vectorize[1, simd_size](),
     )
@@ -417,6 +565,10 @@ fn test_copy_sram_to_dram[
     layout: Layout,
     M: Int,
     N: Int,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
     skew_M: Int = 0,
     binary_op: OptionalReg[binary_op_type] = None,
 ](ctx: DeviceContext) raises:
@@ -448,11 +600,14 @@ fn test_copy_sram_to_dram[
 
     var tile_tensor = input.device_tensor().tile[M - skew_M, N](0, 0)
 
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
     alias kernel_type = copy_sram_to_dram_kernel[
-        dtype, tile_layout, M, N, binary_op
+        dtype, tile_layout, M, N, num_threads, block_dim_count, binary_op
     ]
     ctx.enqueue_function[kernel_type](
-        tile_tensor, grid_dim=(1,), block_dim=(8,)
+        tile_tensor,
+        grid_dim=(1,),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
 
     ctx.synchronize()
@@ -463,7 +618,20 @@ fn test_copy_sram_to_dram[
 
 
 def run_copy_sram_to_dram_tests(ctx: DeviceContext):
-    # CHECK: == test_copy_sram_to_dram
+    # CHECK: === test_copy_sram_to_dram
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    test_copy_sram_to_dram[
+        DType.float32, Layout.row_major(8, 8), M=8, N=8, block_dim_x=8
+    ](ctx)
+
+    # CHECK: === test_copy_sram_to_dram
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
@@ -477,9 +645,32 @@ def run_copy_sram_to_dram_tests(ctx: DeviceContext):
         Layout.row_major(8, 8),
         M=8,
         N=8,
+        block_dim_x=2,
+        block_dim_y=4,
+        block_dim_z=2,
+        block_dim_count=3,
     ](ctx)
 
-    # CHECK: == test_copy_sram_to_dram
+    # CHECK: === test_copy_sram_to_dram
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    test_copy_sram_to_dram[
+        DType.float32,
+        Layout.row_major(8, 8),
+        M=8,
+        N=8,
+        block_dim_x=2,
+        block_dim_y=4,
+        block_dim_count=2,
+    ](ctx)
+
+    # CHECK: === test_copy_sram_to_dram
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
@@ -493,6 +684,7 @@ def run_copy_sram_to_dram_tests(ctx: DeviceContext):
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
         M=8,
         N=8,
+        block_dim_x=8,
     ](ctx)
 
 
@@ -503,7 +695,14 @@ def run_copy_sram_to_dram_tests(ctx: DeviceContext):
 
 @always_inline
 fn copy_local_to_local_kernel[
-    dtype: DType, layout: Layout, WM: Int, WN: Int, MMA_M: Int, MMA_N: Int
+    dtype: DType,
+    layout: Layout,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    num_threads: Int,
+    block_dim_count: Int,
 ](output: LayoutTensor[dtype, layout, MutableAnyOrigin]):
     alias simd_size = 2
 
@@ -534,7 +733,8 @@ fn copy_local_to_local_kernel[
     copy_local_to_dram[
         dst_thread_layout = Layout.row_major(
             WM // MMA_M, WN // simd_size // MMA_N
-        )
+        ),
+        block_dim_count=block_dim_count,
     ](
         output.vectorize[1, simd_size](),
         reg_tile1.vectorize[1, simd_size](),
@@ -547,6 +747,10 @@ fn test_copy_local_to_local[
     WN: Int,
     MMA_M: Int,
     MMA_N: Int,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
 ](ctx: DeviceContext) raises:
     print("=== test_copy_local_to_local")
 
@@ -556,11 +760,14 @@ fn test_copy_local_to_local[
         layout,
     ](ctx)
 
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
     alias kernel_type = copy_local_to_local_kernel[
-        dtype, layout, WM, WN, MMA_M, MMA_N
+        dtype, layout, WM, WN, MMA_M, MMA_N, num_threads, block_dim_count
     ]
     ctx.enqueue_function[kernel_type](
-        output.device_tensor(), grid_dim=(1, 1), block_dim=(8, 1)
+        output.device_tensor(),
+        grid_dim=(1, 1),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
 
     ctx.synchronize()
@@ -581,11 +788,48 @@ def run_copy_local_to_local_tests(ctx: DeviceContext):
     # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
     # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
     test_copy_local_to_local[
+        DType.bfloat16, WM=8, WN=16, MMA_M=4, MMA_N=4, block_dim_x=4
+    ](ctx)
+
+    # CHECK: === test_copy_local_to_local
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    test_copy_local_to_local[
         DType.bfloat16,
         WM=8,
         WN=16,
         MMA_M=4,
         MMA_N=4,
+        block_dim_x=2,
+        block_dim_y=2,
+        block_dim_count=2,
+    ](ctx)
+
+    # CHECK: === test_copy_local_to_local
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    test_copy_local_to_local[
+        DType.bfloat16,
+        WM=8,
+        WN=16,
+        MMA_M=4,
+        MMA_N=4,
+        block_dim_x=1,
+        block_dim_y=2,
+        block_dim_z=2,
+        block_dim_count=3,
     ](ctx)
 
 
@@ -596,20 +840,20 @@ def run_copy_local_to_local_tests(ctx: DeviceContext):
 
 @always_inline
 fn copy_dram_to_local_kernel[
-    layout: Layout
+    layout: Layout, num_threads: Int, block_dim_count: Int
 ](
     input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
     output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
 ):
     alias thread_layout = Layout.row_major(4, 2)
-    alias num_threads = thread_layout.size()
+    alias num_active_threads = thread_layout.size()
     alias simd_width = 2
 
     var reg_tile = (
         LayoutTensor[
             DType.float32,
             Layout.row_major(
-                layout.size() // num_threads // simd_width, simd_width
+                layout.size() // num_active_threads // simd_width, simd_width
             ),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
@@ -618,19 +862,31 @@ fn copy_dram_to_local_kernel[
         .fill(0)
     )
 
-    copy_dram_to_local[src_thread_layout=thread_layout](
-        reg_tile.vectorize[1, simd_width](), input.vectorize[1, simd_width]()
-    )
+    copy_dram_to_local[
+        src_thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
+    ](reg_tile.vectorize[1, simd_width](), input.vectorize[1, simd_width]())
 
     barrier()
 
-    copy_local_to_dram[dst_thread_layout=thread_layout](
+    copy_local_to_dram[
+        dst_thread_layout=thread_layout,
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
+    ](
         output.vectorize[1, simd_width](),
         reg_tile.vectorize[1, simd_width](),
     )
 
 
-fn test_copy_dram_to_local[layout: Layout](ctx: DeviceContext) raises:
+fn test_copy_dram_to_local[
+    layout: Layout,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
+](ctx: DeviceContext) raises:
     print("=== test_copy_dram_to_local")
 
     var input = ManagedLayoutTensor[
@@ -645,12 +901,15 @@ fn test_copy_dram_to_local[layout: Layout](ctx: DeviceContext) raises:
         layout,
     ](ctx)
 
-    alias kernel_type = copy_dram_to_local_kernel[layout]
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
+    alias kernel_type = copy_dram_to_local_kernel[
+        layout, num_threads, block_dim_count
+    ]
     ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
-        block_dim=(8,),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
 
     ctx.synchronize()
@@ -671,7 +930,24 @@ def run_copy_dram_to_local_tests(ctx: DeviceContext):
     # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
     # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
     # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-    test_copy_dram_to_local[Layout.row_major(8, 8),](ctx)
+    test_copy_dram_to_local[Layout.row_major(8, 8), block_dim_x=8](ctx)
+
+    # CHECK: === test_copy_dram_to_local
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    test_copy_dram_to_local[
+        Layout.row_major(8, 8),
+        block_dim_x=2,
+        block_dim_y=2,
+        block_dim_z=2,
+        block_dim_count=3,
+    ](ctx)
 
 
 # ----------------------------------------------------------------------
@@ -689,6 +965,8 @@ fn copy_local_to_sram_kernel[
     MMA_N: Int,
     simd_size_row: Int,
     simd_size_col: Int,
+    num_threads: Int,
+    block_dim_count: Int = 1,
 ](output: LayoutTensor[dtype, layout, MutableAnyOrigin]):
     var reg_tile0 = LayoutTensor[
         DType.float32,
@@ -712,7 +990,9 @@ fn copy_local_to_sram_kernel[
     copy_local_to_shared[
         thread_layout = Layout.row_major(
             WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
-        )
+        ),
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
     ](
         smem_warp_tile.vectorize[simd_size_row, simd_size_col](),
         reg_tile0.vectorize[simd_size_row, simd_size_col](),
@@ -721,7 +1001,9 @@ fn copy_local_to_sram_kernel[
     copy_sram_to_dram[
         thread_layout = Layout.row_major(
             WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
-        )
+        ),
+        num_threads=num_threads,
+        block_dim_count=block_dim_count,
     ](
         output.vectorize[simd_size_row, simd_size_col](),
         smem_warp_tile.vectorize[simd_size_row, simd_size_col](),
@@ -736,6 +1018,10 @@ fn test_copy_local_to_sram[
     MMA_N: Int,
     simd_size_row: Int,
     simd_size_col: Int,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    block_dim_count: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
         "=== test_copy_local_to_sram_",
@@ -752,11 +1038,23 @@ fn test_copy_local_to_sram[
         layout,
     ](ctx)
 
+    alias num_threads = block_dim_x * block_dim_y * block_dim_z
     alias kernel_type = copy_local_to_sram_kernel[
-        dtype, layout, WM, WN, MMA_M, MMA_N, simd_size_row, simd_size_col
+        dtype,
+        layout,
+        WM,
+        WN,
+        MMA_M,
+        MMA_N,
+        simd_size_row,
+        simd_size_col,
+        num_threads,
+        block_dim_count,
     ]
     ctx.enqueue_function[kernel_type](
-        output.device_tensor(), grid_dim=(1, 1), block_dim=(8, 1)
+        output.device_tensor(),
+        grid_dim=(1, 1),
+        block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
 
     ctx.synchronize()
@@ -784,6 +1082,30 @@ def run_copy_local_to_sram_tests_float32_simd_size_12(ctx: DeviceContext):
         MMA_N=4,
         simd_size_row=1,
         simd_size_col=2,
+        block_dim_x=4,
+    ](ctx)
+
+    # CHECK: === test_copy_local_to_sram_float32_simd_size_12
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+    test_copy_local_to_sram[
+        DType.float32,
+        WM=8,
+        WN=16,
+        MMA_M=4,
+        MMA_N=4,
+        simd_size_row=1,
+        simd_size_col=2,
+        block_dim_x=2,
+        block_dim_y=1,
+        block_dim_z=2,
+        block_dim_count=3,
     ](ctx)
 
 
@@ -805,6 +1127,7 @@ def run_copy_local_to_sram_tests_float32_simd_size_21(ctx: DeviceContext):
         MMA_N=4,
         simd_size_row=2,
         simd_size_col=1,
+        block_dim_x=4,
     ](ctx)
 
 
@@ -826,6 +1149,7 @@ def run_copy_local_to_sram_tests_bfloat16_simd_size_12(ctx: DeviceContext):
         MMA_N=4,
         simd_size_row=1,
         simd_size_col=2,
+        block_dim_x=4,
     ](ctx)
 
 
@@ -847,6 +1171,7 @@ def run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx: DeviceContext):
         MMA_N=4,
         simd_size_row=2,
         simd_size_col=1,
+        block_dim_x=4,
     ](ctx)
 
 
@@ -854,7 +1179,8 @@ fn main() raises:
     with DeviceContext() as ctx:
         run_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)
-        run_partial_copy_dram_to_sram_async(ctx)
+        run_partial_copy_dram_to_sram_async_tests(ctx)
+        run_copy_dram_to_sram_tests(ctx)
         run_copy_sram_to_dram_tests(ctx)
         run_copy_local_to_local_tests(ctx)
         run_copy_dram_to_local_tests(ctx)
