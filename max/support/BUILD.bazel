@@ -4,7 +4,4 @@ modular_py_library(
     name = "support",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-    deps = [
-        "//SDK/lib/API/python/max/entrypoints:mojo",
-    ],
 )
