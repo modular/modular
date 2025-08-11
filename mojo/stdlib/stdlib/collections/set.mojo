@@ -370,7 +370,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             t: The element to add to the set.
         """
-        self._data[t] = None
+        self._data[t.copy()] = None
 
     fn remove(mut self, t: T) raises:
         """Remove an element from the set.
@@ -399,9 +399,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next_ref__()
+        var first = iter.__next_ref__().copy()
         self.remove(first)
-        return first
+        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.

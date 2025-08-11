@@ -412,7 +412,10 @@ struct DummyKey(KeyElement):
     var value: Int
 
     fn __init__(out self, *, other: Self):
-        self = other
+        self = other.copy()
+
+    fn __copyinit__(out self, other: Self):
+        self.value = other.value
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         return hasher.update(self.value)

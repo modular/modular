@@ -77,7 +77,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data = Dict[V, Int, H]()
         for item in values:
-            self._data[item] = self._data.get(item, 0) + 1
+            self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @implicit
     fn __init__(out self, items: List[V, *_]):
@@ -97,7 +97,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data = Dict[V, Int, H]()
         for item in items:
-            self._data[item] = self._data.get(item, 0) + 1
+            self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @always_inline
     fn copy(self) -> Self:
@@ -150,7 +150,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             value: The value to associate with the specified count.
             count: The count to store in the Counter.
         """
-        self._data[value] = count
+        self._data[value.copy()] = count
 
     fn __iter__(self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
         """Iterate over the keyword dict's keys as immutable references.
@@ -364,12 +364,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for key in self.keys():
             if key not in other:
                 try:
-                    var key_copy = key  # Copy due to incorrect origins.
+                    var key_copy = key.copy()  # Copy due to incorrect origins.
                     _ = self.pop(key_copy)
                 except:
                     pass  # this should not happen
             else:
-                var key_copy = key  # Copy due to incorrect origins.
+                var key_copy = key.copy()  # Copy due to incorrect origins.
                 self[key_copy] = min(self.get(key, 0), other.get(key, 0))
 
     fn __or__(self, other: Self) -> Self:
@@ -411,7 +411,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for key in self.keys():
             if self.get(key, 0) <= 0:
                 try:
-                    var key_copy = key  # Copy due to incorrect origins.
+                    var key_copy = key.copy()  # Copy due to incorrect origins.
                     _ = self.pop(key_copy)
                 except:
                     pass  # this should not happen
@@ -590,7 +590,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var elements: List[V] = List[V]()
         for item in self._data.items():
             for _ in range(item.value):
-                elements.append(item.key)
+                elements.append(item.key.copy())
         return elements
 
     fn update(mut self, other: Self):
@@ -601,7 +601,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             other: The Counter to update this Counter with.
         """
         for item in other.items():
-            self._data[item.key] = self._data.get(item.key, 0) + item.value
+            self._data[item.key.copy()] = (
+                self._data.get(item.key, 0) + item.value
+            )
 
     fn subtract(mut self, other: Self):
         """Subtract count. Both inputs and outputs may be zero or negative.
@@ -637,8 +639,17 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
             value: The value in the Counter.
             count: The count of the value in the Counter.
         """
-        self._value = value
+        self._value = value.copy()
         self._count = Int(count)
+
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of the tuple.
+
+        Args:
+            existing: The tuple to copy.
+        """
+        self._value = existing._value.copy()
+        self._count = existing._count
 
     fn copy(self) -> Self:
         """Explicitly construct a copy of self.
@@ -689,6 +700,6 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
             "index must be within bounds",
         )
         if idx == 0:
-            return self._value
+            return self._value.copy()
         else:
             return self._count

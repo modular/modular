@@ -69,9 +69,15 @@ what we publish.
   implementation is not provided by the type, a default implementation will be
   synthesized by the compiler.
 
-  - The following standard library types now require only `ExplicitlyCopyable`,
-    enabling their use with types that are not implicitly copyable:
-    `List`, `Span`, `InlineArray`, `Optional`, `Variant`.
+  - The following standard library types and functions now require only
+    `ExplicitlyCopyable`, enabling their use with types that are not implicitly
+    copyable:
+    `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
+    `Set`, `Counter`, `reversed`.
+
+    Additionally, the following traits now require `ExplicitlyCopyable` instead
+    of implicit `Copyable`:
+    `KeyElement`
 
 - The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
