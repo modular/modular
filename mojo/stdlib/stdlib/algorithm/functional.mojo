@@ -20,7 +20,7 @@ from algorithm import map
 """
 
 from collections.string.string_slice import get_static_string
-from math import align_down, ceildiv
+from math import align_down, ceildiv, clamp
 from os import abort
 from sys import is_nvidia_gpu, simdwidthof
 
@@ -47,6 +47,8 @@ from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
 from pathlib import Path
+
+from gpu.host.info import B200
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -1629,13 +1631,16 @@ fn _elementwise_impl_gpu[
     var packed_region_length = length - unpacked_tail_length
 
     alias block_size_unrounded = registers_per_block // registers_per_thread
-    alias block_size: UInt = block_size_unrounded - (block_size_unrounded % 2)
-    var num_blocks = max(
+
+    # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifcally
+    alias block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
+        block_size_unrounded % 2
+    )
+
+    var num_blocks = clamp(
+        ceildiv(num_packed_elems, block_size),
         1,
-        min(
-            ceildiv(num_packed_elems, block_size),
-            sm_count * threads_per_sm // block_size * num_waves,
-        ),
+        sm_count * threads_per_sm // block_size * num_waves,
     )
 
     @__copy_capture(
