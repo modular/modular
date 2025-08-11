@@ -27,7 +27,7 @@ ops = CustomOpLibrary(mojo_kernels)
 
 
 @torch.compile
-def grayscale(pic):  # noqa: ANN001
+def grayscale(pic: torch.Tensor):
     output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
     ops.grayscale(output, pic)  # Call our custom Mojo operation
     return output
