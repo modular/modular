@@ -196,6 +196,47 @@ class TextTokenizer(
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
 
+    @staticmethod
+    def _flatten_text_generation_request_message(
+        messages: list[TextGenerationRequestMessage],
+    ) -> list[dict[str, str]]:
+        flattened_messages: list[dict[str, str]] = []
+        for message in messages:
+            flattened_message = {
+                "role": message["role"],
+                "content": "",
+            }
+            if isinstance(message["content"], str):
+                flattened_message["content"] = message["content"]
+            elif isinstance(message["content"], list):
+                for content in message["content"]:
+                    if "type" not in content:
+                        raise ValueError(
+                            "Malformed message content, missing 'type' field"
+                        )
+                    if content["type"] != "text":
+                        raise ValueError(
+                            f"Unsupported content type: {content['type']}"
+                        )
+
+                    if flattened_message["content"] != "":
+                        flattened_message["content"] += "\n"
+
+                    flattened_message["content"] += content["text"]
+
+                if "content" not in flattened_message:
+                    raise ValueError(
+                        "Malformed message content, missing 'content' field with type 'text'"
+                    )
+            else:
+                raise ValueError(
+                    f"Unsupported content type: {type(message['content'])}"
+                )
+
+            flattened_messages.append(flattened_message)
+
+        return flattened_messages
+
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
@@ -205,8 +246,16 @@ class TextTokenizer(
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
         }
+
+        flattened_messages = self._flatten_text_generation_request_message(
+            messages
+        )
+
         templated_message = self.delegate.apply_chat_template(
-            messages, tokenize=False, tools=tools, **chat_template_options
+            flattened_messages,
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
