@@ -1,12 +1,9 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "scheduler",
     srcs = glob(["*.py"]),
-    data = select({
-        "//:linux_x86_64": ["//AsyncRT:plugin_ucx"],
-        "//conditions:default": [],
-    }),
+    data = NIXL_PLUGINS_DATA,
     imports = ["../../.."],
     deps = [
         "//SDK/lib/API/python/max:_core",
