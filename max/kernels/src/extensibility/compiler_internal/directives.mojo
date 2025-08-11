@@ -162,5 +162,22 @@ struct StaticTensorSpec[
         )
 
     @always_inline
+    fn with_layout_and_alignment[
+        new_rank: Int
+    ](
+        self, new_shape: DimList, new_strides: DimList, new_alignment: Int
+    ) -> StaticTensorSpec[dtype, new_rank]:
+        return StaticTensorSpec[dtype, new_rank](
+            new_shape,
+            new_strides,
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+            None,
+            None,
+            None,
+        )
+
+    @always_inline
     fn to_layout(self) -> Layout:
         return Layout(IntTuple(self.shape), IntTuple(self.strides))

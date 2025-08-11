@@ -2460,11 +2460,12 @@ struct Slice:
         stops: InputTensor[rank=1],
         steps: InputTensor[rank=1],
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout[rank](
+            static_spec = input.static_spec.with_layout_and_alignment[rank](
                 output_static_shape,
                 Self.get_view_strides[rank](
                     input._static_strides, static_steps
                 ),
+                1,
             )
         ],
     ):
@@ -2602,11 +2603,12 @@ struct SliceDim:
         stops: Scalar,
         steps: Scalar,
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout[rank](
+            static_spec = input.static_spec.with_layout_and_alignment[rank](
                 output_static_shape,
                 Self.get_view_strides[rank, axis](
                     input._static_strides, static_step.at[0]()
                 ),
+                1,
             )
         ],
     ):
