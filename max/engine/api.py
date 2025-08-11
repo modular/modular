@@ -22,7 +22,7 @@ from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.profiler import traced
-from max.support.paths import (
+from mojo.paths import (
     _build_mojo_source_package,
     is_mojo_source_package_path,
 )

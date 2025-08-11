@@ -15,7 +15,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 # Install mojo import hook
-import max.mojo.importer
+import mojo.importer
 
 # Imports from 'mojo_module.mojo'
 from mojo_module import mojo_block_hasher  # type: ignore
