@@ -153,54 +153,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         if self._end_idx < self._size:
             self.tokens = np.resize(self.tokens, self._size)
 
-    def __eq__(self, other: object) -> bool:
-        """Compare TextContext instances for equality.
-
-        Ensures proper comparison of numpy array fields and all other attributes.
-        Handles numpy arrays, lists, lists of lists, and sets appropriately.
-
-        Args:
-            other: Object to compare against
-
-        Returns:
-            bool: True if contexts are equal, False otherwise
-        """
-        if not isinstance(other, type(self)):
-            return NotImplemented
-
-        # Get all fields from msgspec
-        fields = msgspec.structs.fields(type(self))
-
-        # Compare all attributes
-        for field in fields:
-            field_name = field.name
-            self_val = getattr(self, field_name)
-            other_val = getattr(other, field_name)
-
-            # Handle numpy arrays
-            if isinstance(self_val, np.ndarray):
-                if not np.array_equal(self_val, other_val):
-                    return False
-            # Handle lists
-            elif isinstance(self_val, list) or isinstance(self_val, tuple):
-                if len(self_val) != len(other_val):
-                    return False
-                for s, o in zip(self_val, other_val):
-                    if isinstance(s, np.ndarray):
-                        if not np.array_equal(s, o):
-                            return False
-                    elif s != o:
-                        return False
-            # Handle sets
-            elif isinstance(self_val, set):
-                if self_val != other_val:
-                    return False
-            # Handle all other types
-            elif self_val != other_val:
-                return False
-
-        return True
-
     @property
     def all_tokens(self) -> np.ndarray:
         return self.tokens[: self.end_idx]
