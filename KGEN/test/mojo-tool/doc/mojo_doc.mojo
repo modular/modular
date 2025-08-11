@@ -327,7 +327,7 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:     "returns": {
 # CHECK:       "type": "S"
 # CHECK:     },
-# CHECK:     "signature": "fn_with_fn_param_and_arg[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T](arg_fn: fn(S, S) capturing -> Bool) -> S"
+# CHECK:     "signature": "fn_with_fn_param_and_arg[T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T](arg_fn: fn(S, S) capturing -> Bool) -> S"
 
 
 fn fn_with_fn_param_and_arg[
@@ -345,7 +345,7 @@ fn fn_with_fn_param_and_arg[
 # CHECK:         "type": "NDBuffer"
 # CHECK:     "parameters":
 # CHECK:         "name": "origins"
-# CHECK:         "type": "origin.set"
+# CHECK:         "type": "OriginSet"
 # CHECK:         "name": "input_fn_1d"
 # CHECK:         "type": "fn[Int](Int) capturing -> SIMD[dtype, $0]"
 
@@ -360,6 +360,21 @@ fn logsoftmax[
     ],
 ](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     pass
+
+
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: fn[Int, Bool](Int, Int) capturing -> None, tile_size_list: VariadicList[Int]](offset: Int, upperbound: Int)",
+
+
+fn tile_and_unswitch[
+    workgroup_function: Static1DTileUnswitchUnitFunc,
+    tile_size_list: VariadicList[Int],
+](offset: Int, upperbound: Int):
+    pass
+
+
+alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+    Int, Int
+) capturing [_] -> None
 
 
 @fieldwise_init
@@ -626,7 +641,7 @@ fn fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[: Bool, //, o1: Origin[$0], o2: MutableOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
+# CHECK:     "signature": "fn_with_origins[o1: Origin[$0], o2: MutableOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
 fn fn_with_origins[
     o1: Origin[_], o2: Origin[True]
 ](ref [o1]arg1: Int, ref [o2]arg2: Int) -> ref [arg1] Int:
@@ -892,7 +907,7 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:      "name": "S"
 # CHECK:      "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[

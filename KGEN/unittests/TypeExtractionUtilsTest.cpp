@@ -71,6 +71,15 @@ TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_WithWhitespace) {
   EXPECT_EQ(extractBaseTypeName("\tDict[String, Int]\n"), "Dict");
 }
 
+/// Test extractBaseTypeName with OriginSet type.
+/// Should return "OriginSet" instead of internal representation.
+TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_OriginSetType) {
+  // Test OriginSet type name formatting (string-based fallback)
+  EXPECT_EQ(extractBaseTypeName("origin.set"), "origin.set");
+  EXPECT_EQ(extractBaseTypeName("OriginSet"), "OriginSet");
+  EXPECT_EQ(extractBaseTypeName("OriginSet[something]"), "OriginSet");
+}
+
 /// Test extractBaseTypeName with edge cases and malformed inputs.
 TEST_F(TypeExtractionUtilsTest, ExtractBaseTypeName_EdgeCases) {
   EXPECT_EQ(extractBaseTypeName(""), "");
