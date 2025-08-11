@@ -1,15 +1,11 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "NIXL_ENV_VAR", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
 
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
-        data = ["//AsyncRT:plugin_ucx"],
-        env = {
-            # TODO(GENAI-170): Make plugin directory discovery more robust and work
-            # outside of Bazel.
-            "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
-        },
+        data = NIXL_PLUGINS_DATA,
+        env = NIXL_ENV_VAR,
         exec_properties = {
             "test.resources:gpu-memory": "16",
         },
