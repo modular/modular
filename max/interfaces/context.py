@@ -195,7 +195,6 @@ class InputContext(Protocol):
         - ``start_idx``: Marks the beginning of completed tokens
         - ``active_idx``: Marks the start of next_tokens within the array
         - ``end_idx``: Marks the end of all active tokens (one past the last token)
-        - ``committed_idx``: Marks tokens that have been committed and returned to the user
     """
 
     @property
@@ -292,18 +291,6 @@ class InputContext(Protocol):
 
         Returns:
             The zero-based index one position past the last active token.
-        """
-        ...
-
-    @property
-    def committed_idx(self) -> int:
-        """The index marking tokens that have been committed and returned to the user.
-
-        Committed tokens are those that have been finalized in the generation
-        process and delivered as output to the user.
-
-        Returns:
-            The zero-based index up to which tokens have been committed.
         """
         ...
 
@@ -495,7 +482,6 @@ class InputContext(Protocol):
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
-        committed_idx: int = 0,
     ) -> None:
         """Increment token indices by the specified amounts.
 
@@ -506,7 +492,6 @@ class InputContext(Protocol):
             start_idx: Amount to increment the ``start_idx`` by.
             active_idx: Amount to increment the ``active_idx`` by.
             end_idx: Amount to increment the ``end_idx`` by.
-            committed_idx: Amount to increment the ``committed_idx`` by.
         """
         ...
 
@@ -515,7 +500,6 @@ class InputContext(Protocol):
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
     ) -> None:
         """Set token indices to specific absolute values.
 
@@ -526,7 +510,6 @@ class InputContext(Protocol):
             start_idx: New absolute value for ``start_idx``, if provided.
             active_idx: New absolute value for ``active_idx``, if provided.
             end_idx: New absolute value for ``end_idx``, if provided.
-            committed_idx: New absolute value for ``committed_idx``, if provided.
         """
         ...
 
