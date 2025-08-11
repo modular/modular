@@ -91,8 +91,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
 # ===----------------------------------------------------------------------=== #
 
 
-trait KeyElement(Copyable, Movable):
-    pass
+alias KeyElement = ExplicitlyCopyable & Movable
 
 
 @register_passable
@@ -456,7 +455,7 @@ fn get_static_string[
     return StringLiteral(_get_kgen_string[string, extra]())
 
 
-struct String(KeyElement):
+struct String(Copyable, KeyElement):
     fn __init__(out self):
         pass
 
