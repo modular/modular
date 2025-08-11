@@ -66,6 +66,10 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
         return extractSymbolLeafName(symbols.front());
       }
     }
+    // Handle OriginSet type name
+    else if (isa<LIT::OriginSetType>(mlirType)) {
+      return "OriginSet";
+    }
   }
 
   // String-based fallback: remove generics

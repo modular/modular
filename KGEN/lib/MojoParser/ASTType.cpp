@@ -1333,6 +1333,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       printDemangledParam(os, originType.isMutable(), diagShared);
       os << ']';
     }
+  } else if (isa<OriginSetType>(type)) {
+    // Use "OriginSet" type name instead of the internal "origin.set"
+    os << "OriginSet";
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (diagShared)
