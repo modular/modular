@@ -79,6 +79,22 @@ what we publish.
     of implicit `Copyable`:
     `KeyElement`
 
+- A new `InstanceOf` utility is introduced to reduce the syntactic load of
+  declaring function arguments of a type that implements a given trait. For
+  example, instead of writing
+
+  ```mojo
+  fn foo[T: Intable, //](x: T) -> Int:
+      return x.__int__()
+  ```
+
+  one can now write:
+
+  ```mojo
+  fn foo(x: InstanceOf[Intable]) -> Int:
+      return x.__int__()
+  ```
+
 - The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
   return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
   has explicit elementwise comparisons that return boolean masks, e.g. `eq()`

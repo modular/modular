@@ -113,3 +113,25 @@ trait AnyType:
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
 alias ImplicitlyDestructible = AnyType
+
+
+alias __InstanceOfImpl[Trait: AnyTrivialRegType, T: Trait] = T
+
+alias InstanceOf[Trait: AnyTrivialRegType] = __InstanceOfImpl[Trait]
+"""An alias allowing users to tersely express that a function argument is an
+instance of a trait.
+
+For example, instead of writing
+
+```mojo
+fn foo[T: Intable, //](x: T) -> Int:
+    return x.__int__()
+```
+
+one can write:
+
+```mojo
+fn foo(x: InstanceOf[Intable]) -> Int:
+    return x.__int__()
+```
+"""
