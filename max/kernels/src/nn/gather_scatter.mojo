@@ -673,7 +673,7 @@ fn gather[
         @parameter
         @always_inline
         fn gather_elementwise_fn[
-            simd_width: Int, rank: Int
+            simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
                 dtype=dtype,
@@ -788,7 +788,7 @@ fn gather[
         @parameter
         @always_inline
         fn gather_elementwise_fn[
-            simd_width: Int, rank: Int
+            simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
                 dtype=dtype,
@@ -965,7 +965,9 @@ fn scatter_nd_generator[
         )
         @parameter
         fn update_func[
-            simd_width: Int, _rank: Int
+            simd_width: Int,
+            _rank: Int,
+            alignment: Int = 1,
         ](_indices_coords: IndexList[_rank]):
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
@@ -1280,7 +1282,7 @@ fn scatter_elements[
     @__copy_capture(axis, input_ax_dim)
     @parameter
     fn update_func[
-        simd_width: Int, _rank: Int
+        simd_width: Int, _rank: Int, alignment: Int = 1
     ](_indices_coords: IndexList[_rank]):
         var indices_coords = rebind[IndexList[rank]](_indices_coords)
         var idx_on_axis = indices[indices_coords]
@@ -1394,7 +1396,7 @@ fn gather_elements[
     @__copy_capture(input_ax_dim, axis)
     @parameter
     fn gather_func[
-        simd_width: Int, _rank: Int
+        simd_width: Int, _rank: Int, alignment: Int = 1
     ](_output_coords: IndexList[_rank]):
         var output_coords = rebind[IndexList[rank]](_output_coords)
         var idx_on_axis = indices[output_coords]
@@ -1574,7 +1576,7 @@ fn _gather_nd_impl[
     # output to an index in the input
     @parameter
     fn gather_nd_elementwise_fn[
-        simd_width: Int, rank: Int
+        simd_width: Int, rank: Int, alignment: Int = 1
     ](output_idx_arg: IndexList[rank]):
         var output_idx = rebind[IndexList[output_rank]](output_idx_arg)
         var data_idx = IndexList[data_rank]()
@@ -1737,7 +1739,9 @@ fn scatter_set_constant[
 
     @always_inline
     @parameter
-    fn scatter_set_constant_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+    fn scatter_set_constant_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
         constrained[rank_ == 1, "scatter_set_constant_fn: rank must be 1"]()
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value

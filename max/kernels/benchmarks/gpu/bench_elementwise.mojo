@@ -171,7 +171,9 @@ fn run_elementwise[
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            fn func[simd_width: Int, rank_: Int](idx0: IndexList[rank_]):
+            fn func[
+                simd_width: Int, rank_: Int, alignment: Int = 1
+            ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
 
                 @parameter

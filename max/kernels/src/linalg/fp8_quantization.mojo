@@ -66,7 +66,9 @@ fn quantize_static_scaled_fp8[
     @always_inline
     @parameter
     @__copy_capture(out_buffer, in_buffer, scale)
-    fn scaled_fp8_quant[width: Int, rank: Int](idx_arg: IndexList[rank]):
+    fn scaled_fp8_quant[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
         constrained[
             _is_sm_9x_or_newer(),
             "this kernel is only supported on sm90 or newer",

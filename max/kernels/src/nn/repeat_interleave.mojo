@@ -127,7 +127,7 @@ fn repeat_interleave[
 
     @always_inline
     @parameter
-    fn func[width: Int, rank: Int](idx: IndexList[rank]):
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var output_index = rebind[IndexList[3]](idx)
         var input_index = output_index
         input_index[1] = offset_mapping[output_index[1]]

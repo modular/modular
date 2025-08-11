@@ -46,7 +46,9 @@ fn _argsort_cpu[
     """
 
     @parameter
-    fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
+    fn fill_indices_iota[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
     elementwise[fill_indices_iota, simdwidthof[indices.dtype](), target="cpu"](
@@ -206,7 +208,7 @@ fn _argsort_gpu[
         @parameter
         @__copy_capture(indices)
         fn fill_indices_iota_no_padding[
-            width: Int, rank: Int
+            width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
             indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
@@ -251,7 +253,9 @@ fn _argsort_gpu[
     # Initialize indices with sequential values and copy input data to device
     @parameter
     @__copy_capture(padded_indices, padded_input, input, indices, n)
-    fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
+    fn fill_indices_iota[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
             padded_indices.ptr.store(i, iota[padded_indices.dtype, width](i))
@@ -283,7 +287,9 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     @parameter
     @__copy_capture(padded_indices, indices)
-    fn extract_indices[width: Int, rank: Int](offset: IndexList[rank]):
+    fn extract_indices[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         indices.ptr.store(
             offset[0], padded_indices.ptr.load[width=width](offset[0])
         )

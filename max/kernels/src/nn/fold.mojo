@@ -114,7 +114,9 @@ fn fold[
         height_col,
         width_col,
     )
-    fn fold_fn[width: Int, rank_: Int](idx_arg: IndexList[rank_]):
+    fn fold_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank_]):
         constrained[rank_ == 4, "fold_fn: rank must be 4"]()
         var idx = rebind[IndexList[4]](idx_arg)
 

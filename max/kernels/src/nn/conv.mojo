@@ -3403,10 +3403,10 @@ fn conv_gpu[
                 @__copy_capture(output_tmp)
                 @always_inline
                 fn epilogue_wrapper[
-                    _width: Int, _rank: Int
+                    _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
-                    alias alignment = alignof[SIMD[output_type, _width]]()
-                    vec = output_tmp.load[width=_width, alignment=alignment](
+                    alias align = alignof[SIMD[output_type, _width]]()
+                    vec = output_tmp.load[width=_width, alignment=align](
                         rebind[IndexList[4]](coords)
                     )
                     epilogue(coords, vec)

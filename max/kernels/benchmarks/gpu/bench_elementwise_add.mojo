@@ -47,7 +47,9 @@ fn bench_add[
     @parameter
     @always_inline
     @__copy_capture(input0, input1, output)
-    fn add[simd_width: Int, _rank: Int](out_index: IndexList[_rank]):
+    fn add[
+        simd_width: Int, _rank: Int, alignment: Int = 1
+    ](out_index: IndexList[_rank]):
         var idx = rebind[IndexList[rank]](out_index)
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width

@@ -228,7 +228,9 @@ fn test[
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
 
         var val = c_ref_tensor.load[width=simd_width](idx)

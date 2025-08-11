@@ -45,7 +45,9 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
         var val = in_buffer.load[width=simd_width](idx)
         var result = log_fn(val)

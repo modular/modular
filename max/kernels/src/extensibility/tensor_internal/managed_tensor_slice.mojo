@@ -1376,13 +1376,10 @@ fn foreach[
     fn elementwise_fn_wrapper[
         width: Int,
         rank: Int,
+        alignment: Int = 1,
     ](index: IndexList[rank]) capturing:
-        # TODO: Propagate element_alignment through the foreach kernel
-        alias element_alignment = 1
-        var val = func[width, element_alignment](
-            rebind[IndexList[tensor.rank]](index)
-        )
-        tensor._fused_store[element_alignment=element_alignment](index, val)
+        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
+        tensor._fused_store[element_alignment=alignment](index, val)
 
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
@@ -1432,7 +1429,7 @@ fn foreach[
     @parameter
     @always_inline
     fn out_func_shim[
-        _width: Int, _rank: Int
+        _width: Int, _rank: Int, _alignment: Int = 1
     ](index: IndexList[_rank]) capturing:
         idx = rebind[IndexList[rank]](index)
         out_func[_width](idx)

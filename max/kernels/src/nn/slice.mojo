@@ -168,7 +168,9 @@ fn copy_to_slice[
     @always_inline
     @__copy_capture(in_slice, buffer_slice_view)
     @parameter
-    fn copy[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn copy[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
         buffer_slice_view.store[width=simd_width](
             index, in_slice.load[width=simd_width](index)
@@ -199,7 +201,9 @@ fn slice_as_copy[
     @always_inline
     @__copy_capture(sliced)
     @parameter
-    fn copy[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn copy[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
         output.store[width=simd_width](
             index, sliced.load[width=simd_width](index)

@@ -81,7 +81,7 @@ fn memcpy_or_fuse[
         @parameter
         @always_inline
         fn epilogue_wrapper[
-            simd_width: Int, _rank: Int
+            simd_width: Int, _rank: Int, alignment: Int = 1
         ](index: IndexList[_rank]):
             var load = rebind[NDBuffer[dtype, _rank, input.origin]](input).load[
                 width=simd_width
@@ -430,7 +430,9 @@ fn _concat_small[
 
     @parameter
     @always_inline
-    fn concat_lambda[simd_width: Int, rank: Int](out_index: IndexList[rank]):
+    fn concat_lambda[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](out_index: IndexList[rank]):
         # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
         # [:, 60, :] so when the target dim is:
         #   0 >= target_dim < 10: We are loading from first input.
@@ -689,7 +691,7 @@ fn _concat_gpu_elementwise[
     @parameter
     @always_inline
     fn per_output_elem[
-        simd_width: Int, _rank: Int
+        simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
         in_index[axis] = out_index[axis]
@@ -828,7 +830,7 @@ fn _fused_concat_cpu[
         @parameter
         @always_inline
         fn elementwise_wrapper[
-            _width: Int, rank: Int
+            _width: Int, rank: Int, alignment: Int = 1
         ](indices: IndexList[rank]):
             var c = indices
             c[axis] += offset
@@ -902,7 +904,7 @@ fn _fused_concat_gpu_elementwise[
     @parameter
     @always_inline
     fn per_output_elem[
-        simd_width: Int, _rank: Int
+        simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
         in_index[axis] = out_index[axis]

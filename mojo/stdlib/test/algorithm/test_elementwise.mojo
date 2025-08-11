@@ -48,7 +48,9 @@ def test_elementwise[
 
     @always_inline
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[outer_rank]](idx)
         var in1 = buffer1.load[width=simd_width](index)
         var in2 = buffer2.load[width=simd_width](index)
@@ -73,7 +75,9 @@ def test_elementwise_implicit_runtime():
 
     @always_inline
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         vector[idx[0]] = 42
 
     elementwise[func, simd_width=1](20)

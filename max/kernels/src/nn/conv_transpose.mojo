@@ -1610,14 +1610,16 @@ fn conv_transposed_gpu[
         @parameter
         @__copy_capture(output_tmp)
         @always_inline
-        fn epilogue_wrapper[_width: Int, _rank: Int](coords: IndexList[_rank]):
-            alias alignment = alignof[SIMD[output_type, _width]]()
+        fn epilogue_wrapper[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            alias align = alignof[SIMD[output_type, _width]]()
             var idx = output_tmp.runtime_layout(
                 RuntimeTuple[fill_like(output_tmp.layout.shape, UNKNOWN_VALUE)](
                     coords
                 )
             )
-            vec = output_tmp.ptr.load[width=_width, alignment=alignment](idx)
+            vec = output_tmp.ptr.load[width=_width, alignment=align](idx)
             epilogue(coords, vec)
 
         elementwise[epilogue_wrapper, simdwidthof[output_type](), target="gpu"](

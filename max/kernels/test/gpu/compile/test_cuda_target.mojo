@@ -128,7 +128,9 @@ fn erf_elementwise(
     @always_inline
     @__copy_capture(tid)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var offset = tid + idx[0]
         if offset >= len:
             return

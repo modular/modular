@@ -33,7 +33,9 @@ def test_elementwise_1d():
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var elem = vector.load[width=simd_width](idx[0])
         var val = exp(erf(tanh(elem + 1)))
         vector.store[width=simd_width](idx[0], val)

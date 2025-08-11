@@ -34,7 +34,9 @@ fn test_elementwise_print[
     @always_inline
     @__copy_capture(c01, N)
     @parameter
-    fn binary[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn binary[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var m: Int = idx0[0]
         var n: Int = idx0[1]
         print("print thousands of messages: m=", m, " n=", n, sep="")

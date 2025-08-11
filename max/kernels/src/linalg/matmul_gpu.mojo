@@ -1123,7 +1123,9 @@ fn split_k_reduce[
     @always_inline
     @__copy_capture(c, work_space, num_partitions)
     @parameter
-    fn _reduce[simd_width: Int, rank: Int](c_coord: IndexList[rank]):
+    fn _reduce[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](c_coord: IndexList[rank]):
         var idx = Index(0, c_coord[0], c_coord[1])
         var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
@@ -1131,16 +1133,16 @@ fn split_k_reduce[
                 Index(k, c_coord[0], c_coord[1])
             )
 
-        alias alignment = alignof[SIMD[c_type, simd_width]]()
+        alias align = alignof[SIMD[c_type, simd_width]]()
 
         @parameter
         if elementwise_lambda_fn:
             alias epilogue = elementwise_lambda_fn.value()
-            epilogue[alignment=alignment](
+            epilogue[alignment=align](
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
         else:
-            c.store[width=simd_width, alignment=alignment](
+            c.store[width=simd_width, alignment=align](
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 

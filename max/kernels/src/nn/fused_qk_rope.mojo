@@ -170,7 +170,9 @@ fn fused_qk_rope[
     @always_inline
     @parameter
     @__copy_capture(k_cache)
-    fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
+    fn rope_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
         constrained[rank == 4, "Invalid rank passed to rope kernel"]()
 
         @parameter
@@ -300,7 +302,9 @@ fn fused_qk_rope_ragged[
     @always_inline
     @parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
-    fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
+    fn rope_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
         constrained[rank == 3, "Invalid rank passed to rope kernel"]()
 
         @parameter

@@ -158,7 +158,7 @@ fn resize_nearest_neighbor[
     @__copy_capture(scales)
     @parameter
     fn nn_interpolate[
-        simd_width: Int, _rank: Int
+        simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_coords: IndexList[_rank]):
         var in_coords = IndexList[rank](0)
 

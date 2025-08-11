@@ -90,7 +90,9 @@ fn merge_ragged_tensors[
 ) raises:
     @always_inline
     @parameter
-    fn merge_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+    fn merge_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
         constrained[rank_ == rank, "Invalid rank passed to the kernel"]()
 
         var a_tensor_size = a.dim[0]()

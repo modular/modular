@@ -111,7 +111,9 @@ fn bench_concat[
         var input = inputs_host[i]
 
         @parameter
-        fn check[width: Int, _rank: Int](coords: IndexList[_rank]):
+        fn check[
+            width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
             var out_coords = coords
             out_coords[axis] += offset
             if (

@@ -50,7 +50,9 @@ fn apply_penalties_to_logits[
 
     @always_inline
     @parameter
-    fn apply_penalties_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+    fn apply_penalties_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
         constrained[rank_ == 1, "apply_penalties_fn: rank must be 1"]()
 
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
@@ -209,7 +211,7 @@ fn update_frequency_data[
         @always_inline
         @parameter
         fn update_frequency_data_fn[
-            width: Int, rank_: Int
+            width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
             constrained[
                 rank_ == 1, "update_frequency_data_fn: rank must be 1"

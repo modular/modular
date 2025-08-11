@@ -27,7 +27,9 @@ def print_elements[
 
     @always_inline
     @parameter
-    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn print_elements_lambda[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 
@@ -61,7 +63,9 @@ def test_arange[
     @always_inline
     @__copy_capture(out_tensor, step, start, stop)
     @parameter
-    fn arange_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn arange_lambda[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[1]](idx)
         var range_val = arange[dtype, simd_width](start, stop, step, index)
         out_tensor.store[width=simd_width](index, range_val)

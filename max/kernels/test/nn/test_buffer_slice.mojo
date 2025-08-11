@@ -28,7 +28,9 @@ fn print_elements[
 
     @always_inline
     @parameter
-    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn print_elements_lambda[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 

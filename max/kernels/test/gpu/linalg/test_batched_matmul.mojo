@@ -204,7 +204,9 @@ fn test[
     @always_inline
     @__copy_capture(c_device_ref, B, M, N)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
         var val = c_device_ref.load[width=simd_width](idx)
         alias element_lambda = lambda_fn.value()

@@ -37,7 +37,9 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         @always_inline
         @parameter
-        fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        fn func[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
             vector[idx[0]] = 42
 
         elementwise[func, 1](Index(n))

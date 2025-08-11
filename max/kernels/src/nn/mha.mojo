@@ -4520,7 +4520,9 @@ fn _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    fn scale_and_mask[width: Int, _rank: Int](coords: IndexList[_rank]):
+    fn scale_and_mask[
+        width: Int, _rank: Int, alignment: Int = 1
+    ](coords: IndexList[_rank]):
         var vec = score.load[width=width](rebind[IndexList[4]](coords))
         vec = vec * scale.cast[type]()
         vec = vec + mask.load[width=width](

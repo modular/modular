@@ -56,7 +56,9 @@ fn kl_div[
     len: Int,
 ) raises:
     @parameter
-    fn kl_div_elementwise[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn kl_div_elementwise[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         output.store(
             idx[0],
             kl_div(
@@ -285,7 +287,9 @@ fn _sqrt[
     dtype: DType, //
 ](output: UnsafePointer[Scalar[dtype]], x: __type_of(output), len: Int) raises:
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn apply_fn[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         output.store(
             idx[0],
             rebind[SIMD[dtype, simd_width]](
@@ -305,7 +309,9 @@ fn _mul[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn apply_fn[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         output.store(
             idx[0],
             rebind[SIMD[dtype, simd_width]](
@@ -326,7 +332,9 @@ fn _div[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn apply_fn[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         output.store(
             idx[0],
             rebind[SIMD[dtype, simd_width]](x.load[width=simd_width](idx[0]))

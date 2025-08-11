@@ -62,7 +62,9 @@ fn matmul[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        fn epilogue_wrapper[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
             var c_val = c.load[
                 width=simd_width,

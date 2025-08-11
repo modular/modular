@@ -88,7 +88,9 @@ fn _matrix_band_part_impl[
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter
     @always_inline
-    fn func[simd_width: Int, inner_rank: Int](index: IndexList[inner_rank]):
+    fn func[
+        simd_width: Int, inner_rank: Int, alignment: Int = 1
+    ](index: IndexList[inner_rank]):
         var idx = rebind[IndexList[rank]](index)
 
         var row = idx[rank - 2]

@@ -49,7 +49,9 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
         out_buffer.store(
             idx,
@@ -119,7 +121,9 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
 
         out_buffer.store(
@@ -178,7 +182,9 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer_transposed, out_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
 
         # We need to perform unaligned loads because the non-uniform strides

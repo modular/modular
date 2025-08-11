@@ -2648,7 +2648,9 @@ fn _k_cache_to_buffer[
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
+    fn copy_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
         constrained[rank == 2, "rank should be equal to 2"]()
 
         var idx = rebind[IndexList[2]](idx_arg)

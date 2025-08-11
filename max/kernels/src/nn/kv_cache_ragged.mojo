@@ -2916,7 +2916,7 @@ fn generic_kv_cache_radd_dispatch[
 
     @parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
-    fn do_radd[width: Int, rank: Int](idx: IndexList[rank]):
+    fn do_radd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         constrained[rank == 2, "Rank must be 2"]()
 
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch

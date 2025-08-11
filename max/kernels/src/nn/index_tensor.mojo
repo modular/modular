@@ -313,7 +313,7 @@ fn _index_tensor_impl[
     # output to an index in the input
     @parameter
     fn index_tensor_elementwise_fn[
-        simd_width: Int, rank: Int
+        simd_width: Int, rank: Int, alignment: Int = 1
     ](output_idx_arg: IndexList[rank]) capturing -> None:
         var output_idx = rebind[IndexList[output_rank]](output_idx_arg)
         var data_idx = IndexList[data_rank]()
@@ -516,7 +516,9 @@ fn advanced_indexing_getitem[
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
-        width: Int, out_tensor_rank: Int
+        width: Int,
+        out_tensor_rank: Int,
+        alignment: Int = 1,
     ](output_index: IndexList[out_tensor_rank]) capturing:
         input_index = IndexList[input_rank]()
 
@@ -736,7 +738,7 @@ fn advanced_indexing_setitem_inplace[
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
-        width: Int, iteration_rank: Int
+        width: Int, iteration_rank: Int, alignment: Int = 1
     ](iteration_indices: IndexList[iteration_rank]) capturing:
         var index_tensor_indices = IndexList[index_rank]()
 

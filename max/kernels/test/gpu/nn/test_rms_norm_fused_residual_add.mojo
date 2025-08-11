@@ -150,7 +150,9 @@ fn run_rms_norm_fused_residual_add_gpu[
     @parameter
     @always_inline
     @__copy_capture(unfused_intermediate_buf, data_buf)
-    fn sum_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+    fn sum_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
         var residual_val = data_buf.load[width=width](
             rebind[IndexList[rank]](idx)
         )
