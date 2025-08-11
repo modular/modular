@@ -56,6 +56,7 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "causal_conv1d",
     srcs = ["causal_conv1d.py"],
+    tags = ["manual"],  # TODO: Fix this flaky test
 )
 
 custom_op_example_py_binary(

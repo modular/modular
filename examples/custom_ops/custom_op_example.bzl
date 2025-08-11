@@ -7,7 +7,8 @@ def custom_op_example_py_binary(
         srcs,
         extra_data = [],
         extra_deps = [],
-        target_compatible_with = None):
+        target_compatible_with = None,
+        tags = []):
     modular_py_binary(
         name = name,
         srcs = srcs,
@@ -36,5 +37,5 @@ def custom_op_example_py_binary(
         name = name + ".example-test",
         args = [],
         binary = name,
-        tags = ["gpu"],
+        tags = ["gpu"] + tags,
     )
