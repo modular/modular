@@ -332,65 +332,6 @@ struct MatmulKernels[
         num_pipeline_stages=3,
     )
 
-    # TODO: These will have to be tuned for various shapes
-    alias mi300x_64x64_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(32, 32, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(2, 2, 2),
-    )
-
-    alias mi300x_64x64_splitk_1 = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(32, 32, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(2, 2, 2),
-        num_k_partitions=4,
-    )
-
-    alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(2, 2, 2),
-    )
-
-    alias mi300x_128x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 256, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(64, 128, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(2, 4, 2),
-    )
-
-    alias mi300x_192x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(192, 256, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(96, 128, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(4, 6, 2),
-    )
-
-    alias mi300x_224x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(224, 256, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(112, 128, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(4, 7, 2),
-    )
-
-    alias mi300x_256x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(256, 256, _bk_base[a_type, True]()),
-        warp_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
-        num_pipeline_stages=1,
-        scheduler_hint=Index(4, 8, 2),
-    )
-
-    alias mi300x_128x128_2 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 128, _bk_base[a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[a_type]()),
-        num_pipeline_stages=2,
-    )
-
     alias tuning_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(
             env_get_int["TUNE_BM", 128](),

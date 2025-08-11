@@ -247,7 +247,6 @@ fn _matmul_sm100[
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-    _trace_description: StaticString = "",
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -279,11 +278,9 @@ fn _matmul_sm100[
 
         logger.info("Executing vendor BLAS (cuBLAS)")
         return matmul_vendor[
-            use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             config=config,
-            _trace_description=_trace_description,
         ](c, a, b, ctx)
 
     except:
@@ -346,7 +343,6 @@ fn _matmul_gpu[
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-    _trace_description: StaticString = "",
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -435,11 +431,9 @@ fn _matmul_gpu[
     if env_get_bool["MODULE_USE_VENDOR_BLAS", False]():
         logger.info("Executing: Vendor BLAS")
         return matmul_vendor[
-            use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             config=config,
-            _trace_description=_trace_description,
         ](c, a, b, ctx)
 
     alias use_experimental_kernels = Bool(
@@ -483,7 +477,6 @@ fn _matmul_gpu[
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             config=config,
-            _trace_description=_trace_description,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
@@ -1045,11 +1038,9 @@ fn _matmul_gpu[
         logger.info("Executing: vendor BLAS fallback")
         try:
             return matmul_vendor[
-                use_tensor_core=use_tensor_core,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 config=config,
-                _trace_description=_trace_description,
             ](c, a, b, ctx)
         except:
             logger.warning("Vendor BLAS failed")

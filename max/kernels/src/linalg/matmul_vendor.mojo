@@ -30,13 +30,11 @@ fn matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
-    use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-    _trace_description: StaticString = "",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -99,7 +97,6 @@ fn matmul[
         c_tmp.data = tmp_device_buffer._unsafe_ptr()
 
         matmul[
-            use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             config=config,
