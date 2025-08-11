@@ -115,6 +115,19 @@ class Qwen2_5VLConfigBase:
     devices: list[DeviceRef]
     """Devices that the Qwen2.5VL model is parallelized over."""
 
+    # Multimodal parameters
+    image_token_id: int
+    """Token ID used for image placeholders in the input sequence."""
+
+    video_token_id: int
+    """Token ID used for video placeholders in the input sequence."""
+
+    vision_start_token_id: int
+    """Token ID that marks the start of vision content."""
+
+    spatial_merge_size: int
+    """Size parameter for spatial merging of vision features."""
+
     # Vision encoder configuration.
     vision_config: VisionConfig
     """Vision encoder configuration."""
@@ -238,6 +251,11 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
             ],
+            # Multimodal parameters
+            image_token_id=huggingface_config.image_token_id,
+            video_token_id=huggingface_config.video_token_id,
+            vision_start_token_id=huggingface_config.vision_start_token_id,
+            spatial_merge_size=hf_vision_config.spatial_merge_size,
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration
