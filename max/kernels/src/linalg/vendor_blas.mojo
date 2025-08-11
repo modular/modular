@@ -80,6 +80,7 @@ from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 
+from runtime.tracing import Trace, TraceLevel
 from utils.variant import Variant
 
 # ===----------------------------------------------------------------------===#
@@ -357,57 +358,61 @@ fn matmul[
 ) raises:
     @parameter
     if handle.resolved_backend is Backend.CUBLAS:
-        _cublas_matmul[use_tf32=use_tf32](
-            ctx,
-            handle._get_cublas(),
-            c,
-            a,
-            b,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-        )
+        with Trace[TraceLevel.OP]("_cublas_matmul"):
+            _cublas_matmul[use_tf32=use_tf32](
+                ctx,
+                handle._get_cublas(),
+                c,
+                a,
+                b,
+                c_row_major=c_row_major,
+                transpose_a=transpose_a,
+                transpose_b=transpose_b,
+                alpha=alpha,
+                beta=beta,
+            )
     elif handle.resolved_backend is Backend.ROCBLAS:
-        _rocblas_matmul[use_tf32=use_tf32](
-            ctx,
-            handle._get_rocblas(),
-            c,
-            a,
-            b,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-        )
+        with Trace[TraceLevel.OP]("_rocblas_matmul"):
+            _rocblas_matmul[use_tf32=use_tf32](
+                ctx,
+                handle._get_rocblas(),
+                c,
+                a,
+                b,
+                c_row_major=c_row_major,
+                transpose_a=transpose_a,
+                transpose_b=transpose_b,
+                alpha=alpha,
+                beta=beta,
+            )
     elif handle.resolved_backend is Backend.CUBLASLT:
-        _cublasLt_matmul(
-            ctx,
-            handle._get_cublas().bitcast[Context](),
-            c,
-            a,
-            b,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-        )
+        with Trace[TraceLevel.OP]("_cublasLt_matmul"):
+            _cublasLt_matmul(
+                ctx,
+                handle._get_cublas().bitcast[Context](),
+                c,
+                a,
+                b,
+                c_row_major=c_row_major,
+                transpose_a=transpose_a,
+                transpose_b=transpose_b,
+                alpha=alpha,
+                beta=beta,
+            )
     elif handle.resolved_backend is Backend.HIPBLASLT:
-        _hipblasLt_matmul(
-            ctx,
-            handle._get_hipblaslt(),
-            c,
-            a,
-            b,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-        )
+        with Trace[TraceLevel.OP]("_hipblasLt_matmul"):
+            _hipblasLt_matmul(
+                ctx,
+                handle._get_hipblaslt(),
+                c,
+                a,
+                b,
+                c_row_major=c_row_major,
+                transpose_a=transpose_a,
+                transpose_b=transpose_b,
+                alpha=alpha,
+                beta=beta,
+            )
     else:
         raise Error(
             "the backend '",
