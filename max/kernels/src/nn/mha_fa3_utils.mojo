@@ -169,7 +169,21 @@ struct MHAPosition[
     ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
         @parameter
         if decoding:
-            return TileMaskStatus.PARTIAL_MASK
+
+            @parameter
+            if mask_t.check_mask_during_decoding:
+                # In context encoding, we have BM rows of Q
+                # In decoding, we have `group` rows, but these
+                # correspond to the same position w/ respect to the mask.
+                return mask.status(
+                    Index[dtype = DType.int32](
+                        Int(self.num_keys - 1),
+                        Int(kv_tile_start_row),
+                    ),
+                    Index[dtype = DType.int32](Int(1), Int(Self.BN)),
+                )
+            else:
+                return TileMaskStatus.PARTIAL_MASK
         else:
             return mask.status(
                 Index[dtype = DType.int32](

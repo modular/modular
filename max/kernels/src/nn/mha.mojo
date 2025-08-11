@@ -1017,9 +1017,9 @@ fn mha[
             kv_seq_start = Int(kv_row_offsets[batch_idx])
             kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
             cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + k.cache_length(batch_idx)
+            num_keys = cur_kv_len + Int(start_pos)
         else:
-            num_keys = seq_len + k.cache_length(batch_idx)
+            num_keys = seq_len + Int(start_pos)
 
         q_batch_offset = start_of_seq * config.depth * config.num_heads
 
@@ -2532,6 +2532,7 @@ fn mha_decoding[
 
     var seq_len: Int
     var q_batch_offset: Int
+    var start_pos: UInt32 = 0
 
     @parameter
     if ragged:
