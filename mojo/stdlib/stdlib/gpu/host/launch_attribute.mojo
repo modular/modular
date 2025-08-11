@@ -209,14 +209,6 @@ struct LaunchAttributeID(Writable):
         """
         return self != other
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `LaunchAttribute`.
@@ -364,14 +356,6 @@ struct AccessProperty(Writable):
             True if the instances have different values, False otherwise.
         """
         return self != other
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     @no_inline
     fn __str__(self) -> String:

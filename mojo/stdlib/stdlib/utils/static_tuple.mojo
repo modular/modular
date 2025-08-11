@@ -158,14 +158,6 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         _static_tuple_construction_checks[size]()
         self.array = _create_array[size, Self.element_type](values)
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly copy the provided StaticTuple.
-
-        Args:
-            other: The StaticTuple to copy.
-        """
-        self.array = other.array
-
     @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Returns the length of the array. This is a known constant value.

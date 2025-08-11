@@ -304,14 +304,6 @@ struct _TaskGroupBox(Copyable, Movable):
     fn __init__[type: AnyType](out self, var coro: Coroutine[type]):
         self.handle = coro^._take_handle()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     fn __del__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 

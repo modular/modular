@@ -487,12 +487,10 @@ fn test_sort_stress() raises:
 struct MyStruct(Copyable, Movable):
     var val: Int
 
-    fn __init__(out self, *, other: Self):
-        self.val = other.val
-
 
 fn test_sort_custom() raises:
     alias length = 103
+
     var list = List[MyStruct](capacity=length)
 
     for i in range(length):
@@ -539,10 +537,6 @@ def test_sort_strings():
 struct Person(Comparable, Copyable, Movable):
     var name: String
     var age: Int
-
-    fn __init__(out self, *, other: Self):
-        self.name = other.name.copy()
-        self.age = other.age
 
     fn __lt__(self, other: Self) -> Bool:
         if self.age < other.age:

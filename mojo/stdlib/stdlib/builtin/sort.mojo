@@ -32,9 +32,6 @@ alias insertion_sort_threshold = 32
 struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
     var data: T
 
-    fn __init__(out self, *, other: Self):
-        self.data = other.data
-
 
 @always_inline
 fn _insertion_sort[

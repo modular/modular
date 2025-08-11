@@ -397,15 +397,6 @@ struct Layout(
             self.stride = stride.owned_copy()
 
     @always_inline("nodebug")
-    fn __init__(out self, *, other: Self):
-        """Explicitly constructs a deep copy of the provided layout.
-
-        Args:
-            other: The layout to copy.
-        """
-        self = other
-
-    @always_inline("nodebug")
     fn idx2crd(self, idx: IntTuple) -> IntTuple:
         """Converts a linear index to logical coordinates.
 

@@ -163,14 +163,6 @@ struct Batch(Copyable, Movable):
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     fn _mark_as_significant(mut self):
         self._is_significant = True
 
@@ -232,14 +224,6 @@ struct Report(Copyable, Defaultable, Movable):
         """
         self.warmup_duration = 0
         self.runs = List[Batch]()
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     fn __copyinit__(out self, existing: Self):
         """

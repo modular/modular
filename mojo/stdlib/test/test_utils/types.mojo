@@ -139,9 +139,6 @@ struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     fn __init__(out self):
         self.copy_count = 0
 
-    fn __init__(out self, *, other: Self):
-        self.copy_count = other.copy_count + 1
-
     fn __moveinit__(out self, deinit existing: Self):
         self.copy_count = existing.copy_count
 
@@ -176,17 +173,6 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
         """
         self.value = value^
         self.move_count = 0
-
-    # TODO: This type should not be ExplicitlyCopyable, but has to be to satisfy
-    #       CollectionElementNew at the moment.
-    fn __init__(out self, *, other: Self):
-        """Explicitly copy the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self.value = other.value.copy()
-        self.move_count = other.move_count
 
     fn __moveinit__(out self, deinit existing: Self):
         self.value = existing.value^
@@ -238,15 +224,11 @@ struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
-    fn __init__(out self, *, other: Self):
-        self.value = other.value
-        self.destructor_counter = other.destructor_counter
-
     fn __del__(deinit self):
         self.destructor_counter[].append(self.value)
 
     fn copy(self) -> Self:
-        return DelRecorder(other=self)
+        return DelRecorder(self.value, self.destructor_counter)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -259,9 +241,6 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
     Copyable & Movable
 ):
     var target: UnsafePointer[Bool, origin=origin]
-
-    fn __init__(out self, *, other: Self):
-        self = other
 
     fn __del__(deinit self):
         self.target.init_pointee_move(True)
@@ -307,10 +286,6 @@ struct AbortOnDel(Copyable, Movable):
 struct CopyCountedStruct(Copyable, Movable):
     var counter: CopyCounter
     var value: String
-
-    fn __init__(out self, *, other: Self):
-        self.counter = other.counter.copy()
-        self.value = other.value.copy()
 
     @implicit
     fn __init__(out self, value: String):

@@ -326,14 +326,6 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
     fn __init__(out self):
         self.stride = IndexList[rank]()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

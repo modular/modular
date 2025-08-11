@@ -229,14 +229,6 @@ struct FuncAttribute(Copyable, EqualityComparable, Movable):
     alias NULL = FuncAttribute(Attribute(-1), -1)
     """A null/invalid function attribute constant."""
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
         """Checks if two `FuncAttribute` instances are equal.

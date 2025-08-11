@@ -411,9 +411,6 @@ def test_dict_update_empty_new():
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __init__(out self, *, other: Self):
-        self = other.copy()
-
     fn __copyinit__(out self, other: Self):
         self.value = other.value
 

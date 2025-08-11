@@ -39,9 +39,6 @@ struct Poison(Copyable, Movable):
     fn __init__(out self):
         pass
 
-    fn __init__(out self, *, other: Self):
-        _poison_ptr().init_pointee_move(True)
-
     fn __copyinit__(out self, other: Self):
         _poison_ptr().init_pointee_move(True)
 

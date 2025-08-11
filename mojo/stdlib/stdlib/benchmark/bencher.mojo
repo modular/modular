@@ -45,14 +45,6 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
     alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
     """Default set of benchmark metrics."""
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     fn __str__(self) -> String:
         """Gets a string representation of this metric.
 
@@ -169,14 +161,6 @@ struct ThroughputMeasure(Copyable, Movable):
         var metric = BenchMetric.get_metric_from_list(name, reference)
         self.metric = metric
         self.value = value
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     fn __str__(self) -> String:
         """Gets a string representation of this `ThroughputMeasure`.
@@ -398,14 +382,6 @@ struct BenchConfig(Copyable, Movable):
 
         argparse()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
 
 @fieldwise_init
 struct BenchId:
@@ -485,14 +461,6 @@ struct BenchmarkInfo(Copyable, Movable):
         self.result = result
         self.measures = measures
         self.verbose_timing = verbose_timing
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
 
 @fieldwise_init

@@ -23,9 +23,6 @@ struct _SourceLocation(Copyable, Movable, Stringable, Writable):
     var col: Int
     var file_name: StaticString
 
-    fn __init__(out self, *, other: Self):
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

@@ -329,14 +329,6 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         self.method_flags = 0
         self.method_docstring = UnsafePointer[c_char]()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @staticmethod
     fn function[
         static_method: Bool = False

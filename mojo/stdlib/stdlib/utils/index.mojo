@@ -337,17 +337,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             ]
         ](Self._int_type(elem))
 
-    fn __init__(out self, *, other: Self):
-        """Copy constructor.
-
-        Args:
-            other: The other tuple to copy from.
-        """
-        constrained[
-            element_type.is_integral(), "Element type must be of integral type."
-        ]()
-        self.data = other.data
-
     @always_inline
     @implicit
     fn __init__(out self, values: VariadicList[Int]):
