@@ -1104,7 +1104,7 @@ fn fence_mbarrier_init():
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
 
 
-@always_inline
+@always_inline("nodebug")
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier

@@ -60,6 +60,8 @@ from gpu.sync import (
     mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor
+from layout.int_tuple import product
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from memory.pointer import _GPUAddressSpace
 from gpu.intrinsics import Scope
 from utils.index import Index, IndexList
@@ -547,6 +549,7 @@ struct TMATensorTile[
     dtype: DType,
     layout: Layout,
     desc_layout: Layout = layout,
+    is_k_major: Bool = True,
 ](Copyable, Movable):
     """
     A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
@@ -563,6 +566,8 @@ struct TMATensorTile[
         desc_layout: Layout = layout
             The layout of the descriptor, which can be different from the shared memory layout
             to accommodate hardware requirements like WGMMA.
+        is_k_major: Bool = True
+            Whether the shared memory is k-major.
 
     Performance:
 
@@ -670,8 +675,10 @@ struct TMATensorTile[
         alias copy_dim0 = desc_layout.shape[0].value()
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+        alias num_copies_dim0 = product(
+            layout.shape[not is_k_major]
+        ) // copy_dim0
+        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -680,6 +687,17 @@ struct TMATensorTile[
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
+                constrained[
+                    (copy_offset * sizeof[dtype]()) % 128 == 0,
+                    "copy_offset="
+                    + String(copy_offset)
+                    + ", sizeof[dtype]()="
+                    + String(sizeof[dtype]())
+                    + "\nlayout="
+                    + String(layout)
+                    + "\ndesc_layout="
+                    + String(desc_layout),
+                ]()
                 cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -860,8 +878,10 @@ struct TMATensorTile[
         alias copy_dim0 = desc_layout.shape[0].value()
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+        alias num_copies_dim0 = product(
+            layout.shape[not is_k_major]
+        ) // copy_dim0
+        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -869,6 +889,7 @@ struct TMATensorTile[
             @parameter
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
+
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -1529,6 +1550,113 @@ def create_tma_tile[
                 __desc_layout.shape[2].value(),
             ),
         )
+
+
+alias TMANestedTensorTile[
+    dtype: DType,
+    tile_m: Int,
+    tile_n: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+] = TMATensorTile[
+    dtype,
+    tile_layout_k_major[
+        dtype, tile_m, tile_n, swizzle_mode=swizzle_mode
+    ]() if is_k_major else tile_layout_mn_major[
+        dtype, tile_n, tile_m, swizzle_mode=swizzle_mode
+    ](),
+    _tma_desc_tile_layout[
+        dtype, 2, IndexList[2](tile_m, tile_n), is_k_major, swizzle_mode
+    ](),
+    is_k_major,
+]
+
+
+fn create_nested_tma_tile[
+    dtype: DType, //,
+    tile_m: Int,
+    tile_n: Int,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    is_k_major: Bool,
+](
+    ctx: DeviceContext,
+    tensor: LayoutTensor[dtype, *_, **_],
+    out res: TMANestedTensorTile[
+        dtype, tile_m, tile_n, swizzle_mode, is_k_major
+    ],
+) raises:
+    """
+    Creates a rank 2 `TMATensorTile` with a nested layout using
+    `tile_layout_k_major` is `is_k_major` or `tile_layout_mn_major` otherwise.
+
+    Parameters:
+        dtype: DType
+            The data type of the tensor elements.
+        tile_m: The number of rows of a global memory tile.
+        tile_n: The number of columns of a global memory tile.
+        swizzle_mode: The swizzle_mode used by the TMA operation.
+        is_k_major: Whether the shared memory is to be k-major
+            or mn-major. If mn-major, it is transposed.
+
+    Args:
+        ctx: DeviceContext
+            The CUDA device context used to create the TMA descriptor.
+        tensor: LayoutTensor[type, *_, **_]
+            The source tensor from which data will be transferred. This defines the
+            global memory layout and must match the specified data type.
+
+    Returns:
+        The `TMATensorTile` configured with the specified tile dimensions and
+        swizzle mode, ready for use in asynchronous data transfer operations.
+    """
+    alias ResultType = __type_of(res)
+    alias desc_layout = ResultType.desc_layout
+    alias desc_bytes_size = desc_layout.size() * sizeof[dtype]()
+    alias layout_size = ResultType.layout.size() * sizeof[dtype]()
+
+    # When we do multiple TMA copy, every address has to be align to 128.
+    constrained[
+        desc_bytes_size == layout_size or desc_bytes_size % 128 == 0,
+        (
+            "desc layout byte size has to be  align to 128 bytes for"
+            " multiple TMA copies. desc_layout: "
+            + String(desc_layout.shape[0].value())
+            + " "
+            + String(desc_layout.shape[1].value())
+            + " tile_layout: "
+            + String(tile_m)
+            + " "
+            + String(tile_n)
+        ),
+    ]()
+
+    @parameter
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        constrained[
+            (tile_n * sizeof[dtype]()) % swizzle_mode.bytes() == 0,
+            String(swizzle_mode),
+            " mode requires K dim multiple of ",
+            String(swizzle_mode.bytes()),
+            "B. K dim is now ",
+            String(tile_n * sizeof[dtype]()),
+            " bytes.",
+        ]()
+
+    res = create_tma_descriptor[dtype, 2, swizzle_mode](
+        DeviceBuffer(
+            ctx,
+            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            1,
+            owning=False,
+        ),
+        (tensor.dim(0), tensor.dim(1)),
+        (tensor.stride(0), tensor.stride(1)),
+        (
+            desc_layout.shape[0].value(),
+            desc_layout.shape[1].value(),
+        ),
+    )
 
 
 @always_inline

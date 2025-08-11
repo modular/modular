@@ -27,7 +27,7 @@ from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import TMATensorTile, create_tma_tile
+from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 from utils import Index, IndexList
 
 
@@ -196,9 +196,17 @@ trait KVCacheT(Copyable, Movable):
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        dtype, Layout.row_major(tile_m, tile_n)
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
         ...
@@ -382,12 +390,18 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](
-        self,
-        ctx: DeviceContext,
-        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
-    ) raises:
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        Self.dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
+    ]:
         """Creates a TMA tile for this KV cache."""
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
@@ -405,11 +419,9 @@ struct ContinuousBatchingKVCache[
             self.blocks.data, rt_layout
         )
 
-        res = rebind[__type_of(res)](
-            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
-                ctx, tensor
-            )
-        )
+        return create_nested_tma_tile[
+            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        ](ctx, tensor)
 
     @always_inline
     fn block_paged_ptr[
@@ -548,12 +560,18 @@ struct PagedKVCache[
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](
-        self,
-        ctx: DeviceContext,
-        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
-    ) raises:
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        Self.dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
+    ]:
         """Creates a TMA tile for this KV cache."""
         # Paged cache is [total_num_blocks, page_size, num_heads, head_size]
         # Create a view that accounts for the paged layout
@@ -571,11 +589,9 @@ struct PagedKVCache[
             MutableAnyOrigin,
         ](self.blocks.data, rt_layout)
 
-        res = rebind[__type_of(res)](
-            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
-                ctx, tensor
-            )
-        )
+        return create_nested_tma_tile[
+            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        ](ctx, tensor)
 
     @always_inline
     fn _get_idx(

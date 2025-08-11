@@ -17,7 +17,7 @@ from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
 from layout.layout import DimList, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import TMATensorTile, create_tma_tile
+from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 from utils import IndexList
 
 
@@ -62,9 +62,13 @@ trait MHAOperand:
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, Layout.row_major(tile_m, tile_n)
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        dtype, tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
     ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         ...
@@ -118,14 +122,22 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, Layout.row_major(tile_m, tile_n)
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        Self.dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # Forward to the underlying cache's implementation
         return self.cache.create_tma_tile[
-            tile_m, tile_n, swizzle_mode=swizzle_mode
+            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
         ](ctx)
 
 
@@ -186,12 +198,18 @@ struct NDBufferMHAOperand[
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](
-        self,
-        ctx: DeviceContext,
-        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
-    ) raises:
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        Self.dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
+    ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
@@ -204,11 +222,9 @@ struct NDBufferMHAOperand[
             self.buffer.data, rt_layout
         )
 
-        res = rebind[__type_of(res)](
-            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
-                ctx, tensor
-            )
-        )
+        return create_nested_tma_tile[
+            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        ](ctx, tensor)
 
 
 @register_passable("trivial")
@@ -275,12 +291,18 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
 
     @always_inline
     fn create_tma_tile[
-        tile_m: Int, tile_n: Int, swizzle_mode: TensorMapSwizzle
-    ](
-        self,
-        ctx: DeviceContext,
-        out res: TMATensorTile[Self.dtype, Layout.row_major(tile_m, tile_n)],
-    ) raises:
+        tile_m: Int,
+        tile_n: Int,
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        is_k_major: Bool,
+    ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
+        Self.dtype,
+        tile_m,
+        tile_n,
+        swizzle_mode,
+        is_k_major=is_k_major,
+    ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # View as [total_tokens, heads*head_dim]
         var rows = self.buffer.dim[0]()  # total tokens
@@ -293,8 +315,6 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
             self.buffer.data, rt_layout
         )
 
-        res = rebind[__type_of(res)](
-            create_tma_tile[tile_m, tile_n, swizzle_mode=swizzle_mode](
-                ctx, tensor
-            )
-        )
+        return create_nested_tma_tile[
+            tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        ](ctx, tensor)
