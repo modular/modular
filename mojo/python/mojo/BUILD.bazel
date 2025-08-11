@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
+    name = "mojo",
+    srcs = glob(["**/*.py"]),
+    data = [
+        "//KGEN/tools/mojo",
+        "@mojo//:stdlib",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)

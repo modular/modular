@@ -1,0 +1,64 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+import argparse
+import tempfile
+from pathlib import Path
+
+try:
+    # Don't require including IPython as a dependency
+    from IPython.core.magic import register_cell_magic  # type: ignore
+except ImportError:
+
+    def register_cell_magic(fn):  # noqa: ANN001
+        return fn
+
+
+from .paths import MojoCompilationError
+from .run import subprocess_run_mojo
+
+
+@register_cell_magic
+def mojo(line, cell) -> None:  # noqa: ANN001
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", nargs="?", default="run")
+    parser.add_argument("-o", "--output")
+
+    args = parser.parse_args(line.strip().split())
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        path = Path(tempdir)
+        mojo_path = path / "cell.mojo"
+        with open(mojo_path, "w") as f:
+            f.write(cell)
+        (path / "__init__.mojo").touch()
+
+        input_path = path if args.command == "package" else mojo_path
+        command = [
+            args.command,
+            str(input_path),
+            *(
+                ("-o", args.output)
+                if args.output and args.command != "run"
+                else ()
+            ),
+        ]
+
+        result = subprocess_run_mojo(command, capture_output=True)
+
+    if not result.returncode:
+        print(result.stdout.decode())
+    else:
+        raise MojoCompilationError(
+            input_path, command, result.stdout.decode(), result.stderr.decode()
+        )

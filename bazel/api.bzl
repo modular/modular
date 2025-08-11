@@ -30,7 +30,6 @@ _DEPS_FROM_WHEEL = [
     "//max/engine",
     "//max/interfaces",
     "//max/mlir",
-    "//max/mojo",
     "//max/profiler",
     "//max/support",
     "//max:_core",
@@ -66,6 +65,9 @@ def _rewrite_deps(deps):
                 replaced_dep = "@modular_wheel//:wheel"
             if replaced_dep not in new_deps:
                 new_deps.append(replaced_dep)
+        elif dep.startswith("//open-source/max/mojo"):
+            replaced_dep = dep.replace("//open-source/max/mojo", "//mojo")
+            new_deps.append(replaced_dep)
         else:
             new_deps.append(dep)
     return new_deps
@@ -94,12 +96,9 @@ def modular_py_binary(
         **kwargs):
     if name == "pipelines":
         # TODO: Fix this hack, there is a layering issue with what is open source right now
-        deps.append("//max/entrypoints:mojo")
+        deps.append("//mojo/python/mojo")
         data = []
         env = {}
-    if native.package_name().endswith("/custom_ops"):
-        # TODO: Fix this hack, it's part of the custom repo but it's transitively depended on by things that are in the wheel
-        deps.append("//max/entrypoints:mojo")
 
     # TODO: There is some data we can fix by pulling from the wheel
     if _has_internal_reference(deps) or _has_internal_reference(data):

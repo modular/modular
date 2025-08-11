@@ -25,6 +25,7 @@ _OPEN_SOURCE_GLOBS = [
     "max/nn/*",
     "max/pipelines/*",
     "max/serve/*",
+    "mojo/*",
 ]
 
 pycross_wheel_library(

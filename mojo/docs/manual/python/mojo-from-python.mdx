@@ -90,7 +90,7 @@ On the Python side, we add the directory containing `mojo_module.mojo` to the
 Python path, and then use a normal `import` statement to load our Mojo code:
 
 ```python title="main.py"
-import max.mojo.importer
+import mojo.importer
 import sys
 
 sys.path.insert(0, "")
@@ -119,7 +119,7 @@ from Python in an intuitive way. Concretely, a Python extension module is
 simply a dynamic library that defines a suitable `PyInit_*()` function.
 
 Mojo comes with built-in functionality for defining Python extension modules.
-The special stuff happens in the `max.mojo.importer` module we imported.
+The special stuff happens in the `mojo.importer` module we imported.
 
 If we have a look at the filesystem after Python imports the Mojo code, we'll
 notice there's a new `__mojocache__` directory, with dynamic library (`.so`)
@@ -133,7 +133,7 @@ project
     └── mojo_module.hash-ABC123.so
 ```
 
-Loading `max.mojo.importer` loads our Python Mojo [import
+Loading `mojo.importer` loads our Python Mojo [import
 hook](https://docs.python.org/3/reference/import.html#import-hooks), which
 behind the scenes looks for a `.mojo` (or `.🔥`) file that matches the imported
 module name, and if found, compiles it using [`mojo build --emit shared-lib`](/mojo/cli/build#--emit-file_type) to generate a static library.

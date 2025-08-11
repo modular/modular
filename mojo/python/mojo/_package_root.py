@@ -20,17 +20,32 @@ from pathlib import Path
 
 def get_package_root() -> Path | None:
     """Returns the package root of this installation, or None if running in a Bazel environment"""
-    current_path = Path(__file__).parent
+    # lib/python3.12/site-packages/mojo/_package_root.py
+    # ->
+    # lib/python3.12/site-packages
+    site_packages_root = Path(__file__).parent.parent
 
-    # Walk up the directory tree until we find bin/mojo or hit root
+    # Look for bin/mojo in the environment
     # This is currently supposed to work for two cases:
     # - Set of Conda packages.
+    # lib/python3.12/site-packages
+    # ->
+    # bin/mojo
+    conda_root = site_packages_root.parent.parent.parent
     # - Monolithic Pip wheel installation.
-    while current_path != current_path.parent:  # Stop at root directory
-        if (current_path / "bin" / "mojo").exists():
-            logging.debug(f"Located MAX SDK assets at {current_path}")
-            return current_path
-        current_path = current_path.parent
+    # lib/python3.12/site-packages
+    # ->
+    # lib/python3.12/site-packages/max
+    wheel_root = site_packages_root / "max"
+
+    # Make sure we check the wheel root first!
+    # conda_root / bin / mojo should exist in both cases here, but when using
+    # wheels this is just a generated wrapper script, which we shouldn't call
+    # from here since we'd end up in an infinite loop.
+    for root in (wheel_root, conda_root):
+        if (root / "bin" / "mojo").exists():
+            logging.debug(f"Located MAX SDK assets at {root}")
+            return root
 
     if "BUILD_WORKSPACE_DIRECTORY" in os.environ or "BAZEL_TEST" in os.environ:
         # We're running in a Modular internal Bazel test, so let Bazel handle

@@ -37,7 +37,7 @@ from max._core.dialects import mo as _mo
 # TODO(GEX-1846): Get rid of this include.
 from max.engine import InferenceSession  # type: ignore
 from max.mlir.dialects import mo
-from max.support.paths import (
+from mojo.paths import (
     _build_mojo_source_package,
     is_mojo_binary_package_path,
     is_mojo_source_package_path,

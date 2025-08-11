@@ -10,8 +10,7 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:mojo",
-        "//SDK/lib/API/python/max/mojo",
+        "//open-source/max/mojo/python/mojo",
     ],
 )
 
@@ -25,8 +24,7 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:mojo",
-        "//SDK/lib/API/python/max/mojo",
+        "//open-source/max/mojo/python/mojo",
     ],
 )
 
@@ -39,8 +37,7 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:mojo",
-        "//SDK/lib/API/python/max/mojo",
+        "//open-source/max/mojo/python/mojo",
     ],
 )
 

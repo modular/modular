@@ -14,7 +14,7 @@
 import os
 import sys
 
-from ._package_root import get_package_root
+from mojo._package_root import get_package_root
 
 
 def exec_gpu_query() -> None:

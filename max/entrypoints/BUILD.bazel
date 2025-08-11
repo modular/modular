@@ -7,8 +7,6 @@ modular_py_library(
     srcs = glob(
         ["**/*.py"],
         exclude = [
-            "_package_root.py",
-            "mojo.py",
             "gpu_query.py",
             "pipelines.py",
             "replay_recording.py",
@@ -36,23 +34,6 @@ modular_py_library(
         requirement("uvicorn"),
         requirement("uvloop"),
     ],
-)
-
-modular_py_library(
-    name = "_package_root",
-    srcs = ["_package_root.py"],
-    visibility = ["//visibility:public"],
-)
-
-modular_py_library(
-    name = "mojo",
-    srcs = ["mojo.py"],
-    data = [
-        "//KGEN/tools/mojo",
-        "@mojo//:stdlib",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [":_package_root"],
 )
 
 modular_py_library(
@@ -132,5 +113,5 @@ modular_py_library(
     name = "gpu-query",
     srcs = ["gpu_query.py"],
     visibility = ["//visibility:public"],
-    deps = [":_package_root"],
+    deps = ["//open-source/max/mojo/python/mojo"],
 )

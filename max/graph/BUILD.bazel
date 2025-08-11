@@ -10,7 +10,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/mlir",
-        "//SDK/lib/API/python/max/support",
+        "//open-source/max/mojo/python/mojo",
         requirement("numpy"),
         requirement("typing-extensions"),
     ],
