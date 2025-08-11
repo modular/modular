@@ -122,7 +122,7 @@ struct ArcPointer[T: Movable](
         self._inner = existing._inner
 
     @no_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more

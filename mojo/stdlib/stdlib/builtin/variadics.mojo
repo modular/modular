@@ -247,7 +247,7 @@ struct VariadicListMem[
         self.value = value
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves constructor.
 
         Args:
@@ -256,7 +256,7 @@ struct VariadicListMem[
         self.value = existing.value
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
@@ -269,7 +269,7 @@ struct VariadicListMem[
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: element_type) capturing
-    ](var self):
+    ](deinit self):
         """Consume the variadic list by transfering ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
@@ -290,8 +290,9 @@ struct VariadicListMem[
             # the element to be Movable, which is not required here.
             elt_handler(i, __get_address_as_owned_value(ptr.address))
 
-        # Don't run our destructor, it would destroy the element again.
-        __disable_del self
+    # FIXME: This is a hack to work around a miscompile, do not use.
+    fn _anihilate(deinit self):
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -445,7 +446,7 @@ struct VariadicPack[
         self._value = value
 
     @always_inline("nodebug")
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         @parameter
@@ -457,7 +458,7 @@ struct VariadicPack[
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
-    ](var self):
+    ](deinit self):
         """Consume the variadic pack by transfering ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic packs.
@@ -478,9 +479,6 @@ struct VariadicPack[
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
             elt_handler[i](__get_address_as_owned_value(ptr.address))
-
-        # Don't run our destructor, it would destroy the element again.
-        __disable_del self
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

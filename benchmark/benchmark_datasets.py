@@ -984,9 +984,6 @@ class VisionArenaBenchmarkDataset(BenchmarkDataset):
 
 
 class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
-    MIN_PROMPT_LEN = 10
-    MIN_OUTPUT_LEN = 10
-
     def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
         # Arxiv summarization loads dataset directly in sample_requests, not as a separate fetch step
         if dataset_name == "arxiv-summarization":
@@ -1001,7 +998,7 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         self,
         num_requests: int,
         input_len: int,
-        output_lengths: Sequence[int] | None,
+        max_output_len: int | None,
         shuffle: bool,
         tokenizer: PreTrainedTokenizerBase,
     ) -> Sequence[SampledRequest]:
@@ -1022,14 +1019,25 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         # Shuffle the dataset indices
         indices = list(range(len(dataset)))  # type: ignore[arg-type]
         if shuffle:
-            if output_lengths is not None:
-                raise NotImplementedError(
-                    "TODO: Add support for shuffling + pinned output lengths"
-                )
             random.shuffle(indices)
 
+        # Create a summarization prompt
+        prompt_prefix = "Summarize the following research paper:\n\n"
+        prompt_suffix = "\n\nSummary:"
+
+        # Calculate tokens for prefix and suffix
+        prefix_tokens = tokenizer(
+            prompt_prefix, add_special_tokens=False
+        ).input_ids
+        suffix_tokens = tokenizer(
+            prompt_suffix, add_special_tokens=False
+        ).input_ids
+
+        # Reserve space for prefix and suffix
+        max_article_len = input_len - len(prefix_tokens) - len(suffix_tokens)
+
         sampled_requests: list[SampledRequest] = []
-        for i, idx in enumerate(indices):
+        for idx in indices:
             if len(sampled_requests) >= num_requests:
                 break
 
@@ -1045,23 +1053,6 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
                 article, add_special_tokens=False
             ).input_ids
 
-            # Create a summarization prompt
-            prompt_prefix = "Summarize the following research paper:\n\n"
-            prompt_suffix = "\n\nSummary:"
-
-            # Calculate tokens for prefix and suffix
-            prefix_tokens = tokenizer(
-                prompt_prefix, add_special_tokens=False
-            ).input_ids
-            suffix_tokens = tokenizer(
-                prompt_suffix, add_special_tokens=False
-            ).input_ids
-
-            # Reserve space for prefix and suffix
-            max_article_len = (
-                input_len - len(prefix_tokens) - len(suffix_tokens)
-            )
-
             # Truncate article if necessary
             if len(article_tokens) > max_article_len:
                 article_tokens = article_tokens[:max_article_len]
@@ -1072,19 +1063,28 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
             # Create the full prompt
             prompt_formatted = f"{prompt_prefix}{article}{prompt_suffix}"
 
-            # Get the actual prompt length
+            # Re-tokenize and get the actual prompt length.
+            # Note that the the final prompt size usually does not match
+            # len(prefix)+len(suffix)+len(article_tokens) exactly because most
+            # tokenizers are not entirely stateless; i.e. adding the prefix
+            # changes the behavior. This means the result may be slightly larger
+            # than the given input_len (by up to ~10 tokens) despite the
+            # truncation logic above. The prompt could of course also be shorter
+            # than the given input_len, if the downloaded paper happens to be a
+            # small one.
             prompt_len = len(
                 tokenizer(prompt_formatted, add_special_tokens=False).input_ids
             )
 
-            output_len = None if output_lengths is None else output_lengths[i]
+            # Tokenize the abtsract to get output length.
+            abstract = item["abstract"]
+            abstract_tokens = tokenizer(
+                abstract, add_special_tokens=False
+            ).input_ids
+            output_len = len(abstract_tokens)
 
-            # Skip if prompt is too short or too long
-            if prompt_len < self.MIN_PROMPT_LEN or prompt_len > input_len:
-                continue
-
-            # Skip if output length is too small
-            if output_len is not None and output_len < self.MIN_OUTPUT_LEN:
+            # Skip outputs that are too large.
+            if max_output_len and output_len > max_output_len:
                 continue
 
             sampled_requests.append(

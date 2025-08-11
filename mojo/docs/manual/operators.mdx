@@ -402,7 +402,7 @@ compared.
     ```mojo
     simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
     simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1 > simd2  # SIMD[DType.bool, 4]
+    simd3 = simd1.gt(simd2)  # SIMD[DType.bool, 4]
     print(simd3)
     ```
 

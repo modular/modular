@@ -39,14 +39,14 @@ def test_compressed_store():
     var vector = UnsafePointer[Float32]().alloc(5)
     memset_zero(vector, 5)
 
-    compressed_store(iota_4, vector, iota_4 >= 2)
+    compressed_store(iota_4, vector, iota_4.ge(2))
     assert_equal(vector.load[width=4](0), F32x4(2.0, 3.0, 0.0, 0.0))
 
     # Just clear the buffer.
     vector.store(0, SIMD[DType.float32, 4](0))
 
     var val = F32x4(0.0, 1.0, 3.0, 0.0)
-    compressed_store(val, vector, val != 0)
+    compressed_store(val, vector, val.ne(0))
     assert_equal(vector.load[width=4](0), F32x4(1.0, 3.0, 0.0, 0.0))
     vector.free()
 
@@ -57,24 +57,24 @@ def test_masked_load():
         vector[i] = 1
 
     assert_equal(
-        masked_load[4](vector, iota_4 < 5, 0), F32x4(1.0, 1.0, 1.0, 1.0)
+        masked_load[4](vector, iota_4.lt(5), 0), F32x4(1.0, 1.0, 1.0, 1.0)
     )
 
     assert_equal(
-        masked_load[8](vector, iota_8 < 5, 0),
+        masked_load[8](vector, iota_8.lt(5), 0),
         F32x8(1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0),
     )
 
     assert_equal(
         masked_load[8](
-            vector, iota_8 < 5, F32x8(43, 321, 12, 312, 323, 15, 9, 3)
+            vector, iota_8.lt(5), F32x8(43, 321, 12, 312, 323, 15, 9, 3)
         ),
         F32x8(1.0, 1.0, 1.0, 1.0, 1.0, 15.0, 9.0, 3.0),
     )
 
     assert_equal(
         masked_load[8](
-            vector, iota_8 < 2, F32x8(43, 321, 12, 312, 323, 15, 9, 3)
+            vector, iota_8.lt(2), F32x8(43, 321, 12, 312, 323, 15, 9, 3)
         ),
         F32x8(1.0, 1.0, 12.0, 312.0, 323.0, 15.0, 9.0, 3.0),
     )
@@ -85,12 +85,12 @@ def test_masked_store():
     var vector = UnsafePointer[Float32]().alloc(5)
     memset_zero(vector, 5)
 
-    masked_store[4](iota_4, vector, iota_4 < 5)
+    masked_store[4](iota_4, vector, iota_4.lt(5))
     assert_equal(vector.load[width=4](0), F32x4(0.0, 1.0, 2.0, 3.0))
 
-    masked_store[8](iota_8, vector, iota_8 < 5)
+    masked_store[8](iota_8, vector, iota_8.lt(5))
     assert_equal(
-        masked_load[8](vector, iota_8 < 5, 33),
+        masked_load[8](vector, iota_8.lt(5), 33),
         F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 33.0, 33.0, 33.0),
     )
     vector.free()

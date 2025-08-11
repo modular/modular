@@ -78,6 +78,7 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -134,7 +135,7 @@ def fused_qkv_ragged_matmul(
         op_name += ".bias"
         values.append(bias)
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=values,
@@ -146,6 +147,7 @@ def fused_qkv_ragged_matmul(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -160,6 +162,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
     bias: TensorValue | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -232,7 +235,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
 
     op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=[
@@ -252,6 +255,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -659,21 +663,36 @@ def fused_qk_ragged_rope(
     freqs_cis: TensorValue,
     layer_idx: TensorValue,
     interleaved: bool = True,
+    position_ids: TensorValue | None = None,
+    mrope_section: list[int] | None = None,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes fused query-key attention with rotary positional encodings and ragged inputs.
 
     Args:
+        kv_params: KV cache parameters
         input: [batch_size * seq_len, n_heads, head_dim]
-        input_row_offsets:
+        input_row_offsets: Ragged tensor offsets indicating where each batch starts and ends
+        kv_collection: KV cache collection
         freqs_cis: tensor of shape (max_seq_len * 2, head_dim)
-        layer_idx:
-        interleaved:
+        layer_idx: Layer index for KV cache
+        interleaved: Whether to use interleaved RoPE pattern
+        position_ids: Optional ragged 2D array of position IDs. If None, defaults to
+                     cache_length + token_idx for each token. When `num_sections` > 1,
+                     `mrope_section` must be provided to indicate each section of the head_dim
+                     to apply RoPE to. Shape: [num_sections, total_seq_len]
+        mrope_section: Optional list of integers indicating the section of the head_dim to
+        apply RoPE to. Must be used in conjunction with `position_ids`.
 
     `input` and `input_row_offsets` are used together to implement the ragged tensor.
     `input_row_offsets` indicates where each batch starts and ends in `input`. If `input`
     is not of the same dtype as `freqs_cis`, it will be cast to the dtype of `freqs_cis`
     for the computation, and cast back to the original dtype after the computation is
     finished.
+
+    When `position_ids` and `mrope_section` are provided, it replaces the default position
+    calculation (cache_length + token_idx) with explicit position values. This is useful for
+    3D RoPE in models like Qwen2.5-VL that need custom position encoding.
     """
 
     if input_row_offsets.dtype != DType.uint32:
@@ -681,6 +700,7 @@ def fused_qk_ragged_rope(
             "expected input_row_offsets to have dtype uint32, was"
             f" {input_row_offsets.dtype}"
         )
+        raise ValueError(msg)
 
     if layer_idx.dtype != DType.uint32:
         msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
@@ -702,19 +722,62 @@ def fused_qk_ragged_rope(
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
+    if position_ids is not None:
+        if position_ids.dtype != DType.uint32:
+            msg = f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+            raise ValueError(msg)
+        if position_ids.rank != 2:
+            msg = (
+                f"expected position_ids to be 2D, got rank {position_ids.rank}"
+            )
+            raise ValueError(msg)
+        if mrope_section is not None:
+            if len(mrope_section) != position_ids.shape[0]:
+                msg = (
+                    f"expected mrope_section to have length {position_ids.shape[0]}, "
+                    f"was {len(mrope_section)}"
+                )
+                raise ValueError(msg)
+            # multiplied by 2 because the kernel expects the section to be in terms of head_dim,
+            # then calculate the prefix sum of the section
+            mrope_section = [x * 2 for x in mrope_section]
+            mrope_section = [
+                sum(mrope_section[: i + 1]) for i in range(len(mrope_section))
+            ]
+            # convert mrope_section to a string, with each element separated by "_"
+            parameters["mrope_section"] = "_".join(
+                str(x) for x in mrope_section
+            )
 
-    return ops.inplace_custom(
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+
+    if position_ids is not None:
+        op_name = (
+            f"mo.fused_qk_rope.ragged.{cache_strategy_str}.with_position_id"
+        )
+        values = [
+            input,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            position_ids,
+            layer_idx,
+        ]
+    else:
+        op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
+        values = [input, input_row_offsets, kv_collection, freqs_cis, layer_idx]
+
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
-        values=[input, input_row_offsets, kv_collection, freqs_cis, layer_idx],
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 
@@ -1006,6 +1069,7 @@ def flash_attention_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    chain: ops._ChainObject | None = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -1065,7 +1129,7 @@ def flash_attention_ragged(
     )
     parameters["local_window_size"] = local_window_size
 
-    return ops.inplace_custom(
+    return ops._inplace_custom_explicit_chains(
         op_name,
         device=input.device,
         values=[
@@ -1082,6 +1146,7 @@ def flash_attention_ragged(
             )
         ],
         parameters=parameters,
+        chain=chain,
     )[0].tensor
 
 

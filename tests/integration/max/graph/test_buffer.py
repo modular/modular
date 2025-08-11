@@ -27,6 +27,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
+    Shape,
     TensorType,
     TensorValue,
     ops,
@@ -39,24 +40,24 @@ def custom_ops_path() -> Path:
     return Path(os.environ["CUSTOM_OPS_PATH"])
 
 
-def torch_add_n(x, n):  # noqa: ANN001
+def torch_add_n(x: torch.Tensor, n: int) -> torch.Tensor:
     return torch.add(x, n)
 
 
-def torch_multiply(x):  # noqa: ANN001
+def torch_multiply(x: torch.Tensor) -> torch.Tensor:
     return torch.mul(x, x)
 
 
-def torch_add_relu(x):  # noqa: ANN001
+def torch_add_relu(x: torch.Tensor) -> torch.Tensor:
     relu = torch.nn.ReLU()
     return relu(torch.add(x, 100))
 
 
-def zeros(shape, dtype):  # noqa: ANN001
+def zeros(shape: Shape, dtype: DType) -> np.ndarray:
     return np.zeros([int(d) for d in shape]).astype(dtype.to_numpy())
 
 
-def ones(shape, dtype):  # noqa: ANN001
+def ones(shape: Shape, dtype: DType) -> np.ndarray:
     return np.ones([int(d) for d in shape]).astype(dtype.to_numpy())
 
 
@@ -67,7 +68,7 @@ def ones(shape, dtype):  # noqa: ANN001
         BufferType(DType.float32, [100, 40], device=DeviceRef.CPU()),
     ]
 )
-def buffer_type(request):  # noqa: ANN001
+def buffer_type(request: pytest.FixtureRequest) -> BufferType:
     return request.param
 
 
@@ -79,37 +80,33 @@ def buffer_type(request):  # noqa: ANN001
         TensorType(DType.float32, [5, 5], device=DeviceRef.CPU()),
     ]
 )
-def tensor_type(request):  # noqa: ANN001
+def tensor_type(request: pytest.FixtureRequest) -> TensorType:
     return request.param
 
 
 @pytest.fixture
-def buffer_graph(buffer_type) -> Graph:  # noqa: ANN001
+def buffer_graph(buffer_type: BufferType) -> Graph:
     graph = Graph("buffer", input_types=[buffer_type])
     return graph
 
 
 @pytest.fixture
-def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:  # noqa: ANN001
+def buffer_tensor_graph(
+    tensor_type: TensorType, buffer_type: BufferType
+) -> Graph:
     graph = Graph(
         "buffer_tensor",
-        input_types=[
-            tensor_type,
-            buffer_type,
-        ],
+        input_types=[tensor_type, buffer_type],
     )
     return graph
 
 
 @pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2137): Crashing on gpu",
+    accelerator_count() > 0, reason="TODO(GEX-2137): Crashing on gpu"
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store(
-    n,  # noqa: ANN001
-    buffer_graph: Graph,
-    session: InferenceSession,
+    n: int, buffer_graph: Graph, session: InferenceSession
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -128,14 +125,11 @@ def test_load_mutate_store(
 
 
 @pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2137): Crashing on gpu",
+    accelerator_count() > 0, reason="TODO(GEX-2137): Crashing on gpu"
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store_ellipsis(
-    n,  # noqa: ANN001
-    buffer_graph: Graph,
-    session: InferenceSession,
+    n: int, buffer_graph: Graph, session: InferenceSession
 ) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
@@ -152,14 +146,11 @@ def test_load_mutate_store_ellipsis(
 
 
 @pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2137): Crashing on gpu",
+    accelerator_count() > 0, reason="TODO(GEX-2137): Crashing on gpu"
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_store_slice_load_slice(
-    n,  # noqa: ANN001
-    buffer_tensor_graph: Graph,
-    session: InferenceSession,
+    n: int, buffer_tensor_graph: Graph, session: InferenceSession
 ) -> None:
     with buffer_tensor_graph as graph:
         tensor = graph.inputs[0].tensor
@@ -194,8 +185,7 @@ def test_store_slice_load_slice(
     reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
 )
 def test_inplace_user_supplied(
-    custom_ops_path,  # noqa: ANN001
-    session: InferenceSession,
+    custom_ops_path: Path, session: InferenceSession
 ) -> None:
     bt = BufferType(DType.float32, [2, 2], device=DeviceRef.CPU())
 

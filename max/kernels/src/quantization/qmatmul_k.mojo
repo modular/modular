@@ -346,8 +346,8 @@ fn _quantize_a_Q8_K[
 fn _expand_q_bits_lo[
     *, width: Int
 ](
-    owned src_ptr: UnsafePointer[UInt8, **_],
-    owned dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, **_],
+    var dst_ptr: UnsafePointer[UInt8, **_],
 ):
     for _k in range(0, _block_QK_K.quantized_k // 2, width):
         var src_q_bits = src_ptr.load[width=width]()
@@ -362,8 +362,8 @@ fn _expand_q_bits_lo[
 fn _expand_and_merge_q_bits_hi[
     *, width: Int, bit_count: Int
 ](
-    owned src_ptr: UnsafePointer[UInt8, **_],
-    owned dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, **_],
+    var dst_ptr: UnsafePointer[UInt8, **_],
 ):
     alias values_per_byte = 8 // bit_count
     alias bit_mask = (1 << bit_count) - 1
@@ -384,8 +384,8 @@ fn _expand_and_merge_q_bits_hi[
 fn _copy_column_q_bits_to_block[
     block_n: Int
 ](
-    owned src_ptr: UnsafePointer[UInt8, **_],
-    owned dst_ptr: UnsafePointer[UInt8, **_],
+    var src_ptr: UnsafePointer[UInt8, **_],
+    var dst_ptr: UnsafePointer[UInt8, **_],
 ):
     """Interleaves the linear source buffer to the blocked destination
     buffer.
@@ -402,7 +402,7 @@ fn _pack_block_Q4_K[
     dst_origin: MutableOrigin,
     alignment: Int,
 ](
-    owned src_ptr: UnsafePointer[
+    var src_ptr: UnsafePointer[
         _block_Q4_K, origin=src_origin, alignment=alignment
     ],
     stride: Int,
@@ -528,7 +528,7 @@ fn _pack_block_Q6_K[
     dst_origin: MutableOrigin,
     alignment: Int,
 ](
-    owned src_ptr: UnsafePointer[
+    var src_ptr: UnsafePointer[
         _block_Q6_K, origin=src_origin, alignment=alignment
     ],
     stride: Int,
@@ -1134,9 +1134,9 @@ fn _matmul_Q4_K_columns[
     simd_width: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
+    var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
-    owned c_ptr: UnsafePointer[Float32],
+    var c_ptr: UnsafePointer[Float32],
     M: Int,
     N: Int,
     accumulate: Bool,
@@ -1378,9 +1378,9 @@ fn _matmul_Q6_K_columns[
     simd_width: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
+    var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
-    owned c_ptr: UnsafePointer[Float32],
+    var c_ptr: UnsafePointer[Float32],
     M: Int,
     N: Int,
     accumulate: Bool,
@@ -1462,9 +1462,9 @@ fn _matmul_Qb_K[
         simd_width: Int,
         elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
     ] (
-        owned a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
+        var a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
         b_ptr: UnsafePointer[b_type],
-        owned c_ptr: UnsafePointer[Float32],
+        var c_ptr: UnsafePointer[Float32],
         M: Int,
         N: Int,
         accumulate: Bool,

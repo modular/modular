@@ -16,7 +16,7 @@ from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 
 
 fn _ownership_helper(
-    owned ctx: DeviceContext,
+    var ctx: DeviceContext,
 ) raises -> DeviceContext:
     var ctx_copy = ctx
     print("local ctx_copy: " + ctx_copy.name())

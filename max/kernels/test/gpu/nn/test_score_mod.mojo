@@ -73,7 +73,7 @@ def test_alibi_score_mod():
 
     var score_vec = SIMD[dtype, width](0, 1, 2, 3)
 
-    var reference = (q_idx >= (k_idx + iota[DType.index, width]())).select(
+    var reference = q_idx.ge(k_idx + iota[DType.index, width]()).select(
         score_vec
         + generate_alibi_bias[dtype, width, num_heads](
             head_idx,

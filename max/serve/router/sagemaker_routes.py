@@ -17,7 +17,7 @@ from typing import Union
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 from max.serve.router.openai_routes import openai_create_chat_completion
-from max.serve.schemas.openai import (  # type: ignore
+from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
 )
 from sse_starlette.sse import EventSourceResponse

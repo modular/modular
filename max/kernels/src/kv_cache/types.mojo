@@ -858,7 +858,7 @@ struct PagedKVCacheCollection[
         """
         return self
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.blocks = other.blocks
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table

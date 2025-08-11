@@ -65,21 +65,24 @@ fn test_factorial() raises:
 
 def test_copysign():
     var x = Int32(2)
-    assert_equal(2, copysign(x, x))
-    assert_equal(-2, copysign(x, -x))
-    assert_equal(2, copysign(-x, x))
-    assert_equal(-2, copysign(-x, -x))
+    assert_equal(x, copysign(x, x))
+    assert_equal(-x, copysign(x, -x))
+    assert_equal(x, copysign(-x, x))
+    assert_equal(-x, copysign(-x, -x))
 
-    assert_equal(1, copysign(Float32(1), Float32(2)))
-    assert_equal(-1, copysign(Float32(1), Float32(-2)))
+    assert_equal(Float32(1.0), copysign(Float32(1.0), Float32(2.0)))
+    assert_equal(Float32(-1.0), copysign(Float32(1.0), Float32(-2.0)))
     assert_equal(neg_inf[DType.float32](), copysign(inf[DType.float32](), -2.0))
-    assert_equal(-nan[DType.float32](), copysign(nan[DType.float32](), -2.0))
+    assert_equal(
+        String(-nan[DType.float32]()),
+        String(copysign(nan[DType.float32](), -2.0)),
+    )
 
     # Test some cases with 0 and signed zero
-    assert_equal(1, copysign(Float32(1.0), Float32(0.0)))
-    assert_equal(0, copysign(Float32(0.0), Float32(1.0)))
-    assert_equal(0, copysign(Float32(-0.0), Float32(1.0)))
-    assert_equal(-0, copysign(Float32(0.0), Float32(-1.0)))
+    assert_equal(Float32(1.0), copysign(Float32(1.0), Float32(0.0)))
+    assert_equal(Float32(0.0), copysign(Float32(0.0), Float32(1.0)))
+    assert_equal(Float32(0.0), copysign(Float32(-0.0), Float32(1.0)))
+    assert_equal(Float32(-0.0), copysign(Float32(0.0), Float32(-1.0)))
 
     # TODO: Add some test cases for SIMD vector with width > 1
 
@@ -98,7 +101,7 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
     fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
         """Creates a value at the tolerance boundary that should be considered close to `a`.
         """
-        debug_assert(all(a >= 0))
+        debug_assert(all(a.ge(0)))
 
         @parameter
         if symm:

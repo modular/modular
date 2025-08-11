@@ -30,7 +30,7 @@ struct HeapArray(Writable):
                 writer.write(", ")
         writer.write("]")
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()

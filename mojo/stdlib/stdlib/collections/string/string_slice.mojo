@@ -1010,7 +1010,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return CodepointSliceIter[origin, forward=False](self)
 
-    fn __getitem__[I: Indexer](self, idx: I) -> String:
+    fn __getitem__[I: Indexer, //](self, idx: I) -> String:
         """Gets the character at the specified position.
 
         Parameters:
@@ -2481,7 +2481,7 @@ fn _memchr_impl[
     var vectorized_end = align_down(len, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = source.load[width=bool_mask_width](i) == first_needle
+        var bool_mask = source.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
             return source + Int(i + count_trailing_zeros(mask))
@@ -2568,8 +2568,8 @@ fn _memmem_impl[
             i + needle_len - 1
         )
 
-        var eq_first = first_needle == first_block
-        var eq_last = last_needle == last_block
+        var eq_first = first_needle.eq(first_block)
+        var eq_last = last_needle.eq(last_block)
 
         var bool_mask = eq_first & eq_last
         var mask = pack_bits(bool_mask)

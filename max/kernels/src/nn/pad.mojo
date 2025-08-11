@@ -471,9 +471,7 @@ fn _pad_constant_axis[
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
-    owned axis_params: StaticTuple[
-        _AxisParams[rank, dtype, paddings_type], rank
-    ],
+    var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
     @parameter
     if axis == (rank - 1):
@@ -711,7 +709,7 @@ fn _pad_reflect_axis[
     ],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
-    owned axis_params: StaticTuple[
+    var axis_params: StaticTuple[
         _AxisParamsReflect[rank, dtype, paddings_type], rank
     ],
 ):

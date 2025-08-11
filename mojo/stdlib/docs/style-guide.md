@@ -183,6 +183,7 @@ struct MyStruct(Sized, Stringable):
     # ===-------------------------------------------------------------------===#
 
     fn unsafe_ptr(..)   # e.g.
+    fn copy(..)        # Explicit copy method
 ```
 
 ## Code conventions
@@ -268,7 +269,7 @@ intention clear.
 Copying `@register_passable` types like `Int`, `Bool`, `Pointer`, and `SIMD` is
 safe and inexpensive. However, copying types that dynamically allocate memory
 can be expensive. This includes common types like `List`, `Dict`, `Set`,
-`Tensor`, and `String`.
+and `String`.
 
 Some standard library types allow implicit copies where they shouldn’t. We will
 resolve this shortly as new Mojo language features are shipped to help with this
@@ -286,6 +287,18 @@ struct MyStruct:
     fn __init__(out self, other: Self):
         # do a deep copy of MyStruct
 ```
+
+#### ℹ️ Use `copy()` method for explicit copying
+
+Many standard library types provide a `copy()` method that creates an explicit copy:
+
+```mojo
+var original = List[Int]()
+var explicit_copy = original.copy()  # 🟢 Preferred
+```
+
+This pattern is used throughout the stdlib for types like `Optional`, `String`,
+and collections.
 
 ### Import statements
 
@@ -427,5 +440,25 @@ fn prefetch[...](...):
 
 #### Unit test filenames
 
-All test filenames should be prefixes with `test_`.
+All test filenames should be prefixed with `test_`.
 For example `test_sort.mojo`.
+
+#### Test organization
+
+- Tests should mirror the source structure
+  - e.g., `stdlib/collections/list.mojo` tests are in
+  `test/collections/test_list.mojo`
+- Use the `testing` module assertions (`assert_equal`, `assert_true`, etc.) for
+  new tests
+- Test files should focus on testing the public API and critical edge cases
+
+#### Performance tests and benchmarks
+
+- Benchmarks are located in the `benchmarks/` directory
+- Use the `benchmark` module for performance testing
+- Benchmark files should be prefixed with `bench_` (e.g., `bench_sort.mojo`)
+
+#### Integration with build system
+
+- See the [bazel usage docs](../../../bazel/docs/usage.md) for more detaiils
+  on how to run tests.

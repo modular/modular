@@ -459,7 +459,7 @@ def test_atof():
     assert_equal(1.0, atof("001."))
     assert_equal(+5.0, atof(" +005."))
     assert_equal(13.0, atof(" 013.f  "))
-    assert_equal(-89, atof("-89"))
+    assert_equal(-89.0, atof("-89"))
     assert_equal(-0.3, atof(" -0.3"))
     assert_equal(-69e3, atof(" -69E+3  "))
     assert_equal(123.2e1, atof(" 123.2E1  "))
@@ -470,7 +470,7 @@ def test_atof():
     assert_equal(121234.0, atof(" 121234.  "))
     assert_equal(985031234.0, atof(" 985031234.F  "))
     assert_equal(FloatLiteral.negative_zero, atof("-0"))
-    assert_equal(FloatLiteral.nan, atof("  nan"))
+    assert_equal(String(FloatLiteral.nan), String(atof("  nan")))
     assert_equal(FloatLiteral.infinity, atof(" inf "))
     assert_equal(FloatLiteral.negative_infinity, atof("-inf  "))
 

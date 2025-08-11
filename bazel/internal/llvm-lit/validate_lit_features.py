@@ -36,6 +36,7 @@ _GPU_FEATURES = {
     "A10-GPU",
     "A100-GPU",
     "AMD-GPU",
+    "APPLE-GPU",
     "B200-GPU",
     "H100-GPU",
     "MI300X-GPU",

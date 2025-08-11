@@ -29,7 +29,7 @@ struct MyPet:
         self.name = existing.name
         self.age = existing.age
 
-    fn __moveinit__(out self, var existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.name = existing.name^
         self.age = existing.age
 

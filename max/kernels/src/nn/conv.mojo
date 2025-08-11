@@ -3142,7 +3142,7 @@ struct CuDNNConvMeta(Copyable, Defaultable, Movable):
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_output_desc))
         check_cudnn_error(cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc))
         check_cudnn_error(cudnnDestroyFilterDescriptor(self.ptr_filter_desc))

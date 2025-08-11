@@ -1,0 +1,13 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+index b788973..ef68c95 100644
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -125,7 +125,7 @@ def _mypy_impl(target, ctx):
+     pyi_dirs = {}
+     for dep in (ctx.rule.attr.deps + additional_types):
+         if RulesPythonPyInfo in dep and hasattr(dep[RulesPythonPyInfo], "direct_pyi_files"):
+-            pyi_files.extend(dep[RulesPythonPyInfo].direct_pyi_files.to_list())
++            pyi_files.extend(dep[RulesPythonPyInfo].transitive_pyi_files.to_list())
+             pyi_dirs |= {"%s/%s" % (ctx.bin_dir.path, imp): None for imp in _extract_imports(dep) if imp != "site-packages" and imp != "_main"}
+         depsets.append(dep.default_runfiles.files)
+         if PyTypeLibraryInfo in dep:

@@ -36,7 +36,7 @@ struct Node[
 
     fn __init__(
         out self,
-        owned value: ElementType,
+        var value: ElementType,
         prev: Optional[Self._NodePointer],
         next: Optional[Self._NodePointer],
     ):
@@ -202,7 +202,7 @@ struct LinkedList[
         """
         self = other.copy()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Initialize this list by moving elements from another list.
 
         Args:
@@ -215,7 +215,7 @@ struct LinkedList[
         self._tail = other._tail
         self._size = other._size
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up the list by freeing all nodes.
 
         Notes:
@@ -327,7 +327,8 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        var current = self._get_node_ptr(Int(i))
+        var idx = Int(index(i))
+        var current = self._get_node_ptr(idx)
 
         if current:
             var node = current[]
@@ -350,7 +351,7 @@ struct LinkedList[
             self._size -= 1
             return data^
 
-        raise Error("Invalid index for pop: ", Int(i))
+        raise Error("Invalid index for pop: ", idx)
 
     fn maybe_pop(mut self) -> Optional[ElementType]:
         """Removes the tail of the list and returns it, if it exists.
@@ -464,7 +465,10 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        var i = max(0, index(idx) if Int(idx) >= 0 else index(idx) + len(self))
+
+        # TODO: use normalize_index
+        var i = Int(index(idx))
+        i = max(0, i if i >= 0 else i + len(self))
 
         if i == 0:
             var node = Self._NodePointer.alloc(1)
@@ -647,14 +651,14 @@ struct LinkedList[
 
     fn _get_node_ptr[
         I: Indexer
-    ](ref self, index: I) -> UnsafePointer[Node[ElementType]]:
+    ](ref self, idx: I) -> UnsafePointer[Node[ElementType]]:
         """Get a pointer to the node at the specified index.
 
         Parameters:
             I: The type of index to use.
 
         Args:
-            index: The index of the node to get.
+            idx: The index of the node to get.
 
         Returns:
             A pointer to the node at the specified index.
@@ -666,7 +670,7 @@ struct LinkedList[
             Time Complexity: O(n) in len(self).
         """
         var l = len(self)
-        var i = normalize_index["LinkedList"](index, l)
+        var i = normalize_index["LinkedList"](idx, l)
         debug_assert(0 <= i < l, "index out of bounds")
         var mid = l // 2
         if i <= mid:
@@ -680,14 +684,14 @@ struct LinkedList[
                 curr = curr[].prev
             return curr
 
-    fn __getitem__[I: Indexer](ref self, index: I) -> ref [self] ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] ElementType:
         """Get the element at the specified index.
 
         Parameters:
             I: The type of index to use.
 
         Args:
-            index: The index of the element to get.
+            idx: The index of the element to get.
 
         Returns:
             The element at the specified index.
@@ -696,23 +700,23 @@ struct LinkedList[
             Time Complexity: O(n) in len(self).
         """
         debug_assert(len(self) > 0, "unable to get item from empty list")
-        return self._get_node_ptr(index)[].value
+        return self._get_node_ptr(idx)[].value
 
-    fn __setitem__[I: Indexer](mut self, index: I, var value: ElementType):
+    fn __setitem__[I: Indexer](mut self, idx: I, var value: ElementType):
         """Set the element at the specified index.
 
         Parameters:
             I: The type of index to use.
 
         Args:
-            index: The index of the element to set.
+            idx: The index of the element to set.
             value: The new value to set.
 
         Notes:
             Time Complexity: O(n) in len(self).
         """
         debug_assert(len(self) > 0, "unable to set item from empty list")
-        self._get_node_ptr(index)[].value = value^
+        self._get_node_ptr(idx)[].value = value^
 
     fn __len__(self) -> Int:
         """Get the number of elements in the list.

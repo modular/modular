@@ -734,7 +734,7 @@ fn frexp[
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
     var x_int = x._to_bits_signed()
-    var selector = x != zero
+    var selector = x.ne(zero)
     var exp = selector.select(
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
         zero,
@@ -773,8 +773,8 @@ fn _log_base[
     var frexp_result = frexp(x)
     var x1 = frexp_result[0]
     var exp = frexp_result[1]
-    exp = (x1 < sqrt2_div_2).select(exp - 1, exp)
-    x1 = (x1 < sqrt2_div_2).select(x1 + x1, x1) - 1
+    exp = x1.lt(sqrt2_div_2).select(exp - 1, exp)
+    x1 = x1.lt(sqrt2_div_2).select(x1 + x1, x1) - 1
 
     var x2 = x1 * x1
     var x3 = x2 * x1
@@ -804,7 +804,7 @@ fn _log_base[
         y = exp.fma(ln2, y)
     else:
         y = y.fma(log2e, exp)
-    return (x == 0).select(Scalar[dtype].MIN, (x > 0).select(y, nan[dtype]()))
+    return x.eq(0).select(Scalar[dtype].MIN, x.gt(0).select(y, nan[dtype]()))
 
 
 @always_inline
@@ -911,7 +911,7 @@ fn copysign[
         return magnitude
     elif dtype.is_integral():
         var mag_abs = abs(magnitude)
-        return (sign < 0).select(-mag_abs, mag_abs)
+        return sign.lt(0).select(-mag_abs, mag_abs)
     return llvm_intrinsic[
         "llvm.copysign", SIMD[dtype, width], has_side_effect=False
     ](magnitude, sign)
@@ -970,7 +970,7 @@ fn erf[
         ),
     ](x_abs * x_abs).fma(x, x)
 
-    return (x_abs > 0.921875).select[dtype](r_large, r_small)
+    return x_abs.gt(0.921875).select[dtype](r_large, r_small)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1122,11 +1122,11 @@ fn isclose[
     @parameter
     if symmetrical:
         check_fin = isfinite(a) & isfinite(b)
-        in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
+        in_range = abs(a - b).le(max(T(atol), T(rtol) * max(abs(a), abs(b))))
     else:
         check_fin = isfinite(b)
-        in_range = abs(a - b) <= T(atol) + T(rtol) * abs(b)
-    return (a == b) | (check_nan & equal_nan) | (check_fin & in_range)
+        in_range = abs(a - b).le(T(atol) + T(rtol) * abs(b))
+    return a.eq(b) | (check_nan & equal_nan) | (check_fin & in_range)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1659,7 +1659,7 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     alias inf_val = inf[x.dtype]()
     alias neg_inf_val = -inf[x.dtype]()
 
-    var is_neg = x < 0
+    var is_neg = x.lt(0)
     var x_abs = abs(x)
     var x2 = x * x
     var x3 = x2 * x
@@ -1685,11 +1685,11 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     # If x is 1, then the result is +infinity if x is negative, and -infinity
     # if x is positive. If x is >= 1, NaN is returned. Otherwise, if x is >= 0.5,
     # we use the r approximation, otherwise we use the p polynomial approximation.
-    return (x_abs == 1).select(
+    return x_abs.eq(1).select(
         is_neg.select(neg_inf_val, inf_val),
-        (x_abs >= 1).select(
+        x_abs.ge(1).select(
             is_neg.select(nan_val, -nan_val),
-            (x_abs > 0.5).select(r, p),
+            x_abs.gt(0.5).select(r, p),
         ),
     )
 

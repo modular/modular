@@ -189,7 +189,7 @@ struct CausalMask(Copyable, MHAMask, Movable):
         # itself and previous tokens.
         # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
         var masked_score_vec = (
-            SIMD[index_type, width](q_idx) >= iota[index_type, width](k_idx)
+            SIMD[index_type, width](q_idx).ge(iota[index_type, width](k_idx))
         ).select(score_vec, MASK_VALUE)
 
         return masked_score_vec
@@ -221,12 +221,14 @@ struct CausalMask(Copyable, MHAMask, Movable):
 
         # If false, the tile is not masked.
         var min_q_lt_max_k = (
-            tile_offset.data[0] + 1 < tile_offset.data[1] + tile_size.data[1]
+            (tile_offset.data[0] + 1).lt(
+                tile_offset.data[1] + tile_size.data[1]
+            )
         ).cast[DType.uint8]()
 
         # If true, the tile is fully masked
         var max_q_lt_min_k = (
-            tile_offset.data[0] + tile_size.data[0] <= tile_offset.data[1]
+            (tile_offset.data[0] + tile_size.data[0]).le(tile_offset.data[1])
         ).cast[DType.uint8]()
 
         # Use 2 bits to represent:
@@ -346,9 +348,9 @@ struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
                 k_start_idx.cast[DType.uint32]() + iota[DType.uint32, width]()
             )
             if q_chunk_idx == k_start_chunk_idx:
-                mask_val = k_indices >= boundary
+                mask_val = k_indices.ge(boundary)
             elif q_chunk_idx == k_end_chunk_idx:
-                mask_val = k_indices < boundary
+                mask_val = k_indices.lt(boundary)
 
             return mask_val.select(MASK_VALUE, retval)
 
@@ -439,7 +441,7 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
         # first, check if the query is after the key, this step is the same
         # as the causal mask
         var masked_score_vec = (
-            SIMD[index_type, width](q_idx) >= iota[index_type, width](k_idx)
+            SIMD[index_type, width](q_idx).ge(iota[index_type, width](k_idx))
         ).select(score_vec, MASK_VALUE)
 
         # second, check if the query is within the window size of the key
@@ -447,9 +449,10 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
         # smaller than k_idx, but this is not possible because of the causal mask
         # that we have applied.
         return (
-            SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx)
-            < window_size
-        ).select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
+            (SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx))
+            .lt(window_size)
+            .select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
+        )
 
     @always_inline
     fn status[

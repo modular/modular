@@ -80,7 +80,7 @@ fn _memcmp_opt_impl_unconstrained[
     for i in range(0, last, simd_width):
         var s1i = s1.load[width=simd_width](i)
         var s2i = s2.load[width=simd_width](i)
-        var diff = s1i != s2i
+        var diff = s1i.ne(s2i)
         if any(diff):
             var index = Int(
                 diff.select(
@@ -92,7 +92,7 @@ fn _memcmp_opt_impl_unconstrained[
 
     var s1i = s1.load[width=simd_width](last)
     var s2i = s2.load[width=simd_width](last)
-    var diff = s1i != s2i
+    var diff = s1i.ne(s2i)
     if any(diff):
         var index = Int(
             diff.select(

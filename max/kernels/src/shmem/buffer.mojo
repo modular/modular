@@ -44,7 +44,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
             self._ctx_ptr = ctx._handle
             self._size = size
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         shmem_free(self._data)
 
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:

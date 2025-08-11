@@ -26,6 +26,7 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
+from layout import IntTuple
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.grouped_matmul import grouped_matmul
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -1720,12 +1721,15 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
     freq_dtype: DType, //,
     *,
     interleaved: Bool,
+    has_position_ids: Bool,
     target: StaticString,
+    mrope_section: Optional[IntTuple] = None,
 ](
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[freq_dtype, 2, *_],
+    position_ids: NDBuffer[DType.uint32, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr,
@@ -1755,17 +1759,39 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        fused_qk_rope_ragged[
-            kv_collection.CacheType, interleaved=interleaved, target=target
-        ](
-            q_proj,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            output,
-            dev_ctx,
-        )
+
+        @parameter
+        if has_position_ids:
+            fused_qk_rope_ragged[
+                kv_collection.CacheType,
+                interleaved=interleaved,
+                target=target,
+                mrope_section=mrope_section,
+            ](
+                q_proj,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
+                    position_ids
+                ),
+                layer_idx,
+                output,
+                dev_ctx,
+            )
+        else:
+            fused_qk_rope_ragged[
+                kv_collection.CacheType, interleaved=interleaved, target=target
+            ](
+                q_proj,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                None,
+                layer_idx,
+                output,
+                dev_ctx,
+            )
 
 
 @always_inline
@@ -1774,12 +1800,15 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     freq_dtype: DType, //,
     *,
     interleaved: Bool,
+    has_position_ids: Bool,
     target: StaticString,
+    mrope_section: Optional[IntTuple] = None,
 ](
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: PagedKVCacheCollection,
     freqs_cis: NDBuffer[freq_dtype, 2, *_],
+    position_ids: NDBuffer[DType.uint32, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -1821,17 +1850,39 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        fused_qk_rope_ragged[
-            kv_collection.CacheType, interleaved=interleaved, target=target
-        ](
-            q_proj,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            output,
-            dev_ctx,
-        )
+
+        @parameter
+        if has_position_ids:
+            fused_qk_rope_ragged[
+                kv_collection.CacheType,
+                interleaved=interleaved,
+                target=target,
+                mrope_section=mrope_section,
+            ](
+                q_proj,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
+                    position_ids
+                ),
+                layer_idx,
+                output,
+                dev_ctx,
+            )
+        else:
+            fused_qk_rope_ragged[
+                kv_collection.CacheType, interleaved=interleaved, target=target
+            ](
+                q_proj,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                None,
+                layer_idx,
+                output,
+                dev_ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#

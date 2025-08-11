@@ -20,6 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
+from collections._index_normalization import normalize_index
 from memory import Pointer, memcpy
 
 from .optional import Optional
@@ -32,7 +33,7 @@ from .optional import Optional
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
@@ -76,10 +77,10 @@ struct _ListIter[
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__()
+        return self.__next_ref__().copy()
 
 
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
+struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """The `List` type is a dynamically-allocated list.
@@ -120,7 +121,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         var copy = Self(capacity=self.capacity)
         for e in self:
-            copy.append(e)
+            copy.append(e.copy())
         return copy^
 
     fn __init__(out self, *, capacity: Int):
@@ -184,7 +185,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(capacity=len(span))
         for value in span:
-            self.append(value)
+            self.append(value.copy())
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
@@ -208,7 +209,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self = Self(capacity=existing.capacity)
         self.extend(Span(existing))
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy all elements in the list and free its memory."""
 
         @parameter
@@ -916,11 +917,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         var res = Self(capacity=len(r))
         for i in r:
-            res.append(self[i])
+            res.append(self[i].copy())
 
         return res^
 
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] T:
+    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
         """Gets the list element at the given index.
 
         Args:
@@ -933,30 +934,10 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A reference to the element at the given index.
         """
 
-        @parameter
-        if _type_is_eq[I, UInt]():
-            var idx = UInt(idx)
-            debug_assert(
-                idx < self._len,
-                "index: ",
-                idx,
-                " is out of bounds for `List` of length: ",
-                self._len,
-            )
-            return (self._data + idx)[]
-        else:
-            var normalized_idx = Int(idx)
-            debug_assert(
-                -self._len <= normalized_idx < self._len,
-                "index: ",
-                normalized_idx,
-                " is out of bounds for `List` of length: ",
-                self._len,
-            )
-            if normalized_idx < 0:
-                normalized_idx += len(self)
-
-            return (self._data + normalized_idx)[]
+        var normalized_idx = normalize_index["List", assert_always=False](
+            idx, len(self)
+        )
+        return (self._data + normalized_idx)[]
 
     @always_inline
     fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
@@ -1122,15 +1103,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
-    ](var self) -> List[T, hint_trivial_type]:
+    ](deinit self) -> List[T, hint_trivial_type]:
         var result = List[T, hint_trivial_type]()
         result._data = self._data
         result._len = self._len
         result.capacity = self.capacity
-
-        # We stole the elements, don't destroy them.
-        __disable_del self
-
         return result^
 
 

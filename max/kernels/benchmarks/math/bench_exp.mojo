@@ -144,7 +144,7 @@ fn ldexp2kf[
 
     var msb = y
     for _ in range(32):
-        if ((msb & 0x1) != 0).reduce_and():
+        if (msb & 0x1).ne(0).reduce_and():
             break
         msb = msb >> 1
 
@@ -205,7 +205,7 @@ fn exp_sleef[
     u = u.fma(s, 0.5)
     u = s * s * u + s
 
-    return (q == 0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
+    return q.eq(0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
 
 
 @always_inline

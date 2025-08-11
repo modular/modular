@@ -106,7 +106,7 @@ struct Semaphore:
         Args:
             status: The state value to wait for (defaults to 0).
         """
-        while _barrier_and((self._state == status).select(Int32(0), Int32(1))):
+        while _barrier_and(self._state.eq(status).select(Int32(0), Int32(1))):
             self.fetch()
         barrier()
 

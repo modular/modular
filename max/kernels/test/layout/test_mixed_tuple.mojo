@@ -23,9 +23,9 @@ fn test_nested_layouts() raises:
     # Create nested layouts
     var inner = MixedIntTuple(Idx[2](), Idx(3))
     var nested = MixedIntTuple(inner, Idx[4]())
-    assert_equal(inner[1].value, 3)
-    assert_equal(nested[0][0].value, 2)
-    assert_equal(nested[1].value, 4)
+    assert_equal(inner[1].value(), 3)
+    assert_equal(nested[0][0].value(), 2)
+    assert_equal(nested[1].value(), 4)
     assert_equal(sizeof[__type_of(inner)](), sizeof[Int]())
     assert_equal(sizeof[__type_of(nested)](), sizeof[Int]())
 
@@ -36,8 +36,8 @@ fn test_list_literal_construction() raises:
         Idx[2](),
         Idx(3),
     ]
-    assert_equal(t[0].value, 2)
-    assert_equal(t[1].value, 3)
+    assert_equal(t[0].value(), 2)
+    assert_equal(t[1].value(), 3)
 
 
 fn main() raises:

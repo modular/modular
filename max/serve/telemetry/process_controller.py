@@ -96,7 +96,7 @@ class ProcessMetricClient(MetricClient):
     def cross_process_factory(
         self,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
-        settings = Settings(metric_level=self.metric_detail_level)  # type: ignore
+        settings = Settings(metric_level=self.metric_detail_level)
         return functools.partial(_reconstruct_client, settings, self.queue)
 
     def __del__(self) -> None:

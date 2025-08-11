@@ -83,7 +83,7 @@ fn bench_vec_add(
     context.enqueue_copy(out_host, out_device)
 
     for i in range(length):
-        assert_equal(i + 2, out_host[i])
+        assert_equal(Scalar[dtype](i + 2), out_host[i])
 
     __ownership_keepalive(in0_device, in1_device, out_device)
 

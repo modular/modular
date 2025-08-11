@@ -167,7 +167,7 @@ struct _DeviceTimer:
     fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
         external_call["AsyncRT_DeviceTimer_release", NoneType, _DeviceTimerPtr](
             self._handle
@@ -329,7 +329,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         ]()
         return self
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Initializes this buffer by taking ownership of an existing buffer.
 
         This move constructor transfers ownership of the device buffer from the existing
@@ -345,7 +345,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         self._host_ptr = existing._host_ptr
         self._handle = existing._handle
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this host buffer.
 
         This function schedules an owned buffer free using the stream in the
@@ -571,7 +571,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         )
 
     fn take_ptr(
-        owned self,
+        var self,
     ) -> Self._HostPtr:
         """Takes ownership of the device pointer from this buffer.
 
@@ -940,7 +940,7 @@ struct DeviceBuffer[dtype: DType](
         ]()
         return self
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Initializes this buffer by taking ownership of an existing buffer.
 
         This move constructor transfers ownership of the device buffer from the existing
@@ -957,7 +957,7 @@ struct DeviceBuffer[dtype: DType](
         self._handle = existing._handle
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this device buffer.
 
         This function schedules an owned buffer free using the stream in the
@@ -1189,7 +1189,7 @@ struct DeviceBuffer[dtype: DType](
 
     @always_inline
     fn take_ptr(
-        owned self,
+        var self,
     ) -> Self._DevicePtr:
         """Takes ownership of the device pointer from this buffer.
 
@@ -1203,7 +1203,7 @@ struct DeviceBuffer[dtype: DType](
         return self._take_ptr()
 
     fn _take_ptr(
-        owned self,
+        var self,
     ) -> Self._DevicePtr:
         constrained[
             not is_gpu(),
@@ -1429,7 +1429,7 @@ struct DeviceStream:
         self._handle = existing._handle
 
     @doc_private
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves an existing stream into this one.
 
         Args:
@@ -1439,7 +1439,7 @@ struct DeviceStream:
 
     @doc_private
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this stream."""
         # void AsyncRT_DeviceStream_release(const DeviceStream *stream)
         external_call[
@@ -1568,7 +1568,7 @@ struct DeviceFunction[
         self._handle = existing._handle
         self._func_impl = existing._func_impl
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves an existing DeviceFunction into this one.
 
         Args:
@@ -1577,7 +1577,7 @@ struct DeviceFunction[
         self._handle = existing._handle
         self._func_impl = existing._func_impl
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this DeviceFunction.
 
         This decrements the reference count of the underlying device function handle.
@@ -1890,8 +1890,8 @@ struct DeviceFunction[
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2019,8 +2019,8 @@ struct DeviceFunction[
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -2328,7 +2328,7 @@ struct DeviceExternalFunction:
         ](existing._handle)
         self._handle = existing._handle
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves an existing device function into this one.
 
         Args:
@@ -2336,7 +2336,7 @@ struct DeviceExternalFunction:
         """
         self._handle = existing._handle
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this device function."""
         # Decrement the reference count held by this struct.
         #
@@ -2461,8 +2461,8 @@ struct DeviceExternalFunction:
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Launches the device function with the specified arguments and configuration.
 
@@ -2621,7 +2621,7 @@ struct DeviceContext(Copyable, Movable):
         out self,
         device_id: Int = 0,
         *,
-        owned api: String = String(Self.default_device_info.api),
+        var api: String = String(Self.default_device_info.api),
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -2719,7 +2719,7 @@ struct DeviceContext(Copyable, Movable):
         """
         return self
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Releases resources associated with this device context.
 
         This destructor decrements the reference count of the native device context.
@@ -3431,8 +3431,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3533,8 +3533,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3628,8 +3628,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3709,8 +3709,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3794,8 +3794,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3882,8 +3882,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3987,8 +3987,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -4089,8 +4089,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
@@ -4195,8 +4195,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
@@ -4296,8 +4296,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4380,8 +4380,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         f._call_with_pack(
             self,
@@ -4406,8 +4406,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         f._call_with_pack_checked(
             self,
@@ -4432,8 +4432,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues an external device function for asynchronous execution on the GPU.
 
@@ -4504,8 +4504,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = [],
-        owned constant_memory: List[ConstantMemoryMapping] = [],
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         _check_dim["DeviceContext.enqueue_external_function", "grid_dim"](
             grid_dim
@@ -5682,7 +5682,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     @doc_private
     fn __init__(
         out self,
-        owned contexts: List[DeviceContext],
+        var contexts: List[DeviceContext],
         size: Int,
     ) raises:
         alias elem_size = sizeof[dtype]()
@@ -5778,7 +5778,7 @@ struct _HostMappedBuffer[dtype: DType]:
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         pass
 
     fn __enter__(mut self) raises -> HostBuffer[dtype]:
@@ -5800,7 +5800,7 @@ struct _DeviceContextScope:
         self._ctx = ctx
         self._handle = _DeviceContextScopePtr()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # Ensure that the C++ scope is removed in all cases.
         if self._handle:
             self._release()

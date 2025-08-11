@@ -126,7 +126,7 @@ struct MyType(
     fn __copyinit__(out self, existing: Self, /):
         self.value = existing.value
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         self.value = existing.value
 
     fn __gt__(self, other: Self) -> Bool:

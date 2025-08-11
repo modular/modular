@@ -38,7 +38,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
         memcpy(dest=self.data, src=existing.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         for i in range(self.num_cells):
             (self.data + i).destroy_pointee()
         self.data.free()

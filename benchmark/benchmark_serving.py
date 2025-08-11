@@ -214,7 +214,6 @@ async def async_request_openai_completions(
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         payload = {
             "model": request_func_input.model,
-            "lora": request_func_input.lora,
             "prompt": request_func_input.prompt,
             "temperature": request_func_input.temperature,
             "best_of": 1,
@@ -222,6 +221,9 @@ async def async_request_openai_completions(
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.lora is not None:
+            payload["lora"] = request_func_input.lora
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
@@ -318,12 +320,14 @@ async def async_request_openai_chat_completions(
         payload = {
             "model": request_func_input.model,
             "messages": messages_data,
-            "lora": request_func_input.lora,
             "temperature": request_func_input.temperature,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
         }
+
+        if request_func_input.lora is not None:
+            payload["lora"] = request_func_input.lora
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
@@ -954,8 +958,8 @@ async def chat_session_driver(
 
 async def benchmark(
     backend: str,
+    chat: bool,
     api_url: str,
-    base_url: str,
     model_id: str,
     lora_id: str,
     tokenizer: PreTrainedTokenizerBase,
@@ -977,10 +981,11 @@ async def benchmark(
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
 ):
-    if backend in ASYNC_REQUEST_FUNCS:
-        request_func = ASYNC_REQUEST_FUNCS[backend]
+    full_backend = backend + ("-chat" if chat else "")
+    if full_backend in ASYNC_REQUEST_FUNCS:
+        request_func = ASYNC_REQUEST_FUNCS[full_backend]
     else:
-        raise ValueError(f"Unknown backend: {backend}")
+        raise ValueError(f"Unknown backend: {full_backend}")
 
     if do_test_prompt:
         logger.info("Starting initial single prompt test run...")
@@ -1362,6 +1367,14 @@ def main(args: argparse.Namespace) -> None:
     lora_id = args.lora
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
+    if args.endpoint not in [
+        "/v1/completions",
+        "/v1/chat/completions",
+        "/v2/models/ensemble/generate_stream",
+    ]:
+        raise ValueError(f"Unknown endpoint: {args.endpoint}")
+    chat = args.endpoint == "/v1/chat/completions"
+
     if args.base_url is not None:
         api_url = f"{args.base_url}{args.endpoint}"
         base_url = f"{args.base_url}"
@@ -1369,7 +1382,7 @@ def main(args: argparse.Namespace) -> None:
         api_url = f"http://{args.host}:{args.port}{args.endpoint}"
         base_url = f"http://{args.host}:{args.port}"
 
-    logger.info(f"getting tokenizer. api url: {api_url}, base_url: {base_url}")
+    logger.info(f"getting tokenizer. api url: {api_url}")
     tokenizer = get_tokenizer(
         tokenizer_id, trust_remote_code=args.trust_remote_code
     )
@@ -1444,7 +1457,7 @@ def main(args: argparse.Namespace) -> None:
 
     elif isinstance(benchmark_dataset, SonnetBenchmarkDataset):
         # For sonnet, formatting depends on the endpoint
-        apply_chat_template = args.backend.endswith("chat")
+        apply_chat_template = chat
         # Sample sonnet requests with common parameters
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
@@ -1462,13 +1475,15 @@ def main(args: argparse.Namespace) -> None:
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
+        if output_lengths:
+            ValueError(
+                "Arxiv summarization dataset does not support --output-lengths. Please use --max-output-len"
+            )
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             input_len=args.arxiv_summarization_input_len,
-            output_lengths=output_lengths,
-            shuffle=(
-                args.output_lengths is None and not args.record_output_lengths
-            ),
+            max_output_len=args.max_output_len,
+            shuffle=not args.record_output_lengths,
             tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
@@ -1528,8 +1543,8 @@ def main(args: argparse.Namespace) -> None:
     benchmark_result = asyncio.run(
         benchmark(
             backend=backend,
+            chat=chat,
             api_url=api_url,
-            base_url=base_url,
             model_id=model_id,
             lora_id=lora_id,
             tokenizer=tokenizer,

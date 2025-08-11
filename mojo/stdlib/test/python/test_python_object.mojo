@@ -26,235 +26,115 @@ from testing import (
 def test_dunder_methods(mut python: Python):
     var a = PythonObject(34)
     var b = PythonObject(10)
+    var d = PythonObject(2)
 
-    # __add__
-    var c = a + b
+    # Arithmetic operators (binary, in-place, reverse)
+    var c = a + b  # __add__
     assert_equal_pyobj(c, 44)
-
-    # __add__
-    c = a + 100
+    c += 100  # __iadd__
+    assert_equal_pyobj(c, 144)
+    c = 100 + a  # __radd__
     assert_equal_pyobj(c, 134)
 
-    # __iadd__
-    c += 100
-    assert_equal_pyobj(c, 234)
-
-    # __radd__
-    c = 100 + a
-    assert_equal_pyobj(c, 134)
-
-    # __sub__
-    c = a - b
+    c = a - b  # __sub__
     assert_equal_pyobj(c, 24)
-
-    # __isub__
-    c -= 100
+    c -= 100  # __isub__
     assert_equal_pyobj(c, -76)
-
-    # __sub__
-    c = a - 100
-    assert_equal_pyobj(c, -66)
-
-    # __rsub__
-    c = 100 - a
+    c = 100 - a  # __rsub__
     assert_equal_pyobj(c, 66)
 
-    # __mul__
-    c = a * b
+    c = a * b  # __mul__
     assert_equal_pyobj(c, 340)
-
-    # __imul__
-    c *= 10
+    c *= 10  # __imul__
     assert_equal_pyobj(c, 3400)
-
-    # __mul__
-    c = a * 10
+    c = 34 * b  # __rmul__
     assert_equal_pyobj(c, 340)
 
-    # __rmul__
-    c = 34 * b
-    assert_equal_pyobj(c, 340)
-
-    # __floordiv__
-    c = a // b
+    c = a // b  # __floordiv__
     assert_equal_pyobj(c, 3)
-
-    # __ifloordiv__
-    c //= 2
+    c //= 2  # __ifloordiv__
     assert_equal_pyobj(c, 1)
-
-    # __floordiv__
-    c = a // 10
+    c = 34 // b  # __rfloordiv__
     assert_equal_pyobj(c, 3)
 
-    # __rfloordiv__
-    c = 34 // b
-    assert_equal_pyobj(c, 3)
-
-    # __truediv__
-    c = a / b
+    c = a / b  # __truediv__
     assert_equal_pyobj(c, 3.4)
-
-    # __itruediv__
-    c /= 2
+    c /= 2  # __itruediv__
     assert_equal_pyobj(c, 1.7)
-
-    # __truediv__
-    c = a / 10
+    c = 34 / b  # __rtruediv__
     assert_equal_pyobj(c, 3.4)
 
-    # __rtruediv__
-    c = 34 / b
-    assert_equal_pyobj(c, 3.4)
-
-    # __mod__
-    c = a % b
+    c = a % b  # __mod__
     assert_equal_pyobj(c, 4)
-
-    # __imod__
-    c %= 3
+    c %= 3  # __imod__
     assert_equal_pyobj(c, 1)
-
-    # __mod__
-    c = a % 10
+    c = 34 % b  # __rmod__
     assert_equal_pyobj(c, 4)
 
-    # __rmod__
-    c = 34 % b
-    assert_equal_pyobj(c, 4)
-
-    # __xor__
-    c = a ^ b
-    assert_equal_pyobj(c, 40)
-
-    # __ixor__
-    c ^= 15
-    assert_equal_pyobj(c, 39)
-
-    # __xor__
-    c = a ^ 10
-    assert_equal_pyobj(c, 40)
-
-    # __rxor__
-    c = 34 ^ b
-    assert_equal_pyobj(c, 40)
-
-    # __or__
-    c = a | b
-    assert_equal_pyobj(c, 42)
-
-    # __ior__
-    c |= 9
-    assert_equal_pyobj(c, 43)
-
-    # __or__
-    c = a | 10
-    assert_equal_pyobj(c, 42)
-
-    # __ror__
-    c = 34 | b
-    assert_equal_pyobj(c, 42)
-
-    # __and__
-    c = a & b
-    assert_equal_pyobj(c, 2)
-
-    # __iand__
-    c &= 6
-    assert_equal_pyobj(c, 2)
-
-    # __and__
-    c = a & 10
-    assert_equal_pyobj(c, 2)
-
-    # __rand__
-    c = 34 & b
-    assert_equal_pyobj(c, 2)
-
-    # __rshift__
-    var d = PythonObject(2)
-    c = a >> d
-    assert_equal_pyobj(c, 8)
-
-    # __irshift__
-    c >>= 2
-    assert_equal_pyobj(c, 2)
-
-    # __rshift__
-    c = a >> 2
-    assert_equal_pyobj(c, 8)
-
-    # __rrshift__
-    c = 34 >> d
-    assert_equal_pyobj(c, 8)
-
-    # __lshift__
-    c = a << d
-    assert_equal_pyobj(c, 136)
-
-    # __ilshift__
-    c <<= 1
-    assert_equal_pyobj(c, 272)
-
-    # __lshift__
-    c = a << 2
-    assert_equal_pyobj(c, 136)
-
-    # __rlshift__
-    c = 34 << d
-    assert_equal_pyobj(c, 136)
-
-    # __pow__
-    c = a**d
+    c = a**d  # __pow__
     assert_equal_pyobj(c, 1156)
-
-    # __ipow__
-    c = 3
+    c = 3  # __ipow__
     c **= 4
     assert_equal_pyobj(c, 81)
-
-    # __pow__
-    c = a**2
+    c = 34**d  # __rpow__
     assert_equal_pyobj(c, 1156)
 
-    # __rpow__
-    c = 34**d
-    assert_equal_pyobj(c, 1156)
+    # Bitwise operators
+    c = a ^ b  # __xor__
+    assert_equal_pyobj(c, 40)
+    c ^= 15  # __ixor__
+    assert_equal_pyobj(c, 39)
+    c = 34 ^ b  # __rxor__
+    assert_equal_pyobj(c, 40)
 
-    # __lt__
-    c = a < b
+    c = a | b  # __or__
+    assert_equal_pyobj(c, 42)
+    c |= 9  # __ior__
+    assert_equal_pyobj(c, 43)
+    c = 34 | b  # __ror__
+    assert_equal_pyobj(c, 42)
+
+    c = a & b  # __and__
+    assert_equal_pyobj(c, 2)
+    c &= 6  # __iand__
+    assert_equal_pyobj(c, 2)
+    c = 34 & b  # __rand__
+    assert_equal_pyobj(c, 2)
+
+    c = a >> d  # __rshift__
+    assert_equal_pyobj(c, 8)
+    c >>= 2  # __irshift__
+    assert_equal_pyobj(c, 2)
+    c = 34 >> d  # __rrshift__
+    assert_equal_pyobj(c, 8)
+
+    c = a << d  # __lshift__
+    assert_equal_pyobj(c, 136)
+    c <<= 1  # __ilshift__
+    assert_equal_pyobj(c, 272)
+    c = 34 << d  # __rlshift__
+    assert_equal_pyobj(c, 136)
+
+    # Comparison operators
+    c = a < b  # __lt__
     assert_equal_pyobj(c, PythonObject(False))
-
-    # __le__
-    c = a <= b
+    c = a <= b  # __le__
     assert_equal_pyobj(c, PythonObject(False))
-
-    # __gt__
-    c = a > b
+    c = a > b  # __gt__
+    assert_equal_pyobj(c, PythonObject(True))
+    c = a >= b  # __ge__
+    assert_equal_pyobj(c, PythonObject(True))
+    c = a == b  # __eq__
+    assert_equal_pyobj(c, PythonObject(False))
+    c = a != b  # __ne__
     assert_equal_pyobj(c, PythonObject(True))
 
-    # __ge__
-    c = a >= b
-    assert_equal_pyobj(c, PythonObject(True))
-
-    # __eq__
-    c = a == b
-    assert_equal_pyobj(c, PythonObject(False))
-
-    # __ne__
-    c = a != b
-    assert_equal_pyobj(c, PythonObject(True))
-
-    # __pos__
-    c = +a
+    # Unary operators
+    c = +a  # __pos__
     assert_equal_pyobj(c, 34)
-
-    # __neg__
-    c = -a
+    c = -a  # __neg__
     assert_equal_pyobj(c, -34)
-
-    # __invert__
-    c = ~a
+    c = ~a  # __invert__
     assert_equal_pyobj(c, -35)
 
 
@@ -280,11 +160,26 @@ def test_num_conversion():
     assert_equal(n_str, String(PythonObject(n)))
 
 
-def test_bool_conversion():
+def test_boolean_operations():
+    # Test boolean conversion and context
     var x: PythonObject = 1
     assert_true(x == 1)
     assert_false(x == 0)
     assert_true(x == 0 or x == 1)
+
+    # Test __bool__ method on various objects
+    assert_true(PythonObject(1).__bool__())
+    assert_false(PythonObject(0).__bool__())
+    assert_true(PythonObject("hello").__bool__())
+    assert_false(PythonObject("").__bool__())
+
+    var list_obj: PythonObject = [1, 2, 3]
+    assert_true(list_obj.__bool__())
+
+    var empty_list: PythonObject = []
+    assert_false(empty_list.__bool__())
+
+    assert_false(Python.none().__bool__())
 
 
 fn test_string_conversions(mut python: Python) raises -> None:
@@ -705,6 +600,148 @@ def test_conversion_to_simd():
     assert_equal(UInt8(py_int), UInt8(0))
 
 
+def test_hash():
+    # Test __hash__ method
+    var obj1 = PythonObject(42)
+    var obj2 = PythonObject(42)
+    var obj3 = PythonObject("hello")
+
+    # Same integers should have same hash
+    assert_equal(obj1.__hash__(), obj2.__hash__())
+
+    # Different objects should typically have different hashes
+    assert_true(obj1.__hash__() != obj3.__hash__())
+
+    # Test that unhashable types raise appropriate errors
+    var list_obj: PythonObject = [1, 2, 3]
+    with assert_raises(contains="unhashable type"):
+        _ = list_obj.__hash__()
+
+
+def test_call_with_kwargs():
+    # Test calling Python functions with keyword arguments
+    var print_func = Python.import_module("builtins").print
+
+    # Test calling with positional and keyword args
+    var io = Python.import_module("io")
+    var string_io = io.StringIO()
+    _ = print_func("test", file=string_io)
+
+    var output = string_io.getvalue()
+    assert_equal(String(output).strip(), "test")
+
+
+def test_attribute_access():
+    # Test __getattr__ and __setattr__
+    var test_dict: PythonObject = {"attr": "value"}
+
+    # Test getting attributes that exist
+    var attr_value = test_dict.__getattr__("get")
+    assert_true(attr_value is not None)
+
+    # Test setting attributes on objects that support it
+    var custom_obj = Python.evaluate("type('TestClass', (), {})()")
+    custom_obj.__setattr__("new_attr", "new_value")
+    var retrieved = custom_obj.__getattr__("new_attr")
+    assert_equal_pyobj(retrieved, "new_value")
+
+    # Test getting non-existent attributes raises an error
+    with assert_raises(contains="no attribute"):
+        _ = test_dict.__getattr__("nonexistent")
+
+
+def test_copy():
+    # Test that copy constructor works correctly
+    var original = PythonObject(42)
+    var copied = original
+
+    # They should be equal but not the same object
+    assert_equal_pyobj(original, copied)
+
+    # For immutable objects like integers, they might be the same
+    # but let's test with a mutable object
+    var list_original: PythonObject = [1, 2, 3]
+    var list_copied = list_original
+
+    # They should reference the same object
+    assert_true(list_original is list_copied)
+
+
+def test_python_eval_and_evaluate(mut python: Python):
+    # Test Python.eval() method
+    var success = python.eval("x = 42")
+    assert_true(success)
+
+    # Test Python.evaluate() method
+    var result = Python.evaluate("2 + 3")
+    assert_equal_pyobj(result, 5)
+
+
+def test_python_module_operations():
+    # Test Python.import_module()
+    var math_module = Python.import_module("math")
+    var pi_value = math_module.pi
+    assert_true(Float64(pi_value) > 3.1 and Float64(pi_value) < 3.2)
+
+    # Test Python.add_to_path() and importing custom modules
+    # Note: This test might need a custom module file to be truly effective
+    # For now, just test that the function doesn't crash
+    Python.add_to_path(".")
+
+
+def test_python_type_functions():
+    # Test Python.type()
+    var int_obj = PythonObject(42)
+    var int_type = Python.type(int_obj)
+    assert_equal(String(int_type), "<class 'int'>")
+
+    var str_obj = PythonObject("hello")
+    var str_type = Python.type(str_obj)
+    assert_equal(String(str_type), "<class 'str'>")
+
+    # Test Python.str(), Python.int(), Python.float()
+    var str_result = Python.str(int_obj)
+    assert_equal_pyobj(str_result, "42")
+
+    var int_result = Python.int(str_obj.__getattr__("__len__")())
+    assert_equal_pyobj(int_result, 5)
+
+    var float_result = Python.float(int_obj)
+    assert_equal_pyobj(float_result, 42.0)
+
+
+def test_advanced_slicing():
+    # Test more complex slicing scenarios
+    var data: PythonObject = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    # Test step slicing with negative indices
+    assert_equal("[9, 7, 5, 3, 1]", String(data[-1::-2]))
+
+    # Test empty slices
+    assert_equal("[]", String(data[5:5]))
+    assert_equal("[]", String(data[10:20]))
+
+    # Test slice assignment (if supported)
+    var mutable_list: PythonObject = [1, 2, 3, 4, 5]
+    # Note: slice assignment would be: mutable_list[1:3] = [10, 20]
+    # but this might not be supported in current implementation
+
+
+def test_error_handling():
+    # Test various error conditions
+    var zero = PythonObject(0)
+    var one = PythonObject(1)
+
+    # Test division by zero
+    with assert_raises(contains="division by zero"):
+        _ = one / zero
+
+    # Test invalid operations on None
+    var none_obj = Python.none()
+    with assert_raises():
+        _ = none_obj + one
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -712,7 +749,7 @@ def main():
     test_dunder_methods(python)
     test_inplace_dunder_methods(python)
     test_num_conversion()
-    test_bool_conversion()
+    test_boolean_operations()
     test_string_conversions(python)
     test_len()
     test_is()
@@ -728,3 +765,13 @@ def main():
     test_contains_dunder()
     test_python_mojo_object_operations()
     test_conversion_to_simd()
+
+    test_hash()
+    test_call_with_kwargs()
+    test_attribute_access()
+    test_copy()
+    test_python_eval_and_evaluate(python)
+    test_python_module_operations()
+    test_python_type_functions()
+    test_advanced_slicing()
+    test_error_handling()

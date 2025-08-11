@@ -67,7 +67,7 @@ struct DialectRegistry(Defaultable):
     fn __init__(out self):
         self.c = _c.IR.mlirDialectRegistryCreate()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # We only want to do this for objects which are not added to a context
         pass  # _c.IR.mlirDialectRegistryDestroy(self.c)
 

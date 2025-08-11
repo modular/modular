@@ -44,6 +44,15 @@ single_version_override(
 )
 
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # TODO: Should we submit this upstream or force our deps to directly
+        # depend on the things that provide their pyi files?
+        "//bazel/public-patches:rules_mypy_pyi_files.patch",
+    ],
+)
 
 archive_override(
     module_name = "rules_pycross",
@@ -96,15 +105,6 @@ single_version_override(
 )
 
 single_version_override(
-    module_name = "aspect_rules_py",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/aspect-build/rules_py/pull/463
-        "//bazel/public-patches:rules_py_main.patch",
-    ],
-)
-
-single_version_override(
     module_name = "with_cfg.bzl",
     patch_strip = 1,
     patches = [
@@ -130,6 +130,15 @@ single_version_override(
         "//bazel/public-patches:grpc-java.patch",
     ],
     version = "1.67.1",
+)
+
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/bazel/issues/26561
+        "//bazel/public-patches:rules_python_warning.patch",
+    ],
 )
 
 DEFAULT_PYTHON_VERSION = "3.12"
@@ -242,6 +251,7 @@ mojo.gpu_toolchains(
         "MI355": "mi355",
         "Navi": "radeon",
         "AMD Radeon Graphics": "radeon",
+        "AMD Radeon RX 6900 XT": "rx6900xt",
         "Apple M1": "m1",
         "Apple M2": "m2",
         "Apple M3": "m3",
@@ -264,6 +274,7 @@ mojo.gpu_toolchains(
         "rtx3090": "nvidia:86",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
+        "rx6900xt": "amdgpu:gfx1030",
         "m1": "metal:10",
         "m2": "metal:20",
         "m3": "metal:30",

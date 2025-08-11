@@ -59,7 +59,7 @@ fn mandelbrot_kernel_SIMD[
             break
         var y2 = y * y
         y = x.fma(y + y, cy)
-        t = x.fma(x, y2) <= 4
+        t = x.fma(x, y2).le(4)
         x = x.fma(x, cx - y2)
         iters = t.select(iters + 1, iters)
     return iters

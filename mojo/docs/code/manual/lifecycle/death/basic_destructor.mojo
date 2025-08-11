@@ -19,7 +19,7 @@ struct Balloon(Writable):
     fn write_to[W: Writer](self, mut writer: W) -> None:
         writer.write(String("a ", self.color, " balloon"))
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         print("Destroyed", String(self))
 
 
@@ -28,7 +28,7 @@ struct Balloons:
     var color: String
     var count: Int
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         # Mojo destroys all the fields when they're last used
         pass
 

@@ -28,7 +28,7 @@ struct GenericArray[ElementType: Copyable & Movable]:
         for i in range(self.size):
             (self.data + i).init_pointee_copy(value)
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()

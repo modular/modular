@@ -676,7 +676,7 @@ def test_dtypepointer_gather():
     _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
     _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
 
-    var mask = (offset >= 0) & (offset < 3)
+    var mask = offset.ge(0) & offset.lt(3)
     var default = SIMD[ptr.type.dtype, 8](-1.0)
     desired = SIMD[ptr.type.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 

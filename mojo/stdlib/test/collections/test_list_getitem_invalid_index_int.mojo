@@ -15,7 +15,7 @@
 # CHECK-LABEL: test_fail_list_index
 fn test_fail_list_index():
     print("== test_fail_list_index")
-    # CHECK: index: 4 is out of bounds for `List` of length: 3
+    # CHECK: List index out of bounds: index (4) valid range: -3 <= index < 3
     nums = [1, 2, 3]
     print(nums[4])
 

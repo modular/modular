@@ -342,7 +342,7 @@ fn bit_width[
         return bitwidth - count_leading_zeros(val)
     else:
         # For signed integers, handle positive and negative separately
-        var abs_val = (val < 0).select(bit_not(val), val)
+        var abs_val = val.lt(0).select(bit_not(val), val)
         return bitwidth - count_leading_zeros(abs_val)
 
 
@@ -518,7 +518,7 @@ fn next_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return (val > 1).select(1 << bit_width(val - 1), 1)
+    return val.gt(1).select(1 << bit_width(val - 1), 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -569,7 +569,7 @@ fn prev_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral and unsigned"]()
-    return (val > 0).select(1 << (bit_width(val) - 1), 0)
+    return val.gt(0).select(1 << (bit_width(val) - 1), 0)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -549,16 +549,16 @@ fn isnan[
         return False
 
     elif dtype is DType.float8_e4m3fn:
-        return val.to_bits() & 0x7F == 0x7F
+        return (val.to_bits() & 0x7F).eq(0x7F)
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
-        return val.to_bits() & 0x7F > 0x7C
+        return (val.to_bits() & 0x7F).gt(0x7C)
     elif dtype is DType.bfloat16:
-        return val.to_bits() & 0x7FFF > 0x7F80
+        return (val.to_bits() & 0x7FFF).gt(0x7F80)
     elif dtype is DType.float16:
         var bits = val.to_bits()
-        return (bits & 0x7C00 == 0x7C00) & (bits & 0x03FF != 0)
+        return (bits & 0x7C00).eq(0x7C00) & (bits & 0x03FF).ne(0)
 
     alias signaling_nan_test: UInt32 = 0x0001
     alias quiet_nan_test: UInt32 = 0x0002

@@ -79,7 +79,7 @@ fn pack_string_res(
 fn create_error_async_values_and_destruct_error(
     async_ptr: UnsafePointer[OpaquePointer],
     async_len: Int,
-    owned err: Error,
+    var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
     var str = err.__str__()
@@ -902,11 +902,11 @@ struct MyInt(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, owned other: MyInt):
+    fn __moveinit__(out self, deinit other: MyInt):
         print("MyInt.__moveinit__", other.val)
         self.val = other.val
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("MyInt.__del__", self.val)
 
 
@@ -951,7 +951,7 @@ struct MyIntReg2(Copyable, Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         print("MyIntReg2.__del__", self.val)
 
 

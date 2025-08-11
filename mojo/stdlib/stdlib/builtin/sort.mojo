@@ -547,31 +547,6 @@ fn sort[
 
 
 fn sort[
-    dtype: DType,
-    origin: MutableOrigin, //,
-    *,
-    stable: Bool = False,
-](span: Span[Scalar[dtype], origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
-
-    Parameters:
-        dtype: Copyable & Movable type of the underlying data.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-
-    @parameter
-    fn _cmp_fn(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
-        return lhs < rhs
-
-    sort[_cmp_fn, stable=stable](span)
-
-
-fn sort[
     T: Copyable & Movable & Comparable,
     origin: MutableOrigin, //,
     *,

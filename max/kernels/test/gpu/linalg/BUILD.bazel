@@ -10,7 +10,11 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_gemv_bf16.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_grouped_matmul.mojo": ["//:h100_gpu"],
+    "test_grouped_matmul.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
@@ -33,7 +37,8 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
-    "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
+    "test_matmul_sm90_fp8.mojo": ["//:h100_gpu"],
+    "test_matmul_sm90_bf16_multicast.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_deepseek_scheduler.mojo": ["//:h100_gpu"],

@@ -81,7 +81,7 @@ trait AnyType:
         fn __init__(out self, size: Int):
             self.ptr = UnsafePointer[Int].alloc(size)
 
-        fn __del__(owned self):
+        fn __del__(deinit self):
             # Clean up owned resources
             self.ptr.free()
     ```
@@ -94,7 +94,7 @@ trait AnyType:
     - Use composition to automatically handle nested resource cleanup
     """
 
-    fn __del__(owned self, /):
+    fn __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
         This method is called automatically when an instance's lifetime ends. It receives

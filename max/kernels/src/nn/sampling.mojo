@@ -139,11 +139,11 @@ fn update_frequency_data_kernel[
             else:
                 val[i] = Int32.MAX_FINITE
 
-        var if_found = (val == new_token).select(
+        var if_found = val.eq(new_token).select(
             iota[DType.int32, simd_width](tok_idx),
             SIMD[DType.int32, simd_width](Int32.MIN_FINITE),
         )
-        var first_padding_idx = (val == PADDING_TOKEN).select(
+        var first_padding_idx = val.eq(PADDING_TOKEN).select(
             iota[DType.int32, simd_width](tok_idx),
             SIMD[DType.int32, simd_width](Int32.MAX_FINITE),
         )

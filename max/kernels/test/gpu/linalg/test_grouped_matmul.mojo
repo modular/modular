@@ -20,7 +20,7 @@ from internal_utils import (
     HostNDBuffer,
     random,
 )
-from linalg.grouped_matmul import grouped_matmul_sm90, naive_grouped_matmul
+from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_almost_equal
@@ -145,20 +145,6 @@ fn test[
         ctx,
     )
 
-    alias config = MatmulConfig[
-        a_type,
-        b_type,
-        c_type,
-        transpose_b=True,
-        mma_shape = Index(64, 256, 16),
-    ](
-        block_tile_shape=Index(128, 256, 64),
-        cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=4,
-        num_consumer=2,
-        partitioned_multicast=False,
-    )
-
     var c_dev_ndbuffer = c_dev.tensor
 
     @always_inline
@@ -177,20 +163,17 @@ fn test[
             idx, new_val.cast[out_type]()
         )
 
-    grouped_matmul_sm90[
-        transpose_b=True,
-        wgmma_shape = Index(64, 256, 16),
-        config=config,
+    grouped_matmul[
         elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
             epilogue_fn
         ) if has_epilogue else None,
     ](
         c_dev.tensor,
         a_dev.tensor,
-        a_offsets_dev.tensor,
-        max_num_tokens_by_expert,
         b_dev.tensor,
+        a_offsets_dev.tensor,
         expert_ids_dev.tensor,
+        max_num_tokens_by_expert,
         num_active_experts,
         ctx,
     )

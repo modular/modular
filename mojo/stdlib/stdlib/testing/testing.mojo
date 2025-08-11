@@ -163,41 +163,6 @@ fn assert_equal(
 
 @always_inline
 fn assert_equal[
-    dtype: DType, size: Int
-](
-    lhs: SIMD[dtype, size],
-    rhs: SIMD[dtype, size],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that the input values are equal. If it is not then an
-    Error is raised.
-
-    Parameters:
-        dtype: The dtype of the left- and right-hand-side SIMD vectors.
-        size: The width of the left- and right-hand-side SIMD vectors.
-
-    Args:
-        lhs: The lhs of the equality.
-        rhs: The rhs of the equality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if any(lhs != rhs):
-        raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
-@always_inline
-fn assert_equal[
     T: Copyable & Movable & EqualityComparable & Representable, //
 ](
     lhs: List[T],
@@ -307,43 +272,6 @@ fn assert_equal[
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs,
-            rhs.__str__(),
-            msg=msg,
-            loc=location.or_else(__call_location()),
-        )
-
-
-@always_inline
-fn assert_equal[
-    dtype: DType
-](
-    lhs: List[Scalar[dtype]],
-    rhs: List[Scalar[dtype]],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that two lists are equal.
-
-    Parameters:
-        dtype: A DType.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    var length = len(lhs)
-    if (
-        length != len(rhs)
-        or memcmp(lhs.unsafe_ptr(), rhs.unsafe_ptr(), length) != 0
-    ):
-        raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
             rhs.__str__(),
             msg=msg,
             loc=location.or_else(__call_location()),
@@ -465,7 +393,7 @@ fn assert_not_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    if all(lhs == rhs):
+    if all(lhs.eq(rhs)):
         raise _assert_cmp_error["`left != right` comparison"](
             String(lhs),
             String(rhs),

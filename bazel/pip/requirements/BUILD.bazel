@@ -26,10 +26,6 @@ uv_lock(
     existing_lockfile = "uv.lock",
     py3_runtime = "@python_3_9//:py3_runtime",
     pyproject = "pyproject.toml",
-    tags = [
-        "no-sandbox",  # Trust the uv cache
-        "requires-network",
-    ],
 )
 
 genrule(

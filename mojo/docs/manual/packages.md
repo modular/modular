@@ -108,6 +108,13 @@ mypackage/
 `mymodule.mojo` is the same code from examples above (with the `MyPair`
 struct) and `__init__.mojo` is empty.
 
+:::note
+
+The `__init__.mojo` file is essential. If you don't have it, Mojo won't
+recognize the directory as a package and you can't import `mymodule`.
+
+:::
+
 In this case, the `main.mojo` file can now import `MyPair` through the package
 name like this:
 
@@ -119,11 +126,18 @@ fn main():
     mine.dump()
 ```
 
-Notice that the `__init__.mojo` is crucial here. If you delete it, then Mojo
-doesn't recognize the directory as a package and it cannot import `mymodule`.
+This immediately works:
 
-Then, let's say you don't want the `mypackage` source code in the same location
-as `main.mojo`. So, you can compile it into a package file like this:
+```sh
+mojo main.mojo
+```
+
+```output
+2 4
+```
+
+However, if you don't want the `mypackage` source code in the same location
+as `main.mojo`, you can compile it into a package file like this:
 
 ```sh
 mojo package mypackage -o mypack.mojopkg
@@ -145,11 +159,21 @@ main.mojo
 mypack.mojopkg
 ```
 
-Because we named the package file different from the directory, we need to fix
-the import statement and it all works the same:
+Because we named the package `mypack`, we need to fix
+the import statement:
 
 ```mojo title="main.mojo"
 from mypack.mymodule import MyPair
+```
+
+And the code works the same:
+
+```sh
+mojo main.mojo
+```
+
+```output
+2 4
 ```
 
 :::note

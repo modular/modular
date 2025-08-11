@@ -4,12 +4,14 @@ modular_py_binary(
     name = "factorial",
     srcs = ["main.py"],
     data = ["mojo_module.mojo"],
+    main = "main.py",
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         "//SDK/lib/API/python/max/mojo",
     ],
 )

@@ -2022,7 +2022,7 @@ fn all_true(src: NDBuffer[rank=1]) -> Bool:
         @parameter
         if dtype is DType.bool:
             return val.cast[DType.bool]().reduce_and()
-        return (val != 0).reduce_and()
+        return val.ne(0).reduce_and()
 
     @always_inline
     @parameter
@@ -2055,7 +2055,7 @@ fn any_true(src: NDBuffer[rank=1]) -> Bool:
         @parameter
         if dtype is DType.bool:
             return val.cast[DType.bool]().reduce_or()
-        return (val != 0).reduce_or()
+        return val != 0
 
     @always_inline
     @parameter
@@ -2089,7 +2089,8 @@ fn none_true(src: NDBuffer[rank=1]) -> Bool:
         @parameter
         if dtype is DType.bool:
             return not val.cast[DType.bool]().reduce_or()
-        return not (val != 0).reduce_or()
+        # TODO: simplify this implementation?
+        return val == 0
 
     @always_inline
     @parameter

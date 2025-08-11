@@ -31,7 +31,7 @@ struct Rewriter:
     fn __init__(out self, op: Operation):
         self.c = _c.Rewrite.mlirIRRewriterCreateFromOp(op.c)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         _c.Rewrite.mlirIRRewriterDestroy(self.c)
 
     fn context(self) -> Context:

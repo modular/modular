@@ -25,6 +25,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
@@ -242,7 +243,7 @@ class DistributedTransformer(Module):
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
         if self.use_subgraphs:
-            subgraph_input_types = [
+            subgraph_input_types: Sequence[Type | list[Type]] = [
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],

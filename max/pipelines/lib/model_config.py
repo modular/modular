@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MAX config classes."""
+"""MAX model config classes."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ class MAXModelConfig(MAXModelConfigBase):
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     use_subgraphs: bool = True
-    """Whether to use subgraphs for the model."""
+    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
 
     tensor_parallel_degree: int = 1
     """Number of tensor-parallel replicas."""
@@ -139,6 +139,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KVCache config."""
+
+    _config_file_section_name: str = "model_config"
+    """The section name to use when loading this config from a MAXConfig file.
+    This is used to differentiate between different config sections in a single
+    MAXConfig file."""
 
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
@@ -740,9 +745,12 @@ class MAXModelConfig(MAXModelConfigBase):
             # This is a bit hacky, but seems like we need it for now.
             # This warning is for the MAX pipeline to alert users about a GPTQ format we don't support yet.
             # Instead of running our GPTQ pipeline on this unsupported format and outputting gibberish, we exit early with a clear error message.
-            if str(self.huggingface_config.torch_dtype) != "torch.float16":
+            if str(self.huggingface_config.torch_dtype) not in [
+                "float16",
+                "torch.float16",
+            ]:
                 raise ValueError(
-                    "bfloat16 scales are not supported for GPTQ-quantized models."
+                    f"{self.huggingface_config.torch_dtype} scales are not supported for GPTQ-quantized models."
                 )
             default_quantization_config = QuantizationConfig(
                 quant_method=hf_quant_config["quant_method"],
@@ -832,6 +840,9 @@ class MAXModelConfig(MAXModelConfigBase):
             "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
+            "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
+            "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
+            "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
             "tensor_parallel_degree": "Number of tensor-parallel replicas (default: 1).",
             "pipeline_parallel_degree": "Number of pipeline stages (default: 1).",
         }

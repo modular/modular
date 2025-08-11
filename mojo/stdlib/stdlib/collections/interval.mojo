@@ -128,7 +128,7 @@ struct Interval[T: IntervalElement](
         self.start = existing.start
         self.end = existing.end
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         """Create a new instance of the interval by moving the values
         from an existing one.
 
@@ -437,7 +437,7 @@ struct _IntervalNode[
         self.parent = existing.parent
         self._is_red = existing._is_red
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         """Create a new instance of the interval node by moving the values
         from an existing one.
 

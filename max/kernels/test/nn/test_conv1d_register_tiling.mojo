@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
-from testing import *
+from testing import assert_equal
 
 from utils.index import Index
 
@@ -156,7 +156,7 @@ fn test_conv1d_register_tiling() raises:
         Index(0, wo + micro_kernel_height, f_tile_size)
     )
 
-    assert_equal(0, actual)
+    assert_equal(SIMD[type, simd_size](0), actual)
 
 
 fn main() raises:

@@ -116,9 +116,6 @@ class PipelineConfig(MAXConfig):
     configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
     models)."""
 
-    pad_to_multiple_of: int = 2
-    """Pad input tensors to be a multiple of value provided."""
-
     target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
     """The target number of un-encoded tokens to include in each batch.
     This value is used for chunked prefill and memory estimation."""
@@ -160,6 +157,11 @@ class PipelineConfig(MAXConfig):
 
     _lora_config: Optional[LoRAConfig] = None
     """The LoRA config."""
+
+    _config_file_section_name: str = "pipeline_config"
+    """The section name to use when loading this config from a MAXConfig file.
+    This is used to differentiate between different config sections in a single
+    MAXConfig file."""
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -583,20 +585,24 @@ class PipelineConfig(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         pipeline_help = {
-            "engine": "Specify the engine backend to use for serving the model. Currently only 'max' engine is supported.",
-            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
-            "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
-            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests.",
-            "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
-            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
-            "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
+            "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
+            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",
+            "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
+            "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
+            "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
+            "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
+            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`. Default is true.",
+            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
+            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
+            "target_num_new_tokens": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
-            "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
+            "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
+            "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
+            "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
+            "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
         }
 
         # Add help text for all MAX config classes
@@ -762,6 +768,35 @@ class AudioGenerationConfig(PipelineConfig):
         )
         self._run_model_test_mode = run_model_test_mode
         self.prometheus_metrics_mode = prometheus_metrics_mode
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        # Get the parent class help first
+        audio_help = PipelineConfig.help()
+
+        # Add AudioGenerationConfig-specific fields
+        audio_specific_help = {
+            "audio_decoder": "The name of the audio decoder model architecture.",
+            "audio_decoder_weights": "The path to the audio decoder weights file.",
+            "chunk_size": "The chunk sizes to use for streaming. If this is an int, then fixed-size chunks of the given size are used. If this is a list, then variable chunk sizes are used.",
+            "buffer": "The number of previous speech tokens to pass to the audio decoder on each generation step. Default is 0.",
+            "block_causal": "Whether prior buffered tokens should attend to tokens in the current block. Has no effect if buffer is not set. Default is false.",
+            "prepend_prompt_speech_tokens": "Whether the prompt speech tokens should be forwarded to the audio decoder. Options: 'never', 'once', 'rolling'. Default is 'once'.",
+            "prepend_prompt_speech_tokens_causal": "Whether the prompt speech tokens should attend to tokens in the currently generated audio block. Has no effect if prepend_prompt_speech_tokens is 'never'. Default is false.",
+            "audio_decoder_config": "Parameters to pass to the audio decoder model.",
+            "prometheus_metrics_mode": "The mode to use for Prometheus metrics. Default is 'instrument_only'.",
+        }
+
+        # Check for conflicts
+        for key in audio_specific_help:
+            if key in audio_help:
+                raise ValueError(
+                    f"Duplicate help key '{key}' found in AudioGenerationConfig"
+                )
+
+        # Merge the help dictionaries
+        audio_help.update(audio_specific_help)
+        return audio_help
 
     @classmethod
     def from_flags(

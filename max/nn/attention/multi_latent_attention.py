@@ -400,10 +400,18 @@ class LatentAttentionWithRope(Module, Shardable):
 
             iter_i = ops.constant(1, DType.int64, device=DeviceRef.CPU())
 
-            def cond_fn(iter_i, prev_result, prev_softmax_info):  # noqa: ANN001
+            def cond_fn(
+                iter_i: TensorValue,
+                prev_result: TensorValue,
+                prev_softmax_info: TensorValue,
+            ) -> TensorValue:
                 return buffer_lengths_host[iter_i] > 0
 
-            def body_fn(iter_i, prev_result, prev_softmax_info):  # noqa: ANN001
+            def body_fn(
+                iter_i: TensorValue,
+                prev_result: TensorValue,
+                prev_softmax_info: TensorValue,
+            ) -> list[TensorValue]:
                 kv_buffer = flare_mla_decompress_k_cache(
                     self.kv_params,
                     buffer_row_offsets[iter_i],

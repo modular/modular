@@ -389,7 +389,7 @@ struct HeapArray(Copyable):
             (self.data + i).init_pointee_copy(existing.data[i])
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         # We must free the heap-allocated data, but
         # Mojo knows how to destroy the other fields
         for i in range(self.size):
@@ -592,7 +592,7 @@ The generated move constructor for `MyPet` would look like this if you wrote
 it yourself:
 
 ```mojo
-fn __moveinit__(out self, var existing: Self):
+fn __moveinit__(out self, deinit existing: Self):
     self.name = existing.name^
     self.age = existing.age
 ```

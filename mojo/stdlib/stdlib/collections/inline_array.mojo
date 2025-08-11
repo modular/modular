@@ -61,7 +61,7 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
     size: Int,
     *,
     run_destructors: Bool = False,
@@ -147,7 +147,7 @@ struct InlineArray[
     fn __init__(
         out self,
         *,
-        owned unsafe_assume_initialized: InlineArray[
+        var unsafe_assume_initialized: InlineArray[
             UnsafeMaybeUninitialized[Self.ElementType], Self.size
         ],
     ):
@@ -260,7 +260,7 @@ struct InlineArray[
     fn __init__(
         out self,
         *,
-        owned storage: VariadicListMem[Self.ElementType, _],
+        var storage: VariadicListMem[Self.ElementType, _],
     ):
         """Construct an array from a low-level internal representation.
 
@@ -288,7 +288,8 @@ struct InlineArray[
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
-        __disable_del storage
+        # FIXME: Why doesn't consume_elements work here?
+        storage^._anihilate()
 
     fn copy(self, out copy: Self):
         """Creates a deep copy of the array.
@@ -322,7 +323,7 @@ struct InlineArray[
 
         self = other.copy()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move constructs the array from another array.
 
         Args:
@@ -338,7 +339,7 @@ struct InlineArray[
             var other_ptr = other.unsafe_ptr() + idx
             other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Deallocates the array and destroys its elements.
 
         Examples:

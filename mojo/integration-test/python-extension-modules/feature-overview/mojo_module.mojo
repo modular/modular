@@ -174,7 +174,7 @@ struct FailToInitialize(Defaultable, Movable, Representable):
     fn __init__(out self):
         pass
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         abort("FailToInitialize should never be deinitialized.")
 
     fn __repr__(self) -> String:

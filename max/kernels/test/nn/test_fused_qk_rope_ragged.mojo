@@ -170,6 +170,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         input_row_offsets=input_row_offsets.tensor,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
+        position_ids=None,
         output=q_out,
         layer_idx=UInt32(0),
         context=Optional[DeviceContext](),

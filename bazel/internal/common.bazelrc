@@ -140,6 +140,9 @@ build --internal_spawn_scheduler
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
 
+# TODO: Remove when https://github.com/bazelbuild/bazel/pull/26724 is fixed
+build --strategy=UvLock=sandboxed,standalone
+
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
 

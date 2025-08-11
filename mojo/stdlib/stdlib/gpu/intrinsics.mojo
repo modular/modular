@@ -33,7 +33,7 @@ from sys.info import _is_sm_9x, alignof, bitwidthof, CompilationTarget
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 from memory.unsafe import bitcast
 
-from .memory import AddressSpace, _int_to_str
+from .memory import AddressSpace, CacheOperation, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -1070,6 +1070,36 @@ fn buffer_load_store_lds[
 
 
 @parameter
+fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
+    """Converts CacheOperation to AMD auxiliary parameter at compile time.
+
+    Parameters:
+        cache_policy: The cache operation policy.
+
+    Returns:
+        The auxiliary parameter value formatted for AMD buffer operations.
+        Format: bit 0 = SC0, bit 1 = NT, bit 4 = SC1
+    """
+
+    @parameter
+    if cache_policy is CacheOperation.ALWAYS:
+        return 0x00  # SC=00, NT=0
+    elif cache_policy is CacheOperation.STREAMING:
+        return 0x02  # SC=00, NT=1
+    elif cache_policy is CacheOperation.GLOBAL:
+        return 0x10  # SC=10, NT=0
+    elif cache_policy is CacheOperation.VOLATILE:
+        return 0x11  # SC=11, NT=0
+    else:
+        # Default to ALWAYS for unknown/unsupported operations
+        return 0x00
+
+    # Additional cache operations for potential future support:
+    # CacheOperation.WORKGROUP -> 0x01 (SC=01, NT=0) - Workgroup/CU-level coherency
+    # CacheOperation.GLOBAL_STREAMING -> 0x12 (SC=10, NT=1) - Global + streaming
+    # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
+
+
 fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     @parameter
     if bytes == 1:
@@ -1088,17 +1118,21 @@ fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 
 @always_inline
 fn buffer_load[
-    dtype: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[dtype, width]:
-    """Loads data from global memory into a SIMD register.
+    dtype: DType,
+    width: Int,
+    *,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](src_resource: _buffer_resource, gds_offset: Int32,) -> SIMD[dtype, width]:
+    """Loads data from global memory into a SIMD register with cache operation control.
 
     This function provides a hardware-accelerated global memory load operation
     that maps directly to the AMDGPU buffer_load instruction. It efficiently
-    transfers data from global memory to registers.
+    transfers data from global memory to registers with high-level cache control.
 
     Parameters:
         dtype: The data type to load.
         width: The SIMD vector width for vectorized loads.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
 
     Args:
         src_resource: Buffer resource descriptor created by make_buffer_resource().
@@ -1109,11 +1143,13 @@ fn buffer_load[
 
     Note:
         - Only supported on AMD GPUs.
-        - Uses non-glc loads by default (can hit L1 cache and persist across wavefronts).
+        - Provides high-level cache control via CacheOperation enum values.
         - Supports widths that map to 1, 2, 4, 8, or 16 byte loads.
         - Maps directly to llvm.amdgcn.raw.buffer.load intrinsics.
+        - Cache control bits:
+          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
     """
-
     constrained[
         is_amd_gpu(),
         "The buffer_load function is only applicable on AMDGPU hardware.",
@@ -1122,10 +1158,7 @@ fn buffer_load[
     alias bytes = sizeof[dtype]() * width
 
     var global_offset_bytes: Int32 = Int32(sizeof[dtype]() * gds_offset)
-    # READ
-    # GLC = 0 Reads can hit on the L1 and persist across wavefronts
-    # GLC = 1 Reads miss the L1 and L2 and force fetch to the data fabric. No L1 persistence across waves.
-    alias glc: Int32 = 0
+    alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
     var src_wave_addr_offset: Int32 = 0
 
     var load_val = llvm_intrinsic[
@@ -1135,29 +1168,40 @@ fn buffer_load[
             _get_buffer_intrinsic_simd_width[bytes](),
         ],
         has_side_effect=True,
-    ](src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+    ](src_resource, global_offset_bytes, src_wave_addr_offset, aux)
 
     return bitcast[dtype, width](load_val)
 
 
 @always_inline
 fn buffer_store[
-    dtype: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[dtype, width]):
-    """Stores a register variable to global memory.
+    dtype: DType,
+    width: Int,
+    *,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[dtype, width],):
+    """Stores a register variable to global memory with cache operation control.
 
-    Writes to global memory from a register.
+    Writes to global memory from a register with high-level cache control.
 
     Parameters:
         dtype: The data type.
         width: The SIMD vector width.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
 
     Args:
         src_resource: Buffer resource descriptor.
         gds_offset: Global memory offset.
         val: Value to write.
-    """
 
+    Note:
+        - Only supported on AMD GPUs.
+        - Provides high-level cache control via CacheOperation enum values.
+        - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
+        - Cache control bits:
+          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
+    """
     constrained[
         is_amd_gpu(),
         "The buffer_store function is only applicable on AMDGPU hardware.",
@@ -1166,10 +1210,7 @@ fn buffer_store[
     alias bytes = sizeof[dtype]() * width
 
     var global_offset_bytes: Int32 = Int32(sizeof[dtype]() * gds_offset)
-    # WRITE
-    # GLC = 0 Writes miss the L1, write through to L2, and persist in L1 across wavefronts.
-    # GLC = 1 Writes miss the L1, write through to L2. No persistence across wavefronts.
-    alias glc: Int32 = 0
+    alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
     var src_wave_addr_offset: Int32 = 0
 
     var store_val = bitcast[
@@ -1179,4 +1220,4 @@ fn buffer_store[
 
     llvm_intrinsic[
         "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
-    ](store_val, src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+    ](store_val, src_resource, global_offset_bytes, src_wave_addr_offset, aux)

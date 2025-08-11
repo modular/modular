@@ -190,7 +190,7 @@ struct GenericArray[ElementType: Copyable & Movable]:
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i])
 
-    fn __del__(var self):
+    fn __del__(deinit self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
@@ -1019,7 +1019,7 @@ parameters that can be specified by keyword (positional-or-keyword or
 keyword-only).
 
 ```mojo
-fieldwise_init
+@fieldwise_init
 struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
     pass
 

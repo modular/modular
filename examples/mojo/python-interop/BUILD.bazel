@@ -10,6 +10,7 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         "//SDK/lib/API/python/max/mojo",
     ],
 )
@@ -24,6 +25,7 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         "//SDK/lib/API/python/max/mojo",
     ],
 )
@@ -37,6 +39,7 @@ modular_py_binary(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         "//SDK/lib/API/python/max/mojo",
     ],
 )
@@ -56,5 +59,4 @@ modular_run_binary_test(
 modular_run_binary_test(
     name = "mandelbrot_test",
     binary = "mandelbrot",
-    external_noop = True,
 )

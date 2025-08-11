@@ -20,7 +20,7 @@ struct MyStruct:
     fn __init__(out self):
         self.data = List[UInt8]()
 
-    fn __moveinit__(out self, var existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.data = existing.data ^
 
     @staticmethod

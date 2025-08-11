@@ -170,6 +170,11 @@ def test_tensor_type_layout(mlir_context) -> None:  # noqa: ANN001
     assert t == t_copy
 
 
+def test_tensor_type_layout_default(mlir_context: mlir.Context) -> None:
+    t = TensorType(DType.float32, ["r", "s", "f", "c"], DeviceRef.CPU())
+    assert t._layout is None
+
+
 def test_opaque_type(mlir_context) -> None:  # noqa: ANN001
     """Tests opaque type creation and properties."""
     opaque = mo.OpaqueType(

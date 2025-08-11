@@ -32,10 +32,7 @@ def get_package_root() -> Path | None:
             return current_path
         current_path = current_path.parent
 
-    if (
-        "BUILD_WORKSPACE_DIRECTORY" in os.environ
-        or "BAZEL_WORKSPACE" in os.environ
-    ):
+    if "BUILD_WORKSPACE_DIRECTORY" in os.environ or "BAZEL_TEST" in os.environ:
         # We're running in a Modular internal Bazel test, so let Bazel handle
         # the environment variables.
         return None

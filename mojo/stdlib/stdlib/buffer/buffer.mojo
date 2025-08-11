@@ -32,6 +32,8 @@ from utils._serialize import _serialize
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
+from builtin.device_passable import DevicePassable
+
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
 This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
@@ -231,7 +233,7 @@ struct NDBuffer[
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
-](Sized, Stringable, Writable, Copyable, Movable, Defaultable):
+](Sized, Stringable, Writable, Copyable, Movable, Defaultable, DevicePassable):
     """An N-dimensional buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
@@ -1357,6 +1359,48 @@ struct NDBuffer[
         """
         prefetch[params](self._offset(indices))
 
+    # `trait DevicePassable` implementation
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @no_inline
+    @staticmethod
+    fn get_type_name() -> String:
+        """Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            "NDBuffer[mut = ",
+            String(mut),
+            ", dtype = ",
+            String(dtype),
+            ", rank = ",
+            String(rank),
+            ", address_space = ",
+            String(address_space),
+            "]",
+        )
+
+    @no_inline
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
+
 
 @always_inline
 fn partial_simd_load[
@@ -1394,7 +1438,7 @@ fn partial_simd_load[
     var effective_lbound = max(0, lbound)
     var effective_rbound = min(width, rbound)
     var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_load[width](storage, mask, pad_value)
 
@@ -1433,7 +1477,7 @@ fn partial_simd_store[
     var effective_lbound = max(0, lbound)
     var effective_rbound = min(width, rbound)
     var incr = iota[DType.int32, width]()
-    var mask = (incr >= effective_lbound) & (incr < effective_rbound)
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     # Rebind for the inconsistency between (1) `ptr: UnsafePointer` deduces
     # address_space as ptr1 and (2) `UnsafePointer[Scalar[dtype]]` sets address_space to

@@ -27,7 +27,7 @@ trait Movable:
         fn __init__(out self):
             pass
 
-        fn __moveinit__(out self, owned existing: Self):
+        fn __moveinit__(out self, deinit existing: Self):
             print("moving")
     ```
 
@@ -47,7 +47,7 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         """Create a new instance of the value by moving the value of another.
 
         Args:
@@ -56,7 +56,7 @@ trait Movable:
         ...
 
 
-trait Copyable:
+trait Copyable(ExplicitlyCopyable):
     """The Copyable trait denotes a type whose value can be copied.
 
     Example implementing the `Copyable` trait on `Foo` which requires the `__copyinit__`

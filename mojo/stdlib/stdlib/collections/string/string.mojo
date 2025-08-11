@@ -181,7 +181,7 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the string data."""
         self._drop_ref()
 
@@ -570,7 +570,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move initialize the string from another string.
 
         Args:
@@ -702,7 +702,9 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__[I: Indexer](self, idx: I) -> StringSlice[__origin_of(self)]:
+    fn __getitem__[
+        I: Indexer, //
+    ](self, idx: I) -> StringSlice[__origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:

@@ -942,7 +942,7 @@ def _test_copyinit_trivial_types[dt: DType, hint_trivial_type: Bool]():
         assert_equal(len(y), current_size)
         assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))
         for i in range(current_size):
-            assert_equal(i, x[i])
+            assert_equal(Scalar[dt](i), x[i])
             assert_equal(y[i], x[i])
         test_current_size *= 2
     assert_equal(test_current_size, 1024)

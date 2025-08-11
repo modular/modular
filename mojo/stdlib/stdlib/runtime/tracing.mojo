@@ -394,7 +394,7 @@ struct Trace[
     fn __init__(
         out self,
         *,
-        owned _name_value: Variant[String, StaticString],
+        var _name_value: Variant[String, StaticString],
         detail: String = "",
         parent_id: Int = 0,
         task_id: OptionalReg[Int] = None,
@@ -451,7 +451,7 @@ struct Trace[
     @always_inline
     fn __init__(
         out self,
-        owned name: String,
+        var name: String,
         detail: String = "",
         parent_id: Int = 0,
         color: Optional[Color] = None,

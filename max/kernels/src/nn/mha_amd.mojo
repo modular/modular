@@ -818,7 +818,11 @@ fn _apply_mask[
             )
             # Coordinates in mask for current mma tile.
             var mask_frag_row = mask_warp_row + m_mma * MMA_M
-            var mask_frag_col = mask_warp_col + n_mma * MMA_N
+            var mask_frag_col = (
+                mask_warp_col
+                + n_mma * MMA_N
+                + (kv_tile_start_row if token_gen else 0)
+            )
             mask_frag_row += lane_row
             mask_frag_col += lane_col
             # The row in score matrix of shape seq_len x num_keys.
@@ -1812,20 +1816,6 @@ fn mha_decoding_single_batch_amd[
     fn loop_over_kvcache[
         tile_size: Int
     ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
-        var mask_status = mask.status(
-            Index[dtype = DType.uint32](
-                Int(q_tile_idx * BM + start_pos),
-                Int(kv_tile_start_row),
-            ),
-            Index[dtype = DType.uint32](BM, BN),
-        )
-
-        @parameter
-        if not token_gen:
-            if mask_status == TileMaskStatus.FULL_MASK:
-                mask_warp_col += BN
-                return
-
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         var k_tile = gmem_manager.get_kv_tensor(
@@ -1930,15 +1920,8 @@ fn mha_decoding_single_batch_amd[
                 not_last_iter,
             )
 
-        @parameter
-        if not token_gen:
-            unswitch[_apply_mask_impl](
-                mask_status == TileMaskStatus.PARTIAL_MASK
-            )
-        else:
-            _apply_mask_impl[masked=True]()
+        _apply_mask_impl[masked=True]()
 
-        mask_warp_col += BN
         alias reg_layout_by_mma_unit = Layout.row_major(
             num_m_mmas * num_n_mmas, output_frag_size
         )
