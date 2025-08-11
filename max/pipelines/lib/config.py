@@ -143,6 +143,13 @@ class PipelineConfig(MAXConfig):
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
 
+    # TODO(E2EOPT-460): Consolidate this with device_memory_utilization.
+    experimental_device_context_buffer_cache_size: Optional[float] = None
+    """Dictates the amount of memory to reserve for the pre-allocated pool
+    of device memory managed by the device context. This is a temporary flag that
+    we'll consolidate with the device_memory_utilization field in the future.
+    """
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -603,6 +610,7 @@ class PipelineConfig(MAXConfig):
             "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
             "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
+            "experimental_device_context_buffer_cache_size": "Dictates the amount of memory to reserve for the pre-allocated pool of device memory managed by the device context. This is a temporary flag that we'll consolidate with the device_memory_utilization field in the future.",
         }
 
         # Add help text for all MAX config classes
