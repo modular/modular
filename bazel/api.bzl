@@ -28,8 +28,8 @@ _DEPS_FROM_WHEEL = [
     "//max/driver",
     "//max/dtype",
     "//max/engine",
-    "//max/graph",
     "//max/interfaces",
+    "//max/mlir",
     "//max/mojo",
     "//max/profiler",
     "//max/support",
@@ -44,7 +44,6 @@ def _is_internal_reference(dep):
         "//KGEN/",
         "//Kernels/",
         "//SDK/integration-test/pipelines/python",
-        "//SDK/lib/API/python/max/mlir",
         "//SDK:max",
     )) or "base_max_config_yaml_files" in dep
 
