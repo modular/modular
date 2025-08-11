@@ -19,6 +19,7 @@ import re
 import string
 import subprocess
 import sys
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -32,6 +33,8 @@ from kbench import Spec
 from pandas.api.types import is_numeric_dtype
 from rich.console import Console
 from rich.table import Table
+
+warnings.filterwarnings("ignore")
 
 LINE = 80 * "-"
 
@@ -297,8 +300,8 @@ def profile_results(
         )
         print(LINE)
 
+    tune_df = df_round_floats(tune_df, prec=3)
     if ratio:
-        tune_df = df_round_floats(tune_df, prec=3)
         df_to_console_table(
             tune_df,
             col_style={"ratio": "bold green"},
@@ -427,10 +430,11 @@ def codegen_snippet(
 
     details += [prefix]
     sep = ","
-    for s in specs:
+    for idx, s in enumerate(specs):
         config_str = replace_vals_snippet(s.params[0], snippet_path)
         print(LINE)
         details += [f"# Automatically generated from [{s.pkl_path}]"]
+        details += [f"# index: [{idx}]"]
         if s.datetime:
             details += [f"# date: [{s.datetime}]"]
         if s.git_sha:

@@ -35,3 +35,7 @@ from ._utils import (
     InitializationType,
     init_vector_launch,
 )
+
+from .dispatch_utils import TuningConfig, Table
+from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia
+from .amd_configs import TuningConfigAMD, TuningTableAMD
