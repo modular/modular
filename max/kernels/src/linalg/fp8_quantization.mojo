@@ -149,7 +149,7 @@ fn quantize_dynamic_scaled_fp8[
         scaled_output,
         scales,
         input,
-        scale_ub,
+        scale_ub.cast[scales_dtype](),
         grid_dim=(input.dim[0](), n_groups, 1),
         block_dim=warps_per_block * WARP_SIZE,
         attributes=pdl_launch_attributes(),
@@ -191,7 +191,7 @@ fn quantize_fp8_kernel[
         )
 
         var scale_factor = (
-            max(group_max.cast[scales_type](), scale_ub)
+            min(group_max.cast[scales_type](), scale_ub)
             / fp8_max.cast[scales_type]()
         )
 
