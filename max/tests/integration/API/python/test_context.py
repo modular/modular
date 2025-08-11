@@ -12,6 +12,7 @@ import pytest
 from max.interfaces import (
     GenerationStatus,
     SamplingParams,
+    msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -360,7 +361,7 @@ def test_context_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextContext)
-    assert pickle_decoded == original_context
+    assert msgpack_eq(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextContext with MsgPack
     serialize = msgpack_numpy_encoder()
@@ -370,7 +371,7 @@ def test_context_serializable() -> None:
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_decoded == original_context
+    assert msgpack_eq(msgpack_decoded, original_context)
 
 
 def test_context_tuple_serializable() -> None:
@@ -384,7 +385,8 @@ def test_context_tuple_serializable() -> None:
     pickle_encoded = pickle.dumps(original_tuple)
     pickle_decoded = pickle.loads(pickle_encoded)
 
-    assert pickle_decoded == original_tuple
+    assert pickle_decoded[0] == original_tuple[0]
+    assert msgpack_eq(pickle_decoded[1], original_tuple[1])
 
     # Test that we can encode a tuple of (str, TextContext) with MsgPack
     serialize = msgpack_numpy_encoder()
@@ -394,7 +396,8 @@ def test_context_tuple_serializable() -> None:
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_decoded == original_tuple
+    assert msgpack_decoded[0] == original_tuple[0]
+    assert msgpack_eq(msgpack_decoded[1], original_tuple[1])
 
 
 def test_text_and_vision_context_serializable() -> None:
@@ -409,7 +412,7 @@ def test_text_and_vision_context_serializable() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextAndVisionContext)
-    assert pickle_decoded == original_context
+    assert msgpack_eq(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
@@ -419,7 +422,7 @@ def test_text_and_vision_context_serializable() -> None:
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_decoded == original_context
+    assert msgpack_eq(msgpack_decoded, original_context)
 
 
 def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
@@ -434,7 +437,7 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     pickle_decoded = pickle.loads(pickle_encoded)
 
     assert isinstance(pickle_decoded, TextAndVisionContext)
-    assert pickle_decoded == original_context
+    assert msgpack_eq(pickle_decoded, original_context)
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
@@ -444,7 +447,7 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_decoded == original_context
+    assert msgpack_eq(msgpack_decoded, original_context)
 
 
 def test_text_and_vision_context_tuple_serializable() -> None:
@@ -459,7 +462,8 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     pickle_encoded = pickle.dumps(original_tuple)
     pickle_decoded = pickle.loads(pickle_encoded)
 
-    assert pickle_decoded == original_tuple
+    assert pickle_decoded[0] == original_tuple[0]
+    assert msgpack_eq(pickle_decoded[1], original_tuple[1])
 
     # Test that we can encode a tuple of (str, TextAndVisionContext) with MsgPack
     serialize = msgpack_numpy_encoder()
@@ -469,7 +473,8 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)
 
-    assert msgpack_decoded == original_tuple
+    assert msgpack_decoded[0] == original_tuple[0]
+    assert msgpack_eq(msgpack_decoded[1], original_tuple[1])
 
 
 def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
@@ -503,7 +508,7 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
 
     # Verify the deserialized context matches the original
     assert isinstance(msgpack_decoded, TTSContext)
-    assert msgpack_decoded == original_context
+    assert msgpack_eq(msgpack_decoded, original_context)
     assert np.array_equal(
         msgpack_decoded.audio_prompt_tokens, audio_prompt_tokens
     )
