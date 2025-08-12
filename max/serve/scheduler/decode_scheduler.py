@@ -129,7 +129,7 @@ class DecodeScheduler(Scheduler):
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
             listen_port=8057,
-            tensor=self.paged_manager.device_tensors[0],
+            tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -261,22 +261,24 @@ class DecodeScheduler(Scheduler):
         # Walk all outstanding prefill responses
         # Notifications provides a list of completed XferReqData.xfer_name
         # keyed on remote named (XferReqData.src_name)
-        notifications = self.transfer_engine.agent.get_notifs()
-        new_completed = {
-            completed_transfer_name.decode()
-            for remote in notifications
-            for completed_transfer_name in notifications[remote]
-        }
+        notifications = [
+            ta.agent.get_notifs() for ta in self.transfer_engine.tensor_agents
+        ]
+        new_completed = set()
+        for notification in notifications:
+            for remote in notification:
+                for completed_transfer_name in notification[remote]:
+                    new_completed.add(completed_transfer_name.decode())
         self.completed_transfers.update(new_completed)
 
         # Process ready transfers: intersection of completed transfers
         # and prefill responses received.
-        for completed_transfer_name in (
+        for completed_transfer_name_str in (
             self.completed_transfers & self.prefill_responses.keys()
         ):
             # Retrieve Prefill Response
             prefill_response = self.prefill_responses.pop(
-                completed_transfer_name
+                completed_transfer_name_str
             )
 
             # Add to active batch.
@@ -284,7 +286,7 @@ class DecodeScheduler(Scheduler):
             self.pending_prefill_requests.remove(prefill_response.id)
 
             # Remove from completed transfers.
-            self.completed_transfers.remove(completed_transfer_name)
+            self.completed_transfers.remove(completed_transfer_name_str)
 
         # Walk the active batch, and prefetch for all existing items.
         candidate_request_ids = list(self.active_batch.keys())

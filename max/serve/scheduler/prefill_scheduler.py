@@ -95,7 +95,7 @@ class PrefillScheduler(Scheduler):
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
             listen_port=8047,
-            tensor=self.paged_manager.device_tensors[0],
+            tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -163,9 +163,9 @@ class PrefillScheduler(Scheduler):
         """
         to_be_deleted = []
         for req_id, (context, transfer) in self.active_transfers.items():
-            status = self.transfer_engine.get_transfer_status(transfer)
+            statuses = self.transfer_engine.get_transfer_status(transfer)
 
-            if status != nixl.Status.IN_PROG:
+            if all(status != nixl.Status.IN_PROG for status in statuses):
                 self.pipeline.release(context.request_id)
                 to_be_deleted.append(req_id)
 
