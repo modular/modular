@@ -1885,6 +1885,19 @@ fn mha_decoding_single_batch_amd[
     fn loop_over_kvcache[
         tile_size: Int
     ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
+        @parameter
+        if mask_t.check_mask_during_decoding:
+            var mask_status = mask.status(
+                Index[dtype = DType.uint32](
+                    Int(num_keys - 1),
+                    Int(kv_tile_start_row),
+                ),
+                Index[dtype = DType.uint32](Int(1), Int(BN)),
+            )
+
+            if mask_status == TileMaskStatus.FULL_MASK:
+                return
+
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         var k_tile = gmem_manager.get_kv_tensor(
@@ -1989,7 +2002,20 @@ fn mha_decoding_single_batch_amd[
                 not_last_iter,
             )
 
-        _apply_mask_impl[masked=True]()
+        @parameter
+        if mask_t.check_mask_during_decoding:
+            var mask_status = mask.status(
+                Index[dtype = DType.uint32](
+                    Int(num_keys - 1),
+                    Int(kv_tile_start_row),
+                ),
+                Index[dtype = DType.uint32](Int(1), Int(BN)),
+            )
+            unswitch[_apply_mask_impl](
+                mask_status == TileMaskStatus.PARTIAL_MASK
+            )
+        else:
+            _apply_mask_impl[masked=True]()
 
         alias reg_layout_by_mma_unit = Layout.row_major(
             num_m_mmas * num_n_mmas, output_frag_size
