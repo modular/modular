@@ -10,6 +10,33 @@ rewrite them in Mojo. Instead, you can simply import Python packages and call
 Python APIs from Mojo. The Python code runs in a standard Python interpreter
 (CPython), so your existing Python code doesn't need to change.
 
+## Specify your Python version
+
+Mojo doesn't include a CPython interpreter—it uses the CPython interpreter
+provided by your environment's default Python version. So be sure you know
+which Python version you're using in each environment where your Mojo code will
+run.
+
+To ensure you get consistent results, we recommend you [use Pixi](/pixi) to
+manage your package dependency and virtual environment. In a Pixi project,
+you can specify the Python version like this:
+
+```sh
+pixi add "python==3.11"
+```
+
+Now, even if your operating system's default Python version is something else,
+your Pixi project (and the Mojo code inside) always uses Python 3.11.
+
+```sh
+pixi run python --version
+```
+
+```output
+Python 3.11.0
+```
+
+
 ## Import a Python module in Mojo
 
 To import a Python module in Mojo, just call

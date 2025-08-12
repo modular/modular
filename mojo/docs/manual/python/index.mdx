@@ -6,71 +6,42 @@ description: Using Python and Mojo together.
 show_languages: true
 ---
 
-Because Mojo uses a Pythonic syntax, its easy to start reading and writing Mojo
-when coming from Python. Mojo also optimizes for ease of use across the
-Python-Mojo language boundary, with built-in support for both calling **into
-Python** from Mojo, and calling **into Mojo** from Python.
+Not only does Mojo use a Pythonic syntax, our plan is to provide full
+compatibility with the Python ecosystem. There are two types of compatibility
+(or interoperability) that we support:
 
-<figure>
+- [Calling Python from Mojo](/mojo/manual/python/python-from-mojo):
+
+  You can import existing Python modules and use them in a Mojo program. This
+  is 100% compatible because we use the CPython runtime without modification
+  for full compatibility with existing Python libraries. You can construct
+  Python objects and call Python functions directly from Mojo, using the
+  CPython interpreter as a dynamic library (shown as `libpython.dylib` in
+  figure 1).
+
+- [Calling Mojo from Python](/mojo/manual/python/mojo-from-python):
+
+  You can extend your Python code with high-performance Mojo code (or
+  incrementally migrate Python code to Mojo). Because Mojo is a compiled
+  language, we can't directly "evaluate" Mojo code from Python. Instead, you
+  must declare which Mojo functions and types are available to be called from
+  Python (declare the "bindings"), and then you can import them in your Python
+  code (shown as `mojo_module` in figure 1) just like any other module—there's
+  no extra compilation step.
+
+<figure style={{maxWidth: '550px'}}>
   <img src={require('../images/python/python-interop.png').default}
-       className="light" alt="" width="600" />
+       className="light" alt="" />
   <img src={require('../images/python/python-interop-dark.png').default}
-       className="dark" alt="" width="600" />
+       className="dark" alt="" />
+  <figcaption><b>Figure 1.</b> A simplified look at how a Mojo program calls
+  into Python and a Python program calls into a Mojo module.</figcaption>
 </figure>
 
-The common API for interoperability in both directions is the
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) type, which
-wraps a Python object within Mojo.
-
-In Mojo, you can import Python modules, construct Python objects, and call
-Python functions and methods directly. Mojo will first load the CPython
-interpreter as a dynamic library (called `libpython.dylib` on macOS), and use
-that interpreter to execute Python code. For example:
-
-```mojo
-from python import Python
-
-fn main():
-    # Loads CPython dynamically behind the scenes; returns a PythonObject
-    var res = Python.evaluate("2 + 2")
-```
-
-Calling into Mojo from Python is different. Because Mojo is a compiled
-language, we can't directly "evaluate" Mojo code. Instead, Mojo code must
-declare up front which functions and types are available to be called from
-Python. For example:
-
-```mojo title="mojo_module.mojo"
-@export
-fn PyInit_mojo_module() -> PythonObject:
-    try:
-        var m = PythonModuleBuilder("mojo_module")
-        m.def_function[mojo_greet]("mojo_greet", docstring="Say hello from Mojo")
-        return m.finalize()
-    except e:
-        return abort[PythonObject](String("error creating Python Mojo module:", e))
-
-fn mojo_greet(name: PythonObject):
-  print("Hello to", name, "from Mojo 👋")
-```
-
-By defining a suitable `PyInit_*()` function, Mojo performs the necessary
-low-level binding calls to inform Python how to call Mojo code:
-
-```python title="main.py"
-import mojo.importer
-import mojo_module
-
-mojo_module.mojo_greet("Python")
-```
-
-These quick examples give you a taste of what interoperability looks like for
-Python and Mojo. Flexible interop enables you to move incrementally and
-efficiently. By embracing both directions of language interop, you can choose
-how to use Mojo in a way that works best for your use case.
+By embracing both directions of language interop, you can choose
+how to use Mojo with Python in a way that works best for your use case.
 
 **To learn more about bridging Python ↔ Mojo, continue reading**:
-
 
 import MDXListing from '@site/src/components/Listing/MDXListing';
 
