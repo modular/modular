@@ -125,7 +125,6 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         ],
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
-        chain: ops._ChainObject | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]

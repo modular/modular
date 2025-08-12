@@ -182,7 +182,6 @@ class Qwen25VLDecoderAttentionWithRope(Module):
         input_row_offsets: TensorValue,
         position_ids: TensorValue,
         mrope_section: list[int],
-        chain: ops._ChainObject | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -197,7 +196,6 @@ class Qwen25VLDecoderAttentionWithRope(Module):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-            chain=chain,
         )
 
         # Apply rope.
@@ -218,7 +216,6 @@ class Qwen25VLDecoderAttentionWithRope(Module):
             interleaved=self.rope.interleaved,
             position_ids=position_ids,
             mrope_section=mrope_section,
-            chain=chain,
         )
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
@@ -229,7 +226,6 @@ class Qwen25VLDecoderAttentionWithRope(Module):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
-            chain=chain,
         )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])

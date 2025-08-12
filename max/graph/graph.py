@@ -19,11 +19,11 @@ import functools
 import inspect
 import itertools
 import traceback
-from collections.abc import Iterable, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, TypeVar, cast
 
 from max import mlir
 from max._core import Attribute as _Attribute
@@ -56,6 +56,8 @@ from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
+
+T = TypeVar("T")
 
 
 class KernelLibrary:
@@ -472,10 +474,62 @@ class Graph:
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
 
-    def _merge_chains(self, chains: list[_ChainValue]) -> None:
-        self._current_chain = cast(
-            _ChainValue, self._add_op(mo.chain_create, chains)[0]
-        )
+    def _merge_chains(self, chains: Sequence[_ChainValue]) -> None:
+        chain = self._add_op(mo.chain_create, chains)[0]
+        assert isinstance(chain, _ChainValue)
+        self._current_chain = chain
+
+    @contextlib.contextmanager
+    @staticmethod
+    def _async_region():
+        """Create a region of the graph with tasks guaranteed to execute
+        independently.
+
+        Overrides the implicit chaining of the graph to allow for asyncronous
+        execution of operations which might mutate state.
+
+        Returns:
+            A context manager which can be used to denote task boundaries.
+
+        .. code-block:: python
+
+            with Graph._async_region() as task:
+                with task():
+                    ops.buffer_store(buffer1, tensor)
+
+                with task():
+                    ops.buffer_store(buffer2, tensor)
+        """
+
+        old_chain = Graph.current._current_chain
+        new_chains = []
+
+        class Async:
+            def __enter__(self):
+                Graph.current._update_chain(old_chain)
+                return self
+
+            def __exit__(self, *exc):
+                new_chains.append(Graph.current._current_chain)
+                Graph.current._update_chain(old_chain)
+
+            def __call__(self):
+                return self
+
+            def each(self, vals: Iterable[T]) -> Generator[T]:
+                for val in vals:
+                    with self:
+                        yield val
+
+        try:
+            yield Async()
+        finally:
+            current = Graph.current._current_chain
+            if current not in new_chains and current != old_chain:
+                new_chains.append(current)
+
+            if new_chains:
+                Graph.current._merge_chains(new_chains)
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
