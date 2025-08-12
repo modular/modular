@@ -14,9 +14,17 @@ load("//bazel:api.bzl", "NIXL_ENV_VAR", "NIXL_PLUGINS_DATA", "modular_py_test", 
             "//:has_multi_gpu",
             "//:nvidia_gpu",
         ] + select({
-            "//:a10_gpu": ["@platforms//:incompatible"] if src == "test_send_recv_multi_process_gpu.py" else [],
+            "//:a10_gpu": ["@platforms//:incompatible"] if src in [
+                "test_send_recv_multi_process_gpu.py",
+                "test_send_recv_multi_tensor_multi_process_gpu.py",
+            ] else [],
             "//conditions:default": [],
-        }),
+        }) + (
+            ["//:has_4_gpus"] if src in [
+                "test_send_recv_multi_tensor_threaded_gpu.py",
+                "test_send_recv_multi_tensor_multi_process_gpu.py",
+            ] else []
+        ),
         imports = ["."],
         tags = ["gpu"],
         deps = [
