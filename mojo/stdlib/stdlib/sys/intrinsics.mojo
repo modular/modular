@@ -957,15 +957,11 @@ fn lanemask_lt() -> UInt:
 
     @parameter
     if is_nvidia_gpu():
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.lanemask_lt",
-                    Int32,
-                    has_side_effect=False,
-                ]().cast[DType.uint32]()
-            )
-        )
+        var mlir_result = __mlir_op.`nvvm.read.ptx.sreg.lanemask.lt`[_type=__mlir_type.`i32`]()
+        var result = Int32(__mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<si32>`
+        ](mlir_result))
+        return UInt(Int(result))
 
     else:
         return (1 << lane_id()) - 1
