@@ -437,6 +437,20 @@ fn _shuffle_down_amd[
 
     return generic_impl()
 
+@always_inline
+fn _shuffle_down_amd[
+    dtype: DType, simd_width: Int, //, offset: UInt
+](val: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+]:
+    @parameter
+    if amdgcn_supports_shifts() and (dtype.bitwidth() % 32) == 0 and offset <= 4:
+        var x = val
+        for _ in range(offset):
+            x = amdgcn_shift_left(x)
+        return x
+
+    return _shuffle_down_amd(_FULL_MASK, val, offset)
 
 @always_inline
 fn shuffle_down[
@@ -483,6 +497,36 @@ fn shuffle_down[
             operation="shuffle_down",
         ]()
 
+@always_inline
+fn shuffle_down[
+    dtype: DType, simd_width: Int, //, offset: UInt
+](val: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+]:
+    """Copies values from threads with higher lane IDs in the warp.
+
+    Specialization of the to the other shuffle_down functions for a lane offset
+    that's known at compile time and uniform across all threads of a warp.
+
+    Parameters:
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
+        offset: The number of lanes to shift values down by. Must be positive.
+
+    Args:
+        val: The SIMD value to be shuffled down the warp.
+
+    Returns:
+        The SIMD value from the thread offset lanes higher in the warp.
+        Returns undefined values for threads where lane_id + offset >= WARP_SIZE
+        or where the corresponding mask bit is not set.
+    """
+
+    @parameter
+    if is_amd_gpu():
+        return _shuffle_down_amd[offset](val)
+    else:
+        return shuffle_down(val, offset)
 
 # ===-----------------------------------------------------------------------===#
 # shuffle_xor
