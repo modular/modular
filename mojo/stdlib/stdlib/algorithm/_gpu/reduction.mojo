@@ -109,7 +109,11 @@ fn block_reduce[
             ]:
                 return reduce_fn[dtype, width, i](lhs, rhs)
 
-            result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
+            @always_inline
+            fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+                return warp.shuffle_down[offset](val)
+
+            result[i] = warp.reduce[_shuffle, reduce_wrapper](val[i])
 
         return result
 
