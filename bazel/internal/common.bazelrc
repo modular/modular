@@ -9,6 +9,9 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # TODO: '=true' is required because of a buildbuddy cli bug
 build --enable_platform_specific_config=true
 
+# https://github.com/aspect-build/tools_telemetry
+common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
+
 # Retry dependency download flakes
 common --experimental_repository_downloader_retries=5
 
