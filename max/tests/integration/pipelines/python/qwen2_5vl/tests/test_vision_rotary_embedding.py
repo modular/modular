@@ -11,7 +11,7 @@ import torch
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionRotaryEmbedding,
 )
@@ -175,7 +175,9 @@ def generate_max_outputs(
             rot_pos_ids=rot_pos_ids_tensor.tensor,
             window_index=window_index_tensor.tensor,
             spatial_merge_unit=spatial_merge_unit,
-            max_grid_size=max_grid_size,
+            max_grid_size=ops.constant(
+                max_grid_size, DType.int32, device=DeviceRef.CPU()
+            ),
             seq_len=rot_pos_ids_tensor.tensor.shape[0],
         )
 
