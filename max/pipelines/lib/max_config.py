@@ -642,28 +642,57 @@ class MAXConfig:
                 f"Failed to create {cls.__name__} instance: {e}"
             ) from e
 
-    def cli_parse_args(self) -> argparse.Namespace:
-        """Convert MAXConfig instance to argparse.Namespace by creating an actual
-        argparse parser and parsing the config values as if they were CLI arguments.
+    def cli_arg_parsers(
+        self,
+        choices_provider: dict[str, list[str]] | None = None,
+        description: str | None = None,
+    ) -> argparse.ArgumentParser:
+        """Create an ArgumentParser populated with all MAXConfig fields as arguments.
 
         This creates a parser with proper add_argument() calls for each field,
-        then simulates parsing those arguments, resulting in a namespace identical
-        to what CLI argument parsing would produce.
+        using the loaded config values as defaults. The parser's parse_args() method
+        is wrapped to automatically convert parsed string values back to their proper
+        types (e.g., enum objects, proper data types) using MAXConfig's type conversion
+        logic.
+
+        Args:
+            choices_provider: Optional dictionary mapping field names to their valid choices.
+                             This allows external code to specify choices for specific fields.
+            description: Optional description for the argument parser.
 
         Usage:
             ```python
+            # Basic usage with config file defaults
             config = KVCacheConfig.from_config_file("kv_cache.yaml")
-            args = config.cli_parse_args()
-            main(args)  # args.cache_strategy, args.kv_cache_page_size, etc.
+            parser = config.cli_arg_parsers()
+            args = parser.parse_args()  # Gets config file values as defaults
+            main(args)  # args.cache_strategy will be proper enum object
+
+            # With choices for validation
+            choices = {"backend": ["modular", "vllm"], "dataset_name": ["sharegpt", "random"]}
+            parser = config.cli_arg_parsers(choices_provider=choices)
+            parser.add_argument("--custom-arg", help="Custom argument")
+            args = parser.parse_args(["--backend", "vllm"])  # Validates against choices
+
+            # Empty args uses config file defaults
+            args = parser.parse_args([])  # All values from config file
             ```
+
         Returns:
-            argparse.Namespace object identical to what argparse would produce
-            from CLI arguments.
+            A configured ArgumentParser with enhanced parse_args() method that:
+            - Uses loaded config values as argument defaults
+            - Automatically converts parsed values to proper types (enums, etc.)
+            - Maintains compatibility with standard argparse usage
+
+        Note:
+            The returned parser's parse_args() method automatically handles type
+            conversion, so enum fields will return actual enum objects rather than
+            strings, matching the behavior of loading from config files.
         """
 
         # Create parser
-        parser = argparse.ArgumentParser()
-        cli_args = []
+        parser = argparse.ArgumentParser(description=description)
+        choices_provider = choices_provider or {}
 
         for field_obj in fields(self):
             # Skip internal fields
@@ -672,7 +701,6 @@ class MAXConfig:
 
             field_name = field_obj.name.replace("_", "-")
             arg_name = f"--{field_name}"
-            field_value = getattr(self, field_obj.name)
             field_type = field_obj.type
 
             # Use helper function to determine argparse parameters
@@ -680,77 +708,102 @@ class MAXConfig:
                 field_type, field_obj.default
             )
 
+            # Build argument kwargs
+            # Use the actual config value, not the field default
+            field_value = getattr(self, field_obj.name)
+
+            # Handle enum types specially - argparse expects string values for enums
+            if (
+                hasattr(field_value, "value")
+                and hasattr(field_value, "__class__")
+                and issubclass(field_value.__class__, enum.Enum)
+            ):
+                # For enums, use the string value as default but we'll need to convert back
+                arg_kwargs = {
+                    "default": field_value.value
+                    if field_value
+                    else field_obj.default
+                }
+            else:
+                arg_kwargs = {"default": field_value}
+
+            # Apply choices from choices_provider
+            if field_obj.name in choices_provider:
+                arg_kwargs["choices"] = choices_provider[field_obj.name]
+
+            # Add help from the config class if available
+            if hasattr(self, "help"):
+                help_dict = self.help()
+                if field_obj.name in help_dict:
+                    arg_kwargs["help"] = help_dict[field_obj.name]
+
             # Add argument with appropriate type and action
             if action:
                 # Boolean fields with action
-                parser.add_argument(
-                    arg_name, action=action, default=field_obj.default
-                )
-                if field_value:
-                    cli_args.append(arg_name)
+                arg_kwargs["action"] = action
+                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
             elif get_origin(field_type) is list:
                 # List fields need nargs
-                parser.add_argument(
-                    arg_name,
-                    type=arg_type,
-                    nargs="*",
-                    default=field_obj.default,
-                )
-                if field_value:
-                    # Convert enum values to their string representation (value, not str())
-                    str_values = []
-                    for v in field_value:
-                        if hasattr(v, "value"):  # Enum
-                            str_values.append(str(v.value))
-                        else:
-                            str_values.append(str(v))
-                    cli_args.extend([arg_name] + str_values)
+                arg_kwargs.update({"type": arg_type, "nargs": "*"})
+                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
             else:
                 # Regular typed fields
-                parser.add_argument(
-                    arg_name, type=arg_type, default=field_obj.default
-                )
-                if field_value != field_obj.default:
-                    # Convert enum values to their string representation (value, not str())
-                    if hasattr(field_value, "value"):  # Enum
-                        cli_args.extend([arg_name, str(field_value.value)])
+                arg_kwargs["type"] = arg_type
+                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
+
+        # Create a wrapper class to override parse_args method
+        class MAXConfigArgumentParser(argparse.ArgumentParser):
+            def __init__(
+                self,
+                parser_instance: argparse.ArgumentParser,
+                config_instance: MAXConfig,
+            ):
+                # Copy all attributes from the original parser
+                self.__dict__.update(parser_instance.__dict__)
+                self._config_instance = config_instance
+                self._original_parse_args = parser_instance.parse_args
+
+            def parse_args(  # type: ignore[override]
+                self,
+                args: list[str] | None = None,
+                namespace: argparse.Namespace | None = None,
+            ):
+                # Parse with the original method
+                parsed_namespace = self._original_parse_args(args, namespace)
+
+                # Convert string values back to proper types using MAXConfig conversion logic
+                converted_dict = {}
+                class_fields = {
+                    field.name: field for field in fields(self._config_instance)
+                }
+
+                for attr_name in dir(parsed_namespace):
+                    if attr_name.startswith("_"):
+                        continue
+
+                    parsed_value = getattr(parsed_namespace, attr_name)
+
+                    if attr_name in class_fields:
+                        field = class_fields[attr_name]
+                        try:
+                            # Use the same conversion logic as from_config_file
+                            converted_value = convert_max_config_value(
+                                value=parsed_value,
+                                field_type=field.type,
+                                field_name=attr_name,
+                            )
+                            converted_dict[attr_name] = converted_value
+                        except Exception:
+                            # If conversion fails, keep the parsed value
+                            converted_dict[attr_name] = parsed_value
                     else:
-                        cli_args.extend([arg_name, str(field_value)])
+                        # Unknown fields remain as-is
+                        converted_dict[attr_name] = parsed_value
 
-        # TODO: Handle unknown fields if present
+                return argparse.Namespace(**converted_dict)
 
-        # Parse the simulated CLI arguments to get string values (like real CLI)
-        parsed_namespace = parser.parse_args(cli_args)
-
-        # Convert string values back to proper types using convert_max_config_value
-        converted_dict = {}
-        class_fields = {field.name: field for field in fields(self)}
-
-        for attr_name in dir(parsed_namespace):
-            # Skip internal / private fields
-            if attr_name.startswith("_"):
-                continue
-
-            parsed_value = getattr(parsed_namespace, attr_name)
-
-            if attr_name in class_fields:
-                field = class_fields[attr_name]
-                try:
-                    # Use the same conversion logic as from_config_file
-                    converted_value = convert_max_config_value(
-                        value=parsed_value,
-                        field_type=field.type,
-                        field_name=attr_name,
-                    )
-                    converted_dict[attr_name] = converted_value
-                except Exception:
-                    # If conversion fails, keep the parsed value
-                    converted_dict[attr_name] = parsed_value
-            else:
-                # Unknown fields remain as-is
-                converted_dict[attr_name] = parsed_value
-
-        return argparse.Namespace(**converted_dict)
+        # Return the wrapped parser
+        return MAXConfigArgumentParser(parser, self)
 
 
 # frozen is False (for now) because of _available_cache_memory being set by
