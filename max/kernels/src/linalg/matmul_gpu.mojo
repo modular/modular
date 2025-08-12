@@ -367,10 +367,6 @@ fn _matmul_gpu[
         "Transpose B: ", transpose_b, " Use Tensor Core: ", use_tensor_core
     )
 
-    alias s_type = DType.float32 if (
-        a_type is DType.bfloat16 or a_type is DType.float16
-    ) else c_type
-
     alias matmul_supported_format_nvidia = (
         a_type in (DType.float32, DType.bfloat16)
         and b_type in (DType.float32, DType.bfloat16)
@@ -505,21 +501,38 @@ fn _matmul_gpu[
         if multi_gemm_cond:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
-            # Allow caller to overwrite dispatch heuristic with their own config.
+            @always_inline
             @parameter
-            if config:
-                multistage_gemm[
+            fn _multistage_gemm[
+                config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+            ](
+                runtime_config: MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ]
+            ) raises:
+                return multistage_gemm[
                     transpose_b=transpose_b,
-                    config = config.value(),
+                    config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    config.value(),
+                    runtime_config,
                     ctx,
                 )
-                return
+
+            @always_inline
+            @parameter
+            fn _multistage_gemm[
+                config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+            ]() raises:
+                return _multistage_gemm[config](config)
+
+            # Allow caller to overwrite dispatch heuristic with their own config.
+            @parameter
+            if config:
+                return _multistage_gemm[config.value()]()
 
             @parameter
             if has_amd_gpu_accelerator():
@@ -642,17 +655,7 @@ fn _matmul_gpu[
                         num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config=config,
-                        elementwise_lambda_fn=elementwise_lambda_wrapper,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        config,
-                        ctx,
-                    )
+                    return _multistage_gemm[config]()
 
                 @parameter
                 if not transpose_b:
@@ -861,13 +864,11 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            alias use_A100_kernels = ctx.default_device_info is A100
-
             @parameter
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and use_A100_kernels
+                and ctx.default_device_info is A100
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
@@ -878,7 +879,7 @@ fn _matmul_gpu[
                 try:
 
                     @parameter
-                    for k in range(0, 10):
+                    for k in range(len(Ms)):
                         alias M = Ms[k]
                         if M <= m:
                             alias key = String(M, "_", static_N, "_", static_K)
@@ -887,31 +888,7 @@ fn _matmul_gpu[
                             ]()
                             if curr_config.num_pipeline_stages == 0:
                                 raise "no match for the triple"
-                            else:
-                                multistage_gemm[
-                                    c_type=c_type,
-                                    c_shape=c_shape,
-                                    a_type=a_type,
-                                    a_shape=a_shape,
-                                    b_type=b_type,
-                                    b_shape=b_shape,
-                                    transpose_b=transpose_b,
-                                    config=curr_config,
-                                    elementwise_lambda_fn=elementwise_lambda_fn,
-                                ](
-                                    rebind[
-                                        NDBuffer[c_type, 2, c.origin, c_shape]
-                                    ](c),
-                                    rebind[
-                                        NDBuffer[a_type, 2, a.origin, a_shape]
-                                    ](a),
-                                    rebind[
-                                        NDBuffer[b_type, 2, b.origin, b_shape]
-                                    ](b),
-                                    curr_config,
-                                    ctx,
-                                )
-                                return
+                            return _multistage_gemm[curr_config]()
                     raise "no match for the triple"
                 except:
                     var best_config = select_config[
@@ -919,44 +896,13 @@ fn _matmul_gpu[
                     ](m, n, k, ctx)
 
                     if best_config == kernels.ampere_256x64_4:
-                        alias config = kernels.ampere_256x64_4
-                        multistage_gemm[
-                            transpose_b=transpose_b,
-                            config=config,
-                            elementwise_lambda_fn=elementwise_lambda_wrapper,
-                        ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            best_config,
-                            ctx,
-                        )
+                        _multistage_gemm[kernels.ampere_256x64_4](best_config)
 
                     elif best_config == kernels.ampere_256x128_3:
-                        multistage_gemm[
-                            transpose_b=transpose_b,
-                            config = kernels.ampere_256x128_3,
-                            elementwise_lambda_fn=elementwise_lambda_wrapper,
-                        ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            best_config,
-                            ctx,
-                        )
+                        _multistage_gemm[kernels.ampere_256x128_3](best_config)
 
                     else:  # Default kernel 128x128_4
-                        multistage_gemm[
-                            transpose_b=transpose_b,
-                            config = kernels.ampere_128x128_4,
-                            elementwise_lambda_fn=elementwise_lambda_wrapper,
-                        ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            best_config,
-                            ctx,
-                        )
+                        _multistage_gemm[kernels.ampere_128x128_4](best_config)
                     return
 
             var best_config = select_config[
@@ -964,45 +910,13 @@ fn _matmul_gpu[
             ](m, n, k, ctx)
 
             if best_config == kernels.ampere_256x64_4:
-                alias config = kernels.ampere_256x64_4
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config=config,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    best_config,
-                    ctx,
-                )
+                _multistage_gemm[kernels.ampere_256x64_4](best_config)
 
             elif best_config == kernels.ampere_256x128_3:
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config = kernels.ampere_256x128_3,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    best_config,
-                    ctx,
-                )
+                _multistage_gemm[kernels.ampere_256x128_3](best_config)
 
             else:  # Default kernel 128x128_4
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config = kernels.ampere_128x128_4,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    best_config,
-                    ctx,
-                )
-
+                _multistage_gemm[kernels.ampere_128x128_4](best_config)
             return
 
     @parameter
