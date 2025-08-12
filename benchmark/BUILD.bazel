@@ -6,6 +6,7 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        ":benchmark_config",
         ":benchmark_datasets",
         ":sample_workload_utils",
         requirement("aiohttp"),
@@ -46,6 +47,25 @@ modular_py_library(
         requirement("pillow"),
         requirement("transformers"),
     ],
+)
+
+modular_py_library(
+    name = "benchmark_config",
+    srcs = ["benchmark_config.py"],
+    data = [
+        ":benchmark_config_yaml",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/lib",
+    ],
+)
+
+pkg_files(
+    name = "benchmark_config_yaml",
+    srcs = ["base_benchmark_config.yaml"],
+    visibility = ["//visibility:public"],
 )
 
 pkg_files(
