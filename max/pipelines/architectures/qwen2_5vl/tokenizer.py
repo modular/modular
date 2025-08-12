@@ -172,6 +172,23 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 else:
                     extra_model_args["attention_mask"] = attention_mask
 
+            # Extract video-related inputs
+            if "video_grid_thw" in processed_inputs:
+                video_grid_thw = processed_inputs["video_grid_thw"]
+                if hasattr(video_grid_thw, "numpy"):
+                    extra_model_args["video_grid_thw"] = video_grid_thw.numpy()
+                else:
+                    extra_model_args["video_grid_thw"] = video_grid_thw
+
+            if "second_per_grid_ts" in processed_inputs:
+                second_per_grid_ts = processed_inputs["second_per_grid_ts"]
+                if hasattr(second_per_grid_ts, "numpy"):
+                    extra_model_args["second_per_grid_ts"] = (
+                        second_per_grid_ts.numpy()
+                    )
+                else:
+                    extra_model_args["second_per_grid_ts"] = second_per_grid_ts
+
         # Handle JSON schema if provided
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))

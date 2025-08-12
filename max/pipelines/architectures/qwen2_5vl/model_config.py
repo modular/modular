@@ -102,7 +102,8 @@ class VisionConfig:
             intermediate_size=vision_config.intermediate_size,
             out_hidden_size=vision_config.out_hidden_size,
             fullatt_block_indexes=vision_config.fullatt_block_indexes,
-            rms_norm_eps=vision_config.rms_norm_eps,
+            # TODO: fix this later
+            rms_norm_eps=1e-06,
             window_size=vision_config.window_size,
             spatial_merge_size=vision_config.spatial_merge_size,
         )
@@ -127,6 +128,12 @@ class Qwen2_5VLConfigBase:
 
     spatial_merge_size: int
     """Size parameter for spatial merging of vision features."""
+
+    tokens_per_second: int
+    """Number of tokens per second."""
+
+    mrope_section: list[int]
+    """List of indices for the mrope section."""
 
     # Vision encoder configuration.
     vision_config: VisionConfig
@@ -256,6 +263,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             video_token_id=huggingface_config.video_token_id,
             vision_start_token_id=huggingface_config.vision_start_token_id,
             spatial_merge_size=hf_vision_config.spatial_merge_size,
+            tokens_per_second=hf_vision_config.tokens_per_second,
+            mrope_section=huggingface_config.rope_scaling["mrope_section"],
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration

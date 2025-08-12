@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
-from max.nn import Module
+from max.nn import (
+    Module,
+)
 
 from .model_config import Qwen2_5VLConfig
+from .nn.decoder import Qwen25VLDecoder
 from .nn.visual_transformer import VisionTransformer
 
 
@@ -25,8 +28,10 @@ class Qwen2_5VL(Module):
 
     def __init__(self, config: Qwen2_5VLConfig) -> None:
         self.config = config
+        self.vision_encoder = self.build_vision_encoder()
+        self.language_model = self.build_language_model()
 
-    def vision_encoder(self) -> Module:
+    def build_vision_encoder(self) -> VisionTransformer:
         config = self.config.vision_config
         return VisionTransformer(
             dtype=config.dtype,
@@ -44,13 +49,9 @@ class Qwen2_5VL(Module):
             rms_norm_eps=config.rms_norm_eps,
         )
 
-    def language_model(self, config: Qwen2_5VLConfig) -> Module:
+    def build_language_model(self) -> Qwen25VLDecoder:
         """Return the language model component."""
-        # This method is not currently used in the pipeline
-        # The language model is built separately in the pipeline model
-        raise NotImplementedError(
-            "Language model is built separately in the pipeline"
-        )
+        return Qwen25VLDecoder(self.config)
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""

@@ -50,6 +50,13 @@ class VisionPatchEmbed(Module):
         self.embed_dim = embed_dim
         self.spatial_merge_unit = spatial_merge_unit
 
+        self.image_dim = (
+            self.in_channels
+            * self.temporal_patch_size
+            * self.patch_size
+            * self.patch_size
+        )
+
         # Create Conv3D layer using constructor pattern
         self.proj = Conv3D(
             depth=temporal_patch_size,
@@ -154,7 +161,7 @@ class VisionRotaryEmbedding(Module):
         rot_pos_ids: TensorValue,
         window_index: TensorValue,
         spatial_merge_unit: int,
-        max_grid_size: int,
+        max_grid_size: TensorValue,
         seq_len: Dim,
     ) -> tuple[TensorValue, TensorValue]:
         """Generates rotary position embeddings for a maximum sequence length of max_grid_size
@@ -171,10 +178,11 @@ class VisionRotaryEmbedding(Module):
             0,
             max_grid_size,
             1,
-            out_dim=max_grid_size,
+            # out_dim=max_grid_size,
+            out_dim="max_grid_size",
             device=rot_pos_ids.device,
-            dtype=DType.float32,
-        )
+            dtype=DType.int32,
+        ).cast(DType.float32)
         rotary_pos_emb_full = ops.outer(t, self.inv_freqs(rot_pos_ids.device))
         # Retrieve position embeddings for each patch in input images or videos.
         rotary_pos_emb = ops.gather(rotary_pos_emb_full, rot_pos_ids, axis=0)
@@ -548,7 +556,7 @@ class VisionTransformer(Module):
         window_index: TensorValue,
         attention_mask_window: TensorValue,
         attention_mask_full: TensorValue,
-        max_grid_size: int,
+        max_grid_size: TensorValue,
     ) -> TensorValue:
         """Outputs raw hidden states of the transformer model on input `x`.
 

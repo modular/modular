@@ -53,7 +53,7 @@ from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
 
 
 class Qwen25VLDecoderAttentionWithRope(Module):
@@ -283,119 +283,126 @@ class Qwen25VLDecoder(Module):
     - Multi-axis rotary position embeddings (mrope) for 2D position encoding
     """
 
-    def __init__(self, config: Llama3Config) -> None:
+    def __init__(self, config: Qwen2_5VLConfig) -> None:
         assert len(config.devices) == 1
         rope = Llama3RotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_seq_len,
-            head_dim=config.kv_params.head_dim,
-            interleaved=config.interleaved_rope_weights,
-            scaling_params=config.rope_scaling_params,
+            dim=config.llm_config.hidden_size,
+            n_heads=config.llm_config.num_attention_heads,
+            theta=config.llm_config.rope_theta,
+            max_seq_len=config.llm_config.max_seq_len,
+            head_dim=config.llm_config.kv_params.head_dim,
+            interleaved=config.llm_config.interleaved_rope_weights,
+            scaling_params=config.llm_config.rope_scaling_params,
             device=config.devices[0],
         )
 
         # Select norm layer class.
         create_norm: Callable[..., Module]
-        if config.norm_method == "rms_norm":
-            if config.rms_norm_eps is None:
+        if config.llm_config.norm_method == "rms_norm":
+            if config.llm_config.rms_norm_eps is None:
                 raise ValueError(
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
                 RMSNorm,
-                config.hidden_size,
-                config.norm_dtype or config.dtype,
-                config.rms_norm_eps,
+                config.llm_config.hidden_size,
+                config.llm_config.norm_dtype or config.llm_config.dtype,
+                config.llm_config.rms_norm_eps,
                 multiply_before_cast=False,  # disable Gemma3-style scaling
             )
         else:
-            raise ValueError(f"Unsupported norm method: {config.norm_method}")
+            raise ValueError(
+                f"Unsupported norm method: {config.llm_config.norm_method}"
+            )
 
         # Select linear layer class.
         linear_cls: Callable[..., Linear]
 
         linear_cls = functools.partial(Linear)
 
-        mlp_cls = StackedMLP if config.stacked_mlp else functools.partial(MLP)
+        mlp_cls = (
+            StackedMLP
+            if config.llm_config.stacked_mlp
+            else functools.partial(MLP)
+        )
         attention_cls: Callable[..., Qwen25VLDecoderAttentionWithRope]
 
         attention_cls = functools.partial(
             Qwen25VLDecoderAttentionWithRope,
-            scale=config.attention_multiplier,
-            has_bias=config.attention_bias,
+            scale=config.llm_config.attention_multiplier,
+            has_bias=config.llm_config.attention_bias,
         )
 
         layers = [
             Qwen25VLDecoderTransformerBlock(
                 attention=attention_cls(
-                    num_attention_heads=config.num_attention_heads,
-                    num_key_value_heads=config.num_key_value_heads,
-                    hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
-                    dtype=config.dtype,
+                    num_attention_heads=config.llm_config.num_attention_heads,
+                    num_key_value_heads=config.llm_config.num_key_value_heads,
+                    hidden_size=config.llm_config.hidden_size,
+                    kv_params=config.llm_config.kv_params,
+                    dtype=config.llm_config.dtype,
                     rope=rope,
                     linear_cls=linear_cls,
                     devices=config.devices,
                 ),
                 mlp=mlp_cls(
-                    config.dtype,
-                    config.model_quantization_encoding,
-                    config.hidden_size,
-                    config.intermediate_size,
+                    config.llm_config.dtype,
+                    config.llm_config.model_quantization_encoding,
+                    config.llm_config.hidden_size,
+                    config.llm_config.intermediate_size,
                     config.devices,
                     linear_cls,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
             )
-            for i in range(config.num_hidden_layers)
+            for i in range(config.llm_config.num_hidden_layers)
         ]
 
         # Create Embedding and output layers.
-        embedding_output_dtype = config.dtype
+        embedding_output_dtype = config.llm_config.dtype
 
         embedding_layer = Embedding(
-            config.vocab_size,
-            config.hidden_size,
+            config.llm_config.vocab_size,
+            config.llm_config.hidden_size,
             embedding_output_dtype,
             config.devices[0],
         )
         output = Linear(
-            config.hidden_size,
-            config.vocab_size,
+            config.llm_config.hidden_size,
+            config.llm_config.vocab_size,
             embedding_output_dtype,
             config.devices[0],
         )
 
-        if config.tie_word_embeddings:
+        if config.llm_config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
         kv_collection_cls: type[FetchPagedKVCacheCollection]
 
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        if config.llm_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(
                 "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
+                + str(config.llm_config.kv_params.cache_strategy)
             )
 
         super().__init__()
-        self.dim = config.hidden_size
-        self.n_heads = config.num_attention_heads
+        self.dim = config.llm_config.hidden_size
+        self.n_heads = config.llm_config.num_attention_heads
         self.layers = LayerList(layers)
         self.norm = create_norm()
         self.lm_head = output
         self.embed_tokens = embedding_layer
-        self.kv_params = config.kv_params
+        self.kv_params = config.llm_config.kv_params
         self.kv_collection_constructor = kv_collection_cls(
-            config.kv_params, num_layers=config.num_hidden_layers
+            config.llm_config.kv_params,
+            num_layers=config.llm_config.num_hidden_layers,
         )
-        self.logits_postprocessor = config.logits_postprocessor
+        self.logits_postprocessor = config.llm_config.logits_postprocessor
         self.rope = rope
-        self.return_logits = config.return_logits
+        self.return_logits = config.llm_config.return_logits
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue, ...]
