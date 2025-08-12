@@ -13,6 +13,7 @@ import weakref
 from collections.abc import Iterable
 from contextvars import ContextVar
 from itertools import chain
+from typing import Any
 
 import numpy as np
 from max.driver import DLPackArray
@@ -140,6 +141,25 @@ class Tensor:
             type.shape, dtype=type.dtype, device=type.device.to_device()
         )
 
+    @classmethod
+    def arange(
+        cls,
+        start: int = 0,
+        stop: int | None = None,
+        step: int = 1,
+        dtype: DType = DType.float32,
+        device: Device = CPU(),
+    ):
+        if stop is None:
+            start, stop = 0, start
+        return F.range(
+            start,
+            stop,
+            step,
+            dtype=dtype,
+            device=graph.DeviceRef.from_device(device),
+        )
+
     @property
     def type(self) -> TensorType:
         return self._value.type
@@ -195,35 +215,27 @@ class Tensor:
         if not self.real:
             asyncio.run(self.realize)
 
-    def __add__(self, other: TensorValueLike) -> Tensor:
-        return F.add(self, other)
-
-    def __sub__(self, other: TensorValueLike) -> Tensor:
-        return F.sub(self, other)
-
-    def __truediv__(self, other: TensorValueLike) -> Tensor:
-        return F.div(self, other)
-
-    def __eq__(self, other: TensorValueLike) -> Tensor:  # type: ignore
-        return F.equal(self, other)
-
-    def __gt__(self, other: TensorValueLike) -> Tensor:
-        return F.greater(self, other)
-
-    def __abs__(self) -> Tensor:
-        return F.abs(self)
-
     def __bool__(self) -> bool:
         return bool(self.item())
-
-    def __getitem__(self, idx):  # noqa: ANN001
-        return F.functional(graph.TensorValue.__getitem__)(self, idx)
 
     def _values(self):
         self._sync_realize()
         dt = self.driver_tensor.to(CPU())
         for idx in dt._iterate_indices():
             yield dt[idx].item()
+
+    def __hash__(self):
+        return id(self)
+
+    def __dlpack__(self, stream: int | None = None):
+        self._sync_realize()
+        assert self._storage is not None
+        return self._storage.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        self._sync_realize()
+        assert self._storage is not None
+        return self._storage.__dlpack_device__()
 
     def __repr__(self):
         # Janky repr for bootstrapping, we can do much better.
@@ -247,40 +259,123 @@ class Tensor:
     def max(self) -> Tensor:
         return F.max(self)
 
+    def reshape(self, shape: ShapeLike) -> Tensor:
+        return F.reshape(self, shape)
+
     def cast(self, dtype: DType) -> Tensor:
         return F.cast(self, dtype)
 
-    def __hash__(self):
-        return id(self)
+    def permute(self, dims: list[int]) -> Tensor:
+        return F.permute(self, dims)
 
-    def __dlpack__(self, stream: int | None = None):
-        self._sync_realize()
-        assert self._storage is not None
-        return self._storage.__dlpack__(stream=stream)
+    def transpose(self, dim1: int, dim2: int) -> Tensor:
+        return F.transpose(self, dim1, dim2)
 
-    def __dlpack_device__(self):
-        self._sync_realize()
-        assert self._storage is not None
-        return self._storage.__dlpack_device__()
+    @property
+    def T(self) -> Tensor:
+        return self.transpose(-1, -2)
 
-    @classmethod
-    def arange(
-        cls,
-        start: int = 0,
-        stop: int | None = None,
-        step: int = 1,
-        dtype: DType = DType.float32,
-        device: Device = CPU(),
-    ):
-        if stop is None:
-            start, stop = 0, start
-        return F.range(
-            start,
-            stop,
-            step,
-            dtype=dtype,
-            device=graph.DeviceRef.from_device(device),
-        )
+    def __getitem__(self, idx):  # noqa: ANN001
+        return F.functional(graph.TensorValue.__getitem__)(self, idx)
+
+    def __abs__(self) -> Tensor:
+        return F.abs(self)
+
+    def __neg__(self) -> Tensor:
+        return F.negate(self)
+
+    def __eq__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+        return F.equal(self, rhs)
+
+    def __ne__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+        return F.not_equal(self, rhs)
+
+    def __ge__(self, rhs: Any) -> Tensor:
+        return F.greater_equal(self, rhs)
+
+    def __gt__(self, rhs: Any) -> Tensor:
+        return F.greater(self, rhs)
+
+    def __lt__(self, rhs: Any) -> Tensor:
+        return ~(self >= rhs)
+
+    def __le__(self, rhs: Any) -> Tensor:
+        return ~(self > rhs)
+
+    def __add__(self, rhs: TensorValueLike) -> Tensor:
+        return F.add(self, rhs)
+
+    def __radd__(self, lhs: TensorValueLike) -> Tensor:
+        return F.add(lhs, self)
+
+    def __sub__(self, rhs: TensorValueLike) -> Tensor:
+        return F.sub(self, rhs)
+
+    def __rsub__(self, lhs: TensorValueLike) -> Tensor:
+        return F.sub(lhs, self)
+
+    def __mul__(self, rhs: TensorValueLike) -> Tensor:
+        return F.mul(self, rhs)
+
+    def __rmul__(self, lhs: TensorValueLike) -> Tensor:
+        return F.mul(lhs, self)
+
+    def __truediv__(self, rhs: TensorValueLike) -> Tensor:
+        return F.div(self, rhs)
+
+    def __rtruediv__(self, lhs: TensorValueLike) -> Tensor:
+        return F.div(lhs, self)
+
+    def __floordiv__(self, rhs: TensorValueLike) -> Tensor:
+        return F.floor(F.div(self, rhs))
+
+    def __rfloordiv__(self, lhs: TensorValueLike) -> Tensor:
+        return F.floor(F.div(lhs, self))
+
+    def __mod__(self, rhs: TensorValueLike) -> Tensor:
+        return F.mod(self, rhs)
+
+    def __rmod__(self, lhs: TensorValueLike) -> Tensor:
+        return F.mod(lhs, self)
+
+    def __divmod__(self, rhs: TensorValueLike) -> tuple[Tensor, Tensor]:
+        return (self // rhs, self % rhs)
+
+    def __rdivmod__(self, lhs: TensorValueLike) -> tuple[Tensor, Tensor]:
+        return (self.__rfloordiv__(lhs), self.__rmod__(lhs))
+
+    def __matmul__(self, rhs: TensorValueLike) -> Tensor:
+        return F.matmul(self, rhs)
+
+    def __rmatmul__(self, lhs: TensorValueLike) -> Tensor:
+        return F.matmul(lhs, self)
+
+    def __pow__(self, rhs: TensorValueLike) -> Tensor:
+        return F.pow(self, rhs)
+
+    def __rpow__(self, lhs: TensorValueLike) -> Tensor:
+        return F.pow(lhs, self)
+
+    def __and__(self, rhs: TensorValueLike) -> Tensor:
+        return F.logical_and(self, rhs)
+
+    def __rand__(self, lhs: TensorValueLike) -> Tensor:
+        return F.logical_and(lhs, self)
+
+    def __or__(self, rhs: TensorValueLike) -> Tensor:
+        return F.logical_or(self, rhs)
+
+    def __ror__(self, lhs: TensorValueLike) -> Tensor:
+        return F.logical_or(lhs, self)
+
+    def __xor__(self, rhs: TensorValueLike) -> Tensor:
+        return F.logical_xor(self, rhs)
+
+    def __rxor__(self, lhs: TensorValueLike) -> Tensor:
+        return F.logical_xor(lhs, self)
+
+    def __invert__(self) -> Tensor:
+        return F.logical_not(self)
 
 
 class ComputeGraph:
