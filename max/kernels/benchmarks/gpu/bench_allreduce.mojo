@@ -26,7 +26,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import arg_parse
+from internal_utils import arg_parse, init_vector_launch, InitializationType
 from testing import assert_almost_equal, assert_true
 
 from utils.index import IndexList, StaticTuple
@@ -91,9 +91,14 @@ fn bench_reduce[
         var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
-        # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
-        host_nd_buf.fill(Scalar[dtype](i + 1))
+        # Initialize each device buffer i with values (i + 1).0
+        init_vector_launch[dtype](
+            in_bufs_list[i],
+            length,
+            InitializationType.fill,
+            list_of_ctx[i],
+            value=Scalar[dtype](i + 1),
+        )
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -103,9 +108,6 @@ fn bench_reduce[
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
-
-        # Copy data to device
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
