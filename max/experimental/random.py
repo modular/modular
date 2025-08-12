@@ -9,7 +9,12 @@ from __future__ import annotations
 from ..driver import Device
 from ..dtype import DType
 from ..graph import DeviceRef, ShapeLike, ops
-from .tensor import TensorType, functional
+from .functional import functional
+from .tensor import TensorType
+
+uniform_like = functional(ops.random.uniform)
+gaussian_like = functional(ops.random.gaussian)
+normal_like = gaussian_like
 
 
 def uniform(
@@ -41,9 +46,6 @@ def uniform(
     """
     type = TensorType(dtype, shape, device=DeviceRef.from_device(device))
     return uniform_like(type, range=range)
-
-
-uniform_like = functional(ops.random.uniform)
 
 
 def gaussian(
@@ -80,5 +82,3 @@ def gaussian(
 
 
 normal = gaussian
-gaussian_like = functional(ops.random.gaussian)
-normal_like = gaussian_like

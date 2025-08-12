@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import gc
 import sys
 import weakref
@@ -18,15 +17,19 @@ from itertools import chain
 import numpy as np
 from max.driver import DLPackArray
 
-# For clarity, since there are several Tensor and Device types
-# around, only directly import types which are concretely used
-# by max.Tensor.
 from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
 from ..driver import CPU, Device
 from ..dtype import DType
-from ..graph import TensorType, TensorValueLike, Value, ops
+from ..graph import (
+    ShapeLike,
+    TensorType,
+    TensorValueLike,
+    Value,
+    ops,
+)
 from ..graph.graph import _location
+from . import functional as F
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 
@@ -89,7 +92,6 @@ class Tensor:
 
     @classmethod
     def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
-        _ = repr(value), repr(GRAPH.graph)
         return cls(value=value)
 
     @classmethod
@@ -101,8 +103,41 @@ class Tensor:
         if hasattr(value, "__iter__") and not isinstance(value, np.ndarray):
             value = np.array(value, dtype.to_numpy())
 
-        return functional(ops.constant)(
-            value, dtype, graph.DeviceRef.from_device(device)
+        return F.constant(value, dtype, graph.DeviceRef.from_device(device))
+
+    @classmethod
+    def full(
+        cls, shape: ShapeLike, value: int | float, dtype: DType, device: Device
+    ) -> Tensor:
+        return F.broadcast_to(cls.constant(value, dtype, device), shape)
+
+    @classmethod
+    def full_like(cls, type: TensorType, value: int | float) -> Tensor:
+        return cls.full(
+            type.shape,
+            value=value,
+            dtype=type.dtype,
+            device=type.device.to_device(),
+        )
+
+    @classmethod
+    def zeros(cls, shape: ShapeLike, dtype: DType, device: Device) -> Tensor:
+        return cls.full(shape, value=0, dtype=dtype, device=device)
+
+    @classmethod
+    def zeros_like(cls, type: TensorType) -> Tensor:
+        return cls.zeros(
+            type.shape, dtype=type.dtype, device=type.device.to_device()
+        )
+
+    @classmethod
+    def ones(cls, shape: ShapeLike, dtype: DType, device: Device) -> Tensor:
+        return cls.full(shape, value=1, dtype=dtype, device=device)
+
+    @classmethod
+    def ones_like(cls, type: TensorType) -> Tensor:
+        return cls.ones(
+            type.shape, dtype=type.dtype, device=type.device.to_device()
         )
 
     @property
@@ -149,7 +184,6 @@ class Tensor:
         """Force the tensor to realize if it is not already."""
         yield from asyncio.create_task(GRAPH.evaluate(self))
         assert self.real
-        _ = repr(self), repr(GRAPH.graph)
         return self
 
     @property
@@ -162,28 +196,28 @@ class Tensor:
             asyncio.run(self.realize)
 
     def __add__(self, other: TensorValueLike) -> Tensor:
-        return functional(ops.add)(self, other)
+        return F.add(self, other)
 
     def __sub__(self, other: TensorValueLike) -> Tensor:
-        return functional(ops.sub)(self, other)
+        return F.sub(self, other)
 
     def __truediv__(self, other: TensorValueLike) -> Tensor:
-        return functional(ops.div)(self, other)
+        return F.div(self, other)
 
     def __eq__(self, other: TensorValueLike) -> Tensor:  # type: ignore
-        return functional(ops.equal)(self, other)
+        return F.equal(self, other)
 
     def __gt__(self, other: TensorValueLike) -> Tensor:
-        return functional(ops.greater)(self, other)
+        return F.greater(self, other)
 
     def __abs__(self) -> Tensor:
-        return functional(ops.abs)(self)
+        return F.abs(self)
 
     def __bool__(self) -> bool:
         return bool(self.item())
 
     def __getitem__(self, idx):  # noqa: ANN001
-        return functional(graph.TensorValue.__getitem__)(self, idx)
+        return F.functional(graph.TensorValue.__getitem__)(self, idx)
 
     def _values(self):
         self._sync_realize()
@@ -208,10 +242,13 @@ class Tensor:
         return elts
 
     def argmax(self) -> Tensor:
-        return functional(ops.argmax)(self)
+        return F.argmax(self)
 
     def max(self) -> Tensor:
-        return functional(ops.max)(self)
+        return F.max(self)
+
+    def cast(self, dtype: DType) -> Tensor:
+        return F.cast(self, dtype)
 
     def __hash__(self):
         return id(self)
@@ -237,7 +274,7 @@ class Tensor:
     ):
         if stop is None:
             start, stop = 0, start
-        return functional(ops.range)(
+        return F.range(
             start,
             stop,
             step,
@@ -417,21 +454,6 @@ def _remove_unused_arguments(graph: graph.Graph):
         op.discardable_attributes["argument_names"] = builtin.ArrayAttr(
             [builtin.StringAttr(f"input{i}") for i in range(len(graph.inputs))]
         )
-
-
-def functional(op):  # noqa: ANN001
-    """Convert an op on symbolic tensor values to one which
-    additionally supports max.Tensor inputs."""
-
-    @functools.wraps(op)
-    def wrapped(*args, **kwargs):
-        with GRAPH.graph:
-            results = op(*args, **kwargs)
-        if isinstance(results, graph.TensorValue):
-            return Tensor.from_tensor_value(results)
-        return [Tensor.from_tensor_value(result) for result in results]
-
-    return wrapped
 
 
 def driver_tensor_type(t: driver.Tensor) -> TensorType:
