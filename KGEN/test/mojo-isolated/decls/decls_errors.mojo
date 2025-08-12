@@ -875,10 +875,6 @@ struct CheckImplicit:
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
-    fn trait_fn_has_body(self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
-        var t = 1
-
-    # expected-error @+1 {{unexpected function body in trait function declaration, use `...`}}
     fn trait_fn_no_dot_dot_dot(self): # expected-error {{expected body statements; use 'pass' if none is required}}
 
     trait NestedTrait: # expected-error {{nested trait not supported here}}

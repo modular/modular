@@ -180,6 +180,19 @@ void ParserBase::skipUntilIndentation(
   }
 }
 
+/// Skip tokens that compose a function signature. This is used as a helper for
+/// determining whether a trait method provides an implementation or not.
+///
+/// The actual implementation is exceedingly straightforward and will just
+/// consume tokens up to and including the first ':' token as long as it's not
+/// nested inside of any parens or square brackets.
+///
+/// While this does technically allow syntactically invalid forms like:
+/// fn foo()[]:, fn []()foo:, fn foo[](): and others we don't care for the
+/// purposes of marking a trait method as defaulted or not since later parsing
+/// of the signature will result in a parser failure anyways and the simple
+/// logic that is provided is capable of handling valid syntactic forms.
+
 /// Parse a 'ref [exprlist]' production into expr, with the expression set to
 /// the exprlist if specified, otherwise set to null if absent.  This returns
 /// failure on a parse error.

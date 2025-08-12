@@ -63,6 +63,7 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$isImplicitConversion,
     UnitAttr:$isExtern,
     UnitAttr:$isSelfDeinit, // First argument is 'deinit self'.
+    UnitAttr:$isDefaultedTraitFn, // Present for trait methods with non-empty bodies.
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
@@ -133,6 +134,9 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Override the default implementation of isExternal.
     bool isExternal() { return getIsExtern(); }
+
+    /// Return true if this is a defaulted trait method.
+    bool isDefaultedTraitFn() { return getIsDefaultedTraitFn(); }
 
     mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
     mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
