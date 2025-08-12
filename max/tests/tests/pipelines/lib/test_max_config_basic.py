@@ -8,6 +8,7 @@
 import argparse
 import tempfile
 from dataclasses import dataclass, fields
+from typing import Optional, Union
 
 import pytest
 import yaml
@@ -403,8 +404,6 @@ class TestMAXConfigTypeConversion:
 
     def test_optional_type_conversion(self) -> None:
         """Test conversion of Optional types."""
-        from typing import Optional
-
         # Test Optional[int] with valid value.
         result = convert_max_config_value("42", Optional[int], "optional_int")
         assert result == 42
@@ -425,8 +424,6 @@ class TestMAXConfigTypeConversion:
 
     def test_union_type_conversion(self) -> None:
         """Test conversion of Union types."""
-        from typing import Union
-
         # Test Union[int, str] with int.
         result = convert_max_config_value("42", Union[int, str], "union_field")
         assert result == 42
@@ -445,8 +442,6 @@ class TestMAXConfigTypeConversion:
 
     def test_complex_nested_types(self) -> None:
         """Test conversion of complex nested types."""
-        from typing import Optional
-
         # Test Optional[list[str]].
         result = convert_max_config_value(
             ["item1", "item2"], Optional[list[str]], "optional_list"
@@ -471,10 +466,10 @@ class TestMAXConfigTypeConversion:
 
 
 class TestMAXConfigNamespaceConversion:
-    """Test suite for MAXConfig cli_parse_args functionality."""
+    """Test suite for MAXConfig cli_arg_parsers functionality."""
 
-    def test_cli_parse_args_vs_config_file_basic(self) -> None:
-        """Test cli_parse_args produces same result as CLI parsing."""
+    def test_cli_arg_parsers_vs_config_file_basic(self) -> None:
+        """Test cli_arg_parsers produces same result as CLI parsing."""
         # Create a config file with test values
         config_data = {
             "test_field": "from_config",
@@ -488,13 +483,11 @@ class TestMAXConfigNamespaceConversion:
 
             # Load config from file
             config = TestConfig.from_config_file(f.name)
-            config_namespace = config.cli_parse_args()
+            config_file_parser = config.cli_arg_parsers()
 
             # Manually create CLI parser and parse equivalent args
             parser = argparse.ArgumentParser()
-            parser.add_argument(
-                "--test-field", type=str, default="default_value"
-            )
+            parser.add_argument("--test-field", type=str, default="from_config")
             parser.add_argument("--test-int", type=int, default=42)
             parser.add_argument(
                 "--test-bool", action="store_true", default=True
@@ -508,6 +501,7 @@ class TestMAXConfigNamespaceConversion:
                 "42",
                 "--test-bool",
             ]
+            config_namespace = config_file_parser.parse_args(cli_args)
             cli_namespace = parser.parse_args(cli_args)
 
             # Both should produce identical namespaces
@@ -519,8 +513,8 @@ class TestMAXConfigNamespaceConversion:
             assert config_namespace.test_int == cli_namespace.test_int == 42
             assert config_namespace.test_bool == cli_namespace.test_bool is True
 
-    def test_cli_parse_args_vs_config_file_kv_cache(self) -> None:
-        """Test cli_parse_args with KV cache config vs CLI parsing."""
+    def test_cli_arg_parsers_vs_config_file_kv_cache(self) -> None:
+        """Test cli_arg_parsers with KV cache config vs CLI parsing."""
         # Create a config file with KV cache values
         config_data = {
             "name": "test_kv_config",
@@ -536,7 +530,8 @@ class TestMAXConfigNamespaceConversion:
 
             # Load config from file
             config = KVCacheConfig.from_config_file(f.name)
-            config_namespace = config.cli_parse_args()
+            parser = config.cli_arg_parsers()
+            config_namespace = parser.parse_args([])
 
             assert config_namespace.cache_strategy == KVCacheStrategy.PAGED
             assert config_namespace.kv_cache_page_size == 256
@@ -544,8 +539,8 @@ class TestMAXConfigNamespaceConversion:
             # Verify internal fields are excluded
             assert not hasattr(config_namespace, "_config_file_section_name")
 
-    def test_cli_parse_args_vs_config_file_profiling(self) -> None:
-        """Test cli_parse_args with profiling config vs CLI parsing."""
+    def test_cli_arg_parsers_vs_config_file_profiling(self) -> None:
+        """Test cli_arg_parsers with profiling config vs CLI parsing."""
         # Create a config file with profiling values
         config_data = {
             "name": "test_profiling_config",
@@ -560,14 +555,15 @@ class TestMAXConfigNamespaceConversion:
 
             # Load config from file
             config = ProfilingConfig.from_config_file(f.name)
-            config_namespace = config.cli_parse_args()
+            parser = config.cli_arg_parsers()
+            config_namespace = parser.parse_args([])
             assert config_namespace.gpu_profiling == GPUProfilingMode.DETAILED
 
     @pytest.mark.skip(
         reason="TODO: Skipping LoRA config test for now - there's an issue with list[str] type mismatch for lora_paths"
     )
-    def test_cli_parse_args_vs_config_file_lora(self) -> None:
-        """Test cli_parse_args with LoRA config vs CLI parsing."""
+    def test_cli_arg_parsers_vs_config_file_lora(self) -> None:
+        """Test cli_arg_parsers with LoRA config vs CLI parsing."""
         # Create a config file with LoRA values
         config_data = {
             "name": "test_lora_config",
@@ -584,7 +580,7 @@ class TestMAXConfigNamespaceConversion:
 
             # Load config from file
             config = LoRAConfig.from_config_file(f.name)
-            config_namespace = config.cli_parse_args()
+            parser = config.cli_arg_parsers()
 
             # Manually create CLI parser for LoRA args
             parser = argparse.ArgumentParser()
@@ -603,6 +599,7 @@ class TestMAXConfigNamespaceConversion:
                 "--max-lora-rank",
                 "64",
             ]
+            config_namespace = parser.parse_args(cli_args)
             cli_namespace = parser.parse_args(cli_args)
 
             # Both should produce identical values
@@ -622,8 +619,8 @@ class TestMAXConfigNamespaceConversion:
                 == 64
             )
 
-    def test_cli_parse_args_vs_config_file_sampling(self) -> None:
-        """Test cli_parse_args with sampling config vs CLI parsing."""
+    def test_cli_arg_parsers_vs_config_file_sampling(self) -> None:
+        """Test cli_arg_parsers with sampling config vs CLI parsing."""
         # Create a config file with sampling values
         config_data = {
             "name": "test_sampling_config",
@@ -639,16 +636,17 @@ class TestMAXConfigNamespaceConversion:
 
             # Load config from file
             config = SamplingConfig.from_config_file(f.name)
-            config_namespace = config.cli_parse_args()
+            parser = config.cli_arg_parsers()
+            config_namespace = parser.parse_args([])
 
             assert config_namespace.in_dtype == DType.float16
             assert config_namespace.out_dtype == DType.bfloat16
 
-    def test_cli_parse_args_with_defaults(self) -> None:
-        """Test cli_parse_args preserves defaults when no CLI args provided."""
+    def test_cli_arg_parsers_with_defaults(self) -> None:
+        """Test cli_arg_parsers preserves defaults when no CLI args provided."""
         # Create default config
         config = TestConfig()  # Using all defaults
-        config_namespace = config.cli_parse_args()
+        parser = config.cli_arg_parsers()
 
         # Manually create CLI parser with same defaults
         parser = argparse.ArgumentParser()
@@ -658,6 +656,7 @@ class TestMAXConfigNamespaceConversion:
 
         # Parse empty CLI args (all defaults)
         cli_args: list[str] = []
+        config_namespace = parser.parse_args(cli_args)
         cli_namespace = parser.parse_args(cli_args)
 
         # Both should have identical default values
@@ -669,10 +668,11 @@ class TestMAXConfigNamespaceConversion:
         assert config_namespace.test_int == cli_namespace.test_int == 42
         assert config_namespace.test_bool == cli_namespace.test_bool is True
 
-    def test_cli_parse_args_field_name_conversion(self) -> None:
+    def test_cli_arg_parsers_field_name_conversion(self) -> None:
         """Test that field names use Python naming in namespace."""
         config = KVCacheConfig()
-        namespace = config.cli_parse_args()
+        parser = config.cli_arg_parsers()
+        namespace = parser.parse_args([])
 
         # Field names should use underscores (Python convention)
         assert hasattr(namespace, "cache_strategy")
@@ -682,9 +682,9 @@ class TestMAXConfigNamespaceConversion:
         assert not hasattr(namespace, "cache-strategy")
         assert not hasattr(namespace, "kv-cache-page-size")
 
-    def test_cli_parse_args_standalone_script_pattern(self) -> None:
+    def test_cli_arg_parsers_standalone_script_pattern(self) -> None:
         """Test the standalone script usage pattern."""
-        # Test the real-world pattern: config.cli_parse_args() for script usage
+        # Test the real-world pattern: config.cli_arg_parsers() for script usage
         configs = [
             KVCacheConfig(),
             SamplingConfig(),
@@ -693,7 +693,8 @@ class TestMAXConfigNamespaceConversion:
         ]
 
         for config in configs:
-            namespace = config.cli_parse_args()
+            parser = config.cli_arg_parsers()
+            namespace = parser.parse_args([])
 
             # Should be proper argparse.Namespace
             assert isinstance(namespace, argparse.Namespace)
