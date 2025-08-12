@@ -927,7 +927,7 @@ fn _apply_mask[
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
 
-            if (not not_last_iter or token_gen) and mask_t.mask_out_of_bound:
+            if (not not_last_iter or token_gen) and mask_t.check_oob_after_mask:
                 var bound_y = (
                     kv_tile_start_row
                     + kv_tile_num_rows if token_gen else num_keys
