@@ -1131,29 +1131,62 @@ def _detect_hf_flakes(
         # 4xx status codes indicate client error.
         return 400 <= exc.response.status_code < 500
 
+    def get_all_exceptions_in_chain(
+        exc: Exception,
+    ) -> list[Exception]:
+        """Gets all exceptions in the exception chain."""
+        to_visit = [exc]
+        visited = set()
+        all_exceptions = []
+
+        while to_visit:
+            current_exc = to_visit.pop(0)
+
+            if id(current_exc) in visited:
+                continue
+            visited.add(id(current_exc))
+
+            all_exceptions.append(current_exc)
+
+            cause = current_exc.__cause__
+            if cause is not None and isinstance(cause, Exception):
+                to_visit.append(cause)
+
+            context = current_exc.__context__
+            if context is not None and isinstance(context, Exception):
+                to_visit.append(context)
+
+        return all_exceptions
+
     @functools.wraps(inner)
     def wrapper(*args, **kwargs):
         try:
             return inner(*args, **kwargs)
-        except requests.RequestException as exc:
-            if (
-                exc.request is not None
-                and exc.request.url is not None
-                and "huggingface.co" in exc.request.url
-                and not is_client_error(exc)
-            ):
-                # This is probably a Hugging Face flake.
-                print(
-                    "Seems like a Hugging Face flake has occurred:",
-                    file=sys.stderr,
-                )
-                traceback.print_exc()
-                print(
-                    "-- End of Hugging Face flake traceback --", file=sys.stderr
-                )
-                raise Flake("Hugging Face API flake detected") from exc
-            else:
-                raise
+        except Exception as exc:
+            request_exceptions = [
+                e
+                for e in get_all_exceptions_in_chain(exc)
+                if isinstance(e, requests.RequestException)
+            ]
+            for req_exc in request_exceptions:
+                if (
+                    req_exc.request is not None
+                    and req_exc.request.url is not None
+                    and "huggingface.co" in req_exc.request.url
+                    and not is_client_error(req_exc)
+                ):
+                    # This is probably a Hugging Face flake.
+                    print(
+                        "Seems like a Hugging Face flake has occurred:",
+                        file=sys.stderr,
+                    )
+                    traceback.print_exc()
+                    print(
+                        "-- End of Hugging Face flake traceback --",
+                        file=sys.stderr,
+                    )
+                    raise Flake("Hugging Face API flake detected") from exc
+            raise
 
     return wrapper
 
