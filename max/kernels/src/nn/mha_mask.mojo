@@ -118,11 +118,8 @@ trait MHAMask:
     Does the mask require `log2e` to be applied after the mask, or
     can it be fused with the scaling?
     """
-    alias check_oob_after_mask: Bool
-    """
-    Should we check and set out of bounds elements to -inf?
-    """
-    alias mask_safe_oob: Bool
+    alias mask_out_of_bound: Bool
+    alias mask_safe_out_of_bounds: Bool
     """
     Is the mask safe to read out of bounds?
     """
@@ -173,8 +170,8 @@ struct CausalMask(Copyable, MHAMask, Movable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     alias apply_log2e_after_mask: Bool = False
-    alias check_oob_after_mask: Bool = is_nvidia_gpu()
-    alias mask_safe_oob: Bool = True
+    alias mask_out_of_bound: Bool = is_nvidia_gpu()
+    alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
     @always_inline
@@ -258,8 +255,8 @@ struct NullMask(Copyable, MHAMask, Movable):
     """Mask that's effectively a noop."""
 
     alias apply_log2e_after_mask: Bool = False
-    alias check_oob_after_mask: Bool = True
-    alias mask_safe_oob: Bool = True
+    alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
     @always_inline
@@ -313,8 +310,8 @@ struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
     """
 
     alias apply_log2e_after_mask: Bool = False
-    alias check_oob_after_mask: Bool = is_nvidia_gpu()
-    alias mask_safe_oob: Bool = True
+    alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
 
     @always_inline
@@ -425,8 +422,8 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
     """
 
     alias apply_log2e_after_mask: Bool = False
-    alias check_oob_after_mask: Bool = is_nvidia_gpu()
-    alias mask_safe_oob: Bool = True
+    alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
 
     @always_inline
@@ -540,8 +537,8 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
     """Mask that's backed by a materialized tensor."""
 
     alias apply_log2e_after_mask: Bool = True
-    alias check_oob_after_mask: Bool = True
-    alias mask_safe_oob: Bool = False
+    alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = False
     alias check_mask_during_decoding: Bool = True
 
     alias MaskType = NDBuffer[dtype_, rank_, MutableAnyOrigin, shape_]
@@ -644,8 +641,8 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     """Mask that's the AND of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias check_oob_after_mask: Bool = T.check_oob_after_mask or S.check_oob_after_mask
-    alias mask_safe_oob: Bool = T.mask_safe_oob and S.mask_safe_oob
+    alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
 
     @always_inline
@@ -695,8 +692,8 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     """Mask that's the OR of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias check_oob_after_mask: Bool = T.check_oob_after_mask and S.check_oob_after_mask
-    alias mask_safe_oob: Bool = T.mask_safe_oob and S.mask_safe_oob
+    alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
 
     @always_inline
