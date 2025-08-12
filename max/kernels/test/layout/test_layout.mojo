@@ -35,6 +35,7 @@ from layout.layout import (
 )
 from testing import assert_equal
 from utils import IndexList
+from buffer import DimList, Dim
 
 
 # CHECK-LABEL: test_layout_basic
@@ -93,6 +94,36 @@ fn test_layout_basic() raises:
     assert_equal(
         Layout.row_major(IndexList[2](2, 3)),
         Layout.row_major(2, 3),
+    )
+
+    # testing col major
+    var dl = DimList(3, 64, 128)
+
+    assert_equal(
+        Layout.col_major[3](dl),
+        Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
+    )
+
+    assert_equal(
+        Layout.col_major[3](DimList(Dim(), 64, 128)),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, 64, 128),
+            IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        ),
+    )
+
+    var idx_list = IndexList[3](32, 8, 16)
+    assert_equal(
+        Layout.col_major[3](idx_list),
+        Layout(IntTuple(32, 8, 16), IntTuple(1, 32, 256)),
+    )
+
+    assert_equal(
+        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, 8, 16),
+            IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        ),
     )
 
 

@@ -466,6 +466,110 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
+    fn col_major[rank: Int](dims: DimList) -> Layout:
+        """Creates a col-major layout from a DimList with compile-time rank.
+
+        This method creates a col-major layout where the first dimension varies fastest in memory.
+        It handles both known and unknown dimensions at compile time, properly calculating
+        strides for each dimension. If any dimension is unknown, subsequent strides will
+        also be marked as unknown.
+
+        Parameters:
+            rank: The compile-time rank (number of dimensions) of the layout.
+
+        Args:
+            dims: A DimList containing the dimensions of the layout.
+
+        Returns:
+            A col-major Layout with the specified dimensions and computed strides.
+
+        Example:
+
+            ```mojo
+            from layout import Layout
+            from layout.layout import DimList
+
+            # Create a col-major layout with compile-time rank
+            var dims = DimList(3, 4)
+            var layout = Layout.col_major[2](dims)
+            # Result: Layout with shape (3,4) and stride (1,3)
+            ```
+            .
+        """
+        var c_stride = 1
+        var shape = IntTuple()
+        var stride = IntTuple(c_stride)
+
+        @parameter
+        for i in range(rank):
+            var dim = dims.get[i]()
+            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
+
+        var unknown_flag = False
+
+        @parameter
+        for i in range(rank - 1):
+            var dim = dims.get[i]()
+            if not dims.has_value[i]():
+                unknown_flag = True
+            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
+            c_stride *= dim
+
+        return Layout(shape, stride)
+
+    @staticmethod
+    fn col_major[rank: Int](tuple: IndexList[rank]) -> Layout:
+        """Creates a col-major layout from a IndexList with compile-time rank.
+
+        This method creates a col-major layout where the first dimension varies fastest in memory.
+        It handles both known and unknown dimensions at compile time, properly calculating
+        strides for each dimension. If any dimension is unknown, subsequent strides will
+        also be marked as unknown.
+
+        Parameters:
+            rank: The compile-time rank (number of dimensions) of the layout.
+
+        Args:
+            tuple: An IndexList containing the dimensions of the layout.
+
+        Returns:
+            A col-major Layout with the specified dimensions and computed strides.
+
+        Example:
+
+            ```mojo
+            from layout import Layout
+            from utils import IndexList
+
+            # Create a row-major layout with compile-time rank
+            var idx_list = IndexList[2](3, 4)
+            var layout = Layout.col_major[2](idx_list)
+            # Result: Layout with shape (3,4) and stride (1,3)
+            ```
+        """
+        var c_stride = 1
+        var shape = IntTuple()
+        var stride = IntTuple(c_stride)
+
+        @parameter
+        for i in range(rank):
+            shape.append(tuple[i])
+
+        var unknown_flag = False
+
+        @parameter
+        for i in range(rank - 1):
+            var dim = tuple[i]
+
+            if dim == UNKNOWN_VALUE:
+                unknown_flag = True
+
+            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
+            c_stride *= dim
+
+        return Layout(shape, stride)
+
+    @staticmethod
     fn row_major(*dims: Int) -> Layout:
         """Creates a row-major layout with the specified dimensions.
 
@@ -546,7 +650,7 @@ struct Layout(
 
     @staticmethod
     fn row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
-        """Creates a row-major layout from a DimList with compile-time rank.
+        """Creates a row-major layout from a IndexList with compile-time rank.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
         It handles both known and unknown dimensions at compile time, properly calculating
@@ -566,11 +670,11 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from layout.layout import DimList
+            from utils import IndexList
 
             # Create a row-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.row_major[2](dims)
+            var idx_list = IndexList[2](3, 4)
+            var layout = Layout.row_major[2](idx_list)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
             .
@@ -579,6 +683,8 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
+        var unknown_flag = False
+
         @parameter
         for i in range(rank):
             shape.append(tuple[i])
@@ -586,7 +692,11 @@ struct Layout(
         @parameter
         for i in range(rank - 1):
             var dim = tuple[rank - 1 - i]
-            stride.append(dim * c_stride)
+
+            if dim == UNKNOWN_VALUE:
+                unknown_flag = True
+
+            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
             c_stride *= dim
 
         return Layout(shape, reverse(stride))
