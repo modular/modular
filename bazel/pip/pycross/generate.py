@@ -15,6 +15,7 @@
 
 import os
 import sys
+from typing import Any
 
 import tomllib  # type: ignore
 from package import Package
@@ -27,7 +28,7 @@ _ALLOWED_DUPLICATE_PACKAGES = {
 }
 
 
-def _should_ignore(package):  # noqa: ANN001
+def _should_ignore(package: dict[str, Any]) -> bool:
     # Ignores pypi torch versions because uv is too aggressive about pulling
     # those in even though a group will always be specified.
     return package["name"] == "bazel-pyproject" or (
