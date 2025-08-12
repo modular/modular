@@ -24,7 +24,7 @@ PINS = {
     "editdistance": "editdistance@0.8.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
-    "fastapi": "fastapi@0.115.3",
+    "fastapi": "fastapi@0.116.1",
     "faster-whisper": "faster-whisper@1.1.1",
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
@@ -109,7 +109,7 @@ PINS = {
     "sse-starlette": "sse-starlette@2.1.2",
     "sseclient-py": "sseclient-py@1.8.0",
     "stack-pr": "stack-pr@0.1.3",
-    "starlette": "starlette@0.41.2",
+    "starlette": "starlette@0.47.2",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
     "termcolor": "termcolor@2.5.0",
@@ -1298,21 +1298,21 @@ def targets():
         wheel = ":_wheel_executing@2.1.0",
     )
 
-    _fastapi_0_115_3_deps = [
+    _fastapi_0_116_1_deps = [
         ":pydantic@2.10.4",
-        ":starlette@0.41.2",
+        ":starlette@0.47.2",
         ":typing-extensions@4.12.2",
     ]
 
     native.alias(
-        name = "_wheel_fastapi@0.115.3",
-        actual = "@pycross_lock_file_wheel_fastapi_0.115.3_py3_none_any//file",
+        name = "_wheel_fastapi@0.116.1",
+        actual = "@pycross_lock_file_wheel_fastapi_0.116.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "fastapi@0.115.3",
-        deps = _fastapi_0_115_3_deps,
-        wheel = ":_wheel_fastapi@0.115.3",
+        name = "fastapi@0.116.1",
+        deps = _fastapi_0_116_1_deps,
+        wheel = ":_wheel_fastapi@0.116.1",
     )
 
     _faster_whisper_1_1_1_deps = [
@@ -6001,7 +6001,7 @@ def targets():
 
     _sse_starlette_2_1_2_deps = [
         ":anyio@4.4.0",
-        ":starlette@0.41.2",
+        ":starlette@0.47.2",
         ":uvicorn@0.30.6",
     ]
 
@@ -6053,9 +6053,36 @@ def targets():
         wheel = ":_wheel_stack-pr@0.1.3",
     )
 
-    _starlette_0_41_2_deps = [
+    _starlette_0_47_2_deps = [
         ":anyio@4.4.0",
     ] + select({
+        ":_env_python_3.10_aarch64-apple-darwin": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.11_aarch64-apple-darwin": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.12_aarch64-apple-darwin": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":typing-extensions@4.12.2",
+        ],
         ":_env_python_3.9_aarch64-apple-darwin": [
             ":typing-extensions@4.12.2",
         ],
@@ -6069,14 +6096,14 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_starlette@0.41.2",
-        actual = "@pycross_lock_file_wheel_starlette_0.41.2_py3_none_any//file",
+        name = "_wheel_starlette@0.47.2",
+        actual = "@pycross_lock_file_wheel_starlette_0.47.2_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "starlette@0.41.2",
-        deps = _starlette_0_41_2_deps,
-        wheel = ":_wheel_starlette@0.41.2",
+        name = "starlette@0.47.2",
+        deps = _starlette_0_47_2_deps,
+        wheel = ":_wheel_starlette@0.47.2",
     )
 
     _sympy_1_13_3_deps = [
@@ -9561,12 +9588,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_fastapi_0.115.3_py3_none_any",
+        name = "pycross_lock_file_wheel_fastapi_0.116.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/57/95/4c5b79e7ca1f7b372d16a32cad7c9cc6c3c899200bed8f45739f4415cfae/fastapi-0.115.3-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/e5/47/d63c60f59a59467fda0f93f46335c9d18526d7071f025cb5b89d5353ea42/fastapi-0.116.1-py3-none-any.whl",
         ],
-        sha256 = "8035e8f9a2b0aa89cea03b6c77721178ed5358e1aea4cd8570d9466895c0638c",
-        downloaded_file_path = "fastapi-0.115.3-py3-none-any.whl",
+        sha256 = "c46ac7c312df840f0c9e220f7964bada936781bc4e2e6eb71f1c4d7553786565",
+        downloaded_file_path = "fastapi-0.116.1-py3-none-any.whl",
     )
 
     maybe(
@@ -17211,12 +17238,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_starlette_0.41.2_py3_none_any",
+        name = "pycross_lock_file_wheel_starlette_0.47.2_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/54/43/f185bfd0ca1d213beb4293bed51d92254df23d8ceaf6c0e17146d508a776/starlette-0.41.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/f7/1f/b876b1f83aef204198a42dc101613fefccb32258e5428b5f9259677864b4/starlette-0.47.2-py3-none-any.whl",
         ],
-        sha256 = "fbc189474b4731cf30fcef52f18a8d070e3f3b46c6a04c97579e85e6ffca942d",
-        downloaded_file_path = "starlette-0.41.2-py3-none-any.whl",
+        sha256 = "c5847e96134e5c5371ee9fac6fdf1a67336d5815e09eb2a01fdb57a351ef915b",
+        downloaded_file_path = "starlette-0.47.2-py3-none-any.whl",
     )
 
     maybe(

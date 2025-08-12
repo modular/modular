@@ -280,12 +280,12 @@ class _TransactionRecordingContext:
             path = raw_path.decode("utf-8")
         else:
             path = urllib.parse.quote(self._scope["path"])
-            # If raw_path is not provided, it's not possible to distinguish
-            # between having _no_ query string (question mark not present at
-            # all) and having an _empty_ query string (question mark followed
-            # by nothing).  We assume the former is more likely.
-            if query_string := self._scope.get("query_string"):
-                path += "?" + query_string.decode("utf-8")
+        # It's not possible to distinguish between having _no_ query string
+        # (question mark not present at all) and having an _empty_ query string
+        # (question mark followed by nothing). We assume the former is more
+        # likely.
+        if query_string := self._scope.get("query_string"):
+            path += "?" + query_string.decode("utf-8")
         request = schema.Request(
             start_timestamp=self._start_timestamp,
             end_timestamp=self._request_done_timestamp,
