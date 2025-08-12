@@ -234,7 +234,7 @@ public:
   class MaterializationScope {
   public:
     /// Convert a single memory reference.
-    Value convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
+    ErrorOr<Value> convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
 
     /// Get the parent converter.
     InterpreterMemoryConverter &getParent() { return imc; }
@@ -244,8 +244,9 @@ public:
 
     /// Ensure the blobs within the memory space have been materialized and
     /// then return them.
-    MaterializedBlob &getOrMaterialize(ImplicitLocOpBuilder &b,
-                                       MemorySpaceAttr space, size_t refIndex);
+    ErrorOr<MaterializedBlob &> getOrMaterialize(ImplicitLocOpBuilder &b,
+                                                 MemorySpaceAttr space,
+                                                 size_t refIndex);
     /// Get a pointer into the blob at the given offset.
     static Value getBlobPointer(ImplicitLocOpBuilder &b, Type ptrType,
                                 MaterializedBlob &value, int64_t index,

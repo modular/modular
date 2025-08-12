@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-llvm -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-kgen-to-llvm -split-input-file --verify-diagnostics | FileCheck %s
 
 #mem_heap = #interp.memory_handle<32, "0xEFBE">
 #mem_stack = #interp.memory_handle<32, "0xADDE">
@@ -168,7 +168,7 @@ kgen.func @ptr_inside_blob() {
 
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
     (#large, stack, [(6, 1, 1)], []),
-    (#bar, stack, [], [])
+    (#bar, heap, [], [])
   ], []}, 0, 0>>
   kgen.return
 }
@@ -176,6 +176,22 @@ kgen.func @ptr_inside_blob() {
 // CHECK: llvm.mlir.global internal constant [[MEM_GLOBAL]](#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
 // CHECK: llvm.mlir.global internal constant [[MEM_STRING]]("hello world")
 
+}
+
+// -----
+
+#bar2 = #interp.memory_handle<16, "0x0000">
+#large2 = #interp.memory_handle<16, "0x000102030405060708090001020304050607080900">
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=16>} {
+kgen.func @indirect_stack_ref() {
+  // expected-error@+1 {{indirect access to interpreter stack memory}}
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[
+    (#large2, stack, [(6, 1, 1)], []),
+    (#bar2, stack, [], [])
+  ], []}, 0, 0>>
+  kgen.return
+}
 }
 
 // -----

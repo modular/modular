@@ -507,13 +507,16 @@ Value VariantHelper::materializeLLVMUnion(
 // Interpreter Memory Conversion
 //===----------------------------------------------------------------------===//
 
-Value InterpreterMemoryConverter::MaterializationScope::convertMemRef(
+ErrorOr<Value> InterpreterMemoryConverter::MaterializationScope::convertMemRef(
     ImplicitLocOpBuilder &b, MemRefAttr ref) {
-  MaterializedBlob &materialized =
+  ErrorOr<MaterializedBlob &> materialized =
       getOrMaterialize(b, ref.getModel().getMemory(), ref.getIndex());
 
-  Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()), materialized,
-                             ref.getIndex(), ref.getOffset());
+  if (materialized.isError())
+    return materialized.takeError();
+
+  Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()),
+                             *materialized, ref.getIndex(), ref.getOffset());
   return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);
 }
 
@@ -598,7 +601,7 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
                           align);
 }
 
-InterpreterMemoryConverter::MaterializedBlob &
+ErrorOr<InterpreterMemoryConverter::MaterializedBlob &>
 InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     ImplicitLocOpBuilder &b, MemorySpaceAttr space, size_t refIndex) {
 
@@ -651,19 +654,26 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     }
   };
 
-  std::function<void(const MemoryBlobAttr &)> materializePtrRegionBlobs =
-      [&](const MemoryBlobAttr &blob) {
-        auto ptrIt = blob.getPointerRegions().begin();
-        auto ptrEnd = blob.getPointerRegions().end();
-        for (; ptrIt != ptrEnd; ++ptrIt) {
-          if (materialized.contains(ptrIt->blobIndex))
-            continue;
+  std::function<ErrorOrSuccess(const MemoryBlobAttr &)>
+      materializePtrRegionBlobs =
+          [&](const MemoryBlobAttr &blob) -> ErrorOrSuccess {
+    auto ptrIt = blob.getPointerRegions().begin();
+    auto ptrEnd = blob.getPointerRegions().end();
+    for (; ptrIt != ptrEnd; ++ptrIt) {
+      if (materialized.contains(ptrIt->blobIndex))
+        continue;
 
-          const MemoryBlobAttr &ptrBlob = space[ptrIt->blobIndex];
-          materializeBlob(ptrBlob, ptrIt->blobIndex);
-          materializePtrRegionBlobs(ptrBlob);
-        }
-      };
+      const MemoryBlobAttr &ptrBlob = space[ptrIt->blobIndex];
+      if (ptrBlob.getKind() == MemoryKind::Stack) {
+        return Error("indirect access to interpreter stack memory");
+      }
+      materializeBlob(ptrBlob, ptrIt->blobIndex);
+      ErrorOrSuccess result = materializePtrRegionBlobs(ptrBlob);
+      if (result.isError())
+        return result.takeError();
+    }
+    return success();
+  };
 
   // Get the current blob for the memref.
   const MemoryBlobAttr &blob = space[refIndex];
@@ -671,7 +681,9 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
   materializeBlob(blob, refIndex);
   // Materialize pointer region blobs and recurse to
   // materialize each blob's pointer region.
-  materializePtrRegionBlobs(blob);
+  ErrorOrSuccess mprbResult = materializePtrRegionBlobs(blob);
+  if (mprbResult.isError())
+    return mprbResult.takeError();
 
   // Perform memcpy of non-global blobs while remapping pointer regions.
   int64_t pointerSize = imc.tc.getTarget().getDataLayout().getPointerSize();
@@ -1051,7 +1063,8 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      auto loweredValue = convertParameterToLLVM(b, tc, imc, scope, value);
+      ErrorOr<Value> loweredValue =
+          convertParameterToLLVM(b, tc, imc, scope, value);
       if (loweredValue.isError())
         return loweredValue;
       aggregate =
@@ -1062,7 +1075,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
 
   // Bitpack union constants.
   if (auto unionAttr = dyn_cast<POP::UnionAttr>(attr)) {
-    auto loweredValue =
+    ErrorOr<Value> loweredValue =
         convertParameterToLLVM(b, tc, imc, scope, unionAttr.getValue());
     if (loweredValue.isError())
       return loweredValue;
@@ -1090,7 +1103,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      auto element = convertParameterToLLVM(b, tc, imc, scope, value);
+      ErrorOr<Value> element = convertParameterToLLVM(b, tc, imc, scope, value);
       if (element.isError())
         return element;
 
