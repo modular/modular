@@ -25,6 +25,7 @@ from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
 from gpu.warp import _FULL_MASK
+from gpu._utils import to_i32
 from memory import bitcast
 from memory.pointer import _GPUAddressSpace
 
@@ -1098,11 +1099,25 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
           dtype == DType.int32,
           "This intrinsic is only defined for i32 on NVIDIA GPUs"
       ]()
-      var result = llvm_intrinsic[
-          "llvm.nvvm.vote.ballot.sync",
-          Int32
-      ](Int32(_FULL_MASK), value)
-      return result.cast[dtype]()
+      var mask_index = __mlir_op.`pop.cast_from_builtin`[
+          _type = __mlir_type.`!pop.scalar<index>`
+      ](_FULL_MASK.value)
+      # TODO: can be replaced with `to_i32` from https://github.com/modular/modular/blob/main/mojo/stdlib/stdlib/gpu/_utils.mojo
+      var mask_i32 = __mlir_op.`pop.cast`[
+              _type = SIMD[DType.int32, 1]._mlir_type,
+      ](mask_index)
+      var mask = __mlir_op.`pop.cast_to_builtin`[
+          _type = __mlir_type.`i32`
+      ](mask_i32)
+
+      var result = __mlir_op.`nvvm.vote.sync`[
+          _type=__mlir_type.`i32`,
+          kind=__mlir_attr.`#nvvm.vote_sync_kind ballot`,
+      ](mask, value.value)
+
+      return rebind[Scalar[dtype]](Int32(__mlir_op.`pop.cast_from_builtin`[
+          _type = __mlir_type.`!pop.scalar<si32>`
+      ](result)))
 
 
 # ===-----------------------------------------------------------------------===#
