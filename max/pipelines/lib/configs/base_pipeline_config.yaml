@@ -22,61 +22,36 @@
 
 # KV Cache Configuration - matches fields in KVCacheConfig
 kv_cache_config:
-  cache_strategy: paged
-  kv_cache_page_size: 512
-  enable_prefix_caching: true
-  device_memory_utilization: 0.85
+  cache_strategy: model_default
+  kv_cache_page_size: 128
+  enable_prefix_caching: false
+  enable_kvcache_swapping_to_host: false
+  device_memory_utilization: 0.9
+  host_kvcache_swap_space_gb: 50.0
 
 # Sampling Configuration - matches fields in SamplingConfig  
 sampling_config:
-  in_dtype: float16
+  in_dtype: float32
   out_dtype: float32
-  enable_structured_output: true
+  enable_structured_output: false
   enable_variable_logits: false
-  do_penalties: true
+  do_penalties: false
   enable_min_tokens: false
 
 # Profiling Configuration - matches fields in ProfilingConfig
 profiling_config:
-  gpu_profiling_mode: off
+  gpu_profiling: off
 
 # LoRA Configuration - matches fields in LoRAConfig
 lora_config:
-  lora_paths:
-    - "/models/lora/task_specific_adapter"
-    - "/models/lora/domain_adapter" 
-  max_lora_rank: 32
-  max_num_loras: 50
+  enable_lora: false
+  lora_paths: []
+  max_lora_rank: 16
+  max_num_loras: 100
 
 # Example future config section (would be auto-discovered if the class exists)
+# TODO: Add PipelineConfig and MAXModelConfig
 # pipeline_config:
 #   engine: None
 #   max_length: 2048
 #   batch_size: 32
-
-# Example sampling parameters with field metadata
-# sampling_params:
-#   top_k: 1
-#   top_p: 1.0
-#   min_p: 0.05
-#   temperature: 0.7
-#   frequency_penalty: 0.0
-#   presence_penalty: 0.0
-#   ignore_eos: false
-#   max_new_tokens: 
-#     value: null
-#     dtype: int
-#     description: "Maximum number of new tokens to generate"
-#   seed:
-#     value: 42
-#     dtype: int
-#     tags:
-#       - "randomization"
-#       - "reproducibility" 
-#     docstring: "The seed to use for the random number generator"
-
-# Alternative metadata format examples:
-# seed: 42
-# seed_dtype: int
-# seed_tags: ["randomization", "reproducibility"]
-# seed_docstring: "The seed to use for the random number generator" 
