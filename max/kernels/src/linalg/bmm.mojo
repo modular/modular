@@ -44,7 +44,9 @@ from .utils import (
     partition_work,
     use_i8mm_fn,
 )
-
+from linalg.matmul_sm100_blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
+)
 from ._multistage_gemm_gpu import multistage_gemm_kernel
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout, IntTuple
 from buffer import Dim
@@ -52,8 +54,15 @@ from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
 )
-
+from utils.static_tuple import StaticTuple
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from sys import sizeof
+from logger import Logger
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from layout.tma_async import (
+    TMATensorTile,
+    create_tma_tile,
+)
 
 alias elementwise_epilogue_type = fn[
     c_type: DType,
@@ -979,3 +988,298 @@ fn batched_matmul_shape[
     output_shape[rank - 1] = b_buff.dim(rank - 1)
 
     return output_shape
+
+
+alias _2D_layout[layout: Layout] = Layout.row_major(
+    layout.shape[1].value(),
+    layout.shape[2].value(),
+)
+
+
+@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+fn _bmm_sm100_blockwise_scaled_fp8_kernel[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    accum_type: DType,
+    a_layout: Layout,
+    c_layout: Layout,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    a_scales_tile_layout: Layout,
+    a_desc_layout: Layout,
+    b_desc_layout: Layout,
+    a_scales_desc_layout: Layout,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    transpose_b: Bool = True,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    num_threads: UInt = 128,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    c_tensor: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_scales_tma_op: TMATensorTile[
+        accum_type, a_scales_tile_layout, a_scales_desc_layout
+    ],
+    b_scales_tensor: LayoutTensor[
+        accum_type, b_scales_layout, MutableAnyOrigin
+    ],
+    num_iters: UInt,
+):
+    alias c_2d_layout: Layout = _2D_layout[c_layout]
+    alias b_scales_2d_layout: Layout = _2D_layout[b_scales_layout]
+
+    var M = c_tensor.dim(1)
+    var N = c_tensor.dim(2)
+
+    var c_ptr = c_tensor.ptr + (block_idx.z * M * N)
+    var b_scales_ptr = b_scales_tensor.ptr + (
+        block_idx.z * b_scales_tensor.dim(1) * b_scales_tensor.dim(2)
+    )
+
+    var c = LayoutTensor[c_type, c_2d_layout, MutableAnyOrigin](
+        c_ptr,
+        RuntimeLayout[c_2d_layout].row_major(
+            IndexList[2](c_tensor.dim(1), c_tensor.dim(2)),
+        ),
+    )
+
+    var b_scales = LayoutTensor[
+        accum_type, b_scales_2d_layout, MutableAnyOrigin
+    ](
+        b_scales_ptr,
+        RuntimeLayout[b_scales_2d_layout].row_major(
+            IndexList[2](b_scales_tensor.dim(1), b_scales_tensor.dim(2)),
+        ),
+    )
+
+    @parameter
+    fn elementwise_epilogue_fn_wrapper[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_epilogue = elementwise_lambda_fn.value()
+            var batch_coords = IndexList[3](Int(block_idx.z))
+            batch_coords[2] = out_coords[1]
+            batch_coords[1] = out_coords[0]
+            elementwise_epilogue(batch_coords, val)
+
+    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
+        a_type,
+        b_type,
+        c_type,
+        accum_type,
+        a_layout,
+        __type_of(c).layout,
+        a_scales_layout,
+        __type_of(b_scales).layout,
+        __type_of(a_tma_op).layout,
+        __type_of(b_tma_op).layout,
+        __type_of(a_scales_tma_op).layout,
+        __type_of(a_tma_op).desc_layout,
+        __type_of(b_tma_op).desc_layout,
+        __type_of(a_scales_tma_op).desc_layout,
+        block_tile_shape,
+        mma_shape,
+        transpose_b=True,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        num_threads=num_threads,
+        elementwise_lambda_fn = OptionalReg[matmul_elementwise_epilogue_type](
+            elementwise_epilogue_fn_wrapper
+        ) if elementwise_lambda_fn else None,
+    ](
+        a_tma_op,
+        b_tma_op,
+        c,
+        a_scales_tma_op,
+        b_scales,
+        num_iters,
+    )
+
+
+fn bmm_sm100_blockwise_scaled_fp8[
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    accum_type: DType,
+    *,
+    transpose_b: Bool,
+    umma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout, *_, **_],
+    a: LayoutTensor[a_type, a_layout, *_, **_],
+    b: LayoutTensor[b_type, b_layout, *_, **_],
+    a_scales: LayoutTensor[accum_type, a_scales_layout, *_, **_],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, *_, **_],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        transpose_b,
+        "Only support transposed B",
+    ]()
+
+    constrained[
+        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
+        "Only support bfloat16 and float8_e4m3fn",
+    ]()
+
+    constrained[
+        c.rank == 3,
+        "Only support rank 3 tensors",
+    ]()
+
+    constrained[
+        c.rank == b.rank and c.rank == a.rank,
+        "all tensors must have the same rank",
+    ]()
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+
+    var batch_size = c.dim(0)
+    var M = c.dim(1)
+    var N = c.dim(2)
+    var K = a.dim(2)
+
+    var a_scales_1 = a_scales.dim(2)
+    debug_assert(
+        a_scales_1 == M, "a_scales first non batch dimension must be equal to M"
+    )
+
+    var a_scales_0 = a_scales.dim(1)
+    debug_assert(
+        K % a_scales_0 == 0 and (K // a_scales_0) == BK,
+        (
+            "K must be divisible by a_scales.dim(1) and BK must be equal to K"
+            " // a_scales.dim(1)"
+        ),
+    )
+
+    var b_scales_0 = b_scales.dim(1)
+    var b_scales_1 = b_scales.dim(2)
+    debug_assert(
+        (N % b_scales_0 == 0 and (N // b_scales_0) == BK)
+        and (K % b_scales_1 == 0 and (K // b_scales_1) == BK),
+        (
+            "N must be divisible by b_scales.dim(1) and BK must be equal to N"
+            " // b_scales.dim(1) and K must be divisible by b_scales.dim(2) and"
+            " BK must be equal to K // b_scales.dim(2)"
+        ),
+    )
+
+    var logger = Logger()
+    logger.info(
+        "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
+        " 128)"
+    )
+    logger.info(
+        "Problem Shape: MNK=[", batch_size, ", ", M, ", ", N, ", ", K, "]"
+    )
+    logger.info(
+        "A Scales Shape: [",
+        a_scales.dim(1),
+        ", ",
+        a_scales.dim(2),
+        "]",
+    )
+    logger.info(
+        "B Scales Shape: [",
+        b_scales.dim(1),
+        ", ",
+        b_scales.dim(2),
+        "]",
+    )
+
+    var a_tma_op = create_tma_tile[
+        a_type,
+        3,
+        Index(1, BM, BK),
+        swizzle_mode=a_swizzle,
+        __tile_layout = Layout.row_major(1, BM, BK),
+    ](ctx, a)
+
+    alias b_tile_shape = Index(1, BN, BK) if transpose_b else Index(1, BK, BN)
+
+    var b_tma_op = create_tma_tile[
+        b_type,
+        3,
+        b_tile_shape,
+        is_k_major=transpose_b,
+        swizzle_mode=b_swizzle,
+        __tile_layout = Layout.row_major(b_tile_shape),
+    ](ctx, b)
+
+    var a_scales_tma_op = create_tma_tile[
+        accum_type,
+        3,
+        Index(1, 1, BM),
+        __tile_layout = Layout.row_major(1, 1, BM),
+        __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
+    ](ctx, a_scales)
+    # NOTE: desc layout must be specified otherwise a constraint fails
+
+    alias smem_use = (
+        BM * sizeof[a_type]() + BN * sizeof[b_type]()
+    ) * BK + 24 + sizeof[accum_type]() * BM
+
+    alias block_dim = 128
+
+    alias kernel = _bmm_sm100_blockwise_scaled_fp8_kernel[
+        a_type,
+        b_type,
+        c_type,
+        accum_type,
+        __type_of(a).layout,
+        __type_of(c).layout,
+        __type_of(a_scales).layout,
+        __type_of(b_scales).layout,
+        __type_of(a_tma_op).layout,
+        __type_of(b_tma_op).layout,
+        __type_of(a_scales_tma_op).layout,
+        __type_of(a_tma_op).desc_layout,
+        __type_of(b_tma_op).desc_layout,
+        __type_of(a_scales_tma_op).desc_layout,
+        block_tile_shape,
+        umma_shape,
+        transpose_b=True,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        num_threads=block_dim,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function[kernel](
+        a_tma_op,
+        b_tma_op,
+        c,
+        a_scales_tma_op,
+        b_scales,
+        ceildiv(K, BK),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+        block_dim=(block_dim),
+        shared_mem_bytes=Int(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+    )
