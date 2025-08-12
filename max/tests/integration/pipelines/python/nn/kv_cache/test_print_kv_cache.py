@@ -12,10 +12,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
 )
 
 
@@ -23,7 +23,7 @@ from max.nn.kv_cache import (
 class PrintKVCacheModel:
     """Model containing a single print KV cache op."""
 
-    fetch_layer: FetchContinuousBatchingKVCacheCollection
+    fetch_layer: FetchPagedKVCacheCollection
     """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
@@ -43,8 +43,13 @@ class PrintKVCacheModel:
         KVCacheCollection.
         """
         kv_collection = self.fetch_layer(*fetch_args)
+        page_size = self.kv_params.page_size
+        if page_size is None:
+            raise ValueError(
+                "KVCacheParams.page_size cannot be none, when printing."
+            )
         ops.inplace_custom(
-            "mo.print_kv_cache.continuous_batching",
+            "mo.print_kv_cache.paged",
             device=valid_lengths.device,
             values=[
                 valid_lengths,
@@ -58,6 +63,7 @@ class PrintKVCacheModel:
                 "num_heads": self.kv_params.n_kv_heads_per_device,
                 "head_dim": self.kv_params.head_dim,
                 "dtype": self.kv_params.dtype,
+                "page_size": page_size,
             },
         )
 
@@ -86,18 +92,21 @@ def test_print_kv_cache(dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=1,
         max_seq_len=1,
         num_layers=1,
         devices=[CPU()],
         session=InferenceSession(),
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     batch_size = 2
     graph = Graph(

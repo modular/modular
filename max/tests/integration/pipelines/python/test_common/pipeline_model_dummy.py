@@ -312,8 +312,8 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
         SupportedEncoding.gptq: [
             KVCacheStrategy.PAGED,
         ],
-        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=TextTokenizer,

@@ -19,6 +19,7 @@ from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
@@ -239,6 +240,8 @@ def test_cross_attention(
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.prefetch(context, num_steps=1)
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.

@@ -15,10 +15,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     RaggedKVCacheInputs,
 )
 from test_common.context_utils import create_text_context
@@ -28,7 +28,7 @@ from test_common.context_utils import create_text_context
 class RMSNormKeyCacheModel:
     """Model containing a single matmul KV ragged op."""
 
-    fetch_layer: FetchContinuousBatchingKVCacheCollection
+    fetch_layer: FetchPagedKVCacheCollection
     """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
@@ -85,17 +85,20 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
@@ -124,6 +127,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]
@@ -161,17 +165,20 @@ def test_partial_rms_norm_key_cache(
         dtype=dtype,
         n_kv_heads=1,
         head_dim=576,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
@@ -202,6 +209,7 @@ def test_partial_rms_norm_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]
@@ -252,17 +260,20 @@ def test_rms_norm_new_key_cache(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
@@ -293,6 +304,7 @@ def test_rms_norm_new_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
         batch.append(context)
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
@@ -355,17 +367,20 @@ def test_rms_norm_key_cache_dtype_mismatch(
         dtype=kv_dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
@@ -403,17 +418,20 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         dtype=DType.float32,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]
     # This means normalization is applied across all heads for each token
@@ -450,6 +468,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
         batch.append(context)
 
     fetch_args = kv_manager.fetch(batch)[0]

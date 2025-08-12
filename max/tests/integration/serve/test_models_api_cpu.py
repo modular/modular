@@ -23,7 +23,7 @@ from max.serve.schemas.openai import ListModelsResponse, Model
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
         )
     ],

@@ -100,6 +100,7 @@ async def test_prefix_caching_basic() -> None:
     initial_prompt_1 = [10, 11, 12, 13, 14]
     context_1 = create_text_context(np.array(initial_prompt_1))
     kv_manager.external_claim(context_1.request_id)
+    kv_manager.prefetch(context_1, num_steps=6)
 
     # Seq 1: Prefill 10 - 14
     batch = [context_1]
@@ -129,6 +130,7 @@ async def test_prefix_caching_basic() -> None:
     context_2 = create_text_context(np.array(initial_prompt_2))
     batch = [context_2]
     kv_manager.external_claim(context_2.request_id)
+    kv_manager.prefetch(context_2, num_steps=5)
 
     # Seq 2: Prefill 10 - 13
     kv_tuple_list = kv_manager.fetch(batch)
@@ -175,6 +177,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         batch = [create_text_context(prompt)]
         context = batch[0]
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
         _ = kv_manager.fetch(batch)
 
         if i == 0:
@@ -210,6 +213,7 @@ async def test_prefix_caching_with_no_release() -> None:
             prompt = gen_prompt(16)
             batch = [create_text_context(prompt)]
             kv_manager.external_claim(batch[0].request_id)
+            kv_manager.prefetch(batch[0], num_steps=1)
             _ = kv_manager.fetch(batch)
             batch[0].update(42)
             kv_manager.step(batch)
@@ -255,6 +259,7 @@ async def test_prefix_caching_with_random_prompts(
         batch = [create_text_context(prompt)]
         context = batch[0]
         kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=num_steps)
         # This fetch can trigger evictions from the tree.
         _ = kv_manager.fetch(batch, num_steps=num_steps)
         new_tokens = gen_prompt(num_steps)
@@ -284,6 +289,9 @@ async def test_prefix_caching_with_random_prompts(
             context.set_token_indices(start_idx=orig_start_idx)
 
             # This fetch can trigger evictions from the tree.
+            for ctx in batch:
+                kv_manager.prefetch(ctx, num_steps=num_steps)
+
             _ = kv_manager.fetch(batch, num_steps=num_steps)
             new_tokens = gen_prompt(num_steps)
             for tok in new_tokens:
@@ -309,7 +317,10 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
 
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
     batch = [create_text_context(np.array(initial_prompt_1))]
-    kv_manager.external_claim(batch[0].request_id)
+    for context in batch:
+        kv_manager.external_claim(context.request_id)
+        kv_manager.prefetch(context, num_steps=1)
+
     kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [5, 5],
@@ -342,6 +353,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     # Seq 1: Prefill 10 - 14
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
     kv_manager.external_claim(batch[0].request_id)
+    kv_manager.prefetch(batch[0], num_steps=5)
     kv_tuple_list = kv_manager.fetch(batch)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
@@ -381,6 +393,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
     kv_manager.external_claim(batch[0].request_id)
+    kv_manager.prefetch(batch[0], num_steps=5)
     kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
@@ -574,6 +587,8 @@ async def test_prefix_caching_grouped_prefixes(
         request_ids_and_prompts = {
             request_id: batch[request_id].next_tokens for request_id in batch
         }
+        for ctx in ctxs:
+            kv_manager.prefetch(ctx, num_steps=num_steps)
         fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         request_ids_and_new_tokens_batch = model.run(
             request_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps

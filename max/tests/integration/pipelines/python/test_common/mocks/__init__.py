@@ -61,7 +61,7 @@ def retrieve_mock_text_generation_pipeline(
         max_length=max_length,
         device_specs=device_specs,
         quantization_encoding=SupportedEncoding.float32,
-        kv_cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+        kv_cache_strategy=KVCacheStrategy.PAGED,
         enable_structured_output=False,
         gpu_profiling=GPUProfilingMode.OFF,
         eos_prob=eos_prob,

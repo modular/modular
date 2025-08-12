@@ -10,7 +10,6 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
@@ -62,7 +61,7 @@ def mock_llama3_config(mock_hf_config: LlamaConfig) -> Llama3Config:
             dtype=DType.bfloat16,
             n_kv_heads=32,
             head_dim=128,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             page_size=16,
             n_devices=1,
             pipeline_parallel_degree=2,
@@ -139,7 +138,7 @@ def test_continuous_kv_cache_construction(mock_llama3_config: Llama3Config):
         dtype=DType.bfloat16,
         n_kv_heads=32,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
         page_size=16,
         n_devices=1,
         pipeline_parallel_degree=2,
@@ -157,15 +156,13 @@ def test_continuous_kv_cache_construction(mock_llama3_config: Llama3Config):
 
     # Test stage-specific KV params creation
     stage_kv_params = stage_params.create_stage_params()
-    assert stage_kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS
+    assert stage_kv_params.cache_strategy == KVCacheStrategy.PAGED
     assert stage_kv_params.n_devices == 1  # Single device per stage
     assert stage_kv_params.stage_id == 0
     assert stage_kv_params.total_num_layers == 32
 
     # Test continuous batching collection creation
-    kv_collection = FetchContinuousBatchingKVCacheCollection(
-        stage_kv_params, num_layers=16
-    )
+    kv_collection = FetchPagedKVCacheCollection(stage_kv_params, num_layers=16)
     assert kv_collection is not None
 
 
@@ -206,7 +203,7 @@ def test_paged_kv_cache_construction(mock_llama3_config: Llama3Config):
 
 def test_stage_kv_params_creation(mock_llama3_config: Llama3Config):
     """Test stage-specific KV parameters are created correctly for both strategies."""
-    strategies = [KVCacheStrategy.CONTINUOUS, KVCacheStrategy.PAGED]
+    strategies = [KVCacheStrategy.PAGED]
 
     for strategy in strategies:
         base_params = KVCacheParams(
@@ -253,7 +250,7 @@ def test_stage_kv_params_creation(mock_llama3_config: Llama3Config):
 def test_model_creation_continuous_strategy(mock_llama3_config: Llama3Config):
     """Test PP model creation with continuous batching KV cache."""
     # Set continuous batching strategy
-    mock_llama3_config.kv_params.cache_strategy = KVCacheStrategy.CONTINUOUS
+    mock_llama3_config.kv_params.cache_strategy = KVCacheStrategy.PAGED
 
     # Test model creation
     model = PipelineParallelLlama3(mock_llama3_config)

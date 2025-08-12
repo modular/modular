@@ -65,7 +65,7 @@ def pipeline_config_continuous(test_model_path: str):
         model_path=test_model_path,
         max_batch_size=1,
         max_length=32,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
         kv_cache_page_size=16,
         pipeline_parallel_degree=2,
         tensor_parallel_degree=1,
@@ -108,7 +108,7 @@ def test_multi_gpu_pipeline_config_continuous(test_model_path: str):
             model_path=test_model_path,
             max_batch_size=1,
             max_length=32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             kv_cache_page_size=16,
             pipeline_parallel_degree=2,
             tensor_parallel_degree=1,
@@ -139,7 +139,7 @@ def test_multi_gpu_pipeline_config_continuous(test_model_path: str):
                 model_path=test_model_path,
                 max_batch_size=1,
                 max_length=32,
-                cache_strategy=KVCacheStrategy.CONTINUOUS,
+                cache_strategy=KVCacheStrategy.PAGED,
                 kv_cache_page_size=16,
                 pipeline_parallel_degree=2,
                 tensor_parallel_degree=1,
@@ -163,7 +163,7 @@ def test_multi_gpu_pipeline_config_continuous(test_model_path: str):
     # The system may automatically fallback from CONTINUOUS to PAGED for float32 encoding
     # This is expected behavior, so we accept either strategy
     cache_strategy = config.model_config.kv_cache_config.cache_strategy
-    assert cache_strategy in [KVCacheStrategy.CONTINUOUS, KVCacheStrategy.PAGED]
+    assert cache_strategy in [KVCacheStrategy.PAGED]
     assert config.model_config.kv_cache_config.kv_cache_page_size == 16
 
     # If fallback occurred, verify it was to PAGED (the supported strategy)
@@ -284,13 +284,6 @@ def test_device_constraints_validation(test_model_path: str):
 def test_kv_cache_strategy_support(test_model_path: str):
     """Test that both KV cache strategies are properly configured."""
     require_multi_gpu()
-
-    # Test continuous batching strategy
-    continuous_config = KVCacheConfig(
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
-        kv_cache_page_size=16,
-    )
-    assert continuous_config.cache_strategy == KVCacheStrategy.CONTINUOUS
 
     # Test paged strategy
     paged_config = KVCacheConfig(

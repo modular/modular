@@ -13,10 +13,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
@@ -26,14 +26,12 @@ from test_common.context_utils import create_text_context
 @pytest.mark.parametrize(
     "cache_strategy, fetch_cls",
     [
-        (KVCacheStrategy.CONTINUOUS, FetchContinuousBatchingKVCacheCollection),
         (KVCacheStrategy.PAGED, FetchPagedKVCacheCollection),
     ],
 )
 async def test_kv_collection_constructor(
     cache_strategy: KVCacheStrategy,
-    fetch_cls: type[FetchContinuousBatchingKVCacheCollection]
-    | type[FetchPagedKVCacheCollection],
+    fetch_cls: type[FetchPagedKVCacheCollection],
 ) -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
@@ -69,6 +67,8 @@ async def test_kv_collection_constructor(
     batch = [context]
 
     kv_manager.external_claim(context.request_id)
+    assert isinstance(kv_manager, PagedKVCacheManager)
+    kv_manager.prefetch(context, num_steps=1)
     kv_tuple_list = kv_manager.fetch(batch)
 
     # Set the cache lengths first by "stepping".
@@ -76,6 +76,7 @@ async def test_kv_collection_constructor(
     kv_manager.step(batch)
 
     # Construct a KV cache collection with the given cache length.
+    kv_manager.prefetch(context, num_steps=1)
     kv_tuple_list = kv_manager.fetch(batch)
     assert len(kv_tuple_list) == 1
     assert len(kv_tuple_list[0]) == 4

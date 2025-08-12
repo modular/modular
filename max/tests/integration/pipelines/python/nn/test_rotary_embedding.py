@@ -27,10 +27,10 @@ from max.nn import (
 )
 from max.nn.kernels import fused_qk_ragged_rope
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
@@ -384,7 +384,8 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -404,15 +405,17 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
     )
-    fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_op = FetchPagedKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
@@ -471,6 +474,8 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.prefetch(context, num_steps=1)
 
     input_row_offsets = Tensor(
         DType.uint32,

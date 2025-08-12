@@ -29,7 +29,8 @@ async def _test_kv_cache_gpu() -> None:
         n_kv_heads=8,
         head_dim=128,
         dtype=DType.bfloat16,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
     kv_manager = load_kv_manager(
         params=kv_params,
@@ -38,6 +39,7 @@ async def _test_kv_cache_gpu() -> None:
         num_layers=32,
         devices=[device],
         session=InferenceSession(devices=[device]),
+        available_cache_memory=500 * 2**20,
     )
     context = create_text_context(np.empty(1))
     kv_manager.external_claim(context.request_id)

@@ -20,8 +20,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheManager,
     KVCacheParams,
@@ -46,11 +44,8 @@ BATCH_SIZE = 4
 @pytest.mark.parametrize(
     "cache_strategy,mask_strategy",
     [
-        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.CAUSAL_MASK),
         (KVCacheStrategy.PAGED, MHAMaskVariant.CAUSAL_MASK),
-        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
         (KVCacheStrategy.PAGED, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
-        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
         (KVCacheStrategy.PAGED, MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
     ],
 )
@@ -80,31 +75,18 @@ def test_kv_cache_ragged_attention(
     )
 
     kv_manager: KVCacheManager
-    fetch_op: (
-        FetchContinuousBatchingKVCacheCollection | FetchPagedKVCacheCollection
+    fetch_op: FetchPagedKVCacheCollection
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=128,
+        max_batch_size=2,
+        max_seq_len=100,
+        num_layers=1,
+        devices=[CPU()],
+        session=session,
     )
-    if cache_strategy == KVCacheStrategy.CONTINUOUS:
-        kv_manager = ContinuousBatchingKVCacheManager(
-            kv_params,
-            max_batch_size=2,
-            max_seq_len=100,
-            num_layers=1,
-            devices=[CPU()],
-            session=session,
-        )
-        fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
-    else:
-        kv_manager = PagedKVCacheManager(
-            kv_params,
-            cache_memory=1024 * 1024 * 1024,
-            page_size=128,
-            max_batch_size=2,
-            max_seq_len=100,
-            num_layers=1,
-            devices=[CPU()],
-            session=session,
-        )
-        fetch_op = FetchPagedKVCacheCollection(kv_params)
+    fetch_op = FetchPagedKVCacheCollection(kv_params)
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
@@ -157,6 +139,8 @@ def test_kv_cache_ragged_attention(
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.prefetch(context, num_steps=1)
 
     input_row_offsets = Tensor(
         DType.uint32,

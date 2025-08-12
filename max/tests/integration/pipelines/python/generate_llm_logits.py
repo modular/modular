@@ -559,7 +559,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             model_path=hf_repo_id,
             huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
@@ -1017,7 +1017,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
-            "cache_strategy": KVCacheStrategy.CONTINUOUS,
+            "cache_strategy": KVCacheStrategy.PAGED,
         },
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={

@@ -34,7 +34,7 @@ MAX_READ_SIZE = 10 * 1024
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
         )
     ],
@@ -81,7 +81,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
         )
     ],
@@ -124,7 +124,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
             max_new_tokens=10,
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
         )
     ],

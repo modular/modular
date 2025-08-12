@@ -115,7 +115,7 @@ class MockPipelineModel(PipelineModel):
             n_kv_heads=1,
             head_dim=1,
             enable_prefix_caching=False,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             page_size=None,
             n_devices=n_devices,
         )

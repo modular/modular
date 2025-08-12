@@ -9,7 +9,12 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from test_common.context_utils import create_text_context
 
 
@@ -18,7 +23,13 @@ async def test_step() -> None:
     # Initialize llama like params
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
-    params = KVCacheParams(dtype=DType.float32, n_kv_heads=8, head_dim=128)
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
 
     kv_manager = load_kv_manager(
         params=params,
@@ -27,6 +38,7 @@ async def test_step() -> None:
         num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
+        available_cache_memory=500 * 2**20,
     )
 
     # Create three text contexts and externally claim each using their request_id
@@ -35,6 +47,8 @@ async def test_step() -> None:
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.prefetch(context, num_steps=1)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -64,7 +78,13 @@ async def test_claim_and_release() -> None:
     # claim and release are both cache_type independent,
     # so we can test with the KVCacheType.CONTINUOUS default
     device = CPU()
-    params = KVCacheParams(dtype=DType.float32, n_kv_heads=8, head_dim=128)
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
 
     kv_manager = load_kv_manager(
         params=params,
@@ -73,6 +93,7 @@ async def test_claim_and_release() -> None:
         num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
+        available_cache_memory=500 * 2**20,
     )
 
     contexts = []
@@ -109,14 +130,15 @@ async def test_claim_and_release() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_continuous() -> None:
+async def test_fetch_paged() -> None:
     # Initialize llama like params
     device = CPU()
     params = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=16,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
 
     kv_manager = load_kv_manager(
@@ -126,11 +148,8 @@ async def test_fetch_continuous() -> None:
         num_layers=10,
         devices=[device],
         session=InferenceSession(devices=[device]),
+        available_cache_memory=500 * 2**20,
     )
-
-    # Raise on fetch when nothing has been claimed
-    with pytest.raises(ValueError):
-        kv_collection = kv_manager.fetch([create_text_context(np.empty(1))])[0]
 
     # Claim 5 items
     contexts = []
@@ -138,6 +157,8 @@ async def test_fetch_continuous() -> None:
         context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.prefetch(context, num_steps=1)
 
     # Fetch 3 of the 5 ids
     # Fetch 3 of the 5 contexts created above

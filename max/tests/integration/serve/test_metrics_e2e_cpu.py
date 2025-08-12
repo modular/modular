@@ -33,7 +33,7 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
@@ -105,7 +105,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
@@ -161,7 +161,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
             max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            cache_strategy=KVCacheStrategy.PAGED,
             max_batch_size=16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
