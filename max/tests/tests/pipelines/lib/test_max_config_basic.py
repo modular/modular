@@ -324,24 +324,11 @@ class TestMAXConfigTypeConversion:
         assert result == KVCacheStrategy.PAGED
 
         result = convert_max_config_value(
-            value="continuous",
-            field_type=KVCacheStrategy,
-            field_name="cache_strategy",
-        )
-        assert result == KVCacheStrategy.CONTINUOUS
-
-        result = convert_max_config_value(
             value="model_default",
             field_type=KVCacheStrategy,
             field_name="cache_strategy",
         )
         assert result == KVCacheStrategy.MODEL_DEFAULT
-
-        # Test case insensitive
-        result = convert_max_config_value(
-            "CONTINUOUS", KVCacheStrategy, "cache_strategy"
-        )
-        assert result == KVCacheStrategy.CONTINUOUS
 
     def test_enum_conversion_dtype(self) -> None:
         """Test conversion to DType enum."""
