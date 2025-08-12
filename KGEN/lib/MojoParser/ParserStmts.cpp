@@ -304,6 +304,10 @@ struct StmtParser : public ParserBase {
   ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
   ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
+  // Helper invoked during parseDefFnStmt, meant to mark defaulted trait method
+  // (first token in the function body is neither a '...' nor 'pass').
+  void maybeMarkDefaultedTraitMethod(FnOp fnOp);
+
 private:
   /// This is parent declaration / scope that we're parsing into.
   ASTDecl &parentDecl;
@@ -2602,6 +2606,11 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   if (isDef)
     fnOp.setIsDef(true);
 
+  // Mark this function with an attribute if it's trait method with a non-empty
+  // body.
+  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation()))
+    maybeMarkDefaultedTraitMethod(fnOp);
+
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
@@ -2620,6 +2629,75 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   if (curDeclScope->getNearestDeclOfType<FnOp>())
     (void)getDeclResolver().resolveBody(funcDecl, loc);
   return success();
+}
+
+void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
+  // Save the current lexer state so we can restore it after inspection.
+  LexerCursor savedCursor = getLexer().getCursor();
+
+  // Skip tokens that compose a function signature. This is used as a helper
+  // for determining whether a trait method provides an implementation or not.
+  //
+  // The actual implementation is exceedingly straightforward and will just
+  // consume tokens up to and including the first ':' token as long as it's not
+  // nested inside of any parens or square brackets.
+  //
+  // While this does technically allow syntactically invalid forms like:
+  // fn foo()[]:, fn []()foo:, fn foo[](): and others we don't care for the
+  // purposes of marking a trait method as defaulted or not since later parsing
+  // of the signature will result in a parser failure anyways and the simple
+  // logic that is provided is capable of handling valid syntactic forms.
+  auto skipSignature = [&]() {
+    unsigned parenDepth = 0;
+    unsigned squareDepth = 0;
+    while (true) {
+      switch (getToken().getKind()) {
+      case Token::eof:
+        return; // Unterminated signature – bail out gracefully.
+      case Token::l_paren:
+        ++parenDepth;
+        consumeToken();
+        break;
+      case Token::r_paren:
+        if (parenDepth)
+          --parenDepth;
+        consumeToken();
+        break;
+      case Token::l_square:
+        ++squareDepth;
+        consumeToken();
+        break;
+      case Token::r_square:
+        if (squareDepth)
+          --squareDepth;
+        consumeToken();
+        break;
+      case Token::colon:
+        if (parenDepth == 0 && squareDepth == 0) {
+          consumeToken(Token::colon); // Eat the terminating ':'
+          return;                     // Positioned at first token of the body.
+        }
+        consumeToken();
+        break;
+      default:
+        consumeToken();
+        break;
+      }
+    }
+  };
+
+  skipSignature();
+
+  // Consume the doc string if present.
+  consumeIf(Token::string);
+
+  // Mark the function as defaulted unless its body is explicitly empty.
+  if (!getToken().isAny(Token::kw_pass, Token::dot_dot_dot)) {
+    fnOp.setIsDefaultedTraitFn(true);
+  }
+
+  // Restore lexer state so normal parsing can continue unharmed.
+  savedCursor.restore(getLexer());
 }
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]

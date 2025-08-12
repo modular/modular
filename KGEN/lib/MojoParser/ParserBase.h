@@ -209,6 +209,12 @@ public:
   skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false,
                        llvm::unique_function<bool()> customStopPredicate = {});
 
+  /// Skip over tokens that make up a function signature starting at the
+  /// current token and consume everything up to *and including* the ':' that
+  /// terminates the signature.  After this returns, the lexer will be
+  /// positioned on the first token of the function body (or at EOF if the
+  /// file ended unexpectedly).
+
   //===--------------------------------------------------------------------===//
   // Integration with parsers for subsets of the grammar.
   //===--------------------------------------------------------------------===//

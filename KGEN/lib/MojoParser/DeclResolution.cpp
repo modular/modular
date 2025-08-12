@@ -1539,8 +1539,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   // About to parse the body.
   endFn.setUnresolved(false);
 
-  // If this is a method in a trait, or an extern function, we only allow a
-  // "..." as the body.
+  // If this an extern function, we only allow a "..." as the body. If it's a
+  // trait method this must mean it's not defaulted so we can early exit the
+  // function here as well.
   if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()) ||
       funcOp.getIsExtern()) {
     // Skip any docstring's that might be present.
@@ -1555,8 +1556,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       return success();
     }
 
-    // Otherwise, must be a default implementation.  Parse it and then emit an
-    // error later.
+    // Otherwise, must be a trait method with default implementation.
   }
 
   // Set up information about value arguments, emitting before the lit.endfn.
@@ -1693,15 +1693,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
     if (failed(FnSigDecorators::checkAlwaysInlineBuiltin(funcOp, shared)))
       funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-  }
-
-  // We don't support default implementations for trait methods yet. Reject and
-  // recover cleanly.
-  if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation())) {
-    shared.emitError(decl.getLoc(),
-                     "unexpected function body in trait function "
-                     "declaration, use `...`");
-    return success();
   }
 
   if (funcOp.getIsExtern()) {
