@@ -257,11 +257,9 @@ struct InlineArray[
         self = Self(storage=elems^)
 
     @always_inline
-    fn __init__[batch_size: Int = 64](
-        out self,
-        *,
-        var storage: VariadicListMem[Self.ElementType, _],
-    ):
+    fn __init__[
+        batch_size: Int = 64
+    ](out self, *, var storage: VariadicListMem[Self.ElementType, _],):
         """Construct an array from a low-level internal representation.
 
         Parameters:
