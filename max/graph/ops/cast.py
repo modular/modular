@@ -16,10 +16,10 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..value import TensorValue
+from ..value import StrongTensorValueLike, TensorValue
 
 
-def cast(x: TensorValue, dtype: DType) -> TensorValue:
+def cast(x: StrongTensorValueLike, dtype: DType) -> TensorValue:
     """Casts a symbolic tensor to a different data type.
 
     Args:
@@ -30,5 +30,6 @@ def cast(x: TensorValue, dtype: DType) -> TensorValue:
         A new symbolic tensor with the same shape as the input and the
         specified dtype.
     """
+    x = TensorValue(x)
     cast_type = x.type.cast(dtype)
     return Graph.current._add_op(mo.cast, cast_type.to_mlir(), x)[0].tensor

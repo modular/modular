@@ -14,11 +14,12 @@
 
 from max.dtype import DType
 
-from ..value import TensorType, TensorValue
+from ..type import TensorType
+from ..value import StrongTensorValueLike, TensorValue
 from .custom import custom
 
 
-def argsort(x: TensorValue, ascending: bool = True) -> TensorValue:
+def argsort(x: StrongTensorValueLike, ascending: bool = True) -> TensorValue:
     """Returns the indices that would sort a tensor.
 
     This function returns the indices that would sort the input tensor along
@@ -32,6 +33,7 @@ def argsort(x: TensorValue, ascending: bool = True) -> TensorValue:
     Returns:
         A tensor of indices of the same shape as the input tensor.
     """
+    x = TensorValue(x)
     if x.rank != 1:
         raise ValueError("argsort only implemented for input tensors of rank 1")
     return custom(

@@ -22,11 +22,11 @@ from ..dim import DimLike
 from ..graph import Graph
 from ..shape import Shape, ShapeLike
 from ..type import TensorType
-from ..value import TensorValue
+from ..value import StrongTensorValueLike, TensorValue
 
 
 def broadcast_to(
-    x: TensorValue,
+    x: StrongTensorValueLike,
     shape: TensorValue | ShapeLike,
     out_dims: Iterable[DimLike] | None = None,
 ) -> TensorValue:
@@ -49,6 +49,8 @@ def broadcast_to(
     Raises:
         ValueError: if a tensor-valued shape is passed without out_dims.
     """
+    x = TensorValue(x)
+
     if isinstance(shape, TensorValue):
         # For tensor-valued shapes, dims need to be declared in the graph.
         # Push the onus of doing so onto the caller.

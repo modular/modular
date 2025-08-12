@@ -22,7 +22,7 @@ from max.dtype import DType
 
 from ..dim import Dim, StaticDim
 from ..type import DeviceKind, TensorType
-from ..value import TensorValue
+from ..value import StrongTensorValueLike, TensorValue
 from .concat import concat
 from .constant import constant
 from .custom import custom
@@ -45,7 +45,9 @@ class Normalization(Enum):
         return False
 
 
-def _process_input_signal(input_tensor: TensorValue, n: int, axis: int):
+def _process_input_signal(
+    input_tensor: TensorValue, n: int, axis: int
+) -> TensorValue:
     """Resizes input tensor to the required signal size."""
     axis = axis % input_tensor.rank
     axis_dim = input_tensor.shape[axis]
@@ -69,7 +71,7 @@ def _process_input_signal(input_tensor: TensorValue, n: int, axis: int):
 
 
 def irfft(
-    input_tensor: TensorValue,
+    input_tensor: StrongTensorValueLike,
     n: int | None = None,
     axis: int = -1,
     normalization: Normalization | str = Normalization.BACKWARD,
@@ -101,6 +103,8 @@ def irfft(
         is the same as the shape of the input tensor, except for the axis that
         the inverse real FFT is computed over, which is replaced by `n`.
     """
+    input_tensor = TensorValue(input_tensor)
+
     if not input_tensor.dtype == DType.float32:
         raise ValueError(
             f"Input tensor must be of type float32, got {input_tensor.dtype}."

@@ -18,10 +18,10 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
-from ..value import TensorValue
+from ..value import StrongTensorValueLike, TensorValue
 
 
-def transfer_to(x: TensorValue, device: DeviceRef) -> TensorValue:
+def transfer_to(x: StrongTensorValueLike, device: DeviceRef) -> TensorValue:
     """Device-to-Device transfer operation.
 
     This op transfers the input tensor from its current device over to another. A device represents a
@@ -36,6 +36,8 @@ def transfer_to(x: TensorValue, device: DeviceRef) -> TensorValue:
     Returns:
         A tensor transferred to device specified.
     """
+    x = TensorValue(x)
+
     if device == x.type.device:
         return x
 
