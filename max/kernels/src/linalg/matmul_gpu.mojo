@@ -499,7 +499,6 @@ fn _matmul_gpu[
         and has_static_NK
     ):
         if multi_gemm_cond:
-            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
             @always_inline
             @parameter
@@ -534,10 +533,11 @@ fn _matmul_gpu[
             if config:
                 return _multistage_gemm[config.value()]()
 
+            alias static_N = c_shape.get[1]()
+            alias static_K = a_shape.get[1]()
+
             @parameter
             if has_amd_gpu_accelerator():
-                alias static_N = c_shape.get[1]()
-                alias static_K = a_shape.get[1]()
 
                 @always_inline
                 @parameter
@@ -864,60 +864,53 @@ fn _matmul_gpu[
                         return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
-            @parameter
-            if (
-                a_type == b_type
-                and a_type.is_half_float()
-                and ctx.default_device_info is A100
-                and transpose_b
-            ):
-                alias static_K = a_shape.get[1]()
-                alias static_N = c_shape.get[1]()
-                alias Ms = InlineArray[Int32, 10](
-                    16, 32, 64, 128, 256, 512, 768, 1024, 2048, 4096
-                )
-                try:
+            else:
 
-                    @parameter
-                    for k in range(len(Ms)):
-                        alias M = Ms[k]
-                        if M <= m:
-                            alias key = String(M, "_", static_N, "_", static_K)
-                            alias curr_config = create_matmul_configs_ampere[
-                                key, a_type, b_type, c_type, transpose_b
-                            ]()
-                            if curr_config.num_pipeline_stages == 0:
-                                raise "no match for the triple"
-                            return _multistage_gemm[curr_config]()
-                    raise "no match for the triple"
-                except:
-                    var best_config = select_config[
-                        a_type, b_type, c_type, transpose_b
-                    ](m, n, k, ctx)
+                @parameter
+                if (
+                    a_type == b_type
+                    and a_type.is_half_float()
+                    and ctx.default_device_info is A100
+                    and transpose_b
+                ):
+                    alias Ms = List[Int32](
+                        16, 32, 64, 128, 256, 512, 768, 1024, 2048, 4096
+                    )
+                    try:
 
-                    if best_config == kernels.ampere_256x64_4:
-                        _multistage_gemm[kernels.ampere_256x64_4](best_config)
+                        @parameter
+                        for M in Ms:
+                            if M <= m:
+                                alias key = String(
+                                    M, "_", static_N, "_", static_K
+                                )
+                                alias curr_config = create_matmul_configs_ampere[
+                                    key, a_type, b_type, c_type, transpose_b
+                                ]()
+                                if curr_config.num_pipeline_stages == 0:
+                                    raise "no match for the triple"
+                                return _multistage_gemm[curr_config]()
+                        raise "no match for the triple"
+                    except:
+                        pass
 
-                    elif best_config == kernels.ampere_256x128_3:
-                        _multistage_gemm[kernels.ampere_256x128_3](best_config)
+                alias kernels = MatmulKernels[
+                    a_type, b_type, c_type, transpose_b
+                ]()
 
-                    else:  # Default kernel 128x128_4
-                        _multistage_gemm[kernels.ampere_128x128_4](best_config)
-                    return
+                var best_config = select_config[
+                    a_type, b_type, c_type, transpose_b
+                ](m, n, k, ctx)
 
-            var best_config = select_config[
-                a_type, b_type, c_type, transpose_b
-            ](m, n, k, ctx)
+                if best_config == kernels.ampere_256x64_4:
+                    _multistage_gemm[kernels.ampere_256x64_4](best_config)
 
-            if best_config == kernels.ampere_256x64_4:
-                _multistage_gemm[kernels.ampere_256x64_4](best_config)
+                elif best_config == kernels.ampere_256x128_3:
+                    _multistage_gemm[kernels.ampere_256x128_3](best_config)
 
-            elif best_config == kernels.ampere_256x128_3:
-                _multistage_gemm[kernels.ampere_256x128_3](best_config)
-
-            else:  # Default kernel 128x128_4
-                _multistage_gemm[kernels.ampere_128x128_4](best_config)
-            return
+                else:  # Default kernel 128x128_4
+                    _multistage_gemm[kernels.ampere_128x128_4](best_config)
+                return
 
     @parameter
     if not a_type.is_float8():
@@ -928,24 +921,17 @@ fn _matmul_gpu[
             ](c, a, b, ctx)
             return
 
-    # compile time check to pass bro's req of only having support FP32, FP16 and BF16 for cublas wrapper
+    alias vendor_blas_fallback_dtypes = (
+        DType.float32,
+        DType.float16,
+        DType.bfloat16,
+    )
+
     @parameter
     if (
-        (
-            a_type is DType.float32
-            or a_type is DType.bfloat16
-            or a_type is DType.float16
-        )
-        and (
-            b_type is DType.float32
-            or b_type is DType.bfloat16
-            or b_type is DType.float16
-        )
-        and (
-            c_type is DType.float32
-            or c_type is DType.bfloat16
-            or c_type is DType.float16
-        )
+        a_type in vendor_blas_fallback_dtypes
+        and b_type in vendor_blas_fallback_dtypes
+        and c_type in vendor_blas_fallback_dtypes
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
     ):
@@ -957,55 +943,30 @@ fn _matmul_gpu[
                 config=config,
             ](c, a, b, ctx)
         except:
+            # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
-            alias BLOCK_DIM = 16
-            ctx.enqueue_function[
-                matmul_kernel_naive[
-                    c_type,
-                    a_type,
-                    b_type,
-                    BLOCK_DIM,
-                    transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ]
-            ](
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-            )
-            return
-    else:
-        # For unsupported dtypes like FP8, directly use the naive implementation
-        logger.info("Unsupported dtypes or vendor disabled")
-        alias BLOCK_DIM = 16
-        logger.info(
-            "Executing: Naive MATMUL kernel (BLOCK_DIM=", BLOCK_DIM, ")"
-        )
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                c_type,
-                a_type,
-                b_type,
-                BLOCK_DIM,
-                transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ]
-        ](
-            c.data,
-            a.data,
-            b.data,
-            m,
-            n,
-            k,
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
-        return
+
+    logger.info("Executing: Naive MATMUL kernel")
+    alias BLOCK_DIM = 16
+    ctx.enqueue_function[
+        matmul_kernel_naive[
+            c_type,
+            a_type,
+            b_type,
+            BLOCK_DIM,
+            transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+        ]
+    ](
+        c.data,
+        a.data,
+        b.data,
+        m,
+        n,
+        k,
+        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
 
 
 @always_inline
