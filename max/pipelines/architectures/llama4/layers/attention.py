@@ -37,7 +37,6 @@ from max.nn.kernels import (
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -204,8 +203,7 @@ class _Llama4TextAttention(Module):
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection]
-        | list[PagedKVCacheCollection],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         assert len(xs) == 1 and len(kv_collections) == 1
@@ -344,8 +342,7 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection]
-        | list[PagedKVCacheCollection],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
@@ -359,7 +356,7 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
                 self.list_of_attentions[i](
                     [xs[i]],
                     [cache_positions_list[i]],
-                    [kv_collections[i]],  # type: ignore
+                    [kv_collections[i]],
                     input_row_offsets=input_row_offsets_[i],
                 )[0]
                 for i in range(len(self.devices))

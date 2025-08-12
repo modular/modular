@@ -13,7 +13,7 @@
 """Build an Olmo2 model that uses continuous or paged kv-caching"""
 
 import functools
-from typing import Callable, Union
+from typing import Callable
 
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
@@ -27,7 +27,6 @@ from max.nn import (
     Transformer,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
@@ -166,13 +165,8 @@ class Olmo2(Transformer):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        kv_collection_cls: Union[
-            type[FetchContinuousBatchingKVCacheCollection],
-            type[FetchPagedKVCacheCollection],
-        ]
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(

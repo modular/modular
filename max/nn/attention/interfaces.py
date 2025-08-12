@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from max.graph import BufferValue, TensorValue, TensorValueLike
 
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -63,10 +62,10 @@ class AttentionImpl(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: ContinuousBatchingKVCacheCollection,
+                kv_collection: PagedKVCacheCollection,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, ContinuousBatchingKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -106,8 +105,7 @@ class AttentionImpl(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...
@@ -124,9 +122,7 @@ class DistributedAttentionImpl(Module, ABC):
         layer_idx: TensorValue,
         x: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        kv_collections: list[PagedKVCacheCollection],
         freqs_cis: list[TensorValue],
         input_row_offsets: TensorValue,
     ) -> list[TensorValue]: ...
@@ -167,10 +163,10 @@ class AttentionImplQKV(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: ContinuousBatchingKVCacheCollection,
+                kv_collection: PagedKVCacheCollection,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, ContinuousBatchingKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -218,8 +214,7 @@ class AttentionImplQKV(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...

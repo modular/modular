@@ -30,7 +30,6 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
@@ -171,13 +170,8 @@ class DistributedLlama3(DistributedTransformer):
             quantization_encoding=embedding_output_quantization,
         )
 
-        kv_collection_cls: (
-            type[FetchContinuousBatchingKVCacheCollection]
-            | type[FetchPagedKVCacheCollection]
-        )
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(

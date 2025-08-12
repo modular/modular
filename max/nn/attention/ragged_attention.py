@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Union
+from typing import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
@@ -24,7 +24,6 @@ from max.graph import DeviceRef, TensorValue, Weight, ops
 from ..clamp import clamp
 from ..kernels import flash_attention_ragged, fused_qkv_ragged_matmul
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -180,9 +179,7 @@ class RaggedAttention(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.

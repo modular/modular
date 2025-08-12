@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from max.dtype import DType
 from max.graph import (
@@ -47,7 +47,6 @@ from ..kernels import (
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -82,9 +81,7 @@ class AttentionWithRopeV1(AttentionImpl):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -395,9 +392,7 @@ class AttentionWithRope(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -432,7 +427,7 @@ class AttentionWithRope(Module):
                 wqkv=self.wqkv,
                 bias=self.wqkv_bias,
                 input_row_offsets=input_row_offsets,
-                kv_collection=kv_collection,  # type: ignore
+                kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 input_scale=x_scales.to(x.device),
@@ -615,9 +610,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -803,9 +796,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -994,10 +985,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         layer_idx: TensorValue,
         x: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        kv_collections: (
-            Sequence[ContinuousBatchingKVCacheCollection]
-            | Sequence[PagedKVCacheCollection]
-        ),
+        kv_collections: Sequence[PagedKVCacheCollection],
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
@@ -1046,9 +1034,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:

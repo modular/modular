@@ -29,7 +29,6 @@ from max.nn.kernels import (
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -212,8 +211,7 @@ class Gemma3Attention(Module, Shardable):
     def __call__(
         self,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.

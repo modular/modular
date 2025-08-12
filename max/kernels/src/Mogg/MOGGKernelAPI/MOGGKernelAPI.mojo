@@ -8112,7 +8112,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
 # Print KV Cache
 #
 # Expected kernel name format:
-# mo.print_kv_cache.<continuous_batching/paged>
+# mo.print_kv_cache.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -8197,31 +8197,6 @@ struct Struct_print_kv_cache_paged:
         context: DeviceContextPtr,
     ) raises:
         print_kv_cache_paged_generic_kernel_api[target](
-            valid_lengths,
-            kv_collection,
-            layer_idx,
-            is_print_compact,
-            context,
-        )
-
-
-@compiler.register("mo.print_kv_cache.continuous_batching")
-struct Struct_print_kv_cache_continuous_batching:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
-    ](
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
-        ],
-        layer_idx: UInt32,
-        is_print_compact: InputTensor[dtype = DType.bool, rank=1],
-        context: DeviceContextPtr,
-    ) raises:
-        print_kv_cache_cont_batch_generic_kernel_api[target](
             valid_lengths,
             kv_collection,
             layer_idx,

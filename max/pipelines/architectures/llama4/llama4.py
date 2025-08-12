@@ -36,7 +36,6 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     PagedKVCacheCollection,
 )
@@ -140,9 +139,7 @@ class Llama4DecoderLayer(Module):
         xs: list[TensorValue],
         distributed_cache_positions: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard

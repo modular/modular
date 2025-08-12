@@ -29,7 +29,6 @@ from max.nn import (
     Transformer,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
@@ -168,13 +167,8 @@ class Qwen3(Transformer):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        kv_collection_cls: (
-            type[FetchContinuousBatchingKVCacheCollection]
-            | type[FetchPagedKVCacheCollection]
-        )
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(

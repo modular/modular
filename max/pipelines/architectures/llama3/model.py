@@ -29,7 +29,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheInputs,
     KVCacheManager,
@@ -639,14 +638,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             stage_kv_cache_params = stage_params.create_stage_params()
 
             kv_collection_func: Any
-            if (
-                model_config.kv_params.cache_strategy
-                == KVCacheStrategy.CONTINUOUS
-            ):
-                kv_collection_func = FetchContinuousBatchingKVCacheCollection(
-                    stage_kv_cache_params, num_layers=num_layers_in_stage
-                )
-            elif model_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+            if model_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
                 kv_collection_func = FetchPagedKVCacheCollection(
                     stage_kv_cache_params, num_layers=num_layers_in_stage
                 )

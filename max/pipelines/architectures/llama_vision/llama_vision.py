@@ -38,7 +38,6 @@ from max.interfaces import InputContext
 from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
@@ -208,15 +207,13 @@ class MultimodalKVCacheManager(KVCacheManager):
         assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
         max_vision_seq_len = kwargs["max_vision_seq_len"]
 
-        vision_kv_cache_size = (
-            ContinuousBatchingKVCacheManager.estimated_memory_size(
-                params,
-                max_batch_size,
-                max_vision_seq_len,
-                num_vision_layers,
-                available_cache_memory,
-                devices,
-            )
+        vision_kv_cache_size = PagedKVCacheManager.estimated_memory_size(
+            params,
+            max_batch_size,
+            max_vision_seq_len,
+            num_vision_layers,
+            available_cache_memory,
+            devices,
         )
 
         remaining_memory = available_cache_memory - vision_kv_cache_size
@@ -264,14 +261,12 @@ class MultimodalKVCacheManager(KVCacheManager):
         text_batch_size = infer_optimal_batch_size(
             params, max_seq_len, num_layers, text_cache_size, devices
         )
-        vision_batch_size = (
-            ContinuousBatchingKVCacheManager.infer_optimal_batch_size(
-                params,
-                max_vision_seq_len,
-                num_vision_layers,
-                vision_cache_size,
-                devices,
-            )
+        vision_batch_size = PagedKVCacheManager.infer_optimal_batch_size(
+            params,
+            max_vision_seq_len,
+            num_vision_layers,
+            vision_cache_size,
+            devices,
         )
 
         return min(text_batch_size, vision_batch_size)

@@ -22,7 +22,7 @@ import functools
 import logging
 from collections.abc import Sequence
 from math import ceil
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
@@ -42,7 +42,6 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
@@ -112,13 +111,8 @@ class PipelineParallelLlama3(Transformer):
         )
 
         # Select KV collection class (like DistributedLlama3)
-        kv_collection_cls: Union[
-            type[FetchContinuousBatchingKVCacheCollection],
-            type[FetchPagedKVCacheCollection],
-        ]
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(

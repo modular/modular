@@ -23,8 +23,6 @@ from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
@@ -56,8 +54,7 @@ class TransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -104,10 +101,7 @@ class Transformer(Module):
         output: LinearV1 | Linear,
         embedding: EmbeddingV1 | Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: (
-            FetchContinuousBatchingKVCacheCollection
-            | FetchPagedKVCacheCollection
-        ),
+        kv_collection_constructor: FetchPagedKVCacheCollection,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,

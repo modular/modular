@@ -34,8 +34,6 @@ from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
@@ -129,9 +127,7 @@ class DistributedTransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        kv_collections: list[PagedKVCacheCollection],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
@@ -187,10 +183,7 @@ class DistributedTransformer(Module):
         output: ColumnParallelLinear,
         embedding: VocabParallelEmbedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: (
-            FetchContinuousBatchingKVCacheCollection
-            | FetchPagedKVCacheCollection
-        ),
+        kv_collection_constructor: FetchPagedKVCacheCollection,
         devices: list[DeviceRef],
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,

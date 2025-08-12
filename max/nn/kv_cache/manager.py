@@ -140,7 +140,7 @@ class KVCacheInputSymbols:
     .. code-block:: python
 
         @dataclass
-        class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
+        class KVCacheInputSymbols(KVCacheInputSymbols):
             kv_blocks: TensorType
             cache_lengths: TensorType
             lookup_table: TensorType

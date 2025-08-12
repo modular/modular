@@ -19,12 +19,10 @@ from max.driver import Device
 from max.engine import InferenceSession
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .continuous_batching_cache import ContinuousBatchingKVCacheManager
 from .manager import KVCacheManager
 from .paged_cache import PagedKVCacheManager
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager]] = {
-    KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
     KVCacheStrategy.PAGED: PagedKVCacheManager,
 }
 
@@ -41,16 +39,7 @@ def load_kv_manager(
 ) -> KVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
-    if params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-        return ContinuousBatchingKVCacheManager(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            num_layers=num_layers,
-            devices=devices,
-            session=session,
-        )
-    elif params.cache_strategy == KVCacheStrategy.PAGED:
+    if params.cache_strategy == KVCacheStrategy.PAGED:
         if page_size is None:
             msg = (
                 "Missing required argument page_size for KVCacheStrategy.PAGED"

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Callable, Union, cast
+from typing import Callable, cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -26,7 +26,6 @@ from ..kernels import (
     sgmv_qkv_lora_kernel,
 )
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -120,9 +119,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -186,8 +183,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
     def fused_qkv_lora(
         self,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection
-        | ContinuousBatchingKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         input_row_offsets: TensorValue,
         layer_idx: TensorValue,
     ):
@@ -198,7 +194,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
             qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
             input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
-            kv_collection (ContinuousBatchingKVCacheCollection | PagedKVCacheCollection):
+            kv_collection (PagedKVCacheCollection):
                 The key/value cache collection structure.
             layer_idx (TensorValue): Index of the current transformer layer (used for caching).
 

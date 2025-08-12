@@ -29,7 +29,6 @@ from max.nn.kernels import (
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -180,8 +179,7 @@ class Olmo2Attention(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:

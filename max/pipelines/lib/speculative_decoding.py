@@ -39,7 +39,10 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsSequence,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import traced
 from transformers import AutoConfig

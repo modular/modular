@@ -20,14 +20,10 @@ from max.dtype import DType
 
 class KVCacheStrategy(str, Enum):
     MODEL_DEFAULT = "model_default"
-    CONTINUOUS = "continuous"
-    """Deprecated. Use ``PAGED`` instead."""
     PAGED = "paged"
 
     def kernel_substring(self) -> str:
         """Returns the common substring that we include in the kernel name for this caching strategy."""
-        if self == KVCacheStrategy.CONTINUOUS:
-            return "continuous_batching"
         return self.value
 
     def uses_opaque(self) -> bool:
@@ -42,7 +38,7 @@ class KVCacheParams:
     enable_prefix_caching: bool = False
     enable_kvcache_swapping_to_host: bool = False
     host_kvcache_swap_space_gb: Optional[float] = None
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.CONTINUOUS
+    cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
     page_size: Optional[int] = None
     n_devices: int = 1
     pipeline_parallel_degree: int = 1

@@ -25,7 +25,6 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
@@ -130,13 +129,9 @@ class Pixtral(LlavaConditionalGeneration):
             embedding_output_dtype,
             config.devices[0],
         )
-        kv_collection_cls: (
-            type[FetchContinuousBatchingKVCacheCollection]
-            | type[FetchPagedKVCacheCollection]
-        )
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(

@@ -27,7 +27,6 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
 )
@@ -56,10 +55,7 @@ class Transformer(Module):
         output: Linear,
         embedding: Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: (
-            FetchContinuousBatchingKVCacheCollection
-            | FetchPagedKVCacheCollection
-        ),
+        kv_collection_constructor: FetchPagedKVCacheCollection,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,

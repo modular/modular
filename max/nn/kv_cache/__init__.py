@@ -12,14 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .continuous_batching_cache import (
-    ContinuousBatchingKVCache,
-    ContinuousBatchingKVCacheCollection,
-    ContinuousBatchingKVCacheCollectionType,
-    ContinuousBatchingKVCacheManager,
-    ContinuousBatchingKVCacheType,
-    FetchContinuousBatchingKVCacheCollection,
-)
 from .manager import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -48,12 +40,6 @@ from .utils import build_max_lengths_tensor
 
 __all__ = [
     "BlockCopyType",
-    "ContinuousBatchingKVCache",
-    "ContinuousBatchingKVCacheCollection",
-    "ContinuousBatchingKVCacheCollectionType",
-    "ContinuousBatchingKVCacheManager",
-    "ContinuousBatchingKVCacheType",
-    "FetchContinuousBatchingKVCacheCollection",
     "FetchPagedKVCacheCollection",
     "KVCacheInputSymbols",
     "KVCacheInputs",
