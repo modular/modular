@@ -349,6 +349,13 @@ struct KBuffer[
         )
 
 
+@always_inline
+fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
+    alias simd_width = simdwidthof[dtype]()
+    alias padding = 0 if depth == 64 else size // simd_width
+    return size + padding
+
+
 struct VBuffer[
     dtype: DType,
     layout: Layout,
@@ -365,7 +372,6 @@ struct VBuffer[
 ]:
     alias simd_width = simdwidthof[dtype]()
     alias num_repeats = BK // Self.simd_width
-    alias padding = depth // 8
 
     # V Buffer shared memory layout
     # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)×simd_width tiles
@@ -392,7 +398,10 @@ struct VBuffer[
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = (depth + padding) × simd_width = 144 × 8 = 1152
 
-    alias base_layout = Layout.row_major(depth + Self.padding, Self.simd_width)
+    alias base_layout = Layout.row_major(
+        Self.pad[depth](),
+        Self.simd_width,
+    )
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
     alias smem_layout = blocked_product(
         Self.base_layout,
@@ -403,12 +412,24 @@ struct VBuffer[
     alias MMA_M = mma_shape[0]
     alias MMA_K = mma_shape[2]
     alias num_k_tiles = ceildiv(BK, Self.MMA_K * k_group_size)
-    alias depth_tile_size = 128
+    alias num_depth_tiles = depth // Self.MMA_M
+
+    alias depth_tile_size = min(depth, 128)
+
+    # for depth = 64, we use 8B loads instead of 16B loads
+    # this keeps the layout of the memory access the same but may not be optimal
+    # can come back to this if perf becomes an issue
+    alias load_width = 4 if depth == 64 else Self.simd_width
+    alias loads_per_thread_per_depth_tile = (Self.depth_tile_size * BK) // (
+        Self.load_width * Self.num_threads
+    )
+
     alias LoadTileType = LayoutTensor[
         dtype,
         Layout.row_major(
-            (BK * depth) // (Self.simd_width * num_threads),
-            Self.simd_width,
+            Self.loads_per_thread_per_depth_tile
+            * (depth // Self.depth_tile_size),
+            Self.load_width,
         ),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
@@ -450,7 +471,7 @@ struct VBuffer[
 
     alias GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
         BK,
-        BN,
+        depth,
         axis=0,
     ]
 
@@ -473,13 +494,21 @@ struct VBuffer[
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
+        constrained[depth in (64, 128, 256), "depth must be 64, 128, or 256"]()
         constrained[k_group_size == 2, "k_group_size must be 2"]()
         self.global_base_tile = global_tile
-        self.global_iterator = global_tile.tiled_iterator[BK, BN, axis=0](0, 0)
+        self.global_iterator = global_tile.tiled_iterator[BK, depth, axis=0](
+            0, 0
+        )
 
         self.load_tile = __type_of(self.load_tile).stack_allocation()
         self.mma_tile = __type_of(self.mma_tile).stack_allocation()
         self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+
+    @always_inline
+    @staticmethod
+    fn pad[dim: Int]() -> Int:
+        return pad[dtype, depth, dim]()
 
     @always_inline
     fn load_from_dram(
@@ -488,11 +517,45 @@ struct VBuffer[
         var global_tile = self.global_iterator[]
         var warp_id = get_warp_id()
 
+        constrained[
+            Self.loads_per_thread_per_depth_tile == 2,
+            "loads_per_thread_per_depth_tile must be 2",
+        ]()
+
         @parameter
         for depth_idx in range(depth // Self.depth_tile_size):
+            # every lane loads 2 elements (=8B for depth=64 and 16B for depth=128)
+            # we transpose the global tile when writing to shared memory
+            # the load pattern here is such that it enables us to use 16B loads
+            # from shared memory and use p from registers instead of going through the shared memory.
+            # warp 0 lane 0 will load first element of row 0 and row 8
+            # warp 0 lane 16 will load first element of row 1 and row 9
+            # warp 0 lane 32 will load first element of row 2 and row 10
+            # warp 0 lane 48 will load first element of row 3 and row 11
+            # warp 1 lane 0 will load first element of row 4 and row 12
+            # warp 1 lane 16 will load first element of row 5 and row 13
+            # warp 1 lane 32 will load first element of row 6 and row 14
+            # warp 1 lane 48 will load first element of row 7 and row 15
+            # warp 2 lane 0 will load first element of row 16 and row 24
+            # warp 2 lane 16 will load first element of row 17 and row 25
+            # warp 2 lane 32 will load first element of row 18 and row 26
+            # warp 2 lane 48 will load first element of row 19 and row 27
+            # warp 3 lane 0 will load first element of row 20 and row 28
+            # warp 3 lane 16 will load first element of row 21 and row 29
+            # warp 3 lane 32 will load first element of row 22 and row 30
+            # warp 3 lane 48 will load first element of row 23 and row 31
+
+            # so when we transpose and write to shared memory, the shared memory tile (of size depthxBK)
+            # will effectively have its columns permuted as:
+            # 0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15,16,24,17,25,18,26,19,27,20,28,21,29,22,30,23,31
+
+            # we will have to interleave the elements of p in register to match this pattern for second mma to be correct.
+            # which means that the output of softmax(which will be of size 16), we will have to be divided into into 2x8 and first 8 will be
+            # interleaved and second 8 will be interleaved independently and use for two different mma operations.
+            # This explanation will likely be clearer with a diagram, I will come back to this later.
 
             @parameter
-            for i in range(2):
+            for i in range(Self.loads_per_thread_per_depth_tile):
                 var warp_tile = (
                     global_tile.tile[16, depth](
                         warp_id // 2,
@@ -505,10 +568,11 @@ struct VBuffer[
                     src_thread_layout = Layout.row_major(4, 16),
                     thread_scope = ThreadScope.WARP,
                 ](
-                    self.load_tile.tile[1, Self.simd_width](
-                        i + depth_idx * 2, 0
-                    ).vectorize[1, Self.simd_width](),
-                    warp_tile.vectorize[1, Self.simd_width](),
+                    self.load_tile.tile[1, Self.load_width](
+                        i + depth_idx * Self.loads_per_thread_per_depth_tile,
+                        0,
+                    ).vectorize[1, Self.load_width](),
+                    warp_tile.vectorize[1, Self.load_width](),
                     self.global_base_tile,
                 )
         self.global_iterator._incr()
@@ -531,32 +595,35 @@ struct VBuffer[
         # shared memory layout is row_major(depth, BK // num_warps) repeated num_warps times
         # and each warp writes to a different tile in smem
 
-        alias num_warps = Self.num_threads // WARP_SIZE
         var warp_id = get_warp_id()
         var lane_coords = idx2crd[Layout.col_major(16, 4)](lane_id())
         var lane_row = lane_coords[0]
         var lane_col = lane_coords[1]
 
-        alias padding = depth // 8
-        alias padding_tile = Self.depth_tile_size // 8
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
 
         @parameter
         for depth_idx in range(depth // Self.depth_tile_size):
-            var smem_warp_tile = (
-                smem_iter_tensor.tile[depth + padding, 8 * 2](0, warp_id // 2)
-                .tile[depth + padding, 8](0, warp_id % 2)
-                .tile[Self.depth_tile_size + padding_tile, 8](depth_idx, 0)
+            var smem_warp_tile = smem_iter_tensor.tile[
+                Self.pad[depth](),
+                Self.simd_width,
+            ](0, warp_id).tile[
+                Self.pad[Self.depth_tile_size](),
+                Self.simd_width,
+            ](
+                depth_idx, 0
             )
 
             var lane_tile = (
-                smem_warp_tile.tile[Self.simd_width + 1, 2](lane_row, lane_col)
-                .slice[: Self.simd_width, :]()
+                smem_warp_tile.tile[Self.pad[Self.load_width](), 2](
+                    lane_row, lane_col
+                )
+                .slice[: Self.load_width, :]()
                 .vectorize[1, 2]()
             )
 
             @parameter
-            for j in range(Self.simd_width):
+            for j in range(Self.load_width):
                 # each thread loads 2x8 elements from gmem
                 # they are interleaved and written to smem
                 var reg_tile_0 = self.load_tile[0 + depth_idx * 2, j][0]
@@ -572,23 +639,24 @@ struct VBuffer[
         var col_idx = lane_id() // 32
         var lane = lane_id() % 32
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
-        alias padding = depth // 8
 
         @parameter
         for k_mma_idx in range(Self.num_k_tiles):
 
             @parameter
-            for depth_idx in range(depth // BK):
+            for depth_idx in range(Self.num_depth_tiles):
                 # TODO: document and parameterize this magic
                 var smem_fragment = (
-                    smem_iter_tensor.tile[depth + padding, 8](
+                    smem_iter_tensor.tile[Self.pad[depth](), 8](
                         0, col_idx + k_mma_idx * 2
                     )
                     .vectorize[1, Self.simd_width]()
-                    .tile[32 + (32 // 8), 1](depth_idx, 0)
-                    .tile[8 + 1, 1](lane // 8, 0)
-                    .slice[:8, :]()
-                    .tile[1, 1](lane % 8, 0)
+                    .tile[Self.pad[Self.MMA_M](), 1](depth_idx, 0)
+                    .tile[Self.pad[Self.simd_width](), 1](
+                        lane // Self.simd_width, 0
+                    )
+                    .slice[: Self.simd_width, :]()
+                    .tile[1, 1](lane % Self.simd_width, 0)
                 )
                 self.mma_tile.split[Self.num_k_tiles]()[k_mma_idx].vectorize[
                     1, Self.simd_width
@@ -928,25 +996,26 @@ struct SharedMemoryManager[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
     # k_v_smem is used for k, v, and scratch
-    alias _alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
-    alias _accum_type = get_accum_type[dtype]()
-    alias _p_smem_size = BM * BN if token_gen else 0
-    # depth // 8 is the padding
-    alias _k_v_smem_size = (depth + depth // 8) * BK
+    alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
+    alias accum_type = get_accum_type[dtype]()
+    alias p_smem_size = BM * BN if token_gen else 0
+    alias simd_width = simdwidthof[dtype]()
+    # depth // simd_width is the padding
+    alias k_v_smem_size = pad[dtype, depth, depth]() * BK
 
     @always_inline
     fn __init__(out self):
         self.p_smem = stack_allocation[
-            Self._p_smem_size,
+            Self.p_smem_size,
             dtype,
             address_space = AddressSpace.SHARED,
-            alignment = Self._alignment,
+            alignment = Self.alignment,
         ]()
         self.k_v_smem = stack_allocation[
-            Self._k_v_smem_size,
+            Self.k_v_smem_size,
             dtype,
             address_space = AddressSpace.SHARED,
-            alignment = Self._alignment,
+            alignment = Self.alignment,
         ]()
 
     @always_inline
@@ -957,7 +1026,7 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment = Self._alignment,
+        alignment = Self.alignment,
     ]:
         return self.k_v_smem.bitcast[Scalar[dtype]]()
 
@@ -967,7 +1036,7 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment = Self._alignment,
+        alignment = Self.alignment,
     ]:
         return self.p_smem.bitcast[Scalar[dtype]]()
 
@@ -1019,7 +1088,7 @@ struct SharedMemoryManager[
     fn get_warp_scratch_tensor(
         self,
         out result: LayoutTensor[
-            Self._accum_type,
+            Self.accum_type,
             Layout.row_major(2 * num_rowwise_warps, BM),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
@@ -1027,11 +1096,11 @@ struct SharedMemoryManager[
     ):
         constrained[
             result.layout.size()
-            * (sizeof[Self._accum_type]() // sizeof[dtype]())
-            <= Self._k_v_smem_size,
+            * (sizeof[Self.accum_type]() // sizeof[dtype]())
+            <= Self.k_v_smem_size,
             "warp_scratch_tile is too large",
         ]()
-        var ptr = self.k_v_smem.bitcast[Scalar[Self._accum_type]]()
+        var ptr = self.k_v_smem.bitcast[Scalar[Self.accum_type]]()
         return __type_of(result)(ptr if token_gen else __type_of(ptr)())
 
 

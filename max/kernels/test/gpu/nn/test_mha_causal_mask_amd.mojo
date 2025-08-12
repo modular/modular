@@ -364,5 +364,6 @@ fn test_helper[depth: Int](ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
+        test_helper[64](ctx)
         test_helper[128](ctx)
         test_helper[256](ctx)

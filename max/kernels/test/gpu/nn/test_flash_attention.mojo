@@ -81,6 +81,8 @@ fn test[
         mask_type,
         "mask_rank:",
         mask_rank,
+        "depth:",
+        depth,
     )
 
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()

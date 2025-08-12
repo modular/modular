@@ -73,6 +73,8 @@ fn test[
         mask_type,
         "mask_rank:",
         mask_rank,
+        "depth:",
+        depth,
     )
 
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
@@ -536,7 +538,7 @@ fn test_decoding[
 
 def main():
     with DeviceContext() as ctx:
-        alias depths = (128, 256)
+        alias depths = (64, 128, 256)
 
         @parameter
         for i in range(len(depths)):
