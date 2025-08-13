@@ -1,5 +1,5 @@
 ---
-title: Mojo🔥 FAQ
+title: Mojo FAQ
 sidebar_label: FAQ
 description: Answers to questions we expect about Mojo.
 ---
@@ -13,13 +13,13 @@ channels](https://www.modular.com/community).
 ### Why did you build Mojo?
 
 We built Mojo to solve an internal challenge at Modular, and we are using it
-extensively in our systems such as our [MAX Platform](https://www.modular.com/max).
+extensively in our systems such as our [Modular Platform](https://www.modular.com).
 As a result, we are extremely committed to
 its long term success and are investing heavily in it. Our overall mission is
 to unify AI software and we can’t do that without a unified language that can
 scale across the AI infrastructure stack. Our current focus is to unify
 CPU+GPU programming with blazing-fast execution on the
-[MAX Platform](https://www.modular.com/max). That said, the north star
+Modular Platform. That said, the north star
 is for Mojo to support the whole gamut of general-purpose
 programming over time. For a longer answer, read [Why
 Mojo](/mojo/why-mojo).
@@ -140,15 +140,12 @@ direct programming support for the MLIR intermediate representations.
 
 ### Is Mojo only for AI or can it be used for other stuff?
 
-Mojo's initial focus is to solve AI programmability challenges. See
-[here](https://github.com/modular/modular/tree/main/examples/custom_ops) for examples
-of how to write custom GPU operations. That being said,
-the goal is to grow Mojo into a general purpose programming language. We use Mojo
-at Modular to develop AI algorithms, but
-you can use it for other things like HPC, data transformations, writing pre/post
-processing operations, and much more. For examples of how Mojo can be used for
-other general programming tasks, see our [Mojo
-examples](https://github.com/modular/modular/tree/main/examples/mojo).
+Mojo's initial focus is to solve AI programmability challenges. However, our
+goal is to grow Mojo into a general purpose programming language. We use Mojo
+at Modular to develop AI algorithms and [GPU
+kernels](/max/tutorials/custom-ops-matmul), but you can use it for other things
+like HPC, data transformations, writing pre/post processing operations, and
+much more.
 
 ### Is Mojo interpreted or compiled?
 
@@ -167,21 +164,13 @@ languages (EDSLs) like Triton, read the “Embedded DSLs in Python” section of
 [Why
 Mojo](/mojo/why-mojo#embedded-dsls-in-python).
 
-### How does Mojo help with PyTorch acceleration?
-
-We use Mojo as part of the overall Modular AI stack,
-[MAX](https://www.modular.com/max) which accelerates PyTorch models.
-Mojo is the language we use to write the MAX’s high-performance CPU and GPU graph
-operations.
-
 ### Does Mojo support distributed execution?
 
-Not alone. You will need to leverage the
-[MAX Platform](https://www.modular.com/max)
-for that. Mojo is one component of the Modular stack that makes it easier
-for you to author highly performant, portable CPU and GPU graph operations,
-but you’ll also need a runtime (or “OS”) that supports graph level
-transformations and heterogeneous compute, which is provided by MAX.
+Not alone. Mojo is one component of the Modular Platform, which
+makes it easier for you to author highly performant, portable CPU and GPU graph
+operations, but you’ll also need a runtime (or “OS”) that supports graph level
+transformations and heterogeneous compute, which is provided by
+[MAX](/max/intro#components).
 
 ### Will Mojo support web deployment (such as Wasm or WebGPU)?
 
@@ -190,9 +179,9 @@ support it.
 
 ### How do I convert Python programs or libraries to Mojo?
 
-Mojo is still early and not yet a Python superset, so only simple programs can
-be brought over as-is with no code changes. We will continue investing in this
-and build migration tools as the language matures.
+You can migrate some parts of a Python project to Mojo
+by building Mojo bindings for Python. See the documentation about how to [call
+Mojo from Python](/mojo/manual/python/mojo-from-python).
 
 ### What about interoperability with other languages like C/C++?
 
@@ -219,24 +208,22 @@ will contribute additional hardware support in the future.
 
 ### Are there any AI related performance benchmarks for Mojo?
 
-It’s important to remember that Mojo is a general-purpose programming language,
-and any AI-related benchmarks will rely heavily upon other framework
-components. For example, our in-house CPU and GPU graph operations that power
-Modular's [MAX](https://www.modular.com/max) are all written in
-Mojo and you can learn more about performance in our [matrix multiplication blog
+It’s important to remember that Mojo is designed to be a general-purpose
+programming language, and any AI-related benchmarks will rely heavily upon
+other framework components. For example, our in-house CPU and GPU graph
+operations that power the Modular Platform are all written in Mojo and you can
+learn more about performance in our [matrix multiplication blog
 post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
 For details about our end-to-end model performance, read about how we measure
-performance at Modular [here](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+performance at Modular
+[here](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 ## Mojo SDK
 
 ### How can I get access to the SDK?
 
-Mojo is included with the `max` conda package. Try it now by following
+You can install it with the `mojo` conda package. Try it now by following
 the tutorial to [get started with Mojo](/mojo/manual/get-started).
-
-Read more about [why Mojo is bundled with
-MAX](/max/faq#why-bundle-mojo-with-max).
 
 ### Is the Mojo Playground still available?
 
@@ -247,38 +234,13 @@ for local development, we've shut down that service.
 The new [Mojo Playground](https://developer.modular.com/playground)
 does not require login.
 
-- It provides access to Mojo and the Mojo standard library. It does not have
-  network access, so you can't install additional Mojo or Python packages.
-
-- It doesn't include any Python packages by default. In the future,
-  we intend to make some common Python packages available to import in the
-  Playground.
-
-- You can download your code or share it as a gist, but there's no mechanism
-  for saving code in the Playground itself. Any changes will be lost when you
-  switch code examples (as well as in the event of a server refresh or update).
-  If you come up with something you want to save, download it or share it
-  using buttons in the Playground toolbar.
-
-- There might be some bugs. Please [report issues and feedback on
-  GitHub](https://github.com/modular/modular/issues/new/choose).
-
 ### What are the license terms for the SDK?
 
 Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-Currently, we support Ubuntu Linux 20.04/22.04 (64-bit x86) and macOS (Apple
-silicon). Support for Windows will follow. Until then, you have several options:
-
-- Windows users can use
-  [Windows Subsystem for Linux version 2 (WSL 2)](https://learn.microsoft.com/en-us/windows/wsl/install)
-  running a supported Linux distribution.
-- Intel Mac users can use a [Docker](https://www.docker.com/) container running
-  a supported Linux distribution.
-- Users on any system can install the SDK on a remote machine running a
-  supported Linux distribution.
+See the [system requirements](/max/faq#system-requirements).
 
 ### Is there IDE Integration?
 
@@ -301,28 +263,6 @@ reports, and in our decades of experience building developer products, we know
 that most people don’t do that. The telemetry provides us the insights we need
 to build better products for you.
 
-You can opt-out of the crash report and compiler/runtime telemetry, but
-package install/update/uninstall events cannot be
-disabled (see the [MAX SDK terms](https://www.modular.com/legal/terms)).
-
-To disable crash reports, use this command:
-
-```sh
-modular config-set crash_reporting.enabled=false
-```
-
-To reduce other telemetry to only the required telemetry events, use this
-command:
-
-```sh
-modular config-set telemetry.level=0
-```
-
-There are 3 telemetry levels: `0` currently records nothing (unless you're also
-using MAX, which records hardware information and session durations); `1`
-records high-level events such as when the compiler is invoked; and `2` records
-more detail such as the time spend compiling.
-
 ## Versioning & compatibility
 
 ### What’s the Mojo versioning strategy?
@@ -334,8 +274,10 @@ the language is evolving rapidly and source stability is not guaranteed.
 
 ### How often will you be releasing new versions of Mojo?
 
-Mojo development is moving fast and we are regularly releasing updates. Please
-join the [Mojo Discord channel](http://discord.gg/modular) for notifications
+Mojo development is moving fast and we are regularly releasing updates,
+including nightly builds almost every day.
+
+Join the [Mojo Discord channel](http://discord.gg/modular) for notifications
 and [sign up for our newsletter](https://www.modular.com/modverse#signup) for
 more coarse-grain updates.
 
