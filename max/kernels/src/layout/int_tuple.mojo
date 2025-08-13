@@ -1257,17 +1257,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             For tuples, writes a comma-separated list of elements enclosed in parentheses.
         """
         if self.is_value():
-            return writer.write(self.value())
-        writer.write("(")
-        var len = len(self)
-        for i in range(len):
-            if self.is_value(i):
-                writer.write(self.value(i))
-            else:
-                writer.write(String(self[i]))
-            if i < len - 1:
-                writer.write(", ")
-        writer.write(")")
+            writer.write(self.value())
+        else:
+            writer.write("(")
+            var len = len(self)
+            for i in range(len):
+                if self.is_value(i):
+                    writer.write(self.value(i))
+                else:
+                    writer.write(String(self[i]))
+                if i < len - 1:
+                    writer.write(", ")
+            writer.write(")")
 
     fn __str__(self) -> String:
         """
