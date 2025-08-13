@@ -8,6 +8,8 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
+#include "LLVM/Transforms/MetalAIRPass.h"
+#include "LLVM/Transforms/PointerRewriter.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
@@ -378,6 +380,15 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   OptimizationLevel level = OptimizationLevel::O3;
   ModulePassManager mpm;
 
+  // Add Metal AIR transformation pass at the very end for Metal GPU targets
+  if (isMetalBackend(options)) {
+    // First run MetalAIRPass to do address space conversions
+    mpm.addPass(MetalAIRPass());
+    // Then run PointerRewriter to add bitcasts for typed IR
+    mpm.addPass(PointerRewriter());
+    return mpm;
+  }
+
   // Do basic inference of function attributes from known properties of system
   // libraries and other oracles.
   mpm.addPass(InferFunctionAttrsPass());
@@ -541,6 +552,16 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
                                          const CompilationOptions &options) {
   OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
   ModulePassManager mpm;
+
+  // Add Metal AIR transformation pass at the very end for Metal GPU targets
+  if (isMetalBackend(options)) {
+    // First run MetalAIRPass to do address space conversions
+    mpm.addPass(MetalAIRPass());
+    // Then run PointerRewriter to add bitcasts for typed IR
+    mpm.addPass(PointerRewriter());
+    return mpm;
+  }
+
   passBuilder.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O0);
 
   passBuilder.invokePipelineEarlySimplificationEPCallbacks(

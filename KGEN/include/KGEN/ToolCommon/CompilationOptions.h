@@ -143,7 +143,10 @@ public:
   bool disableWarnings = false;
 };
 
-// Return true if target triple is `nvptx` or `amdgcn`
+// Return true if target triple is `air64-`
+bool isMetalTriple(const llvm::Triple &triple);
+
+// Return true if target triple is `nvptx` or `amdgcn` or `air64-`
 bool isGPUTriple(const llvm::Triple &triple);
 bool isGPUBackend(const CompilationOptions &options);
 
@@ -152,6 +155,9 @@ bool isAMDGPUBackend(const CompilationOptions &options);
 
 // Return true if target triple is `nvptx`
 bool isNVPTXBackend(const CompilationOptions &options);
+
+// Return true if target triple is `air64-`
+bool isMetalBackend(const CompilationOptions &options);
 
 } // namespace M::KGEN
 

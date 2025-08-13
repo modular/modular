@@ -121,7 +121,15 @@ void CompilationOptions::print(raw_ostream &os) const {
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
   // llvm::Triple defines isAMDGPU and isAMDGCN functions. The main difference
   // is that isAMDGPU checks for TeraScale muarch, which we don't support.
-  return triple.isNVPTX() || triple.isAMDGCN();
+  return triple.isNVPTX() || triple.isAMDGCN() || isMetalTriple(triple);
+}
+
+bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
+  // Metal GPU targets use ARM64 during compilation, then get converted to AIR
+  // iOS/tvOS/watchOS don't have discrete GPUs suitable for compute kernels
+  StringRef tripleStr = triple.str();
+
+  return tripleStr.starts_with("air64-");
 }
 
 bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
@@ -137,4 +145,10 @@ bool M::KGEN::isNVPTXBackend(const CompilationOptions &options) {
 bool M::KGEN::isAMDGPUBackend(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
   return triple.isAMDGCN();
+}
+
+bool M::KGEN::isMetalBackend(const CompilationOptions &options) {
+  // check compilation options for Metal backend
+  return options.targetAccelerator == "metal" ||
+         llvm::StringRef(options.targetTriple).starts_with("air64-");
 }
