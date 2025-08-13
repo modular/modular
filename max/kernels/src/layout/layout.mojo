@@ -988,6 +988,51 @@ struct Layout(
         """
         return self.shape.all_known()
 
+    @always_inline("nodebug")
+    fn transpose(self) -> Layout:
+        """Transposes the layout by reversing the order of dimensions.
+
+        For an n-dimensional layout, this reverses the order of both shapes and strides.
+        For nested layouts, only the top-level dimensions are transposed, not the
+        hierarchical structure within nested tuples.
+
+        Returns:
+            A new Layout with transposed dimensions.
+
+        Example:
+
+        ```mojo
+        from layout import Layout
+        from layout.int_tuple import IntTuple
+
+        # Simple 2D transpose (row-major to column-major)
+        var layout = Layout.row_major(3, 4)  # shape (3,4), stride (4,1)
+        var transposed = layout.transpose()  # shape (4,3), stride (1,4)
+
+        # 3D transpose
+        var layout3d = Layout.row_major(2, 3, 4)  # shape (2,3,4), stride (12,4,1)
+        var trans3d = layout3d.transpose()        # shape (4,3,2), stride (1,4,12)
+
+        # Nested layout - only top level transposed
+        var nested = Layout(
+            IntTuple(IntTuple(2, 3), 4),
+            IntTuple(IntTuple(12, 4), 1)
+        )
+        var trans_nested = nested.transpose()
+        # Result: shape (4, (2,3)), stride (1, (12,4))
+        ```
+        .
+        """
+        # Reverse only the top level, not nested tuples
+        var reversed_shape = IntTuple()
+        var reversed_stride = IntTuple()
+
+        for i in reversed(range(len(self.shape))):
+            reversed_shape.append(self.shape[i])
+            reversed_stride.append(self.stride[i])
+
+        return Layout(reversed_shape, reversed_stride)
+
 
 @always_inline("nodebug")
 fn size(l: Layout) -> Int:
