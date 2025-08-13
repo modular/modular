@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "NIXL_ENV_VAR", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
@@ -49,7 +49,7 @@ modular_py_test(
     data = NIXL_PLUGINS_DATA + [
         "//SDK/lib/API/python/tests/serve/testdata",
     ],
-    env = NIXL_ENV_VAR | {
+    env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
     },
