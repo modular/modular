@@ -115,6 +115,117 @@ fn matmul_dispatch_sm90[
 # FP8 (e4m3fn) Dispatch
 # ===----------------------------------------------------------------------=== #
 
+from internal_utils import Table, TuningConfig
+from utils.index import Index, IndexList
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct TuningConfigSM90(TuningConfig):
+    var M: Int
+    var N: Int
+    var K: Int
+
+    var mma_shape: IndexList[3]
+    var block_tile_shape: IndexList[3]
+    var num_pipeline_stages: UInt
+    var cluster_shape: IndexList[3]
+    var num_consumer: UInt
+    var partitioned_multicast: Bool
+    var grid_shape: OptionalReg[IndexList[2]]  # = None
+    var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
+
+    fn __str__(self) -> String:
+        return "hello" + String(self.M) + String(self.N) + String(self.K)
+
+
+# llama-405B-FP8 gemm shapes
+alias llama_405b_fp8_list = List(
+    TuningConfigSM90(
+        M=64,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(64, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=8,
+        num_consumer=1,
+        partitioned_multicast=False,
+        grid_shape=Index(128, 1),
+        schedule=MatmulSchedule.DS_SCHEDULER,
+    ),
+    TuningConfigSM90(
+        M=128,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=Index(H100.sm_count, 1),
+        schedule=MatmulSchedule.DS_SCHEDULER,
+    ),
+    TuningConfigSM90(
+        M=256,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=Index(H100.sm_count, 1),
+        schedule=MatmulSchedule.DS_SCHEDULER,
+    ),
+    TuningConfigSM90(
+        M=512,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=True,
+        schedule=MatmulSchedule.DS_SCHEDULER,
+        grid_shape=Index(H100.sm_count, 1),
+    ),
+    TuningConfigSM90(
+        M=1024,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=Index(H100.sm_count, 1),
+        schedule=MatmulSchedule.DS_SCHEDULER,
+    ),
+    TuningConfigSM90(
+        M=1025,
+        N=16384,
+        K=2048,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(2, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=Index(8, H100.sm_count // 8),
+        schedule=MatmulSchedule.TILE2D,
+    ),
+)
+
+# llama-405B-FP8 gemm shapes
+alias llama_405b_fp8_table = Table[
+    llama_405b_fp8_list, "llama_405b_fp8_table"
+]()
+
 
 fn matmul_dispatch_sm90_fp8[
     c_type: DType,
@@ -180,22 +291,41 @@ fn matmul_dispatch_sm90_fp8[
         )
         return DISPATCH_HIT
 
-    # llama-405B-FP8 gemm shapes
     @parameter
-    if static_N == 16384 and static_K == 2048:
-        if m <= 64:
+    if static_K == 2048 and static_N == 16384:
+
+        @parameter
+        @always_inline
+        fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
+            return x.K == static_K and x.N == static_N
+
+        # First, filter by static params N and K
+        alias nk_idx_list = llama_405b_fp8_table.query_index[rule_eq_nk]()
+
+        @parameter
+        @always_inline
+        fn get_m(x: TuningConfigSM90) -> Int:
+            return x.M
+
+        alias m_values = llama_405b_fp8_table.query_values[
+            Int, get_m, nk_idx_list
+        ]()
+
+        @parameter
+        @always_inline("nodebug")
+        fn _dispatch[entry: TuningConfigSM90]() raises:
             alias config = MatmulConfig[
                 a_type,
                 b_type,
                 c_type,
                 transpose_b,
-                mma_shape = Index(64, 128, 32),
+                mma_shape = entry.mma_shape,
             ](
-                block_tile_shape=Index(64, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=8,
-                num_consumer=1,
-                partitioned_multicast=False,
+                block_tile_shape=entry.block_tile_shape,
+                cluster_shape=entry.cluster_shape,
+                num_pipeline_stages=entry.num_pipeline_stages,
+                num_consumer=entry.num_consumer,
+                partitioned_multicast=entry.partitioned_multicast,
                 pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
@@ -203,159 +333,53 @@ fn matmul_dispatch_sm90_fp8[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule = entry.schedule,
+                grid_shape = entry.grid_shape,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
                 rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
                 ctx,
             )
-            return DISPATCH_HIT
-        elif m <= 128:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                grid_shape = Index(H100.sm_count, 1),
-                schedule = MatmulSchedule.DS_SCHEDULER,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        elif m <= 256:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(H100.sm_count, 1),
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        elif m <= 512:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(H100.sm_count, 1),
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        elif m <= 1024:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                grid_shape = Index(H100.sm_count, 1),
-                schedule = MatmulSchedule.DS_SCHEDULER,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        else:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(2, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
+
+        @parameter
+        for static_m in m_values:
+
+            @parameter
+            @always_inline
+            fn rule_eq_m(x: TuningConfigSM90) -> Bool:
+                return x.M == static_m
+
+            if m <= static_m:
+                alias idx_list = llama_405b_fp8_table.query_index[
+                    rule_eq_m, domain=nk_idx_list
+                ]()
+
+                @parameter
+                if idx_list:
+                    alias entry = llama_405b_fp8_table.configs[idx_list[0]]
+                    _dispatch[entry]()
+                    return DISPATCH_HIT
+                else:
+                    # dynamic m is in the range but cannot find any corresponding config in the table.
+                    break
+
+        # dynamic m is outside the range, pick the config for largest value of M.
+        alias max_m = m_values[len(m_values) - 1]
+
+        @parameter
+        @always_inline
+        fn rule_eq_max_m(x: TuningConfigSM90) -> Bool:
+            return x.M == max_m
+
+        alias idx_list = llama_405b_fp8_table.query_index[
+            rule_eq_max_m, domain=nk_idx_list
+        ]()
+
+        @parameter
+        if idx_list:
+            alias entry = llama_405b_fp8_table.configs[idx_list[0]]
+            _dispatch[entry]()
             return DISPATCH_HIT
 
     elif static_N == 2304 and static_K == 16384:

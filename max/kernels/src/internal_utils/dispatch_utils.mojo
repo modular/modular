@@ -115,23 +115,21 @@ struct Table[
     ]() -> List[ret_type]:
         var result = List[ret_type]()
 
+        @always_inline
+        fn _get_search_idx_list() -> List[Int]:
+            @parameter
+            if idx_list:
+                return idx_list
+            else:
+                return List[Int]([idx for idx in range(Self.num_configs)])
+
+        alias search_idx_list = _get_search_idx_list()
+
         @parameter
-        if idx_list:
-
-            @parameter
-            for idx in idx_list:
-                alias cfg = configs[idx]
-                alias value = rule(cfg)
-                if value not in result:
-                    result.append(value)
-        else:
-
-            @parameter
-            for idx in range(Self.num_configs):
-                alias cfg = configs[idx]
-                alias value = rule(cfg)
-                if value not in result:
-                    result.append(value)
+        for idx in search_idx_list:
+            alias value = rule(configs[idx])
+            if value not in result:
+                result.append(value)
 
         @parameter
         fn _cmp(
@@ -140,5 +138,4 @@ struct Table[
             return lsh.data < rhs.data
 
         _quicksort[_cmp](result)
-
         return result
