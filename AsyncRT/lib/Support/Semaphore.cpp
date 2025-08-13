@@ -10,13 +10,10 @@
 
 #if defined(__APPLE__)
 #include <dispatch/dispatch.h>
-#elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
+#else
 #include <cassert>
 #include <cerrno>
 #include <semaphore.h>
-#else
-#include <condition_variable>
-#include <mutex>
 #endif
 
 using namespace M::AsyncRT;
@@ -40,12 +37,8 @@ public:
 private:
 #if defined(__APPLE__)
   dispatch_semaphore_t sema;
-#elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
-  sem_t sema;
 #else
-  int counter;
-  std::mutex mut;
-  std::condition_variable cv;
+  sem_t sema;
 #endif
 };
 
@@ -77,7 +70,7 @@ bool Semaphore::Impl::wait(int64_t timeoutNS) {
   return 0 != dispatch_semaphore_wait(sema, timeout);
 }
 
-#elif defined(MODULAR_HAVE_SEM_TIMEDWAIT)
+#else
 //===----------------------------------------------------------------------===//
 // Semaphore::Impl for POSIX platforms with sem_timedwait
 //===----------------------------------------------------------------------===//
@@ -131,56 +124,6 @@ bool Semaphore::Impl::wait(int64_t timeoutNS) {
 
   llvm::report_fatal_error(
       "sem_timedwait failed for a reason other than EINTR or ETIMEDOUT.");
-}
-
-#else
-//===----------------------------------------------------------------------===//
-// Backup Semaphore::Impl using std::mutex and std::condition_variable.
-//===----------------------------------------------------------------------===//
-
-Semaphore::Impl::Impl(ssize_t initialValue) : counter(initialValue) {
-  assert(initialValue >= 0 && "semaphore initial value cannot be negative");
-}
-
-Semaphore::Impl::~Impl() {}
-
-void Semaphore::Impl::post() {
-  {
-    // Acquire the lock and increment the counter.
-    std::lock_guard<std::mutex> lock(mut);
-    ++counter;
-  }
-
-  cv.notify_one();
-}
-
-bool Semaphore::Impl::wait() {
-  // Use the condition variable to wait for counter to be greater than 0.
-  std::unique_lock<std::mutex> lock(mut);
-
-  // If there is no timeout specified, use cv.wait to wait forever.
-  cv.wait(lock, [&] { return counter > 0; });
-  // We now own the lock and we know the counter is greater than 0, so
-  // decrement it.
-  --counter;
-  return false;
-}
-
-bool Semaphore::Impl::wait(int64_t timeoutNS) {
-  // Use the condition variable to wait for counter to be greater than 0.
-  std::unique_lock<std::mutex> lock(mut);
-
-  // There's a timeout specified so wait for that number of nanoseconds.
-  using namespace std::chrono_literals;
-  bool condition =
-      cv.wait_for(lock, timeoutNS * 1ns, [&] { return counter > 0; });
-  if (!condition)
-    return true;
-
-  // We now own the lock and we know the counter is greater than 0, so
-  // decrement it.
-  --counter;
-  return false;
 }
 #endif
 
