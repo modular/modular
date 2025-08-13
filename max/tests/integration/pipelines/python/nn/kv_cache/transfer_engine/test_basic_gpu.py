@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import os
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator
@@ -115,3 +117,39 @@ def test_initiate_send_xfer() -> None:
 
     engine_1.cleanup()
     engine_2.cleanup()
+
+
+def test_ensure_we_use_buffer_cache() -> None:
+    cpu_device = CPU()
+    cpu_tensor = Tensor.from_numpy(np.arange(10, dtype=np.int16)).to(cpu_device)
+
+    acc_device = Accelerator()
+    acc_tensor = cpu_tensor.to(acc_device)
+
+    # unset BAZEL_TEST to pretend that we are not in a bazel test
+    os.environ.pop("BAZEL_TEST", None)
+
+    # fails
+    with pytest.raises(
+        ValueError,
+        match="MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory",
+    ):
+        engine = KVTransferEngine(
+            "engine",
+            acc_tensor,
+            total_num_pages=1,
+            listen_port=available_port(),
+        )
+
+    # ok
+    engine = KVTransferEngine(
+        "engine", cpu_tensor, total_num_pages=1, listen_port=available_port()
+    )
+    engine.cleanup()
+
+    # ok
+    os.environ["MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"] = "99"
+    engine = KVTransferEngine(
+        "engine", acc_tensor, total_num_pages=1, listen_port=available_port()
+    )
+    engine.cleanup()
