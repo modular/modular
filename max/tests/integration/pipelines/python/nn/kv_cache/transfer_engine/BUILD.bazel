@@ -1,11 +1,10 @@
-load("//bazel:api.bzl", "NIXL_ENV_VAR", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
 
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
         data = NIXL_PLUGINS_DATA,
-        env = NIXL_ENV_VAR,
         exec_properties = {
             "test.resources:gpu-memory": "16",
         },
