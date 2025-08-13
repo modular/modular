@@ -453,7 +453,7 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
   GeneratorOp::build(
       b, state, func.getSymNameAttr(), sigAttr, func.getFunctionTypeAttr(),
       inputParamsArr, func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-      func.getExportKindAttr(), func.getIsExternAttr(),
+      func.getExportKindAttr(), func.getExternalAttr(),
       func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())

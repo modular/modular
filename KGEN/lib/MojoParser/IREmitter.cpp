@@ -1755,7 +1755,7 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   }
 
   // Handle a `deinit` argument by marking it destroyed.
-  if (func.getIsSelfDeinit()) {
+  if (func.getSelfDeinit()) {
     assert(!signature.getArgConventions().empty() &&
            signature.getArgConventions().front() == ArgConvention::OwnedMem);
     Value argToDestroy = func.getBody()->getArguments().front();

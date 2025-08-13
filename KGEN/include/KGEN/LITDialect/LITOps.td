@@ -58,12 +58,12 @@ def LIT_FnOp : LITOp<"fn", [
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
-    UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-    UnitAttr:$isSynthetic,
-    UnitAttr:$isImplicitConversion,
-    UnitAttr:$isExtern,
-    UnitAttr:$isSelfDeinit, // First argument is 'deinit self'.
-    UnitAttr:$isDefaultedTraitFn, // Present for trait methods with non-empty bodies.
+    UnitAttr:$def,  // Present if 'def' absent if 'fn'.
+    UnitAttr:$synthetic,
+    UnitAttr:$implicitConversion,
+    UnitAttr:$external,
+    UnitAttr:$selfDeinit, // First argument is 'deinit self'.
+    UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
@@ -130,13 +130,13 @@ def LIT_FnOp : LITOp<"fn", [
     bool isSynthetic();
 
     /// Return true if this was defined as a 'def', not a 'fn'.
-    bool isDef() { return getIsDef(); }
+    bool isDef() { return getDef(); }
 
     /// Override the default implementation of isExternal.
-    bool isExternal() { return getIsExtern(); }
+    bool isExternal() { return getExternal(); }
 
     /// Return true if this is a defaulted trait method.
-    bool isDefaultedTraitFn() { return getIsDefaultedTraitFn(); }
+    bool isDefaultedTraitFn() { return getDefaultedTraitFn(); }
 
     mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
     mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
@@ -371,7 +371,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
-    UnitAttr:$isSynthetic,
+    UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,

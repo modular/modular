@@ -495,7 +495,7 @@ public:
     TargetInfoAttr target = getTypeConverter()->getTarget();
 
     // Mark all functions as internal for now - we'll clean this up later.
-    LLVM::Linkage linkage = func.getIsExtern()
+    LLVM::Linkage linkage = func.isExternal()
                                 ? LLVM::Linkage::External
                                 : getLinkageKind(func.getExportKind());
     auto funcOp = createLLVMFunc(b, target, func.getLoc(), func.getNameAttr(),
@@ -533,7 +533,7 @@ public:
     convertInlineLevel(funcOp, func.getInlineLevel());
 
     // And move the func's body into the new function.
-    if (!func.getIsExtern()) {
+    if (!func.isExternal()) {
       b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
                            funcOp.end());
       (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());

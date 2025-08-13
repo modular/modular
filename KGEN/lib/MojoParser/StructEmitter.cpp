@@ -180,7 +180,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
 
   attrs.set(fnOp.getSpecialFnKindAttrName(),
             builder.getI8IntegerAttr(uint8_t(specialFnID)));
-  attrs.set(fnOp.getIsSyntheticAttrName(), UnitAttr::get(ctx)); // True.
+  attrs.set(fnOp.getSyntheticAttrName(), UnitAttr::get(ctx)); // True.
   attrs.set(fnOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
   attrs.set(fnOp.getInlineLevelAttrName(),
             InlineLevelAttr::get(ctx, inlineLevel));
@@ -443,7 +443,7 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Destructors consume their 'self' arg.
-  funcOp.setIsSelfDeinit(true);
+  funcOp.setSelfDeinit(true);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -492,7 +492,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   OpBuilder::atBlockEnd(resultFn.getBody())
       .create<EndFnOp>(resultFn.getLoc(), /*unresolved=*/true);
   if (isMove) // Move constructors consume their 'self' arg.
-    resultFn.setIsSelfDeinit(true);
+    resultFn.setSelfDeinit(true);
 
   // TODO: Should only do this if the type is RP or small?
   resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);

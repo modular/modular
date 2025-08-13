@@ -2604,7 +2604,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   // If marked as 'def', remember this on the function decl.
   if (isDef)
-    fnOp.setIsDef(true);
+    fnOp.setDef(true);
 
   // Mark this function with an attribute if it's trait method with a non-empty
   // body.
@@ -2693,7 +2693,7 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
 
   // Mark the function as defaulted unless its body is explicitly empty.
   if (!getToken().isAny(Token::kw_pass, Token::dot_dot_dot)) {
-    fnOp.setIsDefaultedTraitFn(true);
+    fnOp.setDefaultedTraitFn(true);
   }
 
   // Restore lexer state so normal parsing can continue unharmed.
