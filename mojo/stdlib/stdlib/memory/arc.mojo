@@ -102,14 +102,6 @@ struct ArcPointer[T: Movable](
             value^
         )
 
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     fn __copyinit__(out self, existing: Self):
         """Copy an existing reference. Increment the refcount to the object.
 

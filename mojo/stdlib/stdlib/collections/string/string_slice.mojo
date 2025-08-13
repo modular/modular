@@ -641,15 +641,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided `StringSlice`.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(unsafe_from_utf8=self._slice)
-
     @implicit
     fn __init__[
         origin: ImmutableOrigin, //

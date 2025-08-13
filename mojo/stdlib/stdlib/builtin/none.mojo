@@ -48,15 +48,6 @@ struct NoneType(
         """
         self._value = value
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicit copy constructor.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(None)
-
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of `None`.

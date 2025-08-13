@@ -81,14 +81,6 @@ struct Slice(
         self.end = end
         self.step = step
 
-    fn copy(self) -> Self:
-        """Creates a deep copy of the Slice.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#

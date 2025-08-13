@@ -239,14 +239,6 @@ struct DictEntry[K: KeyElement, V: ExplicitlyCopyable & Movable, H: Hasher](
         self.key = existing.key.copy()
         self.value = existing.value.copy()
 
-    fn copy(self) -> Self:
-        """Copy an existing entry.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
 
@@ -553,15 +545,6 @@ struct Dict[
     @always_inline
     fn _reserved(self) -> Int:
         return len(self._entries)
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Copy an existing dictiontary.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
 
     @staticmethod
     fn fromkeys(keys: List[K, *_], value: V) -> Self:
@@ -1118,14 +1101,6 @@ struct OwnedKwargsDict[V: ExplicitlyCopyable & Movable](
     fn __init__(out self):
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, V, default_comp_time_hasher]()
-
-    fn copy(self) -> Self:
-        """Copy an existing keyword dictionary.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
 
     fn __copyinit__(out self, existing: Self):
         """Copy an existing keyword dictionary.

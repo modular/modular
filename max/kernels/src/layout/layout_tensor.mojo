@@ -796,14 +796,6 @@ struct LayoutTensor[
             host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
-    fn copy(self) -> Self:
-        """Explicitly copy the other `LayoutTensor`.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     alias BitcastType[
         new_dtype: DType,
         /,

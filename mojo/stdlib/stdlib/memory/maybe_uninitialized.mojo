@@ -40,25 +40,6 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         """The memory is now considered uninitialized."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    @doc_private
-    @always_inline
-    fn copy(self) -> Self:
-        """This method is not intended to be called.
-
-        Trying to call this method will abort.
-
-        Returns:
-            Nothing, this method always aborts.
-        """
-        return abort[Self](
-            "You should never call the copy() method of"
-            " UnsafeMaybeUninitialized because it's ambiguous to copy"
-            " possibly uninitialized memory. Use"
-            " `UnsafeMaybeUninitialized.copy_from()` instead if you want to"
-            " trigger an explicit copy of the content of"
-            " UnsafeMaybeUninitialized. It has very specific semantics."
-        )
-
     @always_inline
     fn __init__[
         MovableType: Movable
@@ -76,7 +57,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
 
     @always_inline
     fn __copyinit__(out self, other: Self):
-        """Copy another object.
+        """This method is not intended to be called.
 
         This method should never be called as implicit copy should not
         be done on memory that may be uninitialized.
@@ -89,8 +70,14 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        abort("You should never call __copyinit__ on MaybeUninitialized")
-        self = Self()
+        self = abort[Self](
+            "You should never call __copyinit__ on UnsafeMaybeUninitialized"
+            " UnsafeMaybeUninitialized because it's ambiguous to copy"
+            " possibly uninitialized memory. Use"
+            " `UnsafeMaybeUninitialized.copy_from()` instead if you want to"
+            " trigger an explicit copy of the content of"
+            " UnsafeMaybeUninitialized. It has very specific semantics."
+        )
 
     @always_inline
     fn copy_from[

@@ -242,14 +242,6 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         else:
             return DLHandle(OpaquePointer())
 
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
 

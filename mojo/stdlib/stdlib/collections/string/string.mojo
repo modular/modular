@@ -516,15 +516,6 @@ struct String(
         return result^
 
     @always_inline("nodebug")
-    fn copy(self) -> Self:
-        """Explicitly copy the provided value.
-
-        Returns:
-            A copy of the value.
-        """
-        return self  # Just use the implicit copyinit.
-
-    @always_inline("nodebug")
     fn __init__(out self, *, unsafe_uninit_length: UInt):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the

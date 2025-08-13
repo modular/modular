@@ -191,15 +191,6 @@ struct DType(
     alias float64 = DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Copy this DType.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):

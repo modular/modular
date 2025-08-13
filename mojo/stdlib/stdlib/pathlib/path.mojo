@@ -108,14 +108,6 @@ struct Path(
         """
         self.path = path
 
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(self.path)
-
     fn __truediv__(self, suffix: Self) -> Self:
         """Joins two paths using the system-defined path separator.
 

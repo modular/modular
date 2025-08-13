@@ -214,14 +214,6 @@ struct Error(
         buffer.flush()
         self = Error(output)
 
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     fn __del__(deinit self):
         """Releases memory if allocated."""
         if self.loaded_length < 0:

@@ -43,9 +43,6 @@ struct _NoneType(Copyable, ExplicitlyCopyable, Movable):
     fn __copyinit__(out self, other: Self):
         pass
 
-    fn copy(self) -> Self:
-        return _NoneType()
-
 
 # ===-----------------------------------------------------------------------===#
 # Optional
@@ -127,14 +124,6 @@ struct Optional[T: ExplicitlyCopyable & Movable](
             value: Must be exactly `None`.
         """
         self = Self()
-
-    fn copy(self) -> Self:
-        """Copy construct an `Optional`.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

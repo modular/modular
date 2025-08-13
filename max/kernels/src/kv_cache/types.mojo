@@ -769,15 +769,6 @@ struct ContinuousBatchingKVCacheCollection[
         )
 
     @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return self
-
-    @always_inline
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         return self._get_cache[0](layer_idx)
 
@@ -864,15 +855,6 @@ struct PagedKVCacheCollection[
         self.max_cache_length = other.max_cache_length
         self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
         self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return self
 
     fn __moveinit__(out self, deinit other: Self):
         self.blocks = other.blocks

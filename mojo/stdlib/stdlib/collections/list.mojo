@@ -113,17 +113,6 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         self._len = 0
         self.capacity = 0
 
-    fn copy(self) -> Self:
-        """Creates a deep copy of the given list.
-
-        Returns:
-            A copy of the value.
-        """
-        var copy = Self(capacity=self.capacity)
-        for e in self:
-            copy.append(e.copy())
-        return copy^
-
     fn __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
 

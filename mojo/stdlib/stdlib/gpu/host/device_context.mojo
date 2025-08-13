@@ -316,19 +316,6 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         self._host_ptr = existing._host_ptr
         self._handle = existing._handle
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        constrained[
-            not is_gpu(),
-            "HostBuffer is not supported on GPUs",
-        ]()
-        return self
-
     fn __moveinit__(out self, deinit existing: Self):
         """Initializes this buffer by taking ownership of an existing buffer.
 
@@ -926,19 +913,6 @@ struct DeviceBuffer[dtype: DType](
         ](existing._handle)
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        constrained[
-            not is_gpu(),
-            "DeviceBuffer is not supported on GPUs",
-        ]()
-        return self
 
     fn __moveinit__(out self, deinit existing: Self):
         """Initializes this buffer by taking ownership of an existing buffer.
@@ -2706,18 +2680,6 @@ struct DeviceContext(Copyable, Movable):
         # Increment the reference count before copying the handle.
         existing._retain()
         self._handle = existing._handle
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly constructs a copy of this device context.
-
-        This method creates a new reference to the same underlying device context
-        by incrementing the reference count of the native context object.
-
-        Returns:
-            A copy of this device context that refers to the same underlying context.
-        """
-        return self
 
     fn __del__(deinit self):
         """Releases resources associated with this device context.

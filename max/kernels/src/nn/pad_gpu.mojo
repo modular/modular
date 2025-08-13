@@ -146,15 +146,6 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         self.output_shape = output_shape
 
     @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return self
-
-    @always_inline
     fn init_offsets(
         mut self,
         output_offset: Int,

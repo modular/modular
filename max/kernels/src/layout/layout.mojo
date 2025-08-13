@@ -806,17 +806,6 @@ struct Layout(
                     shape_with_unknown.append(to_unknown(self.shape[i]))
             return Layout(shape_with_unknown, self.stride)
 
-    @always_inline("nodebug")
-    fn copy(self) -> Self:
-        """Explicitly constructs a copy of this layout.
-
-        Creates a deep copy of the layout, including its shape and stride tuples.
-
-        Returns:
-            A new Layout instance with identical shape and stride values.
-        """
-        return self
-
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#

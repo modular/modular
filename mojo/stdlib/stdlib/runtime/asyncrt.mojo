@@ -312,16 +312,6 @@ struct _TaskGroupBox(Copyable, Movable):
     fn __copyinit__(out self, existing: Self):
         self = abort[Self]("_TaskGroupBox.__copyinit__ should never get called")
 
-    # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
-    # should never get called.
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return abort[Self]("_TaskGroupBox.copy should never get called")
-
 
 struct TaskGroup(Defaultable):
     """A group of tasks that can be executed concurrently.

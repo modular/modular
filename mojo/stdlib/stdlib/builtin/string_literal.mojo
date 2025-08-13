@@ -66,15 +66,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """Constructor for any value."""
         pass
 
-    @always_inline("nodebug")
-    fn copy(self) -> Self:
-        """Copy constructor.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

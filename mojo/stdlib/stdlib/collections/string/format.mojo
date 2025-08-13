@@ -123,10 +123,6 @@ struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
     alias _args_t = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
     """Args types that are formattable by curly entry."""
 
-    fn copy(self) -> Self:
-        """Construct a format entry by copying another."""
-        return self
-
     fn __init__(
         out self,
         first_curly: Int,

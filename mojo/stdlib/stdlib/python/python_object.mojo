@@ -137,14 +137,6 @@ struct PythonObject(
         """Initialize the object with a `None` value."""
         self = Self(None)
 
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     fn __init__(out self, *, from_owned: PyObjectPtr):
         """Initialize this object from an owned reference-counted Python object
         pointer.

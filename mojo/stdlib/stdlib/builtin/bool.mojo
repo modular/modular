@@ -205,15 +205,6 @@ struct Bool(
         self = value.__bool__()
 
     @always_inline("builtin")
-    fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided value.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
-    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert to Bool.
 

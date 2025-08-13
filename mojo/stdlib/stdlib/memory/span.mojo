@@ -157,15 +157,6 @@ struct Span[
         self._len = Int(length)
 
     @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of the provided `Span`.
-
-        Returns:
-            A copy of the `Span`.
-        """
-        return self
-
-    @always_inline
     @implicit
     fn __init__(out self, ref [origin, address_space]list: List[T, *_]):
         """Construct a `Span` from a `List`.

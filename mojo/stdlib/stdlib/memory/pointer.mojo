@@ -365,16 +365,6 @@ struct Pointer[
         """
         self = Self(_mlir_value=__get_mvalue_as_litref(to))
 
-    fn copy(self) -> Self:
-        """Constructs a copy from another Pointer.
-
-        Note that this does **not** copy the underlying data.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(_mlir_value=self._value)
-
     @always_inline
     fn get_immutable(self) -> Self.Immutable:
         """Constructs a new Pointer with the same underlying target

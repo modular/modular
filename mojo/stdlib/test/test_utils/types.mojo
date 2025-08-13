@@ -145,9 +145,6 @@ struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     fn __copyinit__(out self, existing: Self):
         self.copy_count = existing.copy_count + 1
 
-    fn copy(self) -> Self:
-        return self
-
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("CopyCounter(")
         writer.write(String(self.copy_count))
@@ -184,10 +181,6 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
         self.value = existing.value.copy()
         self.move_count = existing.move_count
 
-    fn copy(self, out existing: Self):
-        existing = Self(self.value.copy())
-        existing.move_count = self.move_count
-
 
 # ===----------------------------------------------------------------------=== #
 # MoveCopyCounter
@@ -206,9 +199,6 @@ struct MoveCopyCounter(Copyable, Movable):
         self.copied = other.copied + 1
         self.moved = other.moved
 
-    fn copy(self) -> Self:
-        return self
-
     fn __moveinit__(out self, deinit other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
@@ -226,9 +216,6 @@ struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
 
     fn __del__(deinit self):
         self.destructor_counter[].append(self.value)
-
-    fn copy(self) -> Self:
-        return DelRecorder(self.value, self.destructor_counter)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -302,7 +289,3 @@ struct CopyCountedStruct(Copyable, Movable):
 struct AbortOnCopy(Copyable, ExplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         abort("We should never implicitly copy AbortOnCopy")
-
-    fn copy(self) -> Self:
-        abort("We should never explicitly copy AbortOnCopy")
-        return self

@@ -160,15 +160,6 @@ struct UnsafePointer[
 
         self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Copy an existing pointer.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
