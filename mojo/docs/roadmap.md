@@ -79,8 +79,9 @@ conforms to a given trait, instead of being hard-coded to work with a specific
 type.
 
 Currently, the only kind of requirements supported by traits are required method
-signatures. The trait can't provide a default implementation for its required
-methods, so each conforming type must implement all of the required methods.
+signatures and associated aliases. The trait can't provide a default
+implementation for its required methods, so each conforming type must implement
+all of the required methods.
 
 A number of [built-in traits](/mojo/manual/traits#built-in-traits) are
 already implemented in the standard library.
@@ -124,31 +125,6 @@ print(cos(0))
 For now, however, working with C/C++ modules requires the
 [`sys.ffi`](/mojo/stdlib/sys/ffi/) package.
 
-## Full MLIR decorator reflection
-
-All decorators in Mojo have hard-coded behavior in the parser. In time, we will
-move these decorators to being compile-time metaprograms that use MLIR
-integration. This may depend on C++ interop for talking to MLIR. This completely
-opens up the compiler to programmers. Static decorators are functions executed
-at compile-time with the capability to inspect and modify the IR of functions
-and types.
-
-```mojo
-fn value(t: TypeSpec):
-    t.__copyinit__ = # synthesize dunder copyinit automatically
-
-@value
-struct TrivialType: pass
-
-fn full_unroll(loop: mlir.Operation):
-    # unrolling of structured loop
-
-fn main():
-    @full_unroll
-    for i in range(10):
-        print(i)
-```
-
 ## Sharp Edges
 
 The entire Modular kernel library is written in Mojo, and its development has
@@ -165,30 +141,6 @@ documented here.
 
 Mojo does not yet support defining anonymous functions with the `lambda`
 keyword.
-
-### Parametric aliases
-
-Mojo aliases can refer to parametric values but cannot themselves have
-parameter lists. As of v0.6.0, you can create a parametric alias by aliasing
-an unbound or partially-bound type. For example, the new `Scalar` type is
-defined as:
-
-```mojo
-alias Scalar = SIMD[size=1]
-```
-
-This creates a parametric alias that you can use like this:
-
-```mojo
-var i = Scalar[DType.int8]
-```
-
-Parametric aliases with an explicit parameter list aren't yet supported:
-
-```mojo
-alias mul2[x: Int] = x * 2
-# Error!
-```
 
 ### `Exception` is actually called `Error`
 
@@ -264,7 +216,7 @@ for var i in list:
     i += 1  # i is a copy; changing i doesn't update the list
 
 for ref i in list:
-    i += 1  # i is a mutable reference; changing i updates the list 
+    i += 1  # i is a mutable reference; changing i updates the list
 ```
 
 ### Name scoping of nested function declarations
