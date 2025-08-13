@@ -168,10 +168,6 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
-    local_defines = select({
-        "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
-        "//conditions:default": [],
-    }),
     tags = ["no-clang-tidy-headers"],
     deps = [
         "//Support:MArchTarget",
