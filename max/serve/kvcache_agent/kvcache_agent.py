@@ -214,13 +214,10 @@ class KVCacheAgentServer:
             config: Configuration for the server.
         """
         self.config = config
-        # This remains the only use of pickle in the current codebase.
-        # As the KVCacheChangeMessage contains Protobuf Enum's it cannot be
-        # serialized by msgspec/msgpack.
         self._kv_cache_events_pull_socket = ZmqPullSocket[KVCacheChangeMessage](
             zmq_endpoint=kv_cache_events_zmq_endpoint,
             # GENAI-233: This is currently non-functional.
-            deserialize=msgpack_numpy_decoder(KVCacheChangeMessage),
+            deserialize=msgpack_numpy_decoder(int),
         )
         self.server = grpc.server(
             concurrent.futures.ThreadPoolExecutor(
