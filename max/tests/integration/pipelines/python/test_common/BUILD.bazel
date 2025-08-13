@@ -8,6 +8,7 @@ load(
 
 modular_py_library(
     name = "test_common",
+    testonly = True,
     srcs = ["__init__.py"],
     imports = [".."],
     deps = [
@@ -39,6 +40,7 @@ modular_py_library(
 
 modular_py_library(
     name = "ndarray_from_tensor_type",
+    testonly = True,
     srcs = ["ndarray_from_tensor_type.py"],
     imports = [".."],
     deps = [
@@ -49,6 +51,7 @@ modular_py_library(
 
 modular_py_library(
     name = "numpy_encoder",
+    testonly = True,
     srcs = ["numpy_encoder.py"],
     imports = [".."],
     deps = [
@@ -58,12 +61,14 @@ modular_py_library(
 
 modular_py_library(
     name = "test_data",
+    testonly = True,
     srcs = ["test_data.py"],
     imports = [".."],
 )
 
 modular_py_library(
     name = "distance_metrics",
+    testonly = True,
     srcs = ["distance_metrics.py"],
     imports = [".."],
     deps = [
@@ -74,6 +79,7 @@ modular_py_library(
 
 modular_py_library(
     name = "evaluate",
+    testonly = True,
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
@@ -88,6 +94,7 @@ modular_py_library(
 
 modular_py_library(
     name = "evaluate_embeddings",
+    testonly = True,
     srcs = ["evaluate_embeddings.py"],
     imports = [".."],
     deps = [
@@ -98,12 +105,14 @@ modular_py_library(
 
 modular_py_library(
     name = "github_utils",
+    testonly = True,
     srcs = ["github_utils.py"],
     imports = [".."],
 )
 
 modular_py_library(
     name = "graph_utils",
+    testonly = True,
     srcs = ["graph_utils.py"],
     imports = [".."],
     deps = [
@@ -116,6 +125,7 @@ modular_py_library(
 
 modular_py_library(
     name = "path",
+    testonly = True,
     srcs = ["path.py"],
     imports = [".."],
     deps = [
@@ -126,6 +136,7 @@ modular_py_library(
 
 modular_py_library(
     name = "context_utils",
+    testonly = True,
     srcs = ["context_utils.py"],
     imports = [".."],
     deps = [
@@ -136,6 +147,7 @@ modular_py_library(
 
 modular_py_library(
     name = "registry",
+    testonly = True,
     srcs = ["registry.py"],
     imports = [".."],
     deps = [
@@ -148,6 +160,7 @@ modular_py_library(
 
 modular_py_library(
     name = "pipeline_cli_utils",
+    testonly = True,
     srcs = ["pipeline_cli_utils.py"],
     imports = [".."],
     deps = [
@@ -157,6 +170,7 @@ modular_py_library(
 
 modular_py_library(
     name = "pipeline_model_dummy",
+    testonly = True,
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
     deps = [
@@ -167,6 +181,7 @@ modular_py_library(
 
 modular_py_library(
     name = "torch_utils",
+    testonly = True,
     srcs = ["torch_utils.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -182,6 +197,7 @@ modular_py_library(
 
 modular_py_library(
     name = "numerics",
+    testonly = True,
     srcs = ["numerics.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -192,6 +208,7 @@ modular_py_library(
 
 modular_py_library(
     name = "mocks",
+    testonly = True,
     srcs = [
         "mocks/__init__.py",
         "mocks/memory_estimation.py",
@@ -211,6 +228,7 @@ modular_py_library(
 
 modular_py_library(
     name = "process_isolation",
+    testonly = True,
     srcs = [
         "process_isolation.py",
     ],
@@ -220,6 +238,7 @@ modular_py_library(
 
 modular_py_library(
     name = "verify_utils",
+    testonly = True,
     srcs = [
         "custom_args.py",
         "table.py",
@@ -235,6 +254,7 @@ modular_py_library(
 
 modular_py_library(
     name = "lora_utils",
+    testonly = True,
     srcs = ["lora_utils.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -251,6 +271,7 @@ modular_py_library(
 
 modular_py_library(
     name = "torch_hooks",
+    testonly = True,
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -262,6 +283,7 @@ modular_py_library(
 
 modular_py_library(
     name = "storage",
+    testonly = True,
     srcs = ["storage.py"],
     imports = [".."],
     visibility = ["//visibility:public"],

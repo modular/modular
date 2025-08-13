@@ -9,6 +9,7 @@ load(
 
 modular_py_library(
     name = "torch_utils",
+    testonly = True,
     srcs = ["torch_utils.py"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",

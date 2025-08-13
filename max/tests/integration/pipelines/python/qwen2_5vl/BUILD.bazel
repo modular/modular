@@ -68,6 +68,7 @@ modular_py_test(
 
 modular_py_library(
     name = "generate_utils",
+    testonly = True,
     srcs = ["generate_utils.py"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",

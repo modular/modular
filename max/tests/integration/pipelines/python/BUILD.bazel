@@ -23,6 +23,7 @@ modular_py_test(
 
 modular_py_binary(
     name = "verify",
+    testonly = True,
     srcs = ["verify.py"],
     data = [
         "@test_llama_golden",
@@ -44,6 +45,7 @@ modular_py_binary(
 
 modular_py_binary(
     name = "verify_pipelines",
+    testonly = True,
     srcs = ["verify_pipelines.py"],
     data = [
         "//Kernels/tools/gpu-query",
@@ -79,6 +81,7 @@ modular_py_binary(
 
 modular_py_binary(
     name = "verify_layers_e2e",
+    testonly = True,
     srcs = glob(["verify_layers/*.py"]),
     data = [
         "//Kernels/tools/gpu-query",
@@ -230,6 +233,7 @@ modular_py_test(
 
 modular_py_binary(
     name = "generate_llm_logits",
+    testonly = True,
     srcs = [
         "generate_llm_logits.py",
     ],
@@ -299,6 +303,7 @@ modular_py_test(
 
 modular_py_binary(
     name = "lm-eval",
+    testonly = True,
     srcs = ["run_lm_eval.py"],
     main = "run_lm_eval.py",
     deps = [
@@ -318,6 +323,7 @@ modular_py_binary(
 
 modular_py_binary(
     name = "pipelines-lm-eval",
+    testonly = True,
     srcs = ["pipelines_lm_eval.py"],
     data = [
         "run_lm_eval.py",
@@ -354,6 +360,7 @@ modular_py_test(
 
 modular_py_binary(
     name = "pipelines_mteb",
+    testonly = True,
     srcs = ["pipelines_mteb.py"],
     data = ["//SDK/lib/API/python/max/entrypoints:pipelines"],
     deps = [
