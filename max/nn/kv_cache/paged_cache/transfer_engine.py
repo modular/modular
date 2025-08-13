@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import socket
 import time
@@ -302,6 +303,23 @@ class KVTransferEngine:
                 type="ucx",
                 init_params=ucx_params,
             )
+
+            if not device.is_host and (
+                "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"
+                not in os.environ
+                and "BAZEL_TEST" not in os.environ
+            ):
+                # See GEX-2445 for more details.
+                # We intentionally make falling back to the slower CUDA_COPY transport
+                # a hard error. This check is best effort. Just because it is not
+                # tripped does not guarantee that the we will end up using CUDA_IPC.
+                # Note that we will use BufferCache regardless when running under
+                # bazel test.
+                raise ValueError(
+                    "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory. "
+                    "This flag enables the BufferCache which is required for the fast CUDA_IPC transport. "
+                    "Try rerunning your command with MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=99"
+                )
 
             # Register memory
             base_addr = tensor._data_ptr()
