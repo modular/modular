@@ -25,6 +25,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 
+#include <atomic>
 #include <cmath>
 #include <thread>
 
@@ -1012,6 +1013,23 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 #if ASYNCRT_WORKER_STATS
   auto start = std::chrono::high_resolution_clock::now();
 #endif
+
+  // If no explicit taskId but we have a device hint, route to appropriate
+  // thread. Guard negative hints and avoid pinning to main when it only
+  // donates.
+  if (taskId == kDefaultTaskId && workItem.deviceHint != kNoDevicePreference &&
+      workItem.deviceHint >= 0 && numWorkers > 0) {
+    // Simple modulo mapping: device N -> thread N % numWorkers.
+    size_t target = static_cast<size_t>(workItem.deviceHint) % numWorkers;
+    // When mainWillDonate is true, worker 0 is the 'main' queue which is only
+    // serviced while awaiting; avoid pinning there to prevent stalls.
+    if (sharedState.mainWillDonate && target == 0 && numWorkers > 1) {
+      target =
+          1 + (static_cast<size_t>(workItem.deviceHint) % (numWorkers - 1));
+    }
+    taskId = static_cast<int>(target);
+  }
+
   if (taskId >= 0) {
     auto workThread = getWorkQueueThread(taskId);
     // Either add to thread local lock-free queues or to its spill queue.
