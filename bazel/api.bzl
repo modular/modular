@@ -46,7 +46,7 @@ def _is_internal_reference(dep):
         "//Kernels/",
         "//SDK/integration-test/pipelines/python",
         "//SDK:max",
-    )) or "base_max_config_yaml_files" in dep
+    )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml" in dep
 
 def _has_internal_reference(deps):
     return any([_is_internal_reference(dep) for dep in deps])
