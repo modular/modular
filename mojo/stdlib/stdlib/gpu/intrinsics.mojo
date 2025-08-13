@@ -1167,7 +1167,7 @@ fn buffer_load[
             _get_buffer_intrinsic_simd_dtype[bytes](),
             _get_buffer_intrinsic_simd_width[bytes](),
         ],
-        has_side_effect=True,
+        has_side_effect=False,
     ](src_resource, global_offset_bytes, src_wave_addr_offset, aux)
 
     return bitcast[dtype, width](load_val)
