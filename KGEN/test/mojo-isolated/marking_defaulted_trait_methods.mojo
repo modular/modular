@@ -11,17 +11,17 @@
 
 trait Foo:
     # CHECK: lit.fn @"foo
-    # CHECK-SAME: isDefaultedTraitFn
+    # CHECK-SAME: defaultedTraitFn
     fn foo(self) -> Int:
         return Int()
 
     # CHECK: lit.fn @"foo
-    # CHECK-NOT: isDefaultedTraitFn
+    # CHECK-NOT: defaultedTraitFn
     fn foo(self, x: Int) -> Int:
         ...
 
     # CHECK: lit.fn @"foo
-    # CHECK-SAME: isDefaultedTraitFn
+    # CHECK-SAME: defaultedTraitFn
     @staticmethod
     fn foo() -> Int:
         return Int()
@@ -29,7 +29,7 @@ trait Foo:
     # Make sure we correctly handle cases with params, nesting of braces/parens
 
     # CHECK: lit.fn @"foo
-    # CHECK-SAME: isDefaultedTraitFn
+    # CHECK-SAME: defaultedTraitFn
     fn foo[
         x: Int,
         y: fn[p: Int, f: fn[pp: Int] (x: Int) -> Int] (x: Int, y: Int) -> Int,
@@ -37,7 +37,7 @@ trait Foo:
         return Int()
 
     # CHECK: lit.fn @"foo
-    # CHECK-NOT: isDefaultedTraitFn
+    # CHECK-NOT: defaultedTraitFn
     fn foo[
         x: Int,
         y: fn[p: Int, f: fn[pp: Int] (x: Int) -> Int, z: Int] (
@@ -49,11 +49,11 @@ trait Foo:
     # Make sure special function keywords don't trip up the parsing logic
 
     # CHECK: lit.fn @"bar
-    # CHECK-SAME: isDefaultedTraitFn
+    # CHECK-SAME: defaultedTraitFn
     fn bar(self) capturing raises -> Int:
         return Int()
 
     # CHECK: lit.fn @"bar
-    # CHECK-NOT: isDefaultedTraitFn
+    # CHECK-NOT: defaultedTraitFn
     fn bar(self, x: Int) capturing raises -> Int:
         ...

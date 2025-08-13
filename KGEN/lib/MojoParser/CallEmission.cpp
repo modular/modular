@@ -170,7 +170,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     // ambiguous when initializing with an implicitly convertible type e.g.
     // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
     bool isImplicit =
-        cast<FnOp>(candidate->getIfOperation()).getIsImplicitConversion();
+        cast<FnOp>(candidate->getIfOperation()).getImplicitConversion();
     if (!areTheBestCandidatesImplicit && isImplicit)
       continue;
 
@@ -266,7 +266,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
       auto func = cast<FnOp>(candidate->getIfOperation());
-      if (func.getIsSynthetic()) {
+      if (func.getSynthetic()) {
         diag.attachNote(candidate->getLoc())
             << "generated function with type "
             << ASTType(func.getFullSignature());
@@ -308,7 +308,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   for (ASTDecl *candidate : newFnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
     InflightDiag &note = diag.attachNote(candidate->getLoc());
-    if (func.getIsSynthetic()) {
+    if (func.getSynthetic()) {
       note << "candidate generated with type "
            << ASTType(func.getFullSignature());
     } else {
@@ -514,7 +514,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
       auto func = cast<FnOp>(candidate->getIfOperation());
-      if (func.getIsSynthetic()) {
+      if (func.getSynthetic()) {
         diag.attachNote(candidate->getLoc())
             << "generated function with type "
             << ASTType(func.getFullSignature());
@@ -592,7 +592,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     for (ASTDecl *candidate : newFnDecls) {
       auto func = cast<FnOp>(candidate->getIfOperation());
       InflightDiag &note = diag.attachNote(candidate->getLoc());
-      if (func.getIsSynthetic()) {
+      if (func.getSynthetic()) {
         note << "candidate generated with type "
              << ASTType(func.getFullSignature());
       } else {
@@ -761,7 +761,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
     InflightDiag &note = diag.attachNote(candidate->getLoc());
-    if (func.getIsSynthetic()) {
+    if (func.getSynthetic()) {
       note << "candidate generated with type "
            << ASTType(func.getFullSignature());
     } else {

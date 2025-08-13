@@ -1198,7 +1198,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      !cast<FnOp>(funcIfDirect->getIfOperation()).getIsImplicitConversion()) {
+      !cast<FnOp>(funcIfDirect->getIfOperation()).getImplicitConversion()) {
     ASTType fromType = operands[0].ir.getRValueTypeIfResolvable();
     return emitDiagFor.badImplicitConversion(fromType,
                                              signature.getUserResultType());

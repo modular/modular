@@ -20,7 +20,7 @@ fn use(y: MemType, z: Int, u: Index):
 
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
-# CHECK-SAME: isSynthetic
+# CHECK-SAME: synthetic
 # CHECK:      lit.struct.field field0 : !MemType
 # CHECK-NEXT: lit.struct.field field1 : !Int
 # CHECK-NEXT: lit.struct.field field2 : index

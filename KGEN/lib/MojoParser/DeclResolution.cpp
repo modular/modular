@@ -410,7 +410,7 @@ static void applyExtern(SMLoc loc, ASTDecl &decl, FnOp func,
     return;
   }
 
-  func.setIsExtern(true);
+  func.setExternal(true);
 }
 
 namespace {
@@ -597,7 +597,7 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
         << "'@implicit' initializers must accept a single argument value";
     return;
   }
-  funcOp.setIsImplicitConversion(true);
+  funcOp.setImplicitConversion(true);
 }
 
 void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
@@ -833,7 +833,7 @@ void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
 }
 
 void FnSigDecorators::finalize() {
-  if (funcOp.getIsExtern()) {
+  if (funcOp.isExternal()) {
     if (funcOp.getInlineLevel() != InlineLevel::Never &&
         funcOp.getInlineLevel() != InlineLevel::Automatic) {
       emitError(funcOp.getLoc(), "extern functions cannot be inlined");
@@ -1543,7 +1543,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   // trait method this must mean it's not defaulted so we can early exit the
   // function here as well.
   if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()) ||
-      funcOp.getIsExtern()) {
+      funcOp.isExternal()) {
     // Skip any docstring's that might be present.
     ParserBase p(shared, lexer);
     p.parseDocString(decl);
@@ -1695,7 +1695,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
   }
 
-  if (funcOp.getIsExtern()) {
+  if (funcOp.isExternal()) {
     shared.emitError(decl.getLoc(),
                      "unexpected function body in extern function "
                      "declaration, use `...`");
@@ -2493,7 +2493,7 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
                 "with a single field");
       return;
     }
-    fn.setIsImplicitConversion(true);
+    fn.setImplicitConversion(true);
   }
 }
 

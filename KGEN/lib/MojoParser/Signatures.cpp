@@ -2053,7 +2053,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // If this function had a deinit self, remember it.
   if (parsedArgs.size() > kSelfArgNo &&
       parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionDeinit)
-    funcOp.setIsSelfDeinit(true);
+    funcOp.setSelfDeinit(true);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.

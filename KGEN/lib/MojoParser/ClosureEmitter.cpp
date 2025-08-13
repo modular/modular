@@ -167,7 +167,7 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
 
   StructDeclOp declOp =
       b.create<StructDeclOp>(shared.diags.translateLocation(loc), name);
-  declOp.setIsSynthetic(true);
+  declOp.setSynthetic(true);
 
   // Set attributes in bulk.
   NamedAttrList attrs = declOp->getAttrDictionary();
@@ -560,8 +560,8 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                            traitFnOp.getSpecialFunctionKind(), smLocation, b,
                            wrapperSignature.getFnEffects().setUnified(false),
                            "", true, traitFnOp.getInlineLevel());
-    if (traitFnOp.getIsSelfDeinit())
-      op.setIsSelfDeinit(true);
+    if (traitFnOp.getSelfDeinit())
+      op.setSelfDeinit(true);
 
     // Generate the call op by collecting the operands and rebinding the
     // signature.

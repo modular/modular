@@ -445,7 +445,7 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
   return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
 }
 
-bool FnOp::isSynthetic() { return getIsSynthetic(); }
+bool FnOp::isSynthetic() { return getSynthetic(); }
 
 /// Parse a fixed mutability specifier that occurs for implicit Origins.
 // Implicit origin params are always known immut or mut, never parametric.
@@ -966,7 +966,7 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
   }
 }
 
-bool StructDeclOp::isSynthetic() { return getIsSynthetic(); }
+bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
 LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);

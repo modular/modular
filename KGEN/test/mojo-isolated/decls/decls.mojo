@@ -684,7 +684,7 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {isDef
+# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {def
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK: lit.ref.store [[RESULT]], %__result__
@@ -967,7 +967,7 @@ struct ValueMem(Copyable, Movable, ExplicitlyCopyable):
 # CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result
-# CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isStatic, isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isStatic, sourceName = "__init__", specialFnKind = 2 : i8, synthetic} {
 # CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: lit.ref.store %a, %[[PA]]
 # CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %self[b]
@@ -1082,9 +1082,9 @@ struct TraitMember[T: Copyable](Copyable, Movable):
 
 
 # CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
-# CHECK: lit.fn @"__moveinit__{{.*}}isSynthetic
-# CHECK: lit.fn @"__copyinit__{{.*}}isSynthetic
-# CHECK: lit.fn @"__init__{{.*}}isSynthetic
+# CHECK: lit.fn @"__moveinit__{{.*}}synthetic
+# CHECK: lit.fn @"__copyinit__{{.*}}synthetic
+# CHECK: lit.fn @"__init__{{.*}}synthetic
 @fieldwise_init
 struct NotSynthetic(Copyable, Movable, ExplicitlyCopyable):
     var member: __mlir_type.`index`
@@ -1517,7 +1517,7 @@ struct Thing:
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.fn @"my_extern_add_one
-# CHECK-SAME: isExtern,
+# CHECK-SAME: external,
 # CHECK-SAME: linkageName = "add_one"
 @extern("add_one")
 fn my_extern_add_one(x: Int) -> Int:

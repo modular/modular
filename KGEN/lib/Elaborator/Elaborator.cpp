@@ -1684,7 +1684,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
             generatorOp.getFuncTypeGenerator().getBody().getArgConventions(),
             generatorOp.getFuncTypeGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
-        generatorOp.getIsExtern(), /*convergent=*/false,
+        generatorOp.getExternal(), /*convergent=*/false,
         generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
     // Process LLVM metadata recorded in the generator by fusing names and
     // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
