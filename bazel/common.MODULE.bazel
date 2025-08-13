@@ -101,6 +101,8 @@ single_version_override(
         # TODO: Remove when this patch is in a release
         # https://github.com/protocolbuffers/protobuf/pull/22633
         "//bazel/public-patches:protobuf-platforms.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/a5220488813040037e59b5625f953f2da7bf73a4
+        "//bazel/public-patches:protobuf-windows.patch",
     ],
 )
 
