@@ -11,9 +11,7 @@ def custom_op_example_py_binary(
     modular_py_binary(
         name = name,
         srcs = srcs,
-        data = [
-            ":kernel_sources",
-        ] + extra_data,
+        data = extra_data,
         imports = ["."],
         mojo_deps = [
             "@mojo//:compiler",
@@ -27,6 +25,7 @@ def custom_op_example_py_binary(
             "//SDK/lib/API/python/max/graph",
             requirement("numpy"),
         ] + extra_deps,
+        visibility = ["//visibility:private"],
     )
 
     # Run each example as a simple non-zero-exit-code test.

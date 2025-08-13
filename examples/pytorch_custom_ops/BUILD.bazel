@@ -1,8 +1,6 @@
 load("//bazel:api.bzl", "mojo_library", "requirement")
 load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
-package(default_visibility = ["//visibility:public"])
-
 filegroup(
     name = "kernel_sources",
     srcs = glob(["operations/*.mojo"]),
@@ -11,11 +9,8 @@ filegroup(
 custom_op_example_py_binary(
     name = "addition",
     srcs = ["addition.py"],
-    create_test = False,
     extra_data = [
         ":operations",
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -26,11 +21,8 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "grayscale",
     srcs = ["grayscale.py"],
-    create_test = False,
     extra_data = [
         ":operations",
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -45,8 +37,6 @@ custom_op_example_py_binary(
     create_test = False,
     extra_data = [
         ":operations",
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
     ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
@@ -60,11 +50,6 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "graph",
     srcs = ["graph.py"],
-    create_test = False,
-    extra_data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-    ],
     extra_deps = [
         "//SDK/lib/API/python/max/torch",
         requirement("torch"),

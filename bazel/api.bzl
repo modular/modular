@@ -26,6 +26,7 @@ strip_prefix = _strip_prefix
 # Deps that aren't open source so we need to remap to pull from the wheel instead.
 _DEPS_FROM_WHEEL = [
     "//max",
+    "//max/_core_mojo",
     "//max/driver",
     "//max/dtype",
     "//max/engine",
@@ -33,8 +34,8 @@ _DEPS_FROM_WHEEL = [
     "//max/mlir",
     "//max/profiler",
     "//max/support",
+    "//max/torch",
     "//max:_core",
-    "//max/_core_mojo",
 ]
 
 def _is_internal_reference(dep):
