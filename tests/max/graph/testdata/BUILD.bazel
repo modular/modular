@@ -13,6 +13,7 @@ filegroup(
 
 modular_py_binary(
     name = "gen_external_checkpoints",
+    testonly = True,
     srcs = ["gen_external_checkpoints.py"],
     deps = [
         requirement("torch"),

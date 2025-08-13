@@ -26,6 +26,7 @@ def custom_op_example_py_binary(
             requirement("numpy"),
         ] + extra_deps,
         visibility = ["//visibility:private"],
+        testonly = True,
     )
 
     # Run each example as a simple non-zero-exit-code test.

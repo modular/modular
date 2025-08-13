@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "mojo_binary", "mojo_test", "requirement")
 
 mojo_binary(
     name = "lifev1",
+    testonly = True,
     srcs = [
         "gridv1.mojo",
         "lifev1.mojo",
@@ -14,6 +15,7 @@ mojo_binary(
 
 mojo_binary(
     name = "lifev2",
+    testonly = True,
     srcs = [
         "gridv2.mojo",
         "lifev2.mojo",
@@ -26,6 +28,7 @@ mojo_binary(
 
 mojo_binary(
     name = "lifev3",
+    testonly = True,
     srcs = [
         "gridv3.mojo",
         "lifev3.mojo",
@@ -38,6 +41,7 @@ mojo_binary(
 
 mojo_binary(
     name = "benchmark",
+    testonly = True,
     srcs = [
         "benchmark.mojo",
         "gridv1.mojo",
