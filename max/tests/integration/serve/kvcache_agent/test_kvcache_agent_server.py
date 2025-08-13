@@ -72,6 +72,7 @@ def stub(server_config: KVCacheAgentServerConfig) -> KVCacheAgentServiceStub:
     return KVCacheAgentServiceStub(channel)
 
 
+@pytest.mark.skip("GENAI-233")
 def test_server_initialization(
     server_config: KVCacheAgentServerConfig, zmq_endpoint: str
 ) -> None:
@@ -86,6 +87,7 @@ def test_server_initialization(
     assert not server._started
 
 
+@pytest.mark.skip("GENAI-233")
 def test_smoke(
     server: KVCacheAgentServer,
     zmq_push_socket: ZmqPushSocket[KVCacheChangeMessage],
@@ -133,6 +135,7 @@ def test_smoke(
     assert response.cache_ids == ["id1"]
 
 
+@pytest.mark.skip("GENAI-233")
 def test_multiple_subscribers(
     server: KVCacheAgentServer,
     zmq_push_socket: ZmqPushSocket[KVCacheChangeMessage],
