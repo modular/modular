@@ -32,10 +32,6 @@ struct MTuple[T: Copyable & Movable](Copyable, Movable, Stringable, Writable):
         self.elts = existing.elts
 
     @always_inline
-    fn copy(self) -> Self:
-        return self
-
-    @always_inline
     fn cons(self, var other: Self) -> Self:
         var new = self
         for e in other.elts:

@@ -83,9 +83,6 @@ struct TalkativeCopableMovableMem(Copyable, Movable, Stringable, Writable):
         self.state = existing.state
         print("copying", self.state)
 
-    fn copy(self) -> Self:
-        return self
-
     fn __moveinit__(out self, deinit existing: Self):
         self.state = existing.state
         print("moving", self.state)
