@@ -1768,11 +1768,13 @@ def quantize_dynamic_scaled_float8(
         else input.shape[1]
     )
 
-    # pad the a_scales to 16B. This is required by NVIDIA SM90+ TMA instructions
-    padding_size = 16 // scales_type.size_in_bytes
-    scales_dim1_padded = (
-        (input.shape[0] + padding_size - 1) // padding_size
-    ) * padding_size
+    a_scales_dim1 = input.shape[0]
+    if group_size_or_per_token != -1:
+        # For blockwise scaling pad the a_scales to 16Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[0] + padding_size - 1) // padding_size
+        ) * padding_size
 
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
@@ -1789,7 +1791,7 @@ def quantize_dynamic_scaled_float8(
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[input.shape[1] // group_size, Dim(scales_dim1_padded)],
+                shape=[input.shape[1] // group_size, Dim(a_scales_dim1)],
                 device=input.device,
             ),
         ],
@@ -1828,14 +1830,6 @@ def dynamic_scaled_matmul(
 
     if a.shape[1] != b.shape[1]:
         msg = "The second dimension of b must match the second dimension of a"
-        raise ValueError(msg)
-
-    if a_scales.shape[0] != 1:
-        msg = "only per-token scaling is supported for a"
-        raise ValueError(msg)
-
-    if b_scales.shape[1] != 1:
-        msg = "only channel-wise scaling is supported for b"
         raise ValueError(msg)
 
     if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):

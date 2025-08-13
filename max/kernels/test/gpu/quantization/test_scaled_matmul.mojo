@@ -30,7 +30,7 @@ fn test_matmul_dynamic_scaled_fp8[
         n.dim, k.dim
     )
     alias static_c_shape = DimList(m.dim, n.dim)
-    alias static_a_scales_shape = DimList(m.dim, 1)
+    alias static_a_scales_shape = DimList(1, m.dim)
     alias static_b_scales_shape = DimList(n.dim, 1) if transpose_b else DimList(
         1, n.dim
     )
@@ -40,7 +40,7 @@ fn test_matmul_dynamic_scaled_fp8[
         n.value, k.value
     )
     var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(m.value, 1)
+    var dynamic_a_scales_shape = DimList(1, m.value)
     var dynamic_b_scales_shape = DimList(
         n.value, 1
     ) if transpose_b else DimList(1, n.value)
@@ -104,7 +104,7 @@ fn test_matmul_dynamic_scaled_fp8[
         for j in range(k.value):
             a_host_ref.tensor[i, j] = (
                 a_host.tensor[i, j].cast[DType.float32]()
-                * a_scales_host.tensor[i, 0].cast[DType.float32]()
+                * a_scales_host.tensor[0, i].cast[DType.float32]()
             )
 
     for i in range(k.value):

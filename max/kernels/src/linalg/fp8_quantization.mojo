@@ -37,7 +37,8 @@ from gpu import global_idx
 from utils.index import Index
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import IntTuple, Layout, LayoutTensor
-
+from gpu.host.info import H100, B200
+from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
 
 ########################################################
 # Static scaled fp8 quantization
@@ -251,6 +252,13 @@ fn matmul_dynamic_scaled_fp8[
         b_type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
         "input B dtype should be float8_e4m3fn, float8_e4m3fnuz",
     ]()
+
+    constrained[a_type == b_type, "input A and B dtype should be the same"]()
+    constrained[
+        a_scales_type == b_scales_type,
+        "input A and B scales dtype should be the same",
+    ]()
+
     constrained[
         a_scales_type in (DType.bfloat16, DType.float16, DType.float32),
         "input A scales dtype should be bfloat16, float16 or float32",
@@ -260,10 +268,10 @@ fn matmul_dynamic_scaled_fp8[
         "input B scales dtype should be bfloat16, float16 or float32",
     ]()
 
-    alias b_k_axis = 1 if transpose_b else 0
     alias b_row_axis = 0 if transpose_b else 1
     alias N = b.shape.get[b_row_axis]()
     var M = a.dim[0]()
+    var K = a.dim[1]()
 
     alias _trace_string = get_static_string[
         trace_arg(
@@ -279,49 +287,99 @@ fn matmul_dynamic_scaled_fp8[
         ),
     ]()
 
-    # create a dummy buffer to instruct the matmul kernel to output values
-    # in the correct dtype
-    var c_dummy = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
-    ](
-        UnsafePointer[Scalar[DType.float32]](),
-        IndexList[2](M, N),
-    )
+    var a_scales_dim0 = a_scales.dim[0]()
+    var a_scales_dim1 = a_scales.dim[1]()
+    var b_scales_dim0 = b_scales.dim[0]()
+    var b_scales_dim1 = b_scales.dim[1]()
 
-    @parameter
-    @__copy_capture(c, a, b, a_scales, b_scales)
-    @always_inline
-    fn scaled_output_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
-        var b_scale: SIMD[dtype, width]
-
-        @parameter
-        if transpose_b:
-            b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
-        else:
-            b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
-
-        var scaled_val = val * a_scale * b_scale
-
-        c.store[width=width, alignment=alignment](
-            idx, scaled_val.cast[c_type]()
+    # Tensorwise and Channelwise scaling
+    if (
+        a_scales_dim0 == a_scales_dim1 == b_scales_dim0 == b_scales_dim1 == 1
+    ) or (
+        a_scales_dim1 == M
+        and b_scales_dim0 == N
+        and a_scales_dim0 == 1
+        and b_scales_dim1 == 1
+    ):
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var c_dummy = NDBuffer[
+            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+        ](
+            UnsafePointer[Scalar[DType.float32]](),
+            IndexList[2](M, N),
         )
 
-    matmul[
-        target=target,
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=scaled_output_fn,
-        _trace_description=_trace_string,
-    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+        @parameter
+        @__copy_capture(c, a, b, a_scales, b_scales)
+        @always_inline
+        fn scaled_output_fn[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
+            var b_scale: SIMD[dtype, width]
+
+            @parameter
+            if transpose_b:
+                b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
+            else:
+                b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
+
+            var scaled_val = val * a_scale * b_scale
+
+            c.store[width=width, alignment=alignment](
+                idx, scaled_val.cast[c_type]()
+            )
+
+        matmul[
+            target=target,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=scaled_output_fn,
+            _trace_description=_trace_string,
+        ](c_dummy, a, b, Optional[DeviceContext](ctx))
+
+    # 1D/2D (1x128)x(128x128) blockwise scaling
+    elif (
+        (a_scales_dim0 == b_scales_dim1)
+        and ((K // a_scales_dim0) == 128)
+        and ((N // b_scales_dim0) == 128)
+    ):
+
+        @parameter
+        if ctx.default_device_info is B200:
+            var a_tensor = from_ndbuffer_row_major(a)
+            var b_tensor = from_ndbuffer_row_major(b)
+            var c_tensor = from_ndbuffer_row_major(c)
+            var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+            var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+
+            alias umma_shape = Index(64, 128, 32)
+            alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+            matmul_sm100_blockwise_scaled_fp8[
+                transpose_b=transpose_b,
+                umma_shape=umma_shape,
+                block_tile_shape=block_tile_shape,
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales_tensor,
+                b_scales_tensor,
+                ctx,
+            )
+
+        else:
+            naive_blockwise_scaled_fp8_matmul[transpose_b=transpose_b,](
+                c, a, b, a_scales, b_scales, ctx
+            )
 
 
 fn naive_blockwise_scaled_fp8_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
     c_shape: DimList,
     a_shape: DimList,
     b_shape: DimList,
@@ -331,13 +389,13 @@ fn naive_blockwise_scaled_fp8_matmul[
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    s_type: DType = get_accum_type[c_type](),
+    accum_type: DType = get_accum_type[c_type](),
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
-    a_scales_device: NDBuffer[scales_type, 2, _, a_scale_shape],
-    b_scales_device: NDBuffer[scales_type, 2, _, b_scale_shape],
+    a_scales_device: NDBuffer[a_scales_type, 2, _, a_scale_shape],
+    b_scales_device: NDBuffer[b_scales_type, 2, _, b_scale_shape],
     ctx: DeviceContext,
 ) raises:
     constrained[
@@ -349,7 +407,12 @@ fn naive_blockwise_scaled_fp8_matmul[
     ]()
 
     constrained[
-        s_type == DType.float32,
+        a_scales_type == b_scales_type,
+        "input A and B scales dtype should be same",
+    ]()
+
+    constrained[
+        accum_type == DType.float32,
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
@@ -364,6 +427,27 @@ fn naive_blockwise_scaled_fp8_matmul[
     var N = c_device.dim(1)
     var K = a_device.dim(1)
 
+    var a_scales_dim0 = a_scales.dim(0)
+    var a_scales_dim1 = a_scales.dim(1)
+    var b_scales_dim0 = b_scales.dim(0)
+    var b_scales_dim1 = b_scales.dim(1)
+
+    # NOTE: a_scales_dim1 is padded to be a multiple of 16 bytes so a_scales_dim1 == M dose not always hold
+    if K % a_scales_dim0 != 0:
+        raise Error("K must be divisible by a_scales.dim(0)")
+
+    if transpose_b and (K % b_scales_dim1 != 0 or N % b_scales_dim0 != 0):
+        raise Error(
+            "K must be divisible by b_scales.dim(1) and N must be divisible by"
+            " b_scales.dim(0)"
+        )
+
+    if not transpose_b and (K % b_scales_dim0 != 0 or N % b_scales_dim1 != 0):
+        raise Error(
+            "K must be divisible by b_scales.dim(0) and N must be divisible by"
+            " b_scales.dim(1)"
+        )
+
     logger.info("Executing Naive Blockwise Scaled FP8 GEMM")
     logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
     logger.info(
@@ -377,8 +461,9 @@ fn naive_blockwise_scaled_fp8_matmul[
         c_type,
         a_type,
         b_type,
-        scales_type,
-        s_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
         __type_of(a).layout,
         __type_of(b).layout,
         __type_of(c).layout,
@@ -404,8 +489,9 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType,
-    s_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    accum_type: DType,
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -418,11 +504,11 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
 ):
     constrained[
-        s_type == DType.float32,
+        accum_type == DType.float32,
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
@@ -441,7 +527,9 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     var b_scale_0 = b_scales.dim(0)
     var b_scale_1 = b_scales.dim(1)
     var MAT_A_ROWS_SCALE_SIZE = K // a_scale_0
-    var MAT_A_COLS_SCALE_SIZE = M // a_scale_1
+    # we hard code this to 1 for now because we pad the M dimension needs to be a multiple of 16 bytes
+    # and (M // a_scale_1) will not give us the correct scale factor.
+    var MAT_A_COLS_SCALE_SIZE = 1
     var MAT_B_ROWS_SCALE_SIZE = (
         N // b_scale_0 if transpose_b else K // b_scale_0
     )
@@ -449,27 +537,27 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         K // b_scale_1 if transpose_b else N // b_scale_1
     )
 
-    var accum = Scalar[s_type](0)
+    var accum = Scalar[accum_type](0)
     for k in range(K):
-        var a_val = rebind[Scalar[a_type]](a[x, k]).cast[s_type]()
-        var a_scale_factor = rebind[Scalar[s_type]](
+        var a_val = rebind[Scalar[a_type]](a[x, k]).cast[accum_type]()
+        var a_scale_factor = rebind[Scalar[a_scales_type]](
             a_scales[k // MAT_A_ROWS_SCALE_SIZE, x // MAT_A_COLS_SCALE_SIZE]
-        )
+        ).cast[accum_type]()
 
-        var b_val: Scalar[s_type]
-        var b_scale_factor: Scalar[s_type]
+        var b_val: Scalar[accum_type]
+        var b_scale_factor: Scalar[accum_type]
 
         @parameter
         if transpose_b:
-            b_val = rebind[Scalar[b_type]](b[y, k]).cast[s_type]()
-            b_scale_factor = rebind[Scalar[s_type]](
+            b_val = rebind[Scalar[b_type]](b[y, k]).cast[accum_type]()
+            b_scale_factor = rebind[Scalar[b_scales_type]](
                 b_scales[y // MAT_B_ROWS_SCALE_SIZE, k // MAT_B_COLS_SCALE_SIZE]
-            )
+            ).cast[accum_type]()
         else:
-            b_val = rebind[Scalar[b_type]](b[k, y]).cast[s_type]()
-            b_scale_factor = rebind[Scalar[s_type]](
+            b_val = rebind[Scalar[b_type]](b[k, y]).cast[accum_type]()
+            b_scale_factor = rebind[Scalar[b_scales_type]](
                 b_scales[k // MAT_B_ROWS_SCALE_SIZE, y // MAT_B_COLS_SCALE_SIZE]
-            )
+            ).cast[accum_type]()
 
         accum += a_val * b_val * a_scale_factor * b_scale_factor
 
