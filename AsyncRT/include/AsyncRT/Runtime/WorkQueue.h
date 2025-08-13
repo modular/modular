@@ -30,6 +30,9 @@
 /// should enqueue to Global queue.
 constexpr int kDefaultTaskId = -1;
 
+/// Indicates that a work item has no device preference for execution.
+constexpr int kNoDevicePreference = -1;
+
 namespace M::AsyncRT {
 
 //===----------------------------------------------------------------------===//
@@ -73,6 +76,10 @@ using namespace std::chrono_literals;
 /// function. Depending on build type may contain extra bookkeeping data.
 struct WorkItem {
   TaskFunction task;
+  /// Optional worker-affinity hint. When non-negative, the scheduler may route
+  /// this item to worker (deviceHint % numWorkers). Use kNoDevicePreference to
+  /// enqueue on the global queue shared by all workers.
+  int deviceHint = kNoDevicePreference;
 #if MODULAR_PARANOID
   /// If non-null, a representation of the implied 'use' this work item has
   /// of the resources it depends on. It is valid for the same work queue to be
@@ -97,11 +104,13 @@ struct WorkItem {
   /// NOTE: Intentionally not marking explicit to promote from function.
   template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
             std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
-  WorkItem(FnTy f) : task(std::forward<FnTy>(f)) {}
+  WorkItem(FnTy f)
+      : task(std::forward<FnTy>(f)), deviceHint(kNoDevicePreference) {}
 
 #if MODULAR_PARANOID
   WorkItem(TaskFunction &&task, ResourceUse use)
-      : task(std::move(task)), use(std::move(use)) {}
+      : task(std::move(task)), deviceHint(kNoDevicePreference),
+        use(std::move(use)) {}
 #endif
 
   explicit operator bool() { return (bool)task; }

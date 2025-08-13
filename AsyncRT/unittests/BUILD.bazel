@@ -150,6 +150,22 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "WorkQueueTest",
+    size = "small",
+    srcs = ["WorkQueueTest.cpp"],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//AsyncRT:DeviceContextImpl",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+    ],
+)
+
+modular_cc_test(
     name = "TypeIDTest",
     size = "small",
     srcs = ["TypeIDTest.cpp"],
