@@ -564,6 +564,9 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
+            # TODO(MODELS-725): Fix LlamaVision memory estimation, instead of
+            # lowering batch size to 1 to avoid OOM.
+            max_batch_size=1,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
