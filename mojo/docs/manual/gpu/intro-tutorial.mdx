@@ -27,16 +27,16 @@ for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-intro).
 
+:::tip
+
+**Tip:** To use AI coding assistants with Mojo, see our guide for
+[using AI coding assistants](/max/coding-assistants/).
+
+:::
+
 System requirements:
 
 <Requirements requirementsData={requirementsWithGPU} />
-
-:::tip
-
-See [Using AI coding assistants](/max/coding-assistants/) for tips on how to
-configure AI coding assistants to help you write Mojo code.
-
-:::
 
 ## 1. Create a Mojo project
 
@@ -931,32 +931,28 @@ covered:
 Now that you understand the basics of GPU programming with Mojo, here are some
 suggested next steps:
 
-- See [Using AI coding assistants](/max/coding-assistants/) for tips on how to
-  configure AI coding assistants to help you write Mojo code.
+import MDXListing from '@site/src/components/Listing/MDXListing';
 
-- Read [GPU programming fundamentals](/mojo/manual/gpu/fundamentals) and
-  subsequent sections of the Mojo Manual to explore more GPU programming
-  features available in Mojo.
+export const Puzzles ={
+  title: "GPU Puzzles",
+  description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
+  metadata: {
+    permalink: "https://puzzles.modular.com/introduction.html"
+  }
+};
 
-- Learn more about GPU programming in Mojo and practice your skills by solving
-  the [Mojo GPU puzzles](https://builds.modular.com/puzzles).
+export const Examples ={
+  title: "GPU code examples",
+  description: "Check out some more examples for programming GPUs with Mojo",
+  metadata: {
+    permalink: "https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions"
+  }
+};
 
-- Check out more [GPU programming examples on
-  GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions).
+export const nextSteps = [
+  '../../layout/layouts',
+  Puzzles,
+  Examples,
+]
 
-- Read the [Introduction to layouts](/mojo/manual/layout/layouts) section of the
-  Mojo Manual to learn more about the `layout` package and managing layouts.
-
-
-import TutorialStack from '@site/src/components/TutorialStack';
-
-export const maxTutorials = [
-    'build-custom-ops',
-];
-
-export const mojoTutorials = [
-    'get-started',
-];
-
-<TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}
-  analyticsName="Get started with GPU programming: Next steps" />
+<MDXListing mdxList={nextSteps} />

@@ -1,5 +1,5 @@
 ---
-title: Mojo🔥 changelog
+title: Mojo changelog
 sidebar_label: Changelog
 description: A history of significant Mojo changes.
 toc_max_heading_level: 2

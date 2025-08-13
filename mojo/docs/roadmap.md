@@ -1,5 +1,5 @@
 ---
-title: Mojo🔥 roadmap & sharp edges
+title: Mojo roadmap & sharp edges
 sidebar_label: Roadmap & sharp edges
 description: A summary of our Mojo plans, including upcoming features and things we need to fix.
 ---
