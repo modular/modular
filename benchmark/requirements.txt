@@ -8,7 +8,6 @@ protobuf
 tqdm
 transformers
 nvitop
-Jinja2
 Pillow
 
 # for upload.py
