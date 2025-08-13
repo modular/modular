@@ -16,11 +16,12 @@ from sys import alignof, simdwidthof
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
     barrier,
     block_idx,
     lane_id,
+    warp_id as get_warp_id,
 )
-from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
 from gpu.sync import (
     AMDScheduleBarrierMask,
@@ -407,7 +408,8 @@ fn gemm_kernel_amd[
     alias num_n_mmas = WN // MMA_N
 
     # K dimension tiling
-    alias k_group_size = 16 // simd_width
+    alias frag_size = MMA_M * MMA_K // WARP_SIZE
+    alias k_group_size = simd_width // frag_size
     alias k_tile_size = MMA_K * k_group_size
     alias num_k_tiles = WK // k_tile_size
 

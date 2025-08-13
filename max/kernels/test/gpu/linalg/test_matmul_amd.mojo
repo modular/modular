@@ -153,8 +153,8 @@ fn test[
     return test[a_type, b_type, c_type, transpose_b, config](ctx, m, n, k)
 
 
-def test_stock(ctx: DeviceContext):
-    print("=== test_stock")
+def test_bf16(ctx: DeviceContext):
+    print("=== test_bf16")
 
     test[
         in_type = DType.bfloat16,
@@ -203,6 +203,16 @@ def test_stock(ctx: DeviceContext):
         out_type = DType.bfloat16,
         transpose_b=True,
     ](ctx, dynamic(256), static[284](), static[256]())
+
+
+def test_float8[in_type: DType](ctx: DeviceContext):
+    print("=== test_float8", in_type)
+
+    test[
+        in_type=in_type,
+        out_type = DType.bfloat16,
+        transpose_b=True,
+    ](ctx, dynamic(480), static[512](), static[640]())
 
 
 def test_block_k(ctx: DeviceContext):
@@ -271,6 +281,8 @@ def test_warp_k_partitions(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        test_stock(ctx)
+        test_bf16(ctx)
+        test_float8[DType.float8_e4m3fnuz](ctx)
+        test_float8[DType.float8_e5m2fnuz](ctx)
         test_block_k(ctx)
         test_warp_k_partitions(ctx)

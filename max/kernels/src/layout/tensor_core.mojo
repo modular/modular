@@ -1382,10 +1382,10 @@ fn get_mma_shape[
         @parameter
         if accum_type is DType.float32 and input_type is DType.float32:
             return shape_16x16x4
-        elif accum_type is DType.float32 and input_type is DType.bfloat16:
+        elif accum_type is DType.float32 and input_type.is_half_float():
             return shape_16x16x16
-        elif accum_type is DType.float32 and input_type is DType.float16:
-            return shape_16x16x16
+        elif accum_type is DType.float32 and input_type.is_float8():
+            return shape_16x16x32
         else:
             constrained[False, "Unsupported mma shape."]()
             return shape_null

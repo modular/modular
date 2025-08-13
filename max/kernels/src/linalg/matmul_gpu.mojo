@@ -374,9 +374,9 @@ fn _matmul_gpu[
     )
 
     alias matmul_supported_format_amd = (
-        a_type is DType.bfloat16
-        and b_type is DType.bfloat16
-        and c_type is DType.bfloat16
+        a_type in (DType.bfloat16, DType.float8_e4m3fnuz, DType.float8_e5m2fnuz)
+        and b_type == a_type
+        and c_type in (DType.float32, DType.bfloat16)
     )
 
     alias matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
