@@ -61,12 +61,9 @@ modular_py_binary(
     srcs = [
         "pipelines.py",
     ],
-    data = NIXL_PLUGINS_DATA + [
-        "@daolabs_flash_attn",
-    ],
+    data = NIXL_PLUGINS_DATA,
     env = NIXL_ENV_VAR | {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
-        "DAOLABS_FLASH_ATTENTION_LIBRARY": "$(location @daolabs_flash_attn)",
     },
     deps = [
         ":_pipelines",
