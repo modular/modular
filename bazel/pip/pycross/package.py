@@ -112,6 +112,9 @@ class Package:
         else:
             deps_line = ""
 
+        testonly_line = f"""
+        testonly = "{self.name}" in _TESTONLY_DEPS,"""
+
         all_downloads = set(downloads_by_platform.values())
         needs_sdist = len(sdist_platforms) > 0
         # No sdist is potentially ok as long as the package is never used on platforms without wheels
@@ -134,7 +137,7 @@ class Package:
         name = "{self.sdist_build_target_name}",
         sdist = ":{self.sdist_target_name}",
         target_environment = _target,
-        {build_deps_line},
+        {build_deps_line},{testonly_line}
         **extra_build_args
     )
 
@@ -180,7 +183,7 @@ class Package:
 
     pycross_wheel_library(
         name = "{self.library_name}",{deps_line}
-        wheel = ":{self.wheel_target_name}",{tags_line}
+        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}
     )
 
 """
