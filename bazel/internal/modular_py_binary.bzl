@@ -19,6 +19,7 @@ def modular_py_binary(
         imports = [],
         tags = [],
         args = [],
+        testonly = False,
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -34,6 +35,7 @@ def modular_py_binary(
         imports: See upstream py_binary docs
         tags: See upstream py_binary docs
         args: See upstream py_binary docs
+        testonly: Only test targets can depend on this target
         **kwargs: Extra arguments passed through to py_binary
     """
     extra_toolchains = [
@@ -47,6 +49,7 @@ def modular_py_binary(
     collect_transitive_mojoinfo(
         name = transitive_mojo_deps,
         deps_to_scan = deps,
+        testonly = testonly,
     )
 
     env_name = name + ".mojo_test_env"
@@ -63,6 +66,7 @@ def modular_py_binary(
         name = env_name,
         data = mojo_deps + [transitive_mojo_deps],
         short_path = True,
+        testonly = testonly,
     )
 
     py_binary(
@@ -78,6 +82,7 @@ def modular_py_binary(
         imports = imports,
         tags = tags,
         args = args,
+        testonly = testonly,
         **kwargs
     )
 
@@ -89,6 +94,7 @@ def modular_py_binary(
         ],
         tags = tags + ["manual"],
         package_collisions = "ignore",
+        testonly = True,
         **kwargs
     )
 
@@ -101,5 +107,6 @@ def modular_py_binary(
         srcs = srcs,
         toolchains = extra_toolchains + toolchains,
         tags = tags + ["manual"],
+        testonly = True,
         **kwargs
     )
