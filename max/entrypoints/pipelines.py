@@ -114,7 +114,7 @@ def configure_telemetry(color: str | None = None) -> None:
 
 def _configure_env_vars(device_context_buffer_cache_size: float | None) -> None:
     if device_context_buffer_cache_size is not None:
-        env_var_name = "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"
+        env_var_name = "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"
         if env_var_name in os.environ:
             logger.warning(
                 f"Both {env_var_name} env var and pipeline config are set. Ignoring env var."
