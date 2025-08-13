@@ -23,6 +23,12 @@ def is_h100_h200() -> bool:
     )
 
 
+def is_b200() -> bool:
+    """Checks if this is an B200 GPU."""
+    devices = NVITOPDevice.all()
+    return bool(devices) and ("B200" in devices[0].name())
+
+
 def are_all_tensors_iterable(
     it: Iterable[Tensor | MojoValue],
 ) -> TypeGuard[Iterable[Tensor]]:
