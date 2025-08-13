@@ -12,7 +12,7 @@ load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_fi
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
-load("//bazel/internal:nixl_plugin.bzl", _NIXL_ENV_VAR = "NIXL_ENV_VAR", _NIXL_PLUGINS = "NIXL_PLUGINS", _NIXL_PLUGINS_DATA = "NIXL_PLUGINS_DATA")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:nixl_plugin.bzl", _NIXL_PLUGINS = "NIXL_PLUGINS", _NIXL_PLUGINS_DATA = "NIXL_PLUGINS_DATA")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 mojo_filecheck_test = _mojo_filecheck_test
@@ -164,5 +164,4 @@ pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
 NIXL_PLUGINS_DATA = _NIXL_PLUGINS_DATA
-NIXL_ENV_VAR = _NIXL_ENV_VAR
 NIXL_PLUGINS = _NIXL_PLUGINS

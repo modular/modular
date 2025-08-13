@@ -19,7 +19,7 @@ def __absolutize_path(value: str) -> str:
     if value == "":
         return value
 
-    if os.path.exists(os.path.abspath(value)):
+    if os.path.exists(value):
         return os.path.abspath(value)
 
     if workspace := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
