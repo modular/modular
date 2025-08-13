@@ -532,13 +532,14 @@ fn crd2idx[
 
     @parameter
     if Shape.is_tuple() and Stride.is_tuple() and shape_len == stride_len:
+        var index_t = to_mixed_int_tuple(crd)
+        var shape_t = to_mixed_int_tuple(shape)
+        var stride_t = to_mixed_int_tuple(stride)
+
         var result: Scalar[out_type] = 0
 
         @parameter
         if index_len > 1:  # tuple tuple tuple
-            var index_t = to_mixed_int_tuple(crd)
-            var shape_t = to_mixed_int_tuple(shape)
-            var stride_t = to_mixed_int_tuple(stride)
 
             @parameter
             for i in range(shape_len):
@@ -548,24 +549,19 @@ fn crd2idx[
 
             return result
         else:  # "int" tuple tuple
-            var int_crd: Scalar[out_type] = 0 if index_len == 0 else crd.value()
-
-            var shape_t = to_mixed_int_tuple(shape)
-            var stride_t = to_mixed_int_tuple(stride)
+            var int_crd = 0 if index_len == 0 else index_t[0].value()
 
             alias last_elem_idx = shape_len - 1
 
             @parameter
             for i in range(last_elem_idx):
-                var quotient, remainder = divmod(
-                    Int(int_crd), shape_t[i].product()
-                )
+                var quotient, remainder = divmod(int_crd, shape_t[i].product())
                 result += crd2idx[out_type=out_type](
-                    remainder, shape_t[i], stride_t[i]
+                    Idx(remainder), shape_t[i], stride_t[i]
                 )
                 int_crd = quotient
             return result + crd2idx[out_type=out_type](
-                Int(int_crd), shape_t[last_elem_idx], stride_t[last_elem_idx]
+                Idx(int_crd), shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
 
