@@ -14,6 +14,7 @@ modular_py_binary(
         requirement("huggingface-hub"),
         requirement("numpy"),
         requirement("nvitop"),
+        requirement("jinja2"),
         requirement("tqdm"),
         requirement("transformers"),
     ],
