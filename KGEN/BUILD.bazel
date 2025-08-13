@@ -1085,7 +1085,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "ObjectCompiler.headers",
-    hdrs = glob(["lib/Compiler/ObjectCompiler/*.h"]),
+    hdrs = glob([
+        "lib/Compiler/ObjectCompiler/*.h",
+        "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.h",
+    ]),
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
 )
@@ -1093,6 +1096,7 @@ modular_cc_library(
 modular_cc_library(
     name = "ObjectCompiler",
     srcs = glob([
+        "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.cpp",
         "lib/Compiler/ObjectCompiler/*.cpp",
         "lib/Compiler/ObjectCompiler/*.h",
     ]),
