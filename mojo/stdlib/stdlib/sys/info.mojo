@@ -517,6 +517,29 @@ fn _is_sm_120x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+fn is_apple_gpu() -> Bool:
+    """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+    Returns:
+        True if the triple target is Apple GPU and False otherwise.
+    """
+    return is_triple["air64-apple-macosx"]()
+
+
+@always_inline("nodebug")
+fn is_apple_gpu[subarch: StaticString]() -> Bool:
+    """Returns True if the target triple of the compiler is `air64-apple-macosx`
+    and we are compiling for the specified sub-architecture and False otherwise.
+
+    Parameters:
+        subarch: The subarchitecture (e.g. sm_80).
+
+    Returns:
+        True if the triple target is cuda and False otherwise.
+    """
+    return is_apple_gpu() and CompilationTarget._is_arch[subarch]()
+
+
+@always_inline("nodebug")
 fn is_nvidia_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `nvptx64-nvidia-cuda`
     False otherwise.
@@ -1045,3 +1068,12 @@ fn has_nvidia_gpu_accelerator() -> Bool:
         True if the host system has an NVIDIA GPU.
     """
     return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
+
+
+@always_inline("nodebug")
+fn has_apple_gpu_accelerator() -> Bool:
+    """Returns True if the host system has a Metal GPU and False otherwise.
+    Returns:
+        True if the host system has a Metal GPU.
+    """
+    return is_apple_gpu() or "metal" in _accelerator_arch()
