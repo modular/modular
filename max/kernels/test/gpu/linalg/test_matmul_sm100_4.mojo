@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof
+from sys import argv, sizeof
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -22,6 +22,7 @@ from gpu.sync import named_barrier
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import B200
 from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
 from gpu.id import warp_id as get_warp_id
 from gpu.memory import AddressSpace, fence_async_view_proxy
@@ -39,7 +40,7 @@ from layout import (
     IntTuple,
     UNKNOWN_VALUE,
 )
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import make_swizzle, make_ldmatrix_swizzle, Swizzle
 
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -63,7 +64,7 @@ from layout.tma_async import (
 
 from linalg import vendor_blas
 from linalg.mmaop_sm100 import MmaOpSM100_SS
-
+from math import ceildiv
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -76,6 +77,20 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark" or arg == "-benchmark":
+            return True
+    return False
+
+
+fn simple_init() -> Bool:
+    for arg in argv():
+        if arg == "--simple-init":
+            return True
+    return False
 
 
 @fieldwise_init
@@ -700,13 +715,14 @@ fn blackwell_tma_pair_umma_kernel[
 
     alias accum_type = get_accum_type[a_type]()
 
-    # this gets 16 bytes of space
-    var ptr_tmem_addr = smem_pool.bitcast[UInt32]()
+    # this gets 8 bytes of space
+    # var ptr_tmem_addr = smem_pool.bitcast[UInt32]()
     # adding 8 bytes for ptr_tmem_addr (smem poll is 8 byte casted)
-    var tma_mbar_ptr = smem_pool + 1
+    var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     # + num_pipeline_stages is 1 * num_pipeline_stage so 8 bytes for each barrier at each stage
     var mma_mbar_ptr = tma_mbar_ptr + (num_pipeline_stages)
     var math_barrier_base = mma_mbar_ptr + (num_pipeline_stages)
+    var ptr_tmem_addr = (math_barrier_base + 1).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
@@ -923,28 +939,29 @@ fn blackwell_matmul_tma_pair_mma[
         == prev_power_of_two(MMA_N) else TensorMapSwizzle.SWIZZLE_64B,
     ](ctx, c)
 
-    # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
-    alias total_smem_size_available = 233472
-    alias smem_available_after_c = total_smem_size_available - (
-        BM * MMA_N * sizeof[c_type]()
-    )
-    alias smem_per_stage_no_c = (BM * BK * sizeof[a_type]()) + (
-        BN * BK * sizeof[b_type]()
-    ) + (32)
-    alias max_pipeline_stages = smem_available_after_c // smem_per_stage_no_c
-
-    # - ptr_tmem_addr: 4 bytes → 8 bytes (padded)
-    # - tma_mbar_ptr: 8 bytes
-    # - mma_mbar_ptr: 8 bytes
-    # - math_barrier: 8 bytes (padded)
-    # Total with alignment: 32 bytes
-    # This is why we pad 32 bytes * num_pipeline_stages to the smem size
-
-    alias smem_size = (
-        (BM * BK * sizeof[a_type]()) * max_pipeline_stages
-        + (BN * BK * sizeof[b_type]()) * max_pipeline_stages
-        + (BM * MMA_N * sizeof[c_type]())
-    ) + (32) * max_pipeline_stages
+    # Configure shared memory usage
+    # Total size = capacity - 1KB_reserved_by_L1
+    alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
+    # A and B per pipeline stage
+    alias AB_smem_per_stage = BM * BK * sizeof[a_type]() + BN * BK * sizeof[
+        b_type
+    ]()
+    # Usage reserved for packing C
+    alias C_smem = BM * MMA_N * sizeof[c_type]()
+    # Usage reserved for mbar and others
+    # - tma_mbar_ptr: 8 bytes per pipeline stage
+    # - mma_mbar_ptr: 8 bytes per pipeline stage
+    # - math_barrier: 8 bytes
+    # - tmem addr in shared memory: 4B
+    alias mbar_per_stage = 16
+    alias other_usage = 8 + 4
+    alias per_stage_usage = AB_smem_per_stage + mbar_per_stage
+    # Compute the max number of pipeline stages supported
+    alias num_pipeline_stages = (
+        b200_smem - C_smem - other_usage
+    ) // per_stage_usage
+    # Total smem usage
+    alias smem_size = per_stage_usage * num_pipeline_stages + C_smem + other_usage
 
     alias kernel = blackwell_tma_pair_umma_kernel[
         a_type,
@@ -964,7 +981,7 @@ fn blackwell_matmul_tma_pair_mma[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=max_pipeline_stages,
+        num_pipeline_stages=num_pipeline_stages,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1046,17 +1063,22 @@ def test_blackwell_matmul_tma_pair_mma[
     )
 
     # Initialize matmul operands
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    if simple_init():
+        var at = a_host.tensor
+        var bt = b_host.tensor
+        for m in range(M):
+            for k in range(K):
+                at[m, k] = k
+        for n in range(N):
+            for k in range(K):
+                bt[n, k] = 1 if n == k else 0
+    else:
+        random(a_host.tensor)
+        random(b_host.tensor)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
     blackwell_matmul_tma_pair_mma[
         transpose_b=transpose_b,
@@ -1131,9 +1153,6 @@ def test_blackwell_matmul_tma_pair_mma[
         ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
         ctx.synchronize()
 
-        # print(ndbuffer_to_str(c_host.tensor))
-        # print(ndbuffer_to_str(c_host_ref.tensor))
-
         alias rtol = 1e-2
         assert_almost_equal(
             c_host.tensor,
@@ -1186,7 +1205,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     alias a_type = DType.bfloat16
     alias b_type = DType.bfloat16
     alias c_type = DType.bfloat16
-    alias block_tile_shape = Index(128, 80, 64)
+    alias block_tile_shape = Index(128, 128, 64)
     alias umma_shape = Index(
         block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
     )
@@ -1217,6 +1236,10 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
+        # Run the benchmark
+        if is_benchmark():
+            benchmark_blackwell_matmul(ctx)
+            return
 
         @parameter
         for mma_m_scale in range(1, 3):
@@ -1311,7 +1334,3 @@ def main():
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
         ](ctx, dynamic(512), static[2560](), static[8192]())
-
-        # Run the benchmark
-        print("\n\n========== Running Benchmarks ==========\n")
-        benchmark_blackwell_matmul(ctx)
