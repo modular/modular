@@ -40,7 +40,44 @@ struct DType(
     Stringable,
     Writable,
 ):
-    """Represents DType and provides methods for working with it."""
+    """Represents a data type specification and provides methods for working
+    with it.
+
+    `DType` defines a set of compile-time constant that specify the precise
+    numeric representation of data in order to prevent runtime errors by
+    catching type mismatches at compile time. It directly maps to CPU/GPU
+    instruction sets, allowing the compiler to generate optimal SIMD and vector
+    operations.
+
+    `DType` behaves like an enum rather than a typical object. You don't
+    instantiate it, but instead use its compile-time constants (aliases) to
+    declare data types for SIMD vectors, tensors, and other data structures.
+
+    Key usage patterns:
+
+    - **Type specification**: Use aliases like `DType.float32` to specify types
+      for SIMD vectors, tensors, and other data structures
+    - **Type parameters**: Pass `DType` values as compile-time parameters to
+      parameterized types like `SIMD[dtype, size]`
+    - **Type introspection**: Call methods like `.bitwidth()`, `.is_floating_point()`
+      to query type properties at compile time
+    - **Type conversion**: Use in casting operations to convert between different
+      numeric representations
+
+    **Note:** Not all data types are supported on all platforms. For example,
+    `DType.bfloat16` is currently not supported on Apple Silicon.
+
+    Example:
+
+    ```mojo
+    var data = SIMD[DType.float16, 4](1.5, 2.5, 3.5, 4.5)
+    var dtype = data.dtype
+
+    print("Is float:", dtype.is_floating_point())  # True
+    print("Bit width:", dtype.bitwidth())          # 16
+    print("Is signed:", dtype.is_signed())         # True
+    ```
+    """
 
     alias type = __mlir_type.`!kgen.dtype`
     var value: Self.type
