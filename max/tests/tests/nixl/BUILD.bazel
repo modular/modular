@@ -1,9 +1,8 @@
-load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
     srcs = glob(["*_gpu.py"]),
-    data = NIXL_PLUGINS_DATA,
     gpu_constraints = [
         "//:has_gpu",
         "//:nvidia_gpu",
