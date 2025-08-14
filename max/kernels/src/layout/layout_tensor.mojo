@@ -2314,7 +2314,9 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
 
-        return self.ptr.load[width=width](self._offset(m, n))
+        return self.ptr.load[width=width, alignment = Self.alignment](
+            self._offset(m, n)
+        )
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -2425,7 +2427,9 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        return self.ptr.store(self._offset(m, n), val)
+        return self.ptr.store[alignment = Self.alignment](
+            self._offset(m, n), val
+        )
 
     @always_inline("nodebug")
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
