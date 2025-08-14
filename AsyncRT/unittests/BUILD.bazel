@@ -64,6 +64,11 @@ modular_cc_test(
     name = "GPUDeviceContextTest",
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
+    env = {
+        # These tests exercise the host buffer cache, so give them 8GB
+        # to use for the tests.
+        "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_SIZE": "8589934592",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     target_compatible_with = select({
