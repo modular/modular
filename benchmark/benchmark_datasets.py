@@ -755,7 +755,7 @@ class RandomBenchmarkDataset(BenchmarkDataset):
 
     def _generate_random_image(self, height: int, width: int) -> Image.Image:
         # Truly random images end up being too large and incompressible.
-        # Instead create a much more limited block based random image with limited color pallete.
+        # Instead create a much more limited block based random image with limited color palette.
         block_size = 16
         colors = np.array([0, 64, 128, 192, 255], dtype=np.uint8)
 

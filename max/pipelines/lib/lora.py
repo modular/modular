@@ -752,8 +752,8 @@ class LoRAManager:
 
     def _get_lora_weights(self, key: str, base_weight: Weight) -> WeightData:
         """
-        Get's the LoRA weights for the specified key for each LoRA that is loaded.
-        If the LoRA's don't contain the weight for the key, a zero-weight is returned.
+        Gets the LoRA weights for the specified key for each LoRA that is loaded.
+        If the LoRAs don't contain the weight for the key, a zero-weight is returned.
 
         Args:
             key: Key for LoRA selection.

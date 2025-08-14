@@ -149,7 +149,7 @@ build --strategy=UvLock=sandboxed,standalone
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
 
-# Separate CI config that doesn't affect build output for verifing we share caches
+# Separate CI config that doesn't affect build output for verifying we share caches
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
 build:ci-no-config --disk_cache=

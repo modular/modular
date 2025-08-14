@@ -525,7 +525,7 @@ class HuggingFaceRepo:
                     supported_encodings.add(SupportedEncoding.bfloat16)
             else:
                 logger.warning(
-                    "torch_dtype not available, cant infer encoding from config.json"
+                    "torch_dtype not available, can't infer encoding from config.json"
                 )
 
         return list(supported_encodings)
