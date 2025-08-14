@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
 import numpy as np
 from max.interfaces import (
@@ -43,6 +43,9 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 from typing_extensions import ParamSpec
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -155,6 +158,7 @@ class TextTokenizer(
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
+        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -201,6 +205,16 @@ class TextTokenizer(
 
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
+
+        if pipeline_config:
+            huggingface_config = pipeline_config.model_config.huggingface_config
+            if eos_token_id := getattr(
+                huggingface_config, "eos_token_id", None
+            ):
+                if isinstance(eos_token_id, int):
+                    self._default_eos_token_ids.add(eos_token_id)
+                elif isinstance(eos_token_id, list):
+                    self._default_eos_token_ids.update(eos_token_id)
 
     @staticmethod
     def _flatten_text_generation_request_message(
