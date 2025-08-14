@@ -23,6 +23,7 @@ Qwen/Qwen3-32B	d47b0d4ae4b48fde975756bf360a63a9cca8d470
 Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8	12fd6884d2585dd4d020373e7f39f74507b31866
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic	b0b04ce47ca8f21386149cf613f64dd611808c05
+RedHatAI/gemma-3-27b-it-FP8-dynamic	306078afe860ef87821018f28078ecf762f31455
 TinyLlama/TinyLlama-1.1B-Chat-v1.0	fe8a4ea1ffedaf415f4da2f062534de366a451e6
 allenai/OLMo-1B-hf	aee7752d9c08ee4775e9b0091426d8410e8f6a89
 allenai/OLMo-2-0325-32B-Instruct	b96024342a77a69aa0dda815c3454a671f477463

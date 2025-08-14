@@ -973,6 +973,19 @@ PIPELINES = {
             kl_div_threshold=5.7e-01,
         ),
     ),
+    # TODO(MODELS-714): High thresholds likely due to bf16 vs fp8 comparison, needs investigation.
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big", "float8-support"],
+        run=_make_pipeline_runner(
+            pipeline="gemma3-27b-float8-dynamic",
+            encoding="float8_e4m3fn",
+            # Doesn't run with torch+transformers, so compare to bf16 goldens.
+            pregenerated_torch_goldens_rlocation="torch_gemma3-27b_golden/torch_gemma3-27b_bfloat16_golden.json",
+            cos_dist_threshold=2.8e-02,
+            kl_div_threshold=7.0e-01,
+        ),
+    ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "tts"],  # TTS tag to identify text-to-speech models
