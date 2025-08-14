@@ -15,20 +15,18 @@ struct MoveMe(Movable):
     fn __moveinit__(out self, deinit other: Self):
         self.x = other.x
 
-fn use(a:String, b:String, c:String, d:MoveMe):
+fn use(a:String, d:MoveMe):
     pass
 
 # CHECK:  lit.fn @"toy
-fn toy(byCopy:String, byRef:String, prefix:String, byRefMut: String, var byMove: MoveMe):
+fn toy(byCopy:String, prefix:String, var byMove: MoveMe):
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.call @{{.*}}::@String::@"__copyinit__(::String)"[{{.*}}](%byCopy, [[V0]])
     # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.call @{{.*}}::@MoveMe::@"__moveinit__({{.*}})"[{{.*}}](%byMove, [[V1]])
-    # CHECK: %byRef[ref: imm *"byRefMut`3"], [[V0]]
-    # CHECK-SAME: [@{{.*}}::@String::@"__copyinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__moveinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__del__({{.*}})" !lit.generator<{{.*}}>],
-    # CHECK-SAME: %byRefMut[ref: imm *"byRef`1"], [[V1]]
-    fn myclosure(prefix: String) unified {read byRef, var byCopy, mut byRefMut, var byMove^} -> String:
-        use(byRef, byCopy, byRefMut, byMove)
+    # CHECK: [[V0]][@{{.*}}::@String::@"__copyinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__moveinit__({{.*}})" !lit.generator<{{.*}}>, @{{.*}}::@String::@"__del__({{.*}})" !lit.generator<{{.*}}>], [[V1]]
+    fn myclosure(prefix: String) unified {var byCopy, var byMove^} -> String:
+        use(byCopy, byMove)
         return prefix
 
     takeIt(myclosure, prefix)
@@ -61,3 +59,41 @@ fn make_closure(x: Int, str:String):
             return x
 
         return x + y
+
+# // -----
+
+# COM: Verify mutability casts are inserted
+
+fn takeIt[T: fn () unified -> None, //](state: T):
+    state()
+
+fn takesImmut(str: String):
+    pass
+
+fn takesMut(mut str: String):
+    pass
+
+# CHECK: lit.fn @"no_castsImmut({{.*}})"[imm *"byRef`"
+fn no_castsImmut(byRef:String):
+    # CHECK-NEXT: %byRef[ref: imm *"byRef`"]
+    fn myclosure() unified {read byRef}:
+        takesImmut(byRef)
+
+    takeIt(myclosure)
+
+# CHECK: lit.fn @"no_castsMut({{.*}})"[mut *"byRefMut`"
+fn no_castsMut(mut byRefMut: String):
+    # CHECK-NEXT: %byRefMut[ref: mut *"byRefMut`"
+    fn myclosure() unified {mut byRefMut}:
+        takesImmut(byRefMut)
+
+    takeIt(myclosure)
+
+# CHECK: lit.fn @"casts({{.*}})"[mut *"byRefMut`"
+fn casts(mut byRefMut: String):
+    # CHECK: [[V0:%.*]] = lit.ref.immut %byRefMut : <!String, mut *"byRefMut`">
+    # CHECK: lit.closure.init[{{.*}}]([[V0]]
+    fn myclosure() unified {read byRefMut}:
+        takesImmut(byRefMut)
+
+    takeIt(myclosure)

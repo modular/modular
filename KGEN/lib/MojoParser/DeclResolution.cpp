@@ -1212,13 +1212,35 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
             expr.expr->getLoc(), expr.ir.getRValueType(),
             /*allowIncompatibleTypes=*/false,
             /*requireMLValue=*/false, emitter);
-
         emitter.emitStoreToLValue(expr, destLV, dest.getContext());
         captureValue = destLV;
       }
       break;
     }
+    case CaptureConvention::kConventionMut: {
+      if (auto refType = dyn_cast<RefType>(original.getType().mlirType)) {
+        OriginType originType = refType.getOriginType();
+        if (originType.isMutableKnown(false)) {
+          p.emitError(funcOp.getLoc(), "Cannot capture ")
+              << name << " by mut because the value is immutable";
+          return failure();
+        }
+      }
+      break;
+    }
+    case CaptureConvention::kConventionRead: {
+      if (auto refType = dyn_cast<RefType>(original.getType().mlirType)) {
+        OriginType originType = refType.getOriginType();
+        if (originType.isMutableKnown(true)) {
+          auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
+              funcOp.getLoc(), original.getMlirValue());
+          captureValue = MBValue(refImmutOp->getResult(0));
+        }
+      }
+      break;
+    }
     default:
+      llvm_unreachable("All capture conventions should be handled above");
       break;
     }
     shared.getDeclResolver().addFullyResolvedDecl(captureValue, name,
