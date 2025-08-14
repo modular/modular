@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
 
 # Header adding test helpers for using gtest with `ErrorOr<T>`.
 modular_cc_library(
@@ -227,7 +227,6 @@ modular_cc_test(
     name = "NixlTestUcx",
     size = "small",
     srcs = ["NixlTestUcx.cpp"],
-    data = NIXL_PLUGINS_DATA,
     gpu_constraints = [
         "//:has_gpu",
         "//:has_multi_gpu",

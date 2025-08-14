@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//bazel:api.bzl", "modular_cc_library", "modular_relink_object", "modular_shared_library")
+load("//bazel:api.bzl", "cc_autolink_deps", "modular_cc_library", "modular_shared_library")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 
 bool_flag(
@@ -118,8 +118,7 @@ modular_cc_library(
         ":RuntimeGlobals",
         "//Support:ML",
     ] + select({
-        "//:linux_x86_64": ["@nvptxcompiler_x86_64//:nvptxcompiler"],
-        "//:linux_aarch64": ["@nvptxcompiler_aarch64//:nvptxcompiler"],
+        "@platforms//os:linux": [":NVPTX"],
         "@platforms//os:macos": ["@metal-cpp//:metal-cpp"],
         "//conditions:default": [],
     }),
@@ -177,6 +176,21 @@ modular_cc_library(
 
 modular_cc_library(
     name = "NIXL",
+    data = select({
+        "//:linux_x86_64": [
+            ":plugin_ucx",
+            ":plugin_ucx_verbs",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":NIXLLibOnly",
+        "//AsyncRT:DeviceContext",
+    ],
+)
+
+modular_cc_library(
+    name = "NIXLLibOnly",
     srcs = glob(
         [
             "lib/NIXL/**/*.cpp",
@@ -198,7 +212,7 @@ modular_cc_library(
     include_prefix = "",
     strip_include_prefix = "include",
     tags = ["no-clang-tidy"],  # Copied code doesn't conform to our style
-    visibility = ["//visibility:public"],
+    visibility = ["//visibility:private"],
     deps = [
         "//AsyncRT:Support",
         "//Support:Threading",
@@ -245,19 +259,12 @@ modular_shared_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//AsyncRT:DeviceContextImpl",
-        "//AsyncRT:NIXL",
-        "//AsyncRT:Support",
+        ":DeviceContextImpl",
+        ":NIXLLibOnly",
+        ":NVPTX",
+        ":Support",
         "@ucx_prebuilt//:ucx",
     ],
-)
-
-modular_relink_object(
-    name = "plugin_ucx.fixed",
-    src = ":plugin_ucx",
-    new_root = "../../lib",
-    use_unique_name = True,
-    visibility = ["//visibility:public"],
 )
 
 modular_shared_library(
@@ -296,17 +303,25 @@ modular_shared_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//AsyncRT:DeviceContextImpl",
-        "//AsyncRT:NIXL",
-        "//AsyncRT:Support",
+        ":DeviceContext",
+        ":NIXLLibOnly",
+        ":NVPTX",
+        ":Support",
         "@ucx_prebuilt//:ucx_verbs",
     ],
 )
 
-modular_relink_object(
-    name = "plugin_ucx_verbs.fixed",
-    src = ":plugin_ucx_verbs",
-    new_root = "../../lib",
-    use_unique_name = True,
-    visibility = ["//visibility:public"],
+cc_autolink_deps(
+    name = "nvptx_alwayslink_deps",
+    deps = select({
+        "//:linux_x86_64": ["@nvptxcompiler_x86_64//:nvptxcompiler"],
+        "//:linux_aarch64": ["@nvptxcompiler_aarch64//:nvptxcompiler"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_shared_library(
+    name = "NVPTX",
+    srcs = [],
+    deps = [":nvptx_alwayslink_deps"],
 )
