@@ -75,6 +75,17 @@ class Gemma3_MultiModalModel(Gemma3Model):
             return_logits: The number of top logits to return from the model
                 execution.
         """
+        hf_quant_config = getattr(
+            huggingface_config, "quantization_config", None
+        )
+        # To the language model section of the config (`text_config`), add a
+        # reference to the top level `quantization_config` for compatibility
+        # with the base Gemma3Model, if text_config doesn't already have one
+        if hf_quant_config and not hasattr(
+            huggingface_config.text_config, "quantization_config"
+        ):
+            huggingface_config.text_config.quantization_config = hf_quant_config
+
         super().__init__(
             pipeline_config,
             session,
