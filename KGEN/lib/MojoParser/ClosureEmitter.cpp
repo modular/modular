@@ -1667,6 +1667,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
     switch (captureConvention) {
     case CaptureConvention::kConventionMut:
     case CaptureConvention::kConventionRead: {
+      // Mutability casts should have been emitted during parse time.
       if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
         origins.push_back(refType.getOrigin());
         captureInfo.push_back(BoolAttr::get(ctx, true));
@@ -1770,7 +1771,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
   // The wrapper takes ownership of the closure.
   builder.create<OwnershipUseOp>(location, closure);
 
-  // Create the wrapper instance by emitting a call to the Wrapper constructor.
+  // Create the wrapper instance by emitting a call to the Wrapper
+  // constructor.
   LIT::StructType closureWrapperType = wrapper.bindReference(witnessTable);
   VarDeclOp var = builder.create<VarDeclOp>(
       location, closureWrapperType, fnName.getValue(),
