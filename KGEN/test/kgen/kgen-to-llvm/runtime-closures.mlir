@@ -21,7 +21,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: [[S0:%.*]] = llvm.insertvalue [[ADDR]], [[UNDEF]][0] : !llvm.struct<(ptr, ptr)>
     // CHECK: [[C1:%.*]] = llvm.mlir.constant(1 : i8) : i8
     // CHECK: [[STATE:%.*]] = llvm.alloca [[C1]] x !llvm.struct<(i64)> : (i8) -> !llvm.ptr
-    // CHECK: llvm.intr.lifetime.start 8, [[STATE]] : !llvm.ptr
+    // CHECK: llvm.intr.lifetime.start [[STATE]] : !llvm.ptr
     // CHECK: [[ARGPTR:%.*]] = llvm.getelementptr [[STATE]][0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i64)>
     // CHECK: llvm.store [[ARG]], [[ARGPTR]] : i64, !llvm.ptr
     // CHECK: [[CLOSURE:%.*]] = llvm.insertvalue [[STATE]], [[S0]][1] : !llvm.struct<(ptr, ptr)>

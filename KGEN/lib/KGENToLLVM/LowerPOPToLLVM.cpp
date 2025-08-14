@@ -1009,14 +1009,13 @@ static Value materializeLLVMAlloca(OpBuilder &b, TargetInfoAttr target,
 
   if (alloca && alloca.getMarkedLifetimes()) {
     // If this alloca has marked lifetimes, it always begins as dead.
-    b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
+    b.create<LLVM::LifetimeEndOp>(op->getLoc(), ptr);
   } else {
     // Insert lifetime markers starting from the op to the end of its block.
     b.setInsertionPoint(op);
-    auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(),
-                                                 typeAllocSize * count, ptr);
+    auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(), ptr);
     b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-    b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
+    b.create<LLVM::LifetimeEndOp>(op->getLoc(), ptr);
     b.setInsertionPointAfter(start);
   }
 
@@ -1109,8 +1108,6 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
   for (unsigned i = 0, e = values.size(); i < e; ++i) {
     Value ptr = op->getOperand(i);
     Value value = values[i];
-    int64_t typeAllocSize = *DataLayoutInterface::getTypeAllocSize(
-        target, cast<PointerType>(ptr.getType()).getElementType());
     auto alloc = ptr.template getDefiningOp<StackAllocationOp>();
     assert(alloc && "expected a parent stack allocation");
     SmallVector<Value> newValues;
@@ -1121,8 +1118,7 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
     if (!isa<LLVM::AllocaOp>(value.getDefiningOp()))
       return op->emitError("lifetime marker is only allowed for alloca");
 
-    int64_t count = cast<IntegerAttr>(alloc.getCountAttr()).getInt();
-    b.create<OpT>(op->getLoc(), typeAllocSize * count, value);
+    b.create<OpT>(op->getLoc(), value);
   }
   b.eraseOp(op);
   return success();

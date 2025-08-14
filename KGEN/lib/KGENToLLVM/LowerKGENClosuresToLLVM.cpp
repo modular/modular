@@ -233,10 +233,7 @@ private:
     envStruct.setElemType(types.liftedFunctionCaptureType);
     // TODO: When data layouts are propagated properly, extract the data
     //  layout from TargetInfoAttr
-    size_t envSize =
-        getTypeConverter()->getTypeAllocSize(types.liftedFunctionCaptureType);
-
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), envSize, envStruct);
+    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), envStruct);
     for (auto [argIdx, boundArgValue] :
          llvm::enumerate(adaptor.getCaptures())) {
       LLVM::GEPOp getBoundArgPtr = rewriter.create<LLVM::GEPOp>(
@@ -256,7 +253,7 @@ private:
     auto oldInsertionBlock = rewriter.getInsertionBlock();
     auto oldInsertionPoint = rewriter.getInsertionPoint();
     rewriter.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), envSize, envStruct);
+    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), envStruct);
     rewriter.setInsertionPoint(oldInsertionBlock, oldInsertionPoint);
     rewriter.replaceOp(op, closureStruct);
 
