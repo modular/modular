@@ -323,8 +323,7 @@ void CallGraph::completeFunctionProcessing(CallGraphNode *caller) {
   // may have violated the debug info rules. Check with verifier. If deferred,
   // then no need to correct since a module wide sweep will occur later on to
   // correct debug info.
-  bool isImmediate = !(updateAttrName.has_value() && *updateAttrName);
-  if (isImmediate) {
+  if (!(updateAttrName.has_value() && *updateAttrName)) {
     mlir::MLIRContext *ctx = caller->func.getContext();
     bool failedVerify = false;
 
