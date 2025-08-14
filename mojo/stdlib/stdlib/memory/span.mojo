@@ -586,9 +586,9 @@ struct Span[
 
         var ptr = self.unsafe_ptr()
         var tmp = InlineArray[T, 1](uninitialized=True)
-        ptr.offset(a).move_pointee_into(tmp.unsafe_ptr())
-        ptr.offset(b).move_pointee_into(ptr.offset(a))
-        tmp.unsafe_ptr().move_pointee_into(ptr.offset(b))
+        (ptr + a).move_pointee_into(tmp.unsafe_ptr())
+        (ptr + b).move_pointee_into(ptr + a)
+        tmp.unsafe_ptr().move_pointee_into(ptr + b)
 
     @always_inline("nodebug")
     fn __merge_with__[
