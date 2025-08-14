@@ -16,8 +16,7 @@ class Module;
 class TypedPointerType;
 } // namespace llvm
 
-namespace M {
-namespace KGEN {
+namespace M::KGEN {
 
 /// Pass to rewrite opaque pointers to typed pointers that constructs a map
 /// between opaque pointer and it's intended type.
@@ -38,7 +37,6 @@ private:
   bool cleanupTypedPointerMetadata(llvm::Module &M);
 };
 
-} // namespace KGEN
-} // namespace M
+} // namespace M::KGEN
 
 #endif // KGEN_COMPILER_LLVMIR_TRANSFORMS_POINTERREWRITER_H

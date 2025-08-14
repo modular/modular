@@ -1084,6 +1084,23 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "ObjectCompiler.BitcodeWriter",
+    srcs = glob([
+        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/*.cpp",
+        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/*.h",
+    ]),
+    tags = ["no-clang-tidy"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":Compiler",
+        ":KGENToLLVM",
+        "//Support:Context",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
     name = "ObjectCompiler.headers",
     hdrs = glob([
         "lib/Compiler/ObjectCompiler/*.h",
@@ -1106,6 +1123,7 @@ modular_cc_library(
     deps = [
         ":Compiler",
         ":KGENToLLVM",
+        ":ObjectCompiler.BitcodeWriter",
         ":Pipeline",
         "//AsyncRT:CompilerSupport",
         "//Support:Context",
