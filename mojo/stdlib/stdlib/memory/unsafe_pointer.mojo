@@ -60,17 +60,95 @@ struct UnsafePointer[
     Comparable,
     Defaultable,
 ):
-    """UnsafePointer[T] represents an indirect reference to one or more values of
-    type T consecutively in memory, and can refer to uninitialized memory.
+    """`UnsafePointer[T]` represents an indirect reference to one or more values
+    of type `T` consecutively in memory, and can refer to uninitialized memory.
 
     Because it supports referring to uninitialized memory, it provides unsafe
-    methods for initializing and destroying instances of T, as well as methods
-    for accessing the values once they are initialized.
+    methods for initializing and destroying instances of `T`, as well as methods
+    for accessing the values once they are initialized. You should instead use
+    safer pointers when possible.
+
+    Important things to know:
+
+    - This pointer is unsafe and nullable. No bounds checks; reading before
+      writing is undefined.
+    - It does not own existing memory. When memory is heap-allocated with
+      `alloc()`, you must call `free()`.
+    - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
+      is the offset size.
+    - For SIMD operations on numeric data, use `UnsafePointer[Scalar[DType.xxx]]`
+      with `load[dtype=DType.xxx]()` and `store[dtype=DType.xxx]()`.
+
+    Key APIs:
+
+    - `alloc()`: Allocates heap space for the specified number of
+      elements (contiguous). Must be paired with `free()`.
+    - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
+      pointers that were not allocated by `alloc()`.
+    - `offset(i)` / `+ i` / `- i`: Pointer arithmetic. Returns a new pointer
+      shifted by `i` elements. No bounds checking.
+    - `[]` or `[i]`: Dereference to a reference of the pointee (or at
+      offset `i`). Only valid if the memory at that location is initialized.
+    - `load()`: Loads `width` elements starting at `offset` (default 0) as
+      `SIMD[dtype, width]` from `UnsafePointer[Scalar[dtype]]`. Pass
+      `alignment` when data is not naturally aligned.
+    - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
+      `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
+    - `destroy_pointee()` / `take_pointee()` / `move_pointee_into(dst)`:
+      Explicitly end the lifetime of the current pointee or move it out and
+      into another pointer without running an extra copy. Use these to manage
+      lifecycles when working with uninitialized memory patterns.
 
     For more information see [Unsafe
     pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
     comparison with other pointer types, see [Intro to
     pointers](/mojo/manual/pointers/).
+
+    Examples:
+
+    Element-wise store and load (width = 1):
+
+    ```mojo
+    var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+    for i in range(4):
+        p.store(i, Scalar[DType.float32](Float32(i)))
+    var v = p.load(2)
+    print(v[0])  # => 2.0
+    p.free()
+    ```
+
+    Vectorized store and load (width = 4):
+
+    ```mojo
+    var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+    var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
+    p.store(0, vec)
+    var out = p.load[width=4](0)
+    print(out)  # => [1, 2, 3, 4]
+    p.free()
+    ```
+
+    Pointer arithmetic and dereference:
+
+    ```mojo
+    var p = UnsafePointer[Int32].alloc(3)
+    (p + 0)[] = 10  # offset by 0 elements, then dereference to write
+    (p + 1)[] = 20  # offset +1 element, then dereference to write
+    p[2] = 30  # equivalent offset/dereference with brackets (via __getitem__)
+    var second = p[1]  # reads the element at index 1
+    print(second, p[2])  # => 20 30
+    p.free()
+    ```
+
+    Point to a value on the stack:
+
+    ```mojo
+    var foo: Int = 123
+    var p = UnsafePointer(to=foo)
+    print(p[])  # => 123
+    # Don't call `free()` because the value was not heap-allocated
+    # Mojo will destroy it when the `foo` lifetime ends
+    ```
 
     Parameters:
         type: The type the pointer points to.
@@ -176,13 +254,31 @@ struct UnsafePointer[
         # already existing.
         origin = MutableOrigin.empty,
     ]:
-        """Allocate an array with specified or default alignment.
+        """Allocates contiguous storage for `count` elements of `type`
+        with compile-time alignment `alignment`.
+
+        - The returned memory is uninitialized; reading before writing is undefined.
+        - The returned pointer has an empty mutable origin; you must call `free()`
+          to release it.
+        - `count` must be positive and `sizeof[type]()` must be > 0.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.int32]].alloc(4)
+        p.store(0, SIMD[DType.int32, 1](42))
+        p.store(1, SIMD[DType.int32, 1](7))
+        p.store(2, SIMD[DType.int32, 1](9))
+        var a = p.load(0)
+        print(a[0], p.load(1)[0], p.load(2)[0])
+        p.free()
+        ```
 
         Args:
-            count: The number of elements in the array.
+            count: Number of elements to allocate.
 
         Returns:
-            The pointer to the newly allocated array.
+            Pointer to the newly allocated uninitialized array.
         """
         alias sizeof_t = sizeof[type]()
         constrained[sizeof_t > 0, "size must be greater than zero"]()
@@ -490,20 +586,35 @@ struct UnsafePointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
-        """Loads the value the pointer points to.
+        """Loads `width` elements from the value the pointer points to.
+
+        Use `alignment` to specify minimal known alignment in bytes; pass a
+        smaller value (such as 1) if loading from packed/unaligned memory. The
+        `volatile`/`invariant` flags control reordering and common-subexpression
+        elimination semantics for special cases.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+        p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
+        var v = p.load[width=4]()
+        print(v)  # => [1, 2, 3, 4]
+        p.free()
+        ```
 
         Constraints:
             The width and alignment must be positive integer values.
 
         Parameters:
-            dtype: The data type of SIMD vector.
-            width: The size of the SIMD vector.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
-            invariant: Whether the memory is load invariant.
+            dtype: The data type of the SIMD vector.
+            width: The number of elements to load.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
+            invariant: Whether the load is from invariant memory.
 
         Returns:
-            The loaded value.
+            The loaded SIMD vector.
         """
         _simd_construction_checks[dtype, width]()
         constrained[
@@ -690,19 +801,34 @@ struct UnsafePointer[
         alignment: Int = alignof[dtype](),
         volatile: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
-        """Stores a single element value.
+        """Stores a single element value `val` at element offset 0.
+
+        Specify `alignment` when writing to packed/unaligned memory. Requires a
+        mutable pointer. For writing at an element offset, use the overloads
+        that accept an index or scalar offset.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+        var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+        p.store(vec)
+        var out = p.load[width=4]()
+        print(out)  # => [1.0, 2.0, 3.0, 4.0]
+        p.free()
+        ```
 
         Constraints:
             The width and alignment must be positive integer values.
 
         Parameters:
             dtype: The data type of SIMD vector elements.
-            width: The size of the SIMD vector.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
+            width: The number of elements to store.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
 
         Args:
-            val: The value to store.
+            val: The SIMD value to store.
         """
         constrained[mut, _must_be_mut_err]()
         self._store[alignment=alignment, volatile=volatile](val)
