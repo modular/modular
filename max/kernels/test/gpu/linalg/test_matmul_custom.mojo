@@ -268,7 +268,7 @@ fn run_matmul_split_k[
     debug: Bool = True,
 ) raises:
     print(
-        "== run_matmul kernel split_k serial reduction => ",
+        "== run_matmul kernel split_k => ",
         String(dtype),
         M,
         N,
@@ -322,12 +322,7 @@ fn run_matmul_split_k[
 
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
-    multistage_gemm[
-        transpose_b=False,
-        config=config,
-        elementwise_lambda_fn=None,
-        serial_reduction=False,
-    ](
+    multistage_gemm[transpose_b=False, config=config](
         rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
         rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
         rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),

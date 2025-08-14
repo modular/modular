@@ -732,7 +732,7 @@ fn batched_matmul_kernel_gpu[
         OptionalReg[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
-    ](c, a, b, UnsafePointer[Int32]())
+    ](c, a, b)
 
 
 @always_inline
