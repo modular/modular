@@ -668,10 +668,11 @@ def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
 
   let parameters = (ins
     "TypedAttr":$typeValue,
+    "TypedAttr":$qualifiedBuiltins,
     AttributeSelfTypeParameter<"", "Type">:$type
   );
 
-  let assemblyFormat = "`<` $typeValue `>`";
+  let assemblyFormat = "`<` $typeValue `,` $qualifiedBuiltins `>`";
 }
 
 //===----------------------------------------------------------------------===//
