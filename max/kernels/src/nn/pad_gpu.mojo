@@ -180,15 +180,15 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         axis_dim: Int,
         ctx: DeviceContext,
     ) raises:
-        var pre_pad_start_ptr = output.offset(self.output_offset)
+        var pre_pad_start_ptr = output + (self.output_offset)
 
         # setting values
         if self.pad_with_constant:
             _fill_gpu(pre_pad_start_ptr, constant, axis_dim, ctx)
         else:
-            var non_pad_start_ptr = pre_pad_start_ptr.offset(self.pre_pad)
-            var post_pad_start_ptr = non_pad_start_ptr.offset(self.non_pad)
-            var input_start_ptr = input.offset(self.input_offset)
+            var non_pad_start_ptr = pre_pad_start_ptr + (self.pre_pad)
+            var post_pad_start_ptr = non_pad_start_ptr + (self.non_pad)
+            var input_start_ptr = input + (self.input_offset)
             _fill_gpu(pre_pad_start_ptr, constant, self.pre_pad, ctx)
             _memcpy_gpu(non_pad_start_ptr, input_start_ptr, self.non_pad, ctx)
             _fill_gpu(post_pad_start_ptr, constant, self.post_pad, ctx)

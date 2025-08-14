@@ -124,7 +124,7 @@ struct _Accumulator[
 
             @parameter
             for n in range(num_cols):
-                func(m, n, row_ptr.offset(n * simd_width))
+                func(m, n, row_ptr + (n * simd_width))
             row_ptr += stride
 
     # TODO: merge with load
@@ -174,7 +174,7 @@ struct _Accumulator[
         c_bound: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr + (tile_n_idx)
 
         if skip_boundary_check:
 
@@ -338,14 +338,14 @@ struct _Accumulator[
             @parameter
             if is_load:
                 self[row, col] = partial_simd_load[simd_width](
-                    row_ptrs[0].offset(stride * row + base_column),
+                    row_ptrs[0] + (stride * row + base_column),
                     0,
                     tail_size,
                     0,
                 )
             else:
                 partial_simd_store(
-                    row_ptrs[0].offset(stride * row + base_column),
+                    row_ptrs[0] + (stride * row + base_column),
                     0,
                     tail_size,
                     self[row, col],

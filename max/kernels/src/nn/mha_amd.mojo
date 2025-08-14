@@ -104,7 +104,7 @@ fn copy_local_to_dram2[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + (src_idx),
                 src.runtime_element_layout,
             )
 

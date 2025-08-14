@@ -493,7 +493,7 @@ struct ConvDirectNHWC[
             var task_output = NDBuffer[
                 output_type, output_rank, output_origin, output_shape
             ](
-                output_scratch.data.offset(task_id_c * output_size),
+                output_scratch.data + (task_id_c * output_size),
                 output.get_shape(),
             )
 
@@ -788,7 +788,7 @@ struct ConvDirectNHWC[
             )
             # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
             # current group.
-            filter_ptr = filter_ptr.offset(
+            filter_ptr = filter_ptr + (
                 # Jump over f_tile_offset in current group.
                 self.conv_shape.f_in_group(f_tile_offset)
                 * self.conv_shape.r()
@@ -811,7 +811,7 @@ struct ConvDirectNHWC[
                 # These contiguous segments are strided by F.
                 @parameter
                 if not filter_packed:
-                    filter_ptr = self.filter.data.offset(
+                    filter_ptr = self.filter.data + (
                         (s + r * self.conv_shape.s())
                         * self.conv_shape.c
                         * self.conv_shape.f
@@ -836,7 +836,7 @@ struct ConvDirectNHWC[
 
                 # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
                 if filter_packed:
-                    filter_ptr = filter_ptr.offset(
+                    filter_ptr = filter_ptr + (
                         self.conv_shape.c_per_group() * micro_kernel_f_size
                     )
 
@@ -952,13 +952,13 @@ struct ConvDirectNHWC[
                     output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
                         partial_simd_load[simd_size](
-                            output_ptr.offset(j * simd_size), 0, residual, 0.0
+                            output_ptr + (j * simd_size), 0, residual, 0.0
                         ),
                     )
                 else:
                     output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
-                        output_ptr.offset(j * simd_size).load[
+                        output_ptr + (j * simd_size).load[
                             width=simd_size
                         ](),
                     )
@@ -966,9 +966,9 @@ struct ConvDirectNHWC[
             @parameter
             if output_shape.at[output_rank - 1]().has_value():
                 alias F = output_shape.get[output_rank - 1]()
-                output_ptr = output_ptr.offset(F)
+                output_ptr = output_ptr + (F)
             else:
-                output_ptr = output_ptr.offset(self.conv_shape.f)
+                output_ptr = output_ptr + (self.conv_shape.f)
 
     @always_inline
     fn _store_output_micro_tile[
@@ -1013,7 +1013,7 @@ struct ConvDirectNHWC[
                         self.conv_shape.f_per_group(), simd_size
                     )
                     partial_simd_store[simd_size](
-                        output_ptr.offset(j * simd_size),
+                        output_ptr + (j * simd_size),
                         0,
                         residual,
                         output_vec,
@@ -1024,9 +1024,9 @@ struct ConvDirectNHWC[
             @parameter
             if output_shape.at[output_rank - 1]().has_value():
                 alias F = output_shape.get[output_rank - 1]()
-                output_ptr = output_ptr.offset(F)
+                output_ptr = output_ptr + (F)
             else:
-                output_ptr = output_ptr.offset(self.conv_shape.f)
+                output_ptr = output_ptr + (self.conv_shape.f)
 
     @always_inline
     fn _accumulate[
@@ -1191,7 +1191,7 @@ struct ConvDirectNHWC[
             )
             # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
             # current group.
-            filter_ptr = filter_ptr.offset(
+            filter_ptr = filter_ptr + (
                 # Jump over f_tile_offset in current group.
                 self.conv_shape.f_in_group(f_tile_offset)
                 * self.conv_shape.c_per_group()
@@ -1201,7 +1201,7 @@ struct ConvDirectNHWC[
                 * micro_kernel_f_size
             )
         else:
-            filter_ptr = self.filter.data.offset(
+            filter_ptr = self.filter.data + (
                 c_tile_offset * self.conv_shape.f + f_tile_offset
             )
 
@@ -1341,10 +1341,10 @@ struct ConvDirectNHWC[
                 wo,
             )
 
-            input_base = input_base.offset(
+            input_base = input_base + (
                 height * self.conv_shape.stride[0] * self.conv_shape.c,
             )
-            output_base = output_base.offset(height * self.conv_shape.f)
+            output_base = output_base + (height * self.conv_shape.f)
 
         tile_middle_unswitch_boundaries[
             work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
@@ -1422,10 +1422,10 @@ struct ConvDirectNHWC[
                     Index(ho, wo),
                 )
 
-                input_base = input_base.offset(
+                input_base = input_base + (
                     height * self.conv_shape.stride[1] * self.conv_shape.c,
                 )
-                output_base = output_base.offset(height * self.conv_shape.f)
+                output_base = output_base + (height * self.conv_shape.f)
 
             tile_middle_unswitch_boundaries[
                 work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
@@ -1513,10 +1513,10 @@ struct ConvDirectNHWC[
                         Index(do, ho, wo),
                     )
 
-                    input_base = input_base.offset(
+                    input_base = input_base + (
                         height * self.conv_shape.stride[2] * self.conv_shape.c,
                     )
-                    output_base = output_base.offset(height * self.conv_shape.f)
+                    output_base = output_base + (height * self.conv_shape.f)
 
                 tile_middle_unswitch_boundaries[
                     work_fn,
@@ -1612,16 +1612,16 @@ struct ConvDirectNHWC[
 
         @parameter
         if filter_packed:
-            filter_base = self.filter.data.offset(
+            filter_base = self.filter.data + (
                 f_tile_offset * C * R * S + c_tile_offset * micro_kernel_f_size
             )
         else:
-            filter_base = self.filter.data.offset(
+            filter_base = self.filter.data + (
                 c_tile_offset * F + f_tile_offset
             )
 
-        var input_curr_image = self.input.data.offset(n * W * H * C)
-        var output_curr_image = self.output.data.offset(n * WO * HO * F)
+        var input_curr_image = self.input.data + (n * W * H * C)
+        var output_curr_image = self.output.data + (n * WO * HO * F)
 
         for ho in range(
             self.partition.ho_or_howo_offset,
@@ -1629,11 +1629,11 @@ struct ConvDirectNHWC[
         ):
             var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
             # Point to (n, 0, ho, c_tile_offset) mapped in input
-            var input_base = input_curr_image.offset(
+            var input_base = input_curr_image + (
                 c_tile_offset + C * (-conv_attr.pad_left() + W * h)
             )
             # Point to (n, 0, ho, f_tile_offset) mapped in input
-            var output_base = output_curr_image.offset(
+            var output_base = output_curr_image + (
                 f_tile_offset + F * WO * ho
             )
 
@@ -1690,10 +1690,10 @@ struct ConvDirectNHWC[
                     ho,
                     0,  # beginning of wo dimension
                 )
-                input_base = input_base.offset(
+                input_base = input_base + (
                     micro_kernel_height_lbound * conv_attr.strides()[1] * C
                 )
-                output_base = output_base.offset(micro_kernel_height_lbound * F)
+                output_base = output_base + (micro_kernel_height_lbound * F)
 
                 # Update middle points if any. They aren't effected by padding.
                 @__copy_capture(filter_base)
@@ -1719,10 +1719,10 @@ struct ConvDirectNHWC[
                         ho,
                         wo,
                     )
-                    input_base = input_base.offset(
+                    input_base = input_base + (
                         height * conv_attr.strides()[1] * C
                     )
-                    output_base = output_base.offset(height * F)
+                    output_base = output_base + (height * F)
 
                 # Middle points are the points not updated by micro kernels
                 # on left or right boundary
@@ -1838,8 +1838,8 @@ struct ConvDirectNHWC[
                 h_shift += conv_attr.dilations()[0]
                 continue
 
-            var input_ptr = input_base.offset(h_shift * C * W)
-            var filter_ptr = filter_base.offset(r * S * filter_S_stride)
+            var input_ptr = input_base + (h_shift * C * W)
+            var filter_ptr = filter_base + (r * S * filter_S_stride)
             var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
 
             @parameter
@@ -1881,13 +1881,13 @@ struct ConvDirectNHWC[
                     ](
                         c_tile_size,
                         wo_stride_in_input,
-                        input_ptr.offset(0),
+                        input_ptr + (0),
                         filter_ptr,
                         acc,
                     )
 
-                filter_ptr = filter_ptr.offset(filter_S_stride)
-                input_ptr = input_ptr.offset(s_stride_in_input)
+                filter_ptr = filter_ptr + (filter_S_stride)
+                input_ptr = input_ptr + (s_stride_in_input)
 
             h_shift += conv_attr.dilations()[0]
 

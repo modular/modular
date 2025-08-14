@@ -703,7 +703,7 @@ fn gemm_kernel_amd[
 
             if m < M and n < N:
                 var result_vec = (
-                    c_reg_fragment.ptr.offset(src_idx)
+                    c_reg_fragment.ptr + (src_idx)
                     .load[
                         width=4,
                         alignment = alignof[SIMD[c_type, 4]](),
@@ -726,7 +726,7 @@ fn gemm_kernel_amd[
                         (Int(m), Int(n)), result_vec
                     )
                 else:
-                    c.ptr.offset(global_offset).store[alignment=alignment](
+                    c.ptr + (global_offset).store[alignment=alignment](
                         result_vec
                     )
     else:

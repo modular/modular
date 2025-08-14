@@ -699,7 +699,7 @@ fn flash_attention_dispatch[
                 )
 
                 var qk_max = NDBuffer[accum_type, 3](
-                    exp_sum_qk_max_data._unsafe_ptr().offset(data_len), data_dim
+                    exp_sum_qk_max_data._unsafe_ptr() + (data_len), data_dim
                 )
 
                 @parameter
@@ -1071,10 +1071,10 @@ fn mha[
                 group=group,
                 use_score_mod=use_score_mod,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + (q_batch_offset),
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + (q_batch_offset),
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1091,10 +1091,10 @@ fn mha[
                 group=group,
                 use_score_mod=use_score_mod,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + (q_batch_offset),
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + (q_batch_offset),
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1111,8 +1111,8 @@ fn mha[
             "use_score_mod must be False for AMD flash attention",
         ]()
         mha_single_batch_amd[group=group, config=config](
-            output_ptr.offset(q_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + (q_batch_offset),
+            q_ptr + (q_batch_offset),
             k,
             v,
             seq_len,
@@ -2524,11 +2524,11 @@ fn mha_decoding[
     # split-k intermediate buffers
     var qk_max_batch_ptr = __type_of(qk_max_ptr)()
     if qk_max_ptr:
-        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+        qk_max_batch_ptr = qk_max_ptr + (qk_max_offset)
 
     var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
     if exp_sum_ptr:
-        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
+        exp_sum_batch_ptr = exp_sum_ptr + (exp_sum_offset)
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -2574,10 +2574,10 @@ fn mha_decoding[
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + (q_batch_offset),
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + (output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -2603,10 +2603,10 @@ fn mha_decoding[
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + (q_batch_offset),
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + (output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -2635,8 +2635,8 @@ fn mha_decoding[
             "use_score_mod must be False for AMD flash attention",
         ]()
         mha_decoding_single_batch_amd[group=group, config=config](
-            output_ptr.offset(output_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + (output_batch_offset),
+            q_ptr + (q_batch_offset),
             k,
             v,
             exp_sum_batch_ptr,

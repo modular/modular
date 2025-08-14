@@ -538,13 +538,13 @@ fn store_C[
                 var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
-                    upper.ptr.offset(
+                    upper.ptr + (
                         st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     ),
                     d_reg_upper_packed,
                 )
                 st_matrix[simd_width=4](
-                    lower.ptr.offset(
+                    lower.ptr + (
                         st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     ),
                     d_reg_lower_packed,
@@ -609,7 +609,7 @@ fn store_C[
                 )
 
                 st_matrix[simd_width=4](
-                    upper_leftover.ptr.offset(
+                    upper_leftover.ptr + (
                         st_matrix_swizzle_32(
                             st_matrix_rt_layout_leftover(st_matrix_args)
                         )
@@ -617,7 +617,7 @@ fn store_C[
                     d_reg_upper_packed_leftover,
                 )
                 st_matrix[simd_width=4](
-                    lower_leftover.ptr.offset(
+                    lower_leftover.ptr + (
                         st_matrix_swizzle_32(
                             st_matrix_rt_layout_leftover(st_matrix_args)
                         )
@@ -636,7 +636,7 @@ fn store_C[
         var col_start = work_tile_coord[1] * MMA_N + thread_idx.x * TMA_BN
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr + (BM * TMA_BN * thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,
@@ -661,7 +661,7 @@ fn store_C[
         var col_start = work_tile_coord[1] * MMA_N + NUM_TMA_TILES * TMA_BN
 
         # Based on the reshape: we want 4,0 of BM,32 tiled smem. So BM * 32 * 4
-        var c_smem_offset_leftover = c_smem_tile.ptr.offset(
+        var c_smem_offset_leftover = c_smem_tile.ptr + (
             BM * half_tma_bn * (RESHAPED_NUM_TILES - 1)
         )
 

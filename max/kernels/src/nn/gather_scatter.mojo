@@ -301,7 +301,7 @@ fn gather[
 
     alias prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.flatten().data.offset(indices.size())
+    var end_indices_ptr = indices.flatten().data + (indices.size())
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -400,7 +400,7 @@ fn gather[
 
     alias prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.flatten().data.offset(indices.size())
+    var end_indices_ptr = indices.flatten().data + (indices.size())
 
     @parameter
     @__copy_capture(end_indices_ptr)
