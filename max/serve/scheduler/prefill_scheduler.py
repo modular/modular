@@ -46,11 +46,11 @@ class PrefillSchedulerConfig:
     max_batch_size_ce: int
     """The maximum number of requests that can be in the context encoding batch."""
 
-    enable_chunked_prefill: bool = True
+    enable_chunked_prefill: bool
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
-    target_tokens_per_batch_ce: int = 4096
+    target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
 
 
@@ -117,6 +117,7 @@ class PrefillScheduler(Scheduler):
         self, message: PrefillRequest, reply_context: ReplyContext
     ) -> None:
         """Handles a prefill request from the dispatcher."""
+        logger.info("received request from decode node.")
         self.prefill_requests.append(message)
         self.request_id_to_reply_context[message.id] = reply_context
 
@@ -172,6 +173,39 @@ class PrefillScheduler(Scheduler):
         for id in to_be_deleted:
             del self.active_transfers[id]
 
+    @traced
+    def _maybe_chunk_prefill_request(
+        self,
+        data: Union[TextContext, TextAndVisionContext],
+        tot_input_tokens: int,
+    ) -> int:
+        """Chunks a prefill request if it exceeds the target tokens per batch."""
+        if not (
+            self.scheduler_config.enable_chunked_prefill
+            and self.scheduler_config.target_tokens_per_batch_ce is not None
+        ):
+            return 0
+
+        input_tokens = data.active_length
+        if (
+            tot_input_tokens + input_tokens
+            <= self.scheduler_config.target_tokens_per_batch_ce
+        ):
+            return 0
+
+        # We can only schedule part of the prompt.
+        # We achieve this by decreasing the active_idx of the context class.
+        token_num_diff = (
+            tot_input_tokens
+            + input_tokens
+            - self.scheduler_config.target_tokens_per_batch_ce
+        )
+        input_tokens -= token_num_diff
+        assert input_tokens > 0
+        assert token_num_diff > 0
+        data.bump_token_indices(active_idx=-token_num_diff)
+        return token_num_diff
+
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
 
@@ -186,9 +220,15 @@ class PrefillScheduler(Scheduler):
             len(self.active_batch) < self.scheduler_config.max_batch_size_ce
             and self.prefill_requests
         ):
+            if (
+                self.scheduler_config.target_tokens_per_batch_ce is not None
+                and batch_token_length
+                >= self.scheduler_config.target_tokens_per_batch_ce
+            ):
+                break
+
             prefill_request = self.prefill_requests.popleft()
             prefill_request.context.reset()
-            logger.info("received from decode node!")
 
             if not self.paged_manager.contains(prefill_request.id):
                 self.paged_manager.external_claim(prefill_request.id)
@@ -199,19 +239,9 @@ class PrefillScheduler(Scheduler):
                 self.return_to_prefill_queue(prefill_request)
                 break
 
-            if self.scheduler_config.enable_chunked_prefill:
-                if (
-                    batch_token_length + prefill_request.context.active_length
-                    >= self.scheduler_config.target_tokens_per_batch_ce
-                ):
-                    trimmed_tokens = (
-                        batch_token_length
-                        + prefill_request.context.active_length
-                        - self.scheduler_config.target_tokens_per_batch_ce
-                    )
-                    prefill_request.context.bump_token_indices(
-                        active_idx=-trimmed_tokens
-                    )
+            _ = self._maybe_chunk_prefill_request(
+                prefill_request.context, batch_token_length
+            )
 
             batch_token_length += prefill_request.context.active_length
             self.active_batch[prefill_request.id] = prefill_request.context
@@ -228,11 +258,17 @@ class PrefillScheduler(Scheduler):
         inputs = TextGenerationInputs(batch=self.active_batch, num_steps=1)
         _ = self.pipeline.execute(inputs)
 
+        # Only the last request in a batch could be chunked. We discard its response
+        # and put it back into the request queue if it is chunked.
+        last_req = list(self.active_batch.values())[-1]
+        if last_req.active_idx - last_req.start_idx > 1:
+            req_id, _ = self.active_batch.popitem()
+            prefill_request = self.pending_transfers.pop(req_id)
+            self.prefill_requests.appendleft(prefill_request)
+
         # Send completed requests to decode queue.
-        # TODO: E2EOPT-275 Handle chunked requests.
         while self.active_batch:
             req_id, input_context = self.active_batch.popitem()
-            logger.info("received request from decode node.")
 
             # Get Remote Metadata.
             prefill_request = self.pending_transfers.pop(req_id)
@@ -264,6 +300,15 @@ class PrefillScheduler(Scheduler):
                 req_id, input_context, xfer_data
             )
 
+    def _log_batch_info(self) -> None:
+        total_input_tokens = sum(
+            context.active_length for context in self.active_batch.values()
+        )
+        batch_size = len(self.active_batch)
+        logger.info(
+            f"Scheduling prefill batch with {batch_size} requests and {total_input_tokens} / {self.scheduler_config.target_tokens_per_batch_ce} input tokens"
+        )
+
     def run_iteration(self) -> None:
         """Main scheduling loop that processes prefill requests.
 
@@ -280,6 +325,8 @@ class PrefillScheduler(Scheduler):
         if not self.active_batch:
             return
 
+        self._log_batch_info()
+
         self.schedule()
 
 
@@ -294,14 +341,6 @@ def load_prefill_scheduler(
     enable_chunked_prefill = pipeline_config.enable_chunked_prefill
     target_tokens_per_batch_ce = pipeline_config.target_num_new_tokens
     max_batch_size_ce = pipeline_config.max_ce_batch_size
-
-    if enable_chunked_prefill == True and target_tokens_per_batch_ce is None:
-        raise RuntimeError(
-            "if enable_chunked_prefill=True, target_tokens_per_batch_ce must be provided"
-        )
-
-    if target_tokens_per_batch_ce is None:
-        target_tokens_per_batch_ce = -1
 
     # Create Scheduler Config.
     scheduler_config = PrefillSchedulerConfig(
