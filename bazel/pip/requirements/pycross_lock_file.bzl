@@ -55,7 +55,7 @@ PINS = {
     "grpcio": "grpcio@1.73.1",
     "hf-transfer": "hf-transfer@0.1.9",
     "httpx": "httpx@0.27.2",
-    "huggingface-hub": "huggingface-hub@0.30.1",
+    "huggingface-hub": "huggingface-hub@0.34.3",
     "hypothesis": "hypothesis@6.108.4",
     "ipython": "ipython@8.18.1",
     "jinja2": "jinja2@3.1.4",
@@ -143,7 +143,7 @@ PINS = {
     "torchmetrics": "torchmetrics@1.7.2",
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
-    "transformers": "transformers@4.52.4",
+    "transformers": "transformers@4.55.0",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
     "types-pyyaml": "types-pyyaml@6.0.12.20240917",
     "types-setuptools": "types-setuptools@75.5.0.20241121",
@@ -247,7 +247,7 @@ def targets():
     )
 
     _accelerate_1_0_1_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":psutil@7.0.0",
@@ -1093,7 +1093,7 @@ def targets():
         ":dill@0.3.8",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":multiprocess@0.70.16",
         ":numpy@2.0.2",
         ":packaging@24.1",
@@ -1330,7 +1330,7 @@ def targets():
         ":datasets@2.21.0",
         ":dill@0.3.8",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":multiprocess@0.70.16",
         ":numpy@2.0.2",
         ":packaging@24.1",
@@ -1406,7 +1406,7 @@ def targets():
     _faster_whisper_1_1_1_deps = [
         ":av@14.2.0",
         ":ctranslate2@4.6.0",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":onnxruntime@1.19.2",
         ":tokenizers@0.21.0",
         ":tqdm@4.66.5",
@@ -2111,7 +2111,7 @@ def targets():
         testonly = "httpx" in _TESTONLY_DEPS,
     )
 
-    _huggingface_hub_0_30_1_deps = [
+    _huggingface_hub_0_34_3_deps = [
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
         ":hf-xet@1.1.5",
@@ -2123,14 +2123,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_huggingface-hub@0.30.1",
-        actual = "@pycross_lock_file_wheel_huggingface_hub_0.30.1_py3_none_any//file",
+        name = "_wheel_huggingface-hub@0.34.3",
+        actual = "@pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "huggingface-hub@0.30.1",
-        deps = _huggingface_hub_0_30_1_deps,
-        wheel = ":_wheel_huggingface-hub@0.30.1",
+        name = "huggingface-hub@0.34.3",
+        deps = _huggingface_hub_0_34_3_deps,
+        wheel = ":_wheel_huggingface-hub@0.34.3",
         testonly = "huggingface-hub" in _TESTONLY_DEPS,
     )
 
@@ -3067,7 +3067,7 @@ def targets():
         ":torch@multiple",
         ":tqdm-multiprocess@0.0.11",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.0",
         ":word2number@1.1",
         ":zstandard@0.23.0",
     ]
@@ -4525,11 +4525,11 @@ def targets():
     )
 
     _optimum_1_24_0_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":torch@multiple",
-        ":transformers@4.52.4",
+        ":transformers@4.55.0",
     ]
 
     native.alias(
@@ -4647,7 +4647,7 @@ def targets():
 
     _peft_0_13_2_deps = [
         ":accelerate@1.0.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":psutil@7.0.0",
@@ -4655,7 +4655,7 @@ def targets():
         ":safetensors@0.4.4",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.0",
     ]
 
     native.alias(
@@ -5971,13 +5971,13 @@ def targets():
     )
 
     _sentence_transformers_3_3_1_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":pillow@10.4.0",
         ":scikit-learn@1.5.2",
         ":scipy@1.13.1",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.0",
     ]
 
     native.alias(
@@ -6596,7 +6596,7 @@ def targets():
     )
 
     _timm_1_0_15_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":pyyaml@6.0.2",
         ":safetensors@0.4.4",
         ":torch@multiple",
@@ -6632,7 +6632,7 @@ def targets():
     )
 
     _tokenicer_0_0_4_deps = [
-        ":transformers@4.52.4",
+        ":transformers@4.55.0",
     ]
 
     _tokenicer_0_0_4_build_deps = [
@@ -6667,7 +6667,7 @@ def targets():
     )
 
     _tokenizers_0_21_0_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
     ]
 
     native.alias(
@@ -7473,9 +7473,9 @@ def targets():
         testonly = "traitlets" in _TESTONLY_DEPS,
     )
 
-    _transformers_4_52_4_deps = [
+    _transformers_4_55_0_deps = [
         ":filelock@3.16.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":pyyaml@6.0.2",
@@ -7487,14 +7487,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_transformers@4.52.4",
-        actual = "@pycross_lock_file_wheel_transformers_4.52.4_py3_none_any//file",
+        name = "_wheel_transformers@4.55.0",
+        actual = "@pycross_lock_file_wheel_transformers_4.55.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "transformers@4.52.4",
-        deps = _transformers_4_52_4_deps,
-        wheel = ":_wheel_transformers@4.52.4",
+        name = "transformers@4.55.0",
+        deps = _transformers_4_55_0_deps,
+        wheel = ":_wheel_transformers@4.55.0",
         testonly = "transformers" in _TESTONLY_DEPS,
     )
 
@@ -11317,12 +11317,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_huggingface_hub_0.30.1_py3_none_any",
+        name = "pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/99/e3/2232d0e726d4d6ea69643b9593d97d0e7e6ea69c2fe9ed5de34d476c1c47/huggingface_hub-0.30.1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/59/a8/4677014e771ed1591a87b63a2392ce6923baf807193deef302dcfde17542/huggingface_hub-0.34.3-py3-none-any.whl",
         ],
-        sha256 = "0f6aa5ec5a4e68e5b9e45d556b4e5ea180c58f5a5ffa734e7f38c9d573028959",
-        downloaded_file_path = "huggingface_hub-0.30.1-py3-none-any.whl",
+        sha256 = "5444550099e2d86e68b2898b09e85878fbd788fc2957b506c6a79ce060e39492",
+        downloaded_file_path = "huggingface_hub-0.34.3-py3-none-any.whl",
     )
 
     maybe(
@@ -18727,12 +18727,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_transformers_4.52.4_py3_none_any",
+        name = "pycross_lock_file_wheel_transformers_4.55.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/96/f2/25b27b396af03d5b64e61976b14f7209e2939e9e806c10749b6d277c273e/transformers-4.52.4-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/1c/93/bcb22fb52ed65084c0199270832aa4cdd4b41296d896f3e7ade188bccb68/transformers-4.55.0-py3-none-any.whl",
         ],
-        sha256 = "203f5c19416d5877e36e88633943761719538a25d9775977a24fe77a1e5adfc7",
-        downloaded_file_path = "transformers-4.52.4-py3-none-any.whl",
+        sha256 = "29d9b8800e32a4a831bb16efb5f762f6a9742fef9fce5d693ed018d19b106490",
+        downloaded_file_path = "transformers-4.55.0-py3-none-any.whl",
     )
 
     maybe(
