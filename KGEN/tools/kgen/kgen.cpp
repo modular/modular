@@ -349,12 +349,20 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     } else {
       // If the user provided the target triple without specifying a CPU,
       // default to `generic`.
-      if (options.targetTriple != llvm::sys::getDefaultTargetTriple()) {
-        if (options.targetCpu == llvm::sys::getHostCPUName())
-          options.targetCpu = "generic";
-        if (options.targetFeatures == getHostCPUFeatures())
-          options.targetFeatures = "";
+      if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
+        if (clOptions.targetCpu == llvm::sys::getHostCPUName())
+          clOptions.targetCpu = "generic";
+        if (clOptions.targetFeatures == getHostCPUFeatures())
+          clOptions.targetFeatures = "";
       }
+
+      ErrorOr<std::vector<std::string>> featuresOr =
+          M::getFeatures(clOptions.targetTriple, clOptions.targetCpu);
+      if (featuresOr)
+        return failure(clOptions.reportError(featuresOr.takeError().get()));
+
+      // TODO: This always overwrites any user-specified features
+      clOptions.targetFeatures = encodeFeatures(*featuresOr);
 
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.
