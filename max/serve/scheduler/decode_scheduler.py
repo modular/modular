@@ -95,12 +95,10 @@ class DecodeScheduler(Scheduler):
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
-        self.cancel_pull_socket = ZmqPullSocket[
-            tuple[str, Union[TextContext, TextAndVisionContext]]
-        ](
+        self.cancel_pull_socket = ZmqPullSocket[list[RequestID]](
             zmq_endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
-                tuple[str, Union[TextContext, TextAndVisionContext]]
+                list[RequestID],
             ),
         )
 
@@ -123,7 +121,7 @@ class DecodeScheduler(Scheduler):
         self.active_batch: OrderedDict[
             str, Union[TextContext, TextAndVisionContext]
         ] = OrderedDict()
-        self.pending_prefill_requests: list[RequestID] = []
+        self.pending_prefill_requests: set[RequestID] = set()
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -244,11 +242,42 @@ class DecodeScheduler(Scheduler):
                 )
 
                 # Send to the Prefill Node
-                self.pending_prefill_requests.append(request_id)
+                self.pending_prefill_requests.add(request_id)
                 self.send_prefill_request(request_id, request_context, dst_idx)
 
             except queue.Empty:
                 # Break loop when no items in queue
+                break
+
+    def _handle_cancelled_requests(self):
+        while True:
+            try:
+                for request_id in self.cancel_pull_socket.get_nowait():
+                    # Remove it from the active batch.
+                    if request_id in self.active_batch:
+                        del self.active_batch[request_id]
+
+                        # Send the cancelled result back to the response q
+                        self.response_push_socket.put_nowait(
+                            {request_id: SchedulerResult.cancelled()}
+                        )
+
+                    # If it is pending prefill, remove the pending request.
+                    elif request_id in self.pending_prefill_requests:
+                        # Remove from pending requests.
+                        self.pending_prefill_requests.remove(request_id)
+
+                        # Send the cancelled result back to the response q
+                        self.response_push_socket.put_nowait(
+                            {request_id: SchedulerResult.cancelled()}
+                        )
+
+                    else:
+                        logger.debug(
+                            f"cancel request received on decode node for {request_id} not in pending or active batch."
+                        )
+
+            except queue.Empty:
                 break
 
     def update_batch(self) -> None:
@@ -281,12 +310,20 @@ class DecodeScheduler(Scheduler):
                 completed_transfer_name_str
             )
 
-            # Add to active batch.
-            self.active_batch[prefill_response.id] = prefill_response.context
-            self.pending_prefill_requests.remove(prefill_response.id)
+            # When cancelled, the request is removed from prefill_requests
+            # therefore the request should only be added to the active_batch
+            # if it is still in prefill_requests.
+            if prefill_response.id in self.pending_prefill_requests:
+                self.active_batch[prefill_response.id] = (
+                    prefill_response.context
+                )
+                self.pending_prefill_requests.remove(prefill_response.id)
 
             # Remove from completed transfers.
             self.completed_transfers.remove(completed_transfer_name_str)
+
+        # Manage for cancelled requests
+        self._handle_cancelled_requests()
 
         # Walk the active batch, and prefetch for all existing items.
         candidate_request_ids = list(self.active_batch.keys())
