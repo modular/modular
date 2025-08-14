@@ -16,7 +16,7 @@ from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn import Float8ScaleGranularity, Float8ScaleOrigin
-from max.pipelines.architectures.llama3.model_config import parse_float8_config
+from max.pipelines.lib.float8_config import parse_float8_config
 from transformers import AutoConfig
 
 # Define a base path for test data.
@@ -403,3 +403,187 @@ def test_error_ct_dynamic_weight_scaling(
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
         )
+
+
+# --- Gemma3 FP8 Tests --- #
+
+
+@pytest.fixture
+def hf_config_gemma3_compressed_tensors() -> AutoConfig:
+    """Loads the Gemma3 FP8 compressed-tensors HuggingFace config."""
+    config_path = TEST_DATA_PATH / "gemma-3-4b-it-FP8-dynamic.json"
+    huggingface_config = AutoConfig.from_pretrained(
+        str(config_path), trust_remote_code=True
+    )
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    # To the language model section of the config (`text_config`), add a
+    # reference to the top level `quantization_config` for compatibility
+    # with the base Gemma3Model
+    if hf_quant_config:
+        huggingface_config.text_config.quantization_config = hf_quant_config
+    return huggingface_config
+
+
+@pytest.fixture
+def state_dict_gemma3_with_language_model_prefix() -> dict[str, WeightData]:
+    """Mock state_dict with Gemma3's language_model prefix and scales."""
+    return {
+        "language_model.layers.0.mlp.down_proj.input_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.input_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.weight_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.embed_tokens.weight": WeightData(
+            name="language_model.embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+        ),
+        "language_model.lm_head.weight": WeightData(
+            name="language_model.lm_head.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.float8_e4m3fn,
+            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+        ),
+    }
+
+
+def test_parse_gemma3_compressed_tensors(
+    hf_config_gemma3_compressed_tensors: AutoConfig,
+    state_dict_gemma3_with_language_model_prefix: dict[str, WeightData],
+) -> None:
+    """Tests parsing Gemma3 FP8 compressed-tensors config with language_model prefix.
+    - Uses "language_model." prefix for both state_dict and ignored modules
+    - Only vision_tower modules and language_model.lm_head are in ignore list
+    - All language model layers should be quantized to float8
+    """
+    hf_config = hf_config_gemma3_compressed_tensors
+    state_dict = state_dict_gemma3_with_language_model_prefix
+    dtype = DType.float8_e4m3fn
+
+    # Call with Gemma3's language_model prefix
+    float8_config = parse_float8_config(
+        hf_config.text_config,
+        state_dict,
+        dtype,
+        state_dict_name_prefix="language_model.",
+        ignored_modules_prefix="language_model.",
+    )
+
+    assert float8_config is not None
+    assert float8_config.quant_method == "compressed-tensors"
+    assert (
+        float8_config.input_scale.granularity == Float8ScaleGranularity.COLWISE
+    )
+    assert float8_config.input_scale.origin == Float8ScaleOrigin.DYNAMIC
+    assert float8_config.input_scale.dtype == DType.float32
+
+    # Check dtypes from state dict - embed_tokens takes priority
+    assert float8_config.embedding_output_dtype == DType.bfloat16
+
+    # All language model layers should be quantized (lm_head is ignored, but layers are not)
+    expected_mlp_in_float8 = set(range(hf_config.text_config.num_hidden_layers))
+    expected_attn_qkv_in_float8 = set(
+        range(hf_config.text_config.num_hidden_layers)
+    )
+    assert float8_config.mlp_in_float8 == expected_mlp_in_float8
+    assert float8_config.attn_qkv_in_float8 == expected_attn_qkv_in_float8
+
+
+def test_gemma3_layer_prefix_handling(
+    hf_config_gemma3_compressed_tensors: AutoConfig,
+) -> None:
+    """Tests that Gemma3 prefix handling works correctly for both standard and prefixed modules."""
+    # Test with just lm_head.weight (no embed_tokens)
+    state_dict_lm_head_only = {
+        "language_model.layers.0.mlp.down_proj.input_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.input_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.weight_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.lm_head.weight": WeightData(
+            name="language_model.lm_head.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.float8_e4m3fn,
+            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+        ),
+    }
+
+    float8_config = parse_float8_config(
+        hf_config_gemma3_compressed_tensors.text_config,
+        state_dict_lm_head_only,
+        DType.float8_e4m3fn,
+        state_dict_name_prefix="language_model.",
+        ignored_modules_prefix="language_model.",
+    )
+
+    assert float8_config is not None
+    # Should fall back to lm_head dtype when embed_tokens is missing
+    assert float8_config.embedding_output_dtype == DType.float8_e4m3fn
+
+
+def test_gemma3_vs_llama3_prefix_difference(
+    hf_config_gemma3_compressed_tensors: AutoConfig,
+) -> None:
+    """Tests that Gemma3 and Llama3 handle prefixes differently."""
+    # Create state dict with both prefixes for comparison
+    state_dict_with_both_prefixes = {
+        # Gemma3-style prefixes
+        "language_model.layers.0.mlp.down_proj.input_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.input_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
+            name="language_model.layers.0.mlp.down_proj.weight_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        ),
+        "language_model.embed_tokens.weight": WeightData(
+            name="language_model.embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+        ),
+        # Llama3-style prefixes (should be ignored when using language_model prefix)
+        "layers.0.mlp.down_proj.input_scale": WeightData(
+            name="layers.0.mlp.down_proj.input_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float16,  # Different dtype
+            data=torch.zeros((1, 1), dtype=DType.float16.to_torch()),
+        ),
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.float16,  # Different dtype
+            data=torch.zeros((1, 1), dtype=DType.float16.to_torch()),
+        ),
+    }
+
+    # Parse with Gemma3 prefixes - should use bfloat16 from language_model.embed_tokens.weight
+    float8_config = parse_float8_config(
+        hf_config_gemma3_compressed_tensors.text_config,
+        state_dict_with_both_prefixes,
+        DType.float8_e4m3fn,
+        state_dict_name_prefix="language_model.",
+        ignored_modules_prefix="language_model.",
+    )
+
+    assert float8_config is not None
+    assert float8_config.embedding_output_dtype == DType.bfloat16
