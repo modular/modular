@@ -168,6 +168,11 @@ struct RuntimeInt[dtype: DType = DType.index](MixedIntTupleLike):
         return abort[VariadicOf[MixedIntTupleLike]]()
 
 
+# Note that `to_mixed_int_tuple` isn't a method on MixedIntTupleLike because it calls
+# T._get_variadic_pack(), which as a signature is illegal on ComptimeInt and
+# RuntimeInt.
+
+
 @always_inline("nodebug")
 fn to_mixed_int_tuple[
     T: MixedIntTupleLike
@@ -242,6 +247,23 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
     @staticmethod
     fn _get_variadic_pack() -> VariadicOf[MixedIntTupleLike]:
         return element_types
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn size() -> Int:
+        """Get the total number of elements including nested ones.
+
+        Returns:
+            The total count of all elements.
+        """
+        var count = 0
+
+        @parameter
+        for i in range(Self.__len__()):
+            alias T = element_types[i]
+            count += T.__len__()
+
+        return count
 
     @staticmethod
     fn __len__() -> Int:
@@ -356,22 +378,6 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
     fn value(self) -> Int:
         constrained[False, "MixedIntTuple is not a value type"]()
         return abort[Int]()
-
-    @always_inline("nodebug")
-    fn size(self) -> Int:
-        """Get the total number of elements including nested ones.
-
-        Returns:
-            The total count of all elements.
-        """
-        var count = 0
-
-        @parameter
-        for i in range(Self.__len__()):
-            alias T = element_types[i]
-            count += T.__len__()
-
-        return count
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
