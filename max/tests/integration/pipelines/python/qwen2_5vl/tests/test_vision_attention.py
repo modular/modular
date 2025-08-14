@@ -20,6 +20,9 @@ from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
     Qwen2_5_VLVisionConfig,
 )
+from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
+    Qwen2_5_VLVisionConfig as HFQwen2_5VLVisionConfig,
+)
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionTransformerPretrainedModel as HFQwen2_5VisionTransformer,
 )
@@ -87,15 +90,16 @@ def generate_torch_outputs(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
     cu_window_seqlens: torch.Tensor,
-    hf_config: dict,
+    vision_config: dict,
     use_window_attention: bool = False,
 ) -> torch.Tensor:
     """Generate reference outputs using HuggingFace Qwen2.5VL implementation."""
     # Create the HuggingFace attention layer
     attention_layer = (
         HFQwen2_5VLVisionAttention(
-            dim=hf_config["hidden_size"],
-            num_heads=hf_config["num_heads"],
+            HFQwen2_5VLVisionConfig(
+                attn_implementation="eager", **vision_config
+            )
         )
         .to(torch.bfloat16)
         .to("cuda")
@@ -273,7 +277,7 @@ def test_vision_attention_multiple_images(
 
     # Generate window index using HF Vision Transformer
     vision_transformer = HFQwen2_5VisionTransformer._from_config(
-        Qwen2_5_VLVisionConfig(**vision_config)
+        Qwen2_5_VLVisionConfig(**vision_config), attn_implementation="eager"
     )
     window_index, cu_window_seqlens = vision_transformer.get_window_index(
         grid_thw
@@ -312,7 +316,7 @@ def test_vision_attention_multiple_images(
         position_embeddings=position_embeddings,
         grid_thw=grid_thw,
         cu_window_seqlens=cu_window_seqlens,
-        hf_config=hf_config,
+        vision_config=vision_config,
         use_window_attention=use_window_attention,
     )
 

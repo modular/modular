@@ -20,7 +20,10 @@ weights.
 
 @pytest.fixture
 def text_config() -> Olmo2Config:
-    config = Olmo2Config()
+    # bug introduced by https://github.com/huggingface/transformers/commit/4ded9a41138773af49c70eac3fca7ad6ba9ede03
+    # combine with out olmo2 is implemented https://github.com/huggingface/transformers/blob/main/src/transformers/models/olmo2/modular_olmo2.py#L229
+    # requires us to explicitly set the attn_implementation to flash_attention_3
+    config = Olmo2Config(attn_implementation="eager")
     path = os.environ["PIPELINES_TESTDATA"]
     config_path = Path(path) / "config.json"
     with open(config_path) as file:

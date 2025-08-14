@@ -26,9 +26,11 @@ def text_config() -> Gemma3TextConfig:
         data = json.load(file)
     # Use "text_config" for the multimodal variants
     if "text_config" in data:
-        return Gemma3TextConfig(**data["text_config"])
+        return Gemma3TextConfig(
+            **data["text_config"], attn_implementation="eager"
+        )
     else:
-        return Gemma3TextConfig(**data)
+        return Gemma3TextConfig(**data, attn_implementation="eager")
 
 
 @pytest.fixture

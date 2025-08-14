@@ -29,6 +29,10 @@ from max.pipelines.architectures.llama4.model_config import (
     Llama4Config as MaxLlama4Config,
 )
 from test_common.context_utils import create_text_context
+from transformers.masking_utils import (
+    create_causal_mask,
+    create_chunked_causal_mask,
+)
 from transformers.models.llama4.configuration_llama4 import (
     Llama4Config,
     Llama4TextConfig,
@@ -74,13 +78,16 @@ def generate_torch_outputs(
     position_ids = cache_position.unsqueeze(0)
     freqs_cis = rotary_emb(input_tensor, position_ids)
 
-    causal_mask, chunk_causal_mask = model._update_causal_mask(
-        attention_mask,
-        input_tensor,
-        cache_position,
-        past_key_values=None,
-        output_attentions=False,
-    )
+    mask_kwargs = {
+        "config": text_config,
+        "input_embeds": input_tensor,
+        "attention_mask": attention_mask,
+        "cache_position": cache_position,
+        "past_key_values": None,
+        "position_ids": position_ids,
+    }
+    causal_mask = create_causal_mask(**mask_kwargs)
+    chunk_causal_mask = create_chunked_causal_mask(**mask_kwargs)
 
     outputs = []
     for layer_idx in (0, 1):

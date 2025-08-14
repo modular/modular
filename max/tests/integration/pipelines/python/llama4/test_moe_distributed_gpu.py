@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 import torch
 from max._core.engine import PrintStyle
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -138,6 +139,9 @@ def generate_max_outputs(
     return compiled.execute(input_tensor, *signal_buffers)
 
 
+@pytest.mark.xfail(
+    reason="TODO(MODELS-728): Fix MOE bugs introduced after transformers version bump"
+)
 def test_mix_of_experts(
     text_config: Llama4TextConfig,
     config: Llama4Config,
