@@ -27,6 +27,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    ShapeLike,
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
@@ -636,7 +637,9 @@ class ColumnParallelLinear(Linear):
         return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 
-def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:  # noqa: ANN001
+def _allocate_if_needed(
+    value: Weights | Weight, dtype: DType, shape: ShapeLike
+) -> Weight:
     if isinstance(value, Weight):
         return value
     else:

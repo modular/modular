@@ -20,7 +20,9 @@ from max.graph import DeviceRef, Dim, DimLike, TensorValue, TensorValueLike, ops
 from max.nn import Module
 
 
-def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:  # noqa: ANN001
+def meshgrid(
+    height: DimLike, width: DimLike, indexing: str = "ij"
+) -> TensorValue:
     """Returns row indices and col indices of each point on the grid."""
     height = Dim(height)
     width = Dim(width)

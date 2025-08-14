@@ -121,9 +121,9 @@ class GGUFWeights(Weights):
     def __init__(
         self,
         source: Union[PathLike, gguf.GGUFReader],
-        tensors=None,  # noqa: ANN001
+        tensors: Optional[dict[str, gguf.ReaderTensor]] = None,
         prefix: str = "",
-        allocated=None,  # noqa: ANN001
+        allocated: Optional[dict[str, DLPackArray]] = None,
     ) -> None:
         """Creates a GGUF weights reader.
 
@@ -162,7 +162,7 @@ class GGUFWeights(Weights):
                     ),
                 )
 
-    def __getattr__(self, attr) -> GGUFWeights:  # noqa: ANN001
+    def __getattr__(self, attr: str) -> GGUFWeights:
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:
@@ -254,7 +254,7 @@ class GGUFWeights(Weights):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
-        device=DeviceRef.CPU(),  # noqa: ANN001
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
         tensor = self._raw_tensor()

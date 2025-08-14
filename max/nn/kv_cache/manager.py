@@ -156,7 +156,7 @@ class KVCacheInputSymbols:
             else:
                 yield value
 
-    def __getitem__(self, index) -> Any:  # noqa: ANN001
+    def __getitem__(self, index: int | slice) -> Any:
         return list(self)[index]
 
 

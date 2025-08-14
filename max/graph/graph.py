@@ -183,7 +183,7 @@ def _location(ignore_frames: int = 1):
     return _graph.frame_loc(mlir.Context.current, tb)
 
 
-def _to_mlir(o):  # noqa: ANN001
+def _to_mlir(o: Any) -> Any:
     # Convert args from instances of Python graph-api Value() to mlir.Value
     if hasattr(o, "to_mlir"):
         return o.to_mlir()
@@ -598,7 +598,7 @@ class Graph:
     def _capturing_mlir_diagnostics(self):
         diagnostics = []
 
-        def handler(d) -> bool:  # noqa: ANN001
+        def handler(d: mlir.Diagnostic) -> bool:
             diagnostics.append(str(d))
             return True
 
@@ -663,7 +663,7 @@ class Graph:
         **kwargs,
     ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
-        def unwrap(arg):  # noqa: ANN001
+        def unwrap(arg: Any) -> Any:
             if isinstance(arg, Value):
                 return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
             elif isinstance(arg, Type):

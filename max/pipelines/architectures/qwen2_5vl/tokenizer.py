@@ -46,7 +46,7 @@ def _convert_image_mode(image: Image.Image, to_mode: str) -> Image.Image:
 
 def _rgba_to_rgb(
     image: Image.Image,
-    background_color=(255, 255, 255),  # noqa: ANN001
+    background_color: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
     """Convert an RGBA image to RGB with filled background color."""
     assert image.mode == "RGBA"

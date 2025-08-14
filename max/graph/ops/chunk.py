@@ -59,7 +59,7 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     # Determine chunk size using ceiling division.
     chunk_size = n // chunks
 
-    def slices(offset):  # noqa: ANN001
+    def slices(offset: int) -> list[slice]:
         slices = [slice(None)] * x.rank
         slices[axis] = slice(chunk_size * offset, chunk_size * (offset + 1))
         return slices

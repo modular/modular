@@ -23,22 +23,36 @@ import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import click
 from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    MAXConfig,
     MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from typing_extensions import ParamSpec, TypeGuard
 
 from .device_options import DevicesOptionType
 
 VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class JSONType(click.ParamType):
@@ -46,7 +60,12 @@ class JSONType(click.ParamType):
 
     name = "json"
 
-    def convert(self, value, param, ctx):  # noqa: ANN001
+    def convert(
+        self,
+        value: Any,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> Any:
         if isinstance(value, dict):
             return value
         try:
@@ -143,7 +162,7 @@ def create_click_option(
     help_for_fields: dict[str, str],
     dataclass_field: Field,
     field_type: Any,
-) -> click.option:  # type: ignore
+) -> Callable[[Callable], Callable]:
     # Get Help text.
     help_text = help_for_fields.get(dataclass_field.name, None)
 
@@ -159,7 +178,9 @@ def create_click_option(
     )
 
 
-def config_to_flag(cls, prefix: Optional[str] = None):  # noqa: ANN001
+def config_to_flag(
+    cls: type[MAXConfig], prefix: Optional[str] = None
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
     if hasattr(cls, "help"):
         help_text = cls.help()
@@ -191,15 +212,15 @@ def config_to_flag(cls, prefix: Optional[str] = None):  # noqa: ANN001
             )
         options.append(new_option)
 
-    def apply_flags(func):  # noqa: ANN001
+    def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:
         for option in reversed(options):
-            func = option(func)  # type: ignore
+            func = option(func)
         return func
 
     return apply_flags
 
 
-def pipeline_config_options(func):  # noqa: ANN001
+def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
@@ -238,10 +259,18 @@ def pipeline_config_options(func):  # noqa: ANN001
         ),
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        def is_str_or_list_of_int(value: Any) -> TypeGuard[str | list[int]]:
+            return isinstance(value, str) or (
+                isinstance(value, list)
+                and all(isinstance(x, int) for x in value)
+            )
+
         # Remove the options from kwargs and replace with unified device_specs.
-        devices: str | list[int] = kwargs.pop("devices")
-        draft_devices: str | list[int] = kwargs.pop("draft_devices")
+        devices = kwargs.pop("devices")
+        draft_devices = kwargs.pop("draft_devices")
+        assert is_str_or_list_of_int(devices)
+        assert is_str_or_list_of_int(draft_devices)
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
         kwargs["draft_device_specs"] = DevicesOptionType.device_specs(

@@ -46,7 +46,9 @@ from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
 
 
-def distribute_value(v, devices: list[DeviceRef]):  # noqa: ANN001
+def distribute_value(
+    v: TensorValue, devices: list[DeviceRef]
+) -> list[TensorValue]:
     return [v.to(device) for device in devices]
 
 
@@ -252,7 +254,7 @@ class Llama4TextModel(Module):
 
         input_row_offsets = kwargs["input_row_offsets"]
         distributed_cache_positions = distribute_value(
-            cache_positions, self.devices
+            TensorValue(cache_positions), self.devices
         )
         for _, layer in enumerate(self.layers):
             h = layer(

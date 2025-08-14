@@ -18,6 +18,7 @@ import queue
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from types import TracebackType
 from typing import Callable, NoReturn, Optional
 
 from max.serve.config import MetricLevel
@@ -73,7 +74,7 @@ class AsyncioTelemetryController:
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
 
-    def __init__(self, maxsize=0) -> None:  # noqa: ANN001
+    def __init__(self, maxsize: int = 0) -> None:
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
         self.task: Optional[asyncio.Task] = None
 
@@ -130,7 +131,12 @@ class AsyncioTelemetryController:
         self.start()
         return self
 
-    async def __aexit__(self, type, value, traceback):  # noqa: ANN001
+    async def __aexit__(
+        self,
+        type: type[BaseException],
+        value: BaseException,
+        traceback: TracebackType,
+    ) -> None:
         await self.shutdown()
 
 

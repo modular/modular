@@ -163,7 +163,7 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
             "ERROR: Failed to parse logging components setting!  Using default."
         )
 
-    def LogFilter(record):  # noqa: ANN001
+    def LogFilter(record: logging.LogRecord) -> bool:
         return record.name in components_to_log
 
     # Create a console handler

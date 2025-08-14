@@ -92,7 +92,7 @@ class ConstantLayerNorm(Module):
 
     def __init__(
         self,
-        dims,  # noqa: ANN001
+        dims: int | tuple[int, ...],
         device: DeviceRef,
         dtype: DType,
         eps: float = 1e-5,

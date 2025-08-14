@@ -16,11 +16,15 @@ from __future__ import annotations
 import functools
 import logging
 import os
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import click
+from typing_extensions import ParamSpec
 
 logger = logging.getLogger("max.entrypoints")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -45,6 +49,7 @@ class WithLazyPipelineOptions(click.Command):
             # The callback contains the actual implementation of the command.
             # Here, we're applying the pipeline_config_options decorator to add CLI parameters
             # to our callback function dynamically, rather than statically at import time.
+            assert self.callback is not None
             self.callback = pipeline_config_options(self.callback)
             self._options_loaded = True
 
@@ -57,29 +62,33 @@ class WithLazyPipelineOptions(click.Command):
             for param in getattr(self.callback, "__click_params__", []):
                 self.params.append(param)
 
-    def get_help(self, ctx):  # noqa: ANN001
+    def get_help(self, ctx: click.Context) -> str:
         self._ensure_options_loaded()
         return super().get_help(ctx)
 
-    def invoke(self, ctx):  # noqa: ANN001
+    def invoke(self, ctx: click.Context) -> Any:
         self._ensure_options_loaded()
         return super().invoke(ctx)
 
-    def parse_args(self, ctx, args):  # noqa: ANN001
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         self._ensure_options_loaded()
         return super().parse_args(ctx, args)
 
-    def get_params(self, ctx):  # noqa: ANN001
+    def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()
         return super().get_params(ctx)
 
-    def shell_complete(self, ctx, incomplete):  # noqa: ANN001
+    def shell_complete(
+        self, ctx: click.Context, incomplete: str
+    ) -> list[click.shell_completion.CompletionItem]:
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):  # noqa: ANN001
+    def get_command(
+        self, ctx: click.Context, cmd_name: str
+    ) -> click.Command | None:
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
             return rv
@@ -123,7 +132,7 @@ def _configure_env_vars(device_context_buffer_cache_size: float | None) -> None:
         os.environ[env_var_name] = str(device_context_buffer_cache_size)
 
 
-def common_server_options(func):  # noqa: ANN001
+def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @click.option(
         "--profile-serve",
         is_flag=True,
@@ -153,7 +162,7 @@ def common_server_options(func):  # noqa: ANN001
         help="Run only the dispatcher service and model worker without the API server.",
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
 
     return wrapper

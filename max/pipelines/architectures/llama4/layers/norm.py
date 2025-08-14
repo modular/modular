@@ -21,7 +21,7 @@ from max.graph import DeviceRef, TensorType, TensorValue, ops
 
 def l2_norm(
     x: TensorValue,
-    eps=1e-6,  # noqa: ANN001
+    eps: float = 1e-6,
     multiply_before_cast: bool = True,
 ) -> TensorValue:
     """Computes the L2 norm of the input."""

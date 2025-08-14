@@ -181,7 +181,7 @@ class MPNetSelfAttention(Layer):
 
     def __call__(
         self,
-        hidden_states,  # noqa: ANN001
+        hidden_states: TensorValue,
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
@@ -435,8 +435,8 @@ class MPNetEncoder(Layer):
     @staticmethod
     def relative_position_bucket(
         relative_position: TensorValue,
-        num_buckets=32,  # noqa: ANN001
-        max_distance=128,  # noqa: ANN001
+        num_buckets: int = 32,
+        max_distance: int = 128,
     ) -> TensorValue:
         n = -relative_position
 

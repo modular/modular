@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from max.nn._identity import IdentityMap
+from max.nn.layer import Layer
 
 
 @dataclass
@@ -53,7 +54,7 @@ class BasePrintHook(ABC):
     """
 
     def __init__(self, export_path: str | None = None) -> None:
-        self._known_layers = IdentityMap()  # Maps layer -> LayerInfo
+        self._known_layers = IdentityMap[Layer, LayerInfo]()
         self._export_path = export_path
         self._current_step = 0
         # Keep a counter for creating unique layer names.

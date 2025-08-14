@@ -159,7 +159,7 @@ class Module(Layer, ABC):
             self._weight_values: dict[str, DLPackArray] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-    def __setattr__(self, name, value) -> None:  # noqa: ANN001
+    def __setattr__(self, name: str, value: Any) -> None:
         try:
             if isinstance(value, Module):
                 self._sublayers[name] = value
@@ -231,7 +231,7 @@ class Module(Layer, ABC):
         layer_weights = list(self.raw_state_dict().values())
         subgraph_input_types: list[Type] = []
 
-        def flatten(t, result) -> None:  # noqa: ANN001
+        def flatten(t: Any, result: list[Any]) -> None:
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -585,7 +585,7 @@ def recursive_named_layers(
     parent: Module, prefix: str = ""
 ) -> Iterable[tuple[str, Module]]:
     """Recursively walks through the layers and generates names."""
-    seen = IdentitySet()
+    seen = IdentitySet[Module]()
     queue: deque[tuple[str, Module]] = deque()
     queue.append((prefix, parent))
 
@@ -644,9 +644,9 @@ def clear_hooks() -> None:
     _LAYER_HOOKS.clear()
 
 
-def _call_with_hooks(call_fn):  # noqa: ANN001
+def _call_with_hooks(call_fn: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(call_fn)
-    def __call_with_hooks(layer, *args, **kwargs):  # noqa: ANN001
+    def __call_with_hooks(layer: Layer, *args, **kwargs) -> Any:
         # Hide this wrapper from rich traceback.
         _rich_traceback_omit = True
 

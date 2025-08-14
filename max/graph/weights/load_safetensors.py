@@ -78,7 +78,7 @@ class SafetensorWeights(Weights):
         tensors: Optional[Set[str]] = None,
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
-        allocated=None,  # noqa: ANN001
+        allocated: Optional[dict[str, DLPackArray]] = None,
         _st_weight_map: dict[str, Tensor] | None = None,
         _st_file_handles: dict[PathLike, SafeTensor] | None = None,
     ) -> None:
@@ -127,7 +127,7 @@ class SafetensorWeights(Weights):
                     ),
                 )
 
-    def __getattr__(self, attr) -> SafetensorWeights:  # noqa: ANN001
+    def __getattr__(self, attr: str) -> SafetensorWeights:
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:

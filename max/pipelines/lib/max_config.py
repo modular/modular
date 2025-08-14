@@ -533,8 +533,9 @@ class MAXConfig:
     their expected configuration section name.
     """
 
+    @staticmethod
     @abstractmethod
-    def help(self) -> dict[str, str]:
+    def help() -> dict[str, str]:
         """Documentation for this config class. Return a dictionary of config
         options and their descriptions."""
         ...

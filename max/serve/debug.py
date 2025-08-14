@@ -19,7 +19,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Callable, ClassVar, Union
+from typing import Any, Callable, ClassVar, Union
 
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -59,7 +59,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
         return {member.label: member for member in ProfileFormat}
 
     @classmethod
-    def _missing_(cls, value):  # noqa: ANN001
+    def _missing_(cls, value: Any) -> ProfileFormat:
         members = cls.members()
         if isinstance(value, str) and value in members:
             return members[value]

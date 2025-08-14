@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -160,7 +160,7 @@ class SupportedArchitecture:
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
-    def __eq__(self, other) -> bool:  # noqa: ANN001
+    def __eq__(self, other: Any) -> bool:
         if other.__class__ == self.__class__:
             for field in [
                 "name",

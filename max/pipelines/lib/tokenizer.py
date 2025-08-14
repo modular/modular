@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar, Union
 
 import numpy as np
 from max.interfaces import (
@@ -42,10 +42,14 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+from typing_extensions import ParamSpec
 
 logger = logging.getLogger("max.pipelines")
 
 TokenGeneratorContext = TypeVar("TokenGeneratorContext")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class IdentityPipelineTokenizer(
@@ -130,9 +134,11 @@ def max_tokens_to_generate(
     return min(max_new_tokens, _difference_between_max_and_prompt)
 
 
-async def run_with_default_executor(fn, *args):  # noqa: ANN001
+async def run_with_default_executor(
+    fn: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
+) -> _R:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, fn, *args)
+    return await loop.run_in_executor(None, fn, *args, **kwargs)
 
 
 class TextTokenizer(
@@ -673,7 +679,7 @@ class TextAndVisionTokenizer(
 
 def _rgba_to_rgb(
     image: Image.Image,
-    background_color=(255, 255, 255),  # noqa: ANN001
+    background_color: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
     """Convert an RGBA image to RGB with filled background color."""
     assert image.mode == "RGBA"

@@ -14,25 +14,15 @@
 
 from __future__ import annotations
 
-import sys
+import builtins
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Optional, Union
-
-from max import mlir
-from max.mlir.dialects import rmo
-
-if sys.version_info >= (3, 10):
-    from typing import TypeGuard
-else:
-    from typing_extensions import TypeGuard
-
-if TYPE_CHECKING:
-    # EllipsisType was added in 3.10, but we support down to 3.9.
-    # Make this import unconditional when we drop 3.9 (MSDK-756).
-    from types import EllipsisType  # type: ignore
+from typing import Optional, Union
 
 import numpy as np
+from max import mlir
 from max.dtype import DType
+from max.mlir.dialects import rmo
+from typing_extensions import TypeGuard
 
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
@@ -49,7 +39,7 @@ from .where import where
 
 
 SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
-SliceIndices = Sequence[Union[SliceIndex, "EllipsisType"]]
+SliceIndices = Sequence[Union[SliceIndex, "builtins.ellipsis"]]
 
 
 def _concrete_static_slice(n: int, index: slice) -> slice:
