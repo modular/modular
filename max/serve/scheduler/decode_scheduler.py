@@ -217,7 +217,6 @@ class DecodeScheduler(Scheduler):
             try:
                 # Pop off request queue
                 request_id, request_context = self.pull_from_request_socket()
-                logger.info("request received from api worker.")
 
                 # Claim the slot with the paged manager
                 if not self.paged_manager.contains(request_id):
@@ -426,6 +425,9 @@ class DecodeScheduler(Scheduler):
         Args:
             num_steps: Number of tokens to generate for this batch.
         """
+        logger.info(
+            f"Scheduling batch with {len(self.active_batch)} requests for {num_steps} steps"
+        )
         responses = self.pipeline.execute(
             TextGenerationInputs(self.active_batch, num_steps=num_steps)
         )
