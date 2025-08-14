@@ -919,6 +919,51 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 }
 
 //===----------------------------------------------------------------------===//
+// Capture Signature Parsing
+//===----------------------------------------------------------------------===//
+
+ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
+  if (!p.consumeIf(Token::l_brace)) {
+    p.emitError(p.getToken().getLoc(), "expected a capture convention list");
+    return failure();
+  }
+
+  auto parseArgument = [&]() -> ParseResult {
+    CaptureConvention convention;
+    StringAttr name;
+    if (p.consumeIf(Token::kw_var)) {
+      if (p.parseIdentifier(name, "Expected captures to be identified by name"))
+        return failure();
+      if (p.consumeIf(Token::caret))
+        convention = CaptureConvention::kConventionMove;
+      else
+        convention = CaptureConvention::kConventionCopy;
+    } else if (p.consumeIfSoftIdentifier("mut"))
+      convention = CaptureConvention::kConventionMut;
+    else if (p.consumeIfSoftIdentifier("read"))
+      convention = CaptureConvention::kConventionRead;
+    else
+      return failure();
+
+    if (!name) {
+      if (p.parseIdentifier(name, "Expected captures to be identified by name"))
+        return failure();
+    }
+
+    parsedCaptures.push_back({name.getValue(), convention});
+    return success();
+  };
+
+  if (!p.consumeIf(Token::r_brace)) {
+    if (p.parseCommaSeparatedList(parseArgument, {Token::l_brace}))
+      return failure();
+    if (p.parseToken(Token::r_brace, "expected '}' in capture list"))
+      return failure();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // Function Signature Parsing
 //===----------------------------------------------------------------------===//
 

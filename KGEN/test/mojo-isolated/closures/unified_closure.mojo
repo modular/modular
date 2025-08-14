@@ -41,7 +41,7 @@
 
 
 fn make_closure(x: Int):
-    fn my_closure(y: Int) unified -> Int:
+    fn my_closure(y: Int) unified {var x} -> Int:
         return x + y
 
 
@@ -55,8 +55,8 @@ fn make_closure(x: Int):
 # CHECK: lit.struct.decl @"fn(z: Int) -> Int_wrapper"
 # CHECK: lit.trait.decl @"fn(z: Int) -> Int"
 fn make_closure(x: Int):
-    fn my_closure(y: Int) unified -> Int:
-        fn my_nested_closure(z: Int) unified -> Int:
+    fn my_closure(y: Int) unified {var x} -> Int:
+        fn my_nested_closure(z: Int) unified {var x} -> Int:
             return x
 
         return x + y
@@ -70,12 +70,12 @@ fn make_closure(x: Int):
 # CHECK-COUNT-1: lit.struct.decl @"fn(y: Int) -> Int_wrapper"
 # CHECK-COUNT-1: lit.trait.decl @"fn(y: Int) -> Int"
 fn make_closure(x: Int):
-    fn my_closure(y: Int) unified -> Int:
+    fn my_closure(y: Int) unified {} -> Int:
         return y
 
 
 fn make_identical_closure(x: Int):
-    fn my_closure(y: Int) unified -> Int:
+    fn my_closure(y: Int) unified {} -> Int:
         return y
 
 
@@ -100,7 +100,7 @@ struct Foo[T: Movable, b: T]:
 
 
 fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified:
+    fn parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {}:
         pass
 
     return x
@@ -128,7 +128,7 @@ fn make_closure(x: Int) -> Int:
 fn make_closure(x: Int) -> Int:
     fn mutate[
         lt: MutableOrigin
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified:
+    ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
 
     return x
@@ -156,7 +156,7 @@ trait MyInterface:
 
 
 fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface](a: T) unified:
+    fn parametric[T: MyInterface](a: T) unified {}:
         pass
 
     return x
@@ -179,7 +179,7 @@ fn make_closure(x: Int):
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:!Int {{.*}}, mut *"[[L1:.*]]">
     # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper"::@"__init__($0)"[mut *"[[L0]]", mut *"[[L1]]"]<:!Int {{.*}}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:!Int {{.*}}>, mut *[0,1]> byref_result) -> !kgen.none>
 
-    fn my_closure(y: Int) unified -> Int:
+    fn my_closure(y: Int) unified {var x} -> Int:
         return x + y
 
 
@@ -215,7 +215,7 @@ fn take_closure[f: fn (y: Int) unified -> Int](myFunc: f, x: Int):
 fn take_closure[closure1: fn (y: Int) unified -> Int](x: Int):
     fn nested[
         closure2: fn (y: Int) unified -> Int
-    ](impl: closure2, y: Int) unified -> Int:
+    ](impl: closure2, y: Int) unified {var x} -> Int:
         return x
 
 
@@ -275,7 +275,7 @@ fn nested[
 # CHECK: kgen.conformance @"{{.*}}::Movable" {
 # CHECK-NEXT: kgen.witness "__moveinit__"
 fn bindIt(x: Int, y: Int) -> Int:
-    fn myclosure(z: Int) unified -> Int:
+    fn myclosure(z: Int) unified {var x, var y} -> Int:
         return x + y + z
 
 
@@ -293,7 +293,7 @@ fn bindIt(x: Int, y: Int) -> Int:
 
 # CHECK: lit.file_module
 fn bindIt() -> Int:
-    fn myclosure[my_param: AnyType](z: Int) unified:
+    fn myclosure[my_param: AnyType](z: Int) unified {}:
         pass
 
 
@@ -322,7 +322,7 @@ fn bindIt() -> Int:
 fn make_closure(x: Int) -> Int:
     fn mutate[
         lt: MutableOrigin
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified:
+    ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
 
     return x

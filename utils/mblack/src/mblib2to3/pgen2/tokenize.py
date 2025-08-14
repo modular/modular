@@ -49,9 +49,9 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Pattern,
     Text,
     Tuple,
-    Pattern,
     Union,
     cast,
 )
@@ -61,14 +61,15 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Final
 
-from mblib2to3.pgen2.token import *
 from mblib2to3.pgen2.grammar import Grammar
+from mblib2to3.pgen2.token import *
 
 __author__ = "Ka-Ping Yee <ping@lfw.org>"
 __credits__ = "GvR, ESR, Tim Peters, Thomas Wouters, Fred Drake, Skip Montanaro"
 
 import re
 from codecs import BOM_UTF8, lookup
+
 from mblib2to3.pgen2.token import *
 
 from . import token
@@ -474,6 +475,7 @@ def generate_tokens(
         "deinit": DEINIT,
         "trait": TRAIT,
         "ref": REF,
+        "unified": UNIFIED,
     }
 
     strstart: Tuple[int, int]

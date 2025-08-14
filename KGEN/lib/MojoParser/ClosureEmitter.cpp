@@ -1656,13 +1656,92 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
   KGEN::ClosureType closureType =
       ClosureType::get(ctx, nestedFnDecl.getParentDecl()->getSymbolRef(),
                        fnName, ClosureMemoryKind::NONESCAPING);
-  // TODO: support explicit capture semantics. For now just default to by value.
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
   SmallVector<TypedAttr> origins;
   for (const Capture &capture : captures) {
-    captureValues.push_back(capture.getValue().getMlirValue());
-    captureInfo.push_back(UnitAttr::get(ctx));
+    Value value = capture.getValue().getMlirValue();
+    captureValues.push_back(value);
+
+    auto captureConvention = capture.getCaptureConvention();
+    switch (captureConvention) {
+    case CaptureConvention::kConventionMut:
+    case CaptureConvention::kConventionRead: {
+      if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
+        origins.push_back(refType.getOrigin());
+        captureInfo.push_back(BoolAttr::get(ctx, true));
+      } else {
+        captureInfo.push_back(UnitAttr::get(ctx));
+      }
+      break;
+    }
+    case CaptureConvention::kConventionTrivialCopy:
+      captureInfo.push_back(UnitAttr::get(ctx));
+      break;
+    case CaptureConvention::kConventionCopy:
+    case CaptureConvention::kConventionMove: {
+      Type mlirType;
+      if (auto refType = dyn_cast<LIT::RefType>(value.getType()))
+        mlirType = refType.getElementType();
+      else
+        mlirType = value.getType();
+
+      if (auto structType = dyn_cast<StructType>(mlirType)) {
+        SymbolConstantAttr del, move, copy;
+        ASTDecl &structDecl =
+            shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
+        StructDeclOp structDeclOp =
+            cast<StructDeclOp>(structDecl.getIfOperation());
+        if (structDeclOp.getDestructor().has_value())
+          del = *structDeclOp.getDestructor();
+        if (!del) {
+          ArrayRef<ASTDecl *> results =
+              structDecl.lookupInCurrentScope("__del__");
+          if (results.size() == 1) {
+            FnOp destructor = dyn_cast<FnOp>(results.front()->getIfOperation());
+            if (destructor)
+              del = destructor.getBoundSymbolRef(shared.getEvaluationContext());
+          }
+        }
+        if (structDeclOp.getMoveInit().has_value())
+          move = *structDeclOp.getMoveInit();
+        if (captureConvention == CaptureConvention::kConventionCopy) {
+          if (structDeclOp.getCopyInit().has_value()) {
+            copy = *structDeclOp.getCopyInit();
+          } else {
+            shared.emitError(nestedFnDecl.getLoc(),
+                             "cannot capture " + capture.getSpelling() +
+                                 " by copy because it is not copyable.");
+          }
+        }
+        if (captureConvention == CaptureConvention::kConventionMove && !move) {
+          shared.emitError(nestedFnDecl.getLoc(),
+                           "cannot capture " + capture.getSpelling() +
+                               " by move because it is not movable.");
+
+          return {};
+        }
+        if (!del)
+          shared.emitError(nestedFnDecl.getLoc(),
+                           "cannot capture " + capture.getSpelling() +
+                               " because it is not destructable.");
+
+        MemSymbolTripleAttr memTriple =
+            MemSymbolTripleAttr::get(ctx, copy, move, del);
+        captureInfo.push_back(memTriple);
+        break;
+      } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {
+        shared.emitError(nestedFnDecl.getLoc(),
+                         "cannot capture a value of trait type yet because "
+                         "existentials are not implemented.");
+        return {};
+      } else {
+        // this is a trivially copyable/movable type
+        captureInfo.push_back(UnitAttr::get(ctx));
+      }
+      break;
+    }
+    }
   }
   StringAttr originAttr =
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue());
