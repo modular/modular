@@ -678,6 +678,190 @@ IREvaluator::evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr) {
   return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
 }
 
+/// Print a single SIMD value.
+static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
+                           KGENDType dtype) {
+  if (dtype.isInt()) {
+    os << value.getIntVal();
+  } else if (dtype.isFloat()) {
+    SmallString<256> strVal;
+    value.getFloatVal().toString(strVal);
+    os << StringRef(strVal.data(), strVal.size());
+  } else if (dtype.isBool()) {
+    os << (value.getBoolVal() ? "True" : "False");
+  } else {
+    assert(dtype.isIndex() || dtype.isAddress());
+    os << value.getIndexVal();
+  }
+}
+
+/// Return a string representation of a KGENDType, following the naming scheme
+/// in the Mojo DType struct. Returns std::nullopt if the dtype is not known.
+static std::optional<std::string> getDTypeAsString(KGENDType dtype) {
+  switch (dtype.getValue()) {
+  case KGENDType::invalid:
+    return "invalid";
+  case KGENDType::kBool:
+    return "bool";
+  case KGENDType::index:
+    return "index";
+  case KGENDType::ui1:
+    return "_uint1";
+  case KGENDType::ui2:
+    return "_uint2";
+  case KGENDType::ui4:
+    return "_uint4";
+  case KGENDType::ui8:
+    return "uint8";
+  case KGENDType::si8:
+    return "int8";
+  case KGENDType::ui16:
+    return "uint16";
+  case KGENDType::si16:
+    return "int16";
+  case KGENDType::ui32:
+    return "uint32";
+  case KGENDType::si32:
+    return "int32";
+  case KGENDType::ui64:
+    return "uint64";
+  case KGENDType::si64:
+    return "int64";
+  case KGENDType::ui128:
+    return "uint128";
+  case KGENDType::si128:
+    return "int128";
+  case KGENDType::ui256:
+    return "uint256";
+  case KGENDType::si256:
+    return "int256";
+  case KGENDType::f8e3m4:
+    return "float8_e3m4";
+  case KGENDType::f8e4m3fn:
+    return "float8_e4m3fn";
+  case KGENDType::f8e4m3fnuz:
+    return "float8_e4m3fnuz";
+  case KGENDType::f8e5m2:
+    return "float8_e5m2";
+  case KGENDType::f8e5m2fnuz:
+    return "float8_e5m2fnuz";
+  case KGENDType::bf16:
+    return "bfloat16";
+  case KGENDType::f16:
+    return "float16";
+  case KGENDType::f32:
+    return "float32";
+  case KGENDType::f64:
+    return "float64";
+  default:
+    return std::nullopt;
+  }
+}
+
+/// Print a KGENDType, following the naming scheme in the Mojo DType struct.
+/// NOTE: It would be better to have custom type name printing that can be
+/// implemented on the struct directly.
+static void printDType(raw_ostream &os, KGENDType dtype) {
+  if (auto dtypeStr = getDTypeAsString(dtype))
+    os << "stdlib.builtin.dtype.DType." << *dtypeStr;
+  else
+    dtype.print(os);
+}
+
+void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
+                                  TypedAttr value) {
+  TypeSwitch<TypedAttr>(value)
+      .Case<DTypeConstantAttr>(
+          [&](auto dtypeConstant) { printDType(os, dtypeConstant.getDType()); })
+      .Case<IntegerAttr>([&](auto intAttr) {
+        // Print booleans nicely.
+        if (intAttr.getType().isSignlessInteger(1))
+          os << (intAttr.getValue().isZero() ? "False" : "True");
+        else
+          intAttr.print(os, /*elideType=*/true);
+      })
+      .Case<NoneAttr>([&](auto noneAttr) { os << "None"; })
+      .Case<UnboundAttr>([&](auto unboundAttr) { os << "?"; })
+      .Case<TypeParamAttr>([&](auto typeAttr) {
+        if (auto typeValue = dyn_cast<TypeValueType>(typeAttr.getTypeValue())) {
+          auto instanceRef =
+              cast<TypeInstanceRefAttr>(typeValue.getTypeValue());
+          os << stringifyTypeInstanceRef(instanceRef);
+          return;
+        }
+
+        // We print a placeholder for anything we don't know how to print.
+        // NOTE: We could consider just printing the mlir for anything else. For
+        // now, this is a more conservative approach, since it prevents leaking
+        // IR details.
+        os << "<unprintable>";
+      })
+      .Case<StructAttr>([&](auto structAttr) {
+        os << "{";
+        llvm::interleaveComma(structAttr.getValues(), os, [&](TypedAttr value) {
+          printParamValue(os, decl, value);
+        });
+        os << "}";
+      })
+      .Case<MemRefAttr>([&](auto memRefAttr) {
+        MemoryBlobAttr memory =
+            memRefAttr.getModel().getMemory()[memRefAttr.getIndex()];
+        if (MemoryHandleAttr handle = memory.getHandle(); handle.isString()) {
+          // NOTE: these strings should be null terminated, but let's be safe.
+          os << '"' << StringRef(handle.getData(), handle.getSize() - 1) << '"';
+          return;
+        }
+
+        os << "<unprintable>";
+      })
+      .Case<POP::SIMDAttr>([&](auto simdAttr) {
+        ArrayRef<POP::DTypeValue> values = simdAttr.getValues();
+        KGENDType dType = *simdAttr.getType().getResolvedDType();
+        if (values.size() == 1) {
+          // We handle scalars specially for improved readability.
+          printSIMDValue(os, values[0], dType);
+        } else {
+          os << "[";
+          llvm::interleaveComma(values, os, [&](const POP::DTypeValue &value) {
+            printSIMDValue(os, value, dType);
+          });
+          os << "]";
+        }
+        os << " : stdlib.builtin.simd.SIMD[";
+        printDType(os, dType);
+        os << ", " << values.size() << "]";
+      })
+      .Default([&](auto value) { os << "<unprintable>"; });
+}
+
+std::string
+IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef) {
+  ParamNode *genNode =
+      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
+  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
+
+  // Print the type name first.
+  std::string name = genOp.getSymName().str();
+  name = std::regex_replace(name, std::regex("::"), ".");
+
+  ArrayRef<TypedAttr> paramValues = genNode->inputParams.getValue();
+  if (!paramValues.empty()) {
+    std::string paramValuesStr;
+    llvm::raw_string_ostream os(paramValuesStr);
+    auto paramDecls = genOp.getInputParams();
+
+    // If the type is parameterized, print the parameter values.
+    llvm::interleaveComma(llvm::zip(paramDecls, paramValues), os,
+                          [&](auto pair) {
+                            auto [decl, value] = pair;
+                            printParamValue(os, decl, value);
+                          });
+
+    name += "[" + paramValuesStr + "]";
+  }
+  return name;
+}
+
 FailureOr<TypedAttr>
 IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   // Find the struct generator for the instantiated type ref.
@@ -687,13 +871,8 @@ IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
                   .getTypeValue();
   }
 
-  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef).getSymbol();
-  ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
-  StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
-
-  std::string name = gen.getSymName().str();
-  name = std::regex_replace(name, std::regex("::"), ".");
-
+  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  std::string name = stringifyTypeInstanceRef(instanceRef);
   return {StringAttr::get(name, getTypeNameAttr.getType())};
 }
 

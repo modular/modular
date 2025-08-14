@@ -91,6 +91,9 @@ private:
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
+  std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef);
+  void printParamValue(raw_ostream &os, ParamDeclAttr decl, TypedAttr value);
+
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
   }

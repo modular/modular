@@ -1344,7 +1344,7 @@ kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
 
 // CHECK-LABEL: kgen.func @"parameter_get_type_name
 kgen.generator @parameter_get_type_name<T: type>(%arg: !kgen.param<T>) {
-  // CHECK-NEXT: constant: string = <"LinkedList">
+  // CHECK-NEXT: constant: string = <"LinkedList[<unprintable>]">
   kgen.param.constant: string = <#kgen.get_type_name<#kgen.param.decl.ref<"T">>>
   kgen.return
 }
