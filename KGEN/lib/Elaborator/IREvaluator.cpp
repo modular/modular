@@ -15,6 +15,7 @@
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/StringExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -864,7 +865,7 @@ IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
     else if (name == "stdlib::collections::string::string::String")
       name = "String";
   }
-  name = std::regex_replace(name, std::regex("::"), ".");
+  replaceAll(name, "::", ".");
 
   ArrayRef<TypedAttr> paramValues = genNode->inputParams.getValue();
   if (!paramValues.empty()) {
