@@ -307,7 +307,10 @@ fn _warp_reduce_launch_helper[
 
     @parameter
     fn do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-        return warp.reduce[shuffle_down, reduce_add](val)
+        @always_inline
+        fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+            return shuffle_down[offset](val)
+        return warp.reduce[_shuffle, reduce_add](val)
 
     _kernel_launch_helper[dtype, simd_width, do_warp_reduce](
         host_ptr, buffer_size, block_size, ctx
@@ -363,8 +366,11 @@ fn _lane_group_reduce_launch_helper[
     fn do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
+        @always_inline
+        fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+            return shuffle_down[offset](val)
         return warp.lane_group_reduce[
-            shuffle_down, reduce_add, num_lanes=num_lanes, stride=stride
+            _shuffle, reduce_add, num_lanes=num_lanes, stride=stride
         ](val)
 
     _kernel_launch_helper[dtype, simd_width, do_lane_group_reduce](

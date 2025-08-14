@@ -27,7 +27,9 @@ from gpu.globals import WARP_SIZE
 from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor, rank
+from memory import pack_bits, bitcast
+from sys import llvm_intrinsic
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
 alias FULL_MASK_AMD = 2**WARP_SIZE - 1
@@ -353,6 +355,23 @@ def test_atomic_compile():
             emission_kind="llvm-opt",
         ]()
     )
+# CHECK-LABEL: test_warp_rank_compile
+def test_warp_rank_compile():
+    print("== test_warp_rank_compile")
+
+    fn kernel_warp_rank(x: UnsafePointer[UInt64], y: UnsafePointer[UInt64]):
+        var data = x[lane_id()]
+        var transformed = data * 3
+        var r = rank(transformed > 42)
+        y[r] = transformed
+
+    # CHECK: global_load_dwordx2
+    # CHECK: v_cmp_lt_u64_e32 vcc, 42
+    # CHECK: v_mbcnt_lo_u32_b32 v0, vcc_lo, 0
+    # CHECK: v_mbcnt_hi_u32_b32 v0, vcc_hi, v0
+    # CHECK: global_store_dwordx2 v0
+
+    print(_compile_code_asm[kernel_warp_rank, target=MI300X_TARGET]())
 
 
 def main():
@@ -366,3 +385,4 @@ def main():
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
     test_atomic_compile()
+    test_warp_rank_compile()
