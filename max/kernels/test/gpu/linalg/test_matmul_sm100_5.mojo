@@ -69,7 +69,7 @@ from layout.tma_async import (
 from linalg import vendor_blas
 from linalg.mmaop_sm100 import MmaOpSM100_SS
 from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
-
+from linalg.matmul_tile_scheduler import RasterOrder
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -705,12 +705,14 @@ fn blackwell_tma_pair_umma_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
     cta_group: Int = 2,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c_tma_op_leftover: TMATensorTile[c_type, c_layout, c_desc_layout],
+    cluster_dim: StaticTuple[Int32, 3],
     num_iters: UInt,
 ):
     alias num_output_warps = 4
@@ -926,10 +928,10 @@ fn blackwell_tma_pair_umma_kernel[
 
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape = Index(
+        cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
-    ](clc_response, clc_full_mbar, clc_empty_mbar)
+    ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     var work_info = scheduler.initial_work_info()
 
@@ -1142,6 +1144,7 @@ fn blackwell_matmul_tma_pair_mma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 1,
     num_accum_pipeline_stages: UInt = 1,
@@ -1242,6 +1245,16 @@ fn blackwell_matmul_tma_pair_mma[
         smem_without_pipeline_stage_objects + smem_for_pipeline_stage_objects
     )
 
+    var grid_dim = (
+        align_up(M // BM, Int(cluster_shape[0])),
+        align_up(N // BN // cta_group, Int(cluster_shape[1])),
+        1,
+    )
+
+    var cluster_dim = StaticTuple[Int32, 3](
+        grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
+    )
+
     alias kernel = blackwell_tma_pair_umma_kernel[
         a_type,
         b_type,
@@ -1263,6 +1276,7 @@ fn blackwell_matmul_tma_pair_mma[
         num_pipeline_stages=maximum_pipeline_stages,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages=num_accum_pipeline_stages,
+        rasterize_order=rasterize_order,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1270,13 +1284,10 @@ fn blackwell_matmul_tma_pair_mma[
         b_tma_op,
         c_tma_op,
         c_tma_op_leftover,
+        cluster_dim,
         K // BK,
-        grid_dim=(
-            align_up(M // BM, Int(cluster_shape[0])),
-            align_up(N // BN // cta_group, Int(cluster_shape[1])),
-            1,
-        ),
-        # 1 TMA, 1 MMA, 4 EPILOGUE warps
+        grid_dim=grid_dim,
+        # 1 TMA, 1 MMA, 1 SCHEDULER, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
@@ -1294,6 +1305,7 @@ def test_blackwell_matmul_tma_pair_mma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
     benchmark: Bool = False,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
@@ -1365,6 +1377,7 @@ def test_blackwell_matmul_tma_pair_mma[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
+        rasterize_order=rasterize_order,
         cta_group=2,
     ](
         c_device.tensor,

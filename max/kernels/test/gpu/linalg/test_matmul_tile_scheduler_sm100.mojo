@@ -30,7 +30,9 @@ from gpu.sync import syncwarp
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
+fn test_kernel[
+    num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
+](cluster_dim: StaticTuple[Int32, 3]):
     var clc_response = stack_allocation[
         num_stages,
         UInt128,
@@ -104,10 +106,10 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
 
     var scheduler = TileScheduler[
         num_stages=num_stages,
-        cluster_shape = Index(
+        cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
-    ](clc_response, clc_full_mbar, clc_empty_mbar)
+    ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     # thread blocks start with their original cta coordinates
     var work_info = scheduler.initial_work_info()
@@ -123,6 +125,7 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
         # stream-k, CTAs might be also working on the same coordinates. In
         # that case, we don't need to block the tile scheduler.
         var required_clc_query = True
+
         while work_info.is_valid():
             # CLC throuttle prevents each CTA from going a few waves ahead.
             if is_first_cta_in_cluster and required_clc_query:
@@ -201,8 +204,20 @@ fn test_kernel[num_stages: Int, cluster_shape: StaticTuple[Int32, 3]]():
 
 
 fn test_tile_scheduler(ctx: DeviceContext) raises:
-    alias kernel = test_kernel[2, StaticTuple[Int32, 3](4, 4, 1)]
-    ctx.enqueue_function[kernel](grid_dim=(16, 16), block_dim=(256))
+    alias cluster_shape = StaticTuple[Int32, 3](2, 2, 1)
+    alias grid_dim = (16, 8, 1)
+
+    alias cluster_dim = StaticTuple[Int32, 3](
+        grid_dim[0] // cluster_shape[0],
+        grid_dim[1] // cluster_shape[1],
+        cluster_shape[2],
+    )
+    alias kernel = test_kernel[2, cluster_shape]
+    ctx.enqueue_function[kernel](
+        cluster_dim,
+        grid_dim=grid_dim,
+        block_dim=(256),
+    )
 
 
 def main():
