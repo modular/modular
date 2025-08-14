@@ -33,7 +33,7 @@ from sys import (
     sizeof,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char
+from sys.ffi import c_char, c_int, c_uint
 from sys.info import (
     is_triple,
     _TargetType,
@@ -171,6 +171,27 @@ struct _DeviceTimer:
         # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
         external_call["AsyncRT_DeviceTimer_release", NoneType, _DeviceTimerPtr](
             self._handle
+        )
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct StreamPriorityRange(Copyable, Movable, Stringable, Writable):
+    var least: Int
+    var greatest: Int
+
+    @always_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @always_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "StreamPriorityRange(least=",
+            self.least,
+            ", greatest=",
+            self.greatest,
+            ")",
         )
 
 
@@ -1335,7 +1356,7 @@ struct DeviceBuffer[dtype: DType](
 
 
 # @doc_private does not work on structs - see MOTO-992.
-struct DeviceStream:
+struct DeviceStream(Copyable, Movable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
     A DeviceStream provides a queue for GPU operations that can execute concurrently
@@ -1366,11 +1387,21 @@ struct DeviceStream:
 
     @doc_private
     @always_inline
-    fn __init__(out self, ctx: DeviceContext) raises:
-        """Creates a new stream associated with the given device context.
+    fn __init__(out self, handle: _DeviceStreamPtr):
+        """Initializes a new DeviceStream with the given stream handle.
 
         Args:
-            ctx: The device context to associate this stream with.
+            handle: The stream handle to initialize the DeviceStream with.
+        """
+        self._handle = handle
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, ctx: DeviceContext) raises:
+        """Retrieves the stream associated with the given device context.
+
+        Args:
+            ctx: The device context to retrieve the stream from.
 
         Raises:
             - If stream creation fails.
@@ -5142,6 +5173,82 @@ struct DeviceContext(Copyable, Movable):
     @always_inline
     fn stream(self) raises -> DeviceStream:
         return DeviceStream(self)
+
+    fn stream_priority_range(self) raises -> StreamPriorityRange:
+        """Returns the range of stream priorities supported by this device context.
+
+        Returns:
+            A StreamPriorityRange object containing the minimum and maximum stream priorities.
+        """
+        var least_priority = c_int(0)
+        var greatest_priority = c_int(0)
+        # const char *AsyncRT_DeviceContext_streamPriorityRange(int *leastPriority, int *greatestPriority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamPriorityRange",
+                _CharPtr,
+            ](
+                UnsafePointer(to=least_priority),
+                UnsafePointer(to=greatest_priority),
+                self._handle,
+            )
+        )
+        return StreamPriorityRange(Int(least_priority), Int(greatest_priority))
+
+    fn create_stream(self, *, blocking: Bool = True) raises -> DeviceStream:
+        """Creates a new stream associated with the given device context.
+
+        Args:
+            blocking: Whether the stream should be blocking.
+
+        Raises:
+            - If stream creation fails.
+        """
+        var flags: c_uint = 0 if blocking else 1
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamCreate",
+                _CharPtr,
+            ](UnsafePointer(to=result), self._handle, flags)
+        )
+        return DeviceStream(result)
+
+    fn create_stream(
+        self, *, priority: Int, blocking: Bool = True
+    ) raises -> DeviceStream:
+        """Creates a new stream associated with the given device context.
+
+        To create a non-blocking stream with the highest priority, use:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        var priority = ctx.stream_priority_range().largest
+        var stream = ctx.create_stream(priority=priority, blocking=False)
+        ```
+
+        Args:
+            priority: The priority of the stream.
+            blocking: Whether the stream should be blocking.
+
+        Raises:
+            - If stream creation fails.
+        """
+        var flags: c_uint = 0 if blocking else 1
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamCreateWithPriority",
+                _CharPtr,
+            ](UnsafePointer(to=result), flags, c_int(priority), self._handle)
+        )
+        return DeviceStream(result)
 
     @always_inline
     fn synchronize(self) raises:
