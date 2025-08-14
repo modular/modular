@@ -526,14 +526,18 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
             output_len = (
                 len(completion_token_ids)
                 if output_lengths is None
-                else output_lengths[i]
+                else output_lengths[len(filtered_dataset)]
             )
             assert output_len is not None, "Unexpected null output length"
-            if prompt_len < 4 or output_len < 4:
+            if prompt_len < 4:
                 # Prune too short sequences.
                 continue
             if prompt_len > 1024 or prompt_len + output_len > 2048:
                 # Prune too long sequences.
+                continue
+            # If we're given explicit output lengths, then run with whatever
+            # we're given. Otherwise, filter requests with super short responses.
+            if output_lengths is None and output_len < 4:
                 continue
             filtered_dataset.append(
                 SampledRequest(prompt, prompt_len, output_len, None)
