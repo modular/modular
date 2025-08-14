@@ -1485,6 +1485,113 @@ struct DeviceStream(Copyable, Movable):
             ](self._handle)
         )
 
+    @parameter
+    @always_inline
+    fn enqueue_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: Argument dtypes.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+
+        constrained[
+            not f.declared_arg_types,
+            (
+                "A checked DeviceFunction should be called with"
+                " `enqueue_function_checked`."
+            ),
+        ]()
+        self._enqueue_function_unchecked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn _enqueue_function_unchecked[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        args: VariadicPack[_, _, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        f._call_with_pack(
+            self,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
 
 fn _is_nvidia_gpu[target: _TargetType]() -> Bool:
     return is_triple["nvptx64-nvidia-cuda", target]()
@@ -1995,6 +2102,111 @@ struct DeviceFunction[
                     UnsafePointer[OpaquePointer],
                 ](
                     ctx._handle,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                )
+            )
+
+        if num_captures > num_captures_static:
+            dense_args_addrs.free()
+
+    # Enqueue function on a stream
+    @always_inline
+    @parameter
+    fn _call_with_pack[
+        *Ts: AnyType
+    ](
+        self,
+        stream: DeviceStream,
+        args: VariadicPack[_, _, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        alias num_args = len(VariadicList(Ts))
+        var num_captures = self._func_impl.num_captures
+        alias populate = __type_of(self._func_impl).populate
+        alias num_captures_static = 16
+
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[OpaquePointer]
+        if num_captures > num_captures_static:
+            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer
+            ]()
+
+        @parameter
+        for i in range(num_args):
+            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
+
+        for i in range(len(constant_memory)):
+            self._copy_to_constant_memory(constant_memory[i])
+
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
+        #     const DeviceContext *ctx, const DeviceFunction *func,
+        #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #     void **args)
+
+        if num_captures > 0:
+            # Call the populate function to initialize the captured values in the arguments array.
+            # The captured values are always at the end of the argument list.
+            # This function (generated by the compiler) has to be inlined here
+            # and be in the same scope as the user of dense_args_addr
+            # (i.e. the following external_call).
+            # Because this closure uses stack allocated ptrs
+            # to store the captured values in dense_args_addrs, they need to
+            # not go out of the scope before dense_args_addr is being use.
+            var capture_args_start = dense_args_addrs.offset(num_args)
+            populate(capture_args_start.bitcast[NoneType]())
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
+                    _CharPtr,
+                ](
+                    stream,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                )
+            )
+        else:
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
+                    _CharPtr,
+                ](
+                    stream,
                     self._handle,
                     grid_dim.x(),
                     grid_dim.y(),
