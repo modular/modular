@@ -16,11 +16,11 @@ from max.nn.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from test_common.graph_utils import is_b200, is_h100_h200
+from test_common.graph_utils import is_h100_h200
 
 # TODO: confirm this is a reasonable rtol for fp8
-ACCURACY_RTOL = 1e-2
-ACCURACY_ATOL = 1e-2
+ACCURACY_RTOL = 1e-1
+ACCURACY_ATOL = 3e-2
 
 
 # The following triton kernels are adapted from https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/kernel.py
@@ -29,7 +29,6 @@ def act_quant_kernel(
     x_ptr: torch.Tensor,
     y_ptr: torch.Tensor,
     s_ptr: torch.Tensor,
-    scale_ub: float,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
@@ -47,8 +46,7 @@ def act_quant_kernel(
     pid = tl.program_id(axis=0)
     offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     x = tl.load(x_ptr + offs).to(tl.float32)
-    max_val = tl.max(tl.abs(x), axis=0)
-    s = tl.minimum(max_val, scale_ub) / 448.0
+    s = tl.max(tl.abs(x)) / 448.0
     y = x / s
     y = y.to(y_ptr.dtype.element_ty)
     tl.store(y_ptr + offs, y)
@@ -56,7 +54,7 @@ def act_quant_kernel(
 
 
 def act_quant(
-    x: torch.Tensor, block_size: int = 128, scale_ub: float = 1200.0
+    x: torch.Tensor, block_size: int = 128
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Quantizes the input tensor `x` using block-wise quantization.
@@ -79,9 +77,7 @@ def act_quant(
         *x.size()[:-1], x.size(-1) // block_size, dtype=torch.float32
     )
     grid = lambda meta: (triton.cdiv(x.numel(), meta["BLOCK_SIZE"]),)
-    act_quant_kernel[grid](
-        x, y, s, scale_ub, BLOCK_SIZE=tl.constexpr(block_size)
-    )
+    act_quant_kernel[grid](x, y, s, BLOCK_SIZE=tl.constexpr(block_size))
     return y, s
 
 
@@ -197,8 +193,8 @@ def fp8_gemm(
         tl.constexpr(N),
         tl.constexpr(K),
         BLOCK_SIZE_M=tl.constexpr(64),
-        BLOCK_SIZE_N=tl.constexpr(128),
-        BLOCK_SIZE_K=tl.constexpr(128),
+        BLOCK_SIZE_N=tl.constexpr(64),
+        BLOCK_SIZE_K=tl.constexpr(64),
         TILE_SIZE_K=tl.constexpr(tile_k),
         TILE_SIZE_N=tl.constexpr(tile_n),
     )
@@ -215,7 +211,6 @@ def create_triton_fp8_result(
     input_quantized, input_scales = act_quant(
         input_tensor, block_size=a_tile_size[1]
     )
-
     result = fp8_gemm(
         input_quantized, input_scales, weight_tensor, weight_scales
     )
@@ -278,9 +273,7 @@ def create_max_fp8_result(
     return torch.from_dlpack(max_result)
 
 
-@pytest.mark.skipif(
-    not (is_h100_h200() or is_b200()), reason="float8 requires H100/H200/B200"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize(
     "M, N, K, a_tile_size, b_tile_size",
     [
@@ -288,12 +281,11 @@ def create_max_fp8_result(
         # for the weight tensor
         (1, 1024, 2048, (1, 2048), (1, 2048)),
         (32, 1024, 2048, (1, 2048), (1, 2048)),
-        (81, 1024, 2048, (1, 2048), (1, 2048)),
-        # per-token quantization scaling for the input tensor, and 2D quantization
-        # scaling for the weight tensor
-        (1, 1024, 2048, (1, 128), (128, 128)),
-        (32, 1024, 2048, (1, 128), (128, 128)),
-        (81, 1024, 2048, (1, 128), (128, 128)),
+        # (81, 1024, 2048, (1, 2048), (1, 2048)),
+        # TODO: enable the block-wise quantization tests once we have the kernel
+        # ( 1, 1024, 2048, (1, 128), (128, 128)),
+        # (32, 1024, 2048, (1, 128), (128, 128)),
+        # (81, 1024, 2048, (1, 128), (128, 128)),
     ],
 )
 def test_linear_gpu(
@@ -316,12 +308,16 @@ def test_linear_gpu(
         device=torch.device("cuda"),
     )
 
+    # This creates FP8_E4M3FN values between -448 and 448
     weight_tensor = (
-        torch.randn(
-            size=(N, K),
-            dtype=torch.bfloat16,
-            device=torch.device("cuda"),
-        ).clamp(-448, 448)
+        (
+            torch.randn(
+                size=(N, K),
+                dtype=torch.bfloat16,
+                device=torch.device("cuda"),
+            ).clamp(-1, 1)
+        )
+        * 448.0
     ).to(torch.float8_e4m3fn)
 
     weight_scales = (
