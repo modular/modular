@@ -12,6 +12,7 @@ modular_py_test(
         "test_engine.py",
         "test_explicit_device.py",
         "test_graph_telemetry.py",
+        "test_huggingface_utilities.py",
         "test_is_inf.py",
         "test_is_nan.py",
         "test_load_weights.py",
@@ -20,6 +21,8 @@ modular_py_test(
         "test_registry.py",
         "test_sampling.py",
         "test_telemetry.py",
+        "test_tokenizer.py",
+        "test_weight_path_parser.py",
     ],
     data = [
         "//SDK/integration-test/API:inputs",
@@ -33,7 +36,7 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "20",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -59,16 +62,13 @@ modular_py_test(
     ],
 )
 
-# TODO(E2EOPT-341): Debug the following tests on B200 and enable them.
+# TODO(PAQ-1028): Some tests in test_config_pure.py still fail on B200.
 modular_py_test(
     name = "tests_disabled_on_b200",
     size = "large",
     srcs = [
         "conftest.py",
         "test_config_pure.py",
-        "test_huggingface_utilities.py",
-        "test_tokenizer.py",
-        "test_weight_path_parser.py",
     ],
     data = [
         "//SDK/integration-test/API:inputs",
@@ -112,7 +112,6 @@ modular_py_test(
     ],
 )
 
-# TODO(E2EOPT-341): Debug the following test on B200 and enable it.
 modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
@@ -133,10 +132,6 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    target_compatible_with = select({
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/integration-test/pipelines/python:hf_repo_lock",
