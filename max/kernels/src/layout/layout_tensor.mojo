@@ -4577,7 +4577,7 @@ struct LayoutTensor[
 
         return Self.SliceType2D[
             d0_slice, d1_slice, slice_indices, __offset_dims
-        ](self.ptr.offset(slice_offset))
+        ](self.ptr + slice_offset)
 
     alias SliceType1D[
         d0_slice: Slice,
@@ -4685,7 +4685,7 @@ struct LayoutTensor[
                 idx += 1
 
         return Self.SliceType1D[d0_slice, slice_indices, __offset_dims](
-            self.ptr.offset(slice_offset)
+            self.ptr + slice_offset
         )
 
     alias TransposeType[
@@ -5093,11 +5093,11 @@ struct LayoutTensor[
             dst_idx = self._get_element_idx[i]()
 
             src_element = MemoryElement[index_type = other.linear_idx_type](
-                other.ptr.offset(src_idx), other.runtime_element_layout
+                other.ptr + src_idx, other.runtime_element_layout
             )
 
             dst_element = MemoryElement[index_type=linear_idx_type](
-                self.ptr.offset(dst_idx), self.runtime_element_layout
+                self.ptr + dst_idx, self.runtime_element_layout
             )
 
             dst_element.transfer(src_element)
@@ -7051,7 +7051,7 @@ fn copy_local_to_dram[
                 var src_element = Element[
                     index_type = src.linear_idx_type
                 ].load(
-                    src.ptr.offset(src_idx),
+                    src.ptr + src_idx,
                     src.runtime_element_layout,
                 )
                 alias dst_element_type = Element[
@@ -7061,7 +7061,7 @@ fn copy_local_to_dram[
                     rebind[dst_element_type.element_data_type](
                         src_element.element_data.cast[dst.dtype]()
                     )
-                ).store(dst_fragments.ptr.offset(dst_idx))
+                ).store(dst_fragments.ptr + dst_idx)
 
 
 @always_inline("nodebug")
@@ -7145,7 +7145,7 @@ fn copy_local_to_dram[
             dst_idx += dst_fragments.runtime_layout(i)
 
         var src_element = Element[index_type = src.linear_idx_type].load(
-            src.ptr.offset(src_idx),
+            src.ptr + src_idx,
             src.runtime_element_layout,
         )
 
@@ -7454,7 +7454,7 @@ fn copy_dram_to_local[
                 var src_element = Element[
                     index_type = src.linear_idx_type
                 ].load(
-                    src_fragments.ptr.offset(src_idx),
+                    src_fragments.ptr + src_idx,
                     src_fragments.runtime_element_layout,
                 )
                 alias dst_element_type = Element[
@@ -7464,7 +7464,7 @@ fn copy_dram_to_local[
                     rebind[dst_element_type.element_data_type](
                         src_element.element_data.cast[dst.dtype]()
                     )
-                ).store(dst.ptr.offset(dst_idx))
+                ).store(dst.ptr + dst_idx)
 
 
 @always_inline("nodebug")
@@ -7619,11 +7619,11 @@ fn copy_local_to_shared[
                 var dst_idx = dst_frag._get_element_idx[idx]()
 
                 var src_element = MemoryElement(
-                    src.ptr.offset(src_idx), src.runtime_element_layout
+                    src.ptr + src_idx, src.runtime_element_layout
                 )
 
                 var dst_element = MemoryElement(
-                    dst_frag.ptr.offset(dst_idx),
+                    dst_frag.ptr + dst_idx,
                     dst_frag.runtime_element_layout,
                 )
                 dst_element.transfer(src_element)

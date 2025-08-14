@@ -414,7 +414,7 @@ fn warp_specialized_gemm_output[
                             m_mma,
                             Int(local_warp_group_idx),
                         )
-                        var offset = c_smem_tile.ptr.offset(
+                        var offset = c_smem_tile.ptr + (
                             st_matrix_swizzle(
                                 st_matrix_rt_layout(st_matrix_args)
                             )
@@ -570,7 +570,7 @@ fn warp_specialized_gemm_output[
                     fence_async_view_proxy()
 
                     if local_thread_idx < WG_BN // TMA_BN:
-                        var smem_offset = c_smem_tile.ptr.offset(
+                        var smem_offset = c_smem_tile.ptr + (
                             WG_BM * TMA_BN * local_thread_idx
                         )
                         var c_tma_tile = LayoutTensor[
