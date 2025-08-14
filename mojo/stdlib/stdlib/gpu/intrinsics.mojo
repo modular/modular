@@ -904,7 +904,6 @@ fn make_buffer_resource[
         var resource = make_buffer_resource[DType.float32](ptr, 1024)
         # Use resource with buffer_load/buffer_store operations
         ```
-        .
     """
 
     constrained[

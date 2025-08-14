@@ -182,7 +182,6 @@ struct FileHandle(Defaultable, Movable, Writer):
         var first_word = file.read(8)
         print(first_word)
         ```
-        .
         """
 
         var list = self.read_bytes(size)
@@ -308,7 +307,6 @@ struct FileHandle(Defaultable, Movable, Writer):
         _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
         var first_data = file.read(8)
         ```
-        .
         """
         if not self.handle:
             raise Error("invalid file handle")
@@ -384,7 +382,6 @@ struct FileHandle(Defaultable, Movable, Writer):
         var f = open("/tmp/example.txt", "r")
         _ = f.seek(-32, os.SEEK_END)
         ```
-        .
         """
         if not self.handle:
             raise "invalid file handle"

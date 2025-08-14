@@ -1211,7 +1211,6 @@ struct Int(
         assert_equal(Int(10)._decimal_digit_count(), 2)
         assert_equal(Int(-10)._decimal_digit_count(), 2)
         ```
-        .
         """
 
         var n = abs(self)

@@ -641,7 +641,6 @@ struct DimList(Representable, Sized, Stringable, Writable):
         var dim_list = DimList(2, 4)
         var index_list = dim_list.into_index_list[rank=2]()
         ```
-        .
         """
         var num_elements = len(self)
         debug_assert(

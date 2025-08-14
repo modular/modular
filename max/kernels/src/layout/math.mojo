@@ -183,7 +183,6 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
     -----
     3 5 7
     ```
-    .
     """
 
     fn sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:

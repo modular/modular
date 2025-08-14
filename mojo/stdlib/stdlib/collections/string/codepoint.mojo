@@ -406,7 +406,6 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         # Letters are not space characters
         assert_fales(Codepoint.ord("a").is_python_space())
         ```
-        .
         """
 
         alias next_line = Codepoint.from_u32(0x85).value()

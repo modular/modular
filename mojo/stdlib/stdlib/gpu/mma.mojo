@@ -670,7 +670,6 @@ fn ld_matrix[
         # Load transposed matrix
         var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
         ```
-        .
     """
 
     constrained[

@@ -342,7 +342,6 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     _hex_digits_to_hex_chars(ptr, UInt8(ord("Ö")))
     assert_equal("d6", S(ptr=ptr, length=2))
     ```
-    .
     """
     alias size = decimal.dtype.sizeof()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))

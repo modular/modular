@@ -394,7 +394,6 @@ struct SIMD[dtype: DType, size: Int](
         # Float to int/uint floors
         Int64(Float64(42.2)) == Int64(42)
         ```
-        .
         """
         self = value.cast[dtype]()
 
@@ -1886,7 +1885,6 @@ struct SIMD[dtype: DType, size: Int](
         # Float to int/uint floors
         Int64(Float64(42.2)) == Int64(42)
         ```
-        .
         """
 
         @parameter
@@ -3026,7 +3024,6 @@ struct SIMD[dtype: DType, size: Int](
         ```mojo
         print(SIMD[DType.uint8, 4](1, 2, 3, 4).reversed()) # [4, 3, 2, 1]
         ```
-        .
         """
 
         fn indices() -> IndexList[size]:

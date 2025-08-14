@@ -201,7 +201,6 @@ struct CodepointSliceIter[
         # Later `peek_next()` calls will return the _new_ next character:
         assert_equal(iter.peek_next().value(), "2")
         ```
-        .
         """
         if len(self._slice) > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
@@ -246,7 +245,6 @@ struct CodepointSliceIter[
         # Later `peek_back()` calls will return the _new_ next character:
         assert_equal(iter.peek_back().value(), "2")
         ```
-        .
         """
         if len(self._slice) > 0:
             var byte_len = 1
@@ -415,7 +413,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         # Later `peek_next()` calls will return the _new_ next character:
         assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
         ```
-        .
         """
         if len(self._slice) > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
@@ -790,7 +787,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_equal(len(s), 3)
         assert_equal(len(s.codepoints()), 3)
         ```
-        .
         """
         return self.byte_length()
 
@@ -1366,7 +1362,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_equal(iter.__next__().to_u32(), 0x0301)
         assert_equal(iter.__has_next__(), False)
         ```
-        .
         """
         return CodepointsIter(self)
 
@@ -1457,7 +1452,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_equal(s.char_length(), 2)
         assert_equal(s.byte_length(), 3)
         ```
-        .
         """
         # Every codepoint is encoded as one leading byte + 0 to 3 continuation
         # bytes.

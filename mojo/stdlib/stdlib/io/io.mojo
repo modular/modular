@@ -92,7 +92,6 @@ struct _fdopen[mode: StaticString = "a"]:
         # Output from print:
         Hello, World
         ```
-        .
         """
         return self.read_until_delimiter("\n")
 
