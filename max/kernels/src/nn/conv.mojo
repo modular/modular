@@ -958,7 +958,7 @@ struct ConvDirectNHWC[
                 else:
                     output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
-                        output_ptr + j * simd_size).load[
+                        (output_ptr + j * simd_size).load[
                             width=simd_size
                         ](),
                     )
@@ -3555,3 +3555,4 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
                 IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
                 value.cast[output_type](),
             )
+

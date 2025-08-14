@@ -172,7 +172,7 @@ fn cpasync_wgmma_kernel[
             alias v_idx = v_to_idx(local_idx)
             alias c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            c_gmem_ptr + c_idx).store[alignment = alignof[T]()](casted_vec)
+            (c_gmem_ptr + c_idx).store[alignment = alignof[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[
@@ -344,3 +344,4 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)
+

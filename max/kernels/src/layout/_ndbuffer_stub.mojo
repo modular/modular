@@ -260,7 +260,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
-        buff.data + Int(thread_offset),
+        buff.data + (Int(thread_offset)),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -1320,3 +1320,4 @@ fn from_ndbuffer_row_major(
         buffer.data,
         runtime_layout,
     )
+

@@ -702,9 +702,7 @@ fn gemm_kernel_amd[
             )
 
             if m < M and n < N:
-                var result_vec = (
-                    c_reg_fragment.ptr + (src_idx)
-                    .load[
+                var result_vec = (c_reg_fragment.ptr + src_idx).load[
                         width=4,
                         alignment = alignof[SIMD[c_type, 4]](),
                     ]()
@@ -726,7 +724,7 @@ fn gemm_kernel_amd[
                         (Int(m), Int(n)), result_vec
                     )
                 else:
-                    c.ptr + global_offset).store[alignment=alignment](
+                    (c.ptr + global_offset).store[alignment=alignment](
                         result_vec
                     )
     else:
@@ -734,3 +732,4 @@ fn gemm_kernel_amd[
         copy_local_to_dram[
             output_thread_layout, thread_scope = ThreadScope.WARP
         ](c_warp_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), c)
+
