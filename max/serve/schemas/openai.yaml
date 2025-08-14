@@ -9705,7 +9705,7 @@ components:
                   description: |
                       Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:
                         - If set to 'auto', the system will utilize scale tier credits until they are exhausted.
-                        - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarentee.
+                        - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarantee.
                         - When not set, the default behavior is 'auto'.
 
                         When this parameter is set, the response body will include the `service_tier` utilized.
@@ -11841,7 +11841,7 @@ components:
                     nullable: true
                 metadata:
                     description: &metadata_description |
-                        Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.
+                        Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.
                     type: object
                     x-oaiTypeLabel: map
                     nullable: true
@@ -12037,7 +12037,7 @@ components:
                                             metadata:
                                                 type: object
                                                 description: |
-                                                    Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.
+                                                    Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.
                                                 x-oaiTypeLabel: map
                             oneOf:
                                 - required: [vector_store_ids]
@@ -13046,7 +13046,7 @@ components:
                                             metadata:
                                                 type: object
                                                 description: |
-                                                    Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.
+                                                    Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.
                                                 x-oaiTypeLabel: map
                                         x-oaiExpandable: true
                             oneOf:
@@ -16983,7 +16983,7 @@ x-oaiMeta:
                 path: list
               - type: endpoint
                 key: create-project-user
-                path: creeate
+                path: create
               - type: endpoint
                 key: retrieve-project-user
                 path: retrieve

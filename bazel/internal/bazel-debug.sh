@@ -87,7 +87,7 @@ elif [[ "$kind" == binary_test ]]; then
   # cc_test has an underlying binary that is debuggable with bazel run
   target="$target.debug"
 elif [[ "$kind" == mojo_test ]]; then
-  # mojo_test has an underyling mojo_binary that is debuggable with bazel run
+  # mojo_test has an underlying mojo_binary that is debuggable with bazel run
   target="$target.debug"
 elif [[ "$kind" == modular_genrule ]]; then
   echo "error: modular_genrule not currently supported for debugging" >&2

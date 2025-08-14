@@ -81,7 +81,7 @@ index a70d249f..2c9dd418 100644
 +    return data;
 +  }
 +  google::protobuf::ArenaOptions arena_options;
-+  // It's easy to allocate datas larger than 1024 when we populate basic resource and attributes
++  // It's easy to allocate data larger than 1024 when we populate basic resource and attributes
 +  arena_options.initial_block_size = 1024;
 +  // When in batch mode, it's easy to export a large number of spans at once, we can alloc a lager
 +  // block to reduce memory fragments.
@@ -115,7 +115,7 @@ index 5c2bc768..1452e515 100644
 +{
 +
 +  google::protobuf::ArenaOptions arena_options;
-+  // It's easy to allocate datas larger than 1024 when we populate basic resource and attributes
++  // It's easy to allocate data larger than 1024 when we populate basic resource and attributes
 +  arena_options.initial_block_size = 1024;
 +  // When in batch mode, it's easy to export a large number of spans at once, we can alloc a lager
 +  // block to reduce memory fragments.
