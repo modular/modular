@@ -63,6 +63,7 @@ from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
+from gpu.memory import AddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -603,7 +604,9 @@ fn _allreduce_2stage_kernel[
         ptrs[i] = src_ptrs[target]
 
         # Skip Signal header.
-        tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[dtype]]()
+        tmps[i] = (
+            rank_sigs[target].address_space_cast[_GPUAddressSpace.GENERIC]() + 1
+        ).bitcast[Scalar[dtype]]()
 
     # Current rank's output buffer.
     var tmp_out = tmps[0]
@@ -622,6 +625,7 @@ fn _allreduce_2stage_kernel[
         var elem_idx = idx * simd_width
         var accum = (
             ptrs[0]
+            .address_space_cast[AddressSpace.GLOBAL]()
             .load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
@@ -632,6 +636,7 @@ fn _allreduce_2stage_kernel[
         for gpu_idx in range(1, ngpus):
             accum += (
                 ptrs[gpu_idx]
+                .address_space_cast[AddressSpace.GLOBAL]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
                     elem_idx
                 )
@@ -640,9 +645,9 @@ fn _allreduce_2stage_kernel[
 
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
-        tmp_out.store[alignment=alignment](
-            elem_idx - elem_start, accum.cast[dtype]()
-        )
+        tmp_out.address_space_cast[AddressSpace.GLOBAL]().store[
+            alignment=alignment
+        ](elem_idx - elem_start, accum.cast[dtype]())
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -671,9 +676,9 @@ fn _allreduce_2stage_kernel[
                     input_index=my_rank, width=simd_width, alignment=alignment
                 ](
                     result.get_nd_index(elem_dst_idx),
-                    tmps[gpu_idx].load[width=simd_width, alignment=alignment](
-                        elem_idx
-                    ),
+                    tmps[gpu_idx]
+                    .address_space_cast[AddressSpace.GLOBAL]()
+                    .load[width=simd_width, alignment=alignment](elem_idx),
                 )
 
 
@@ -747,6 +752,7 @@ fn _allreduce_1stage_kernel[
         var elem_idx = idx * simd_width
         var accum = (
             ptrs[0]
+            .address_space_cast[AddressSpace.GLOBAL]()
             .load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
@@ -757,6 +763,7 @@ fn _allreduce_1stage_kernel[
         for _id in range(1, ngpus):
             accum += (
                 ptrs[_id]
+                .address_space_cast[AddressSpace.GLOBAL]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
                     elem_idx
                 )
