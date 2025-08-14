@@ -930,7 +930,7 @@ fn multistage_gemm_kernel[
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if m < M and n < N:
-                var vec = c_reg_frag.ptr + (src_idx).load[
+                var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment = alignof[SIMD[c_type, src_simd_width_y]](),
                 ]()

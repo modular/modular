@@ -72,7 +72,7 @@ def matmul_qint4_pack_b[
                     var b_tuple_lo = b_data_i8.slice[4, offset=i]()
                     var b_tuple_hi = b_data_i8.slice[4, offset = i + 4]()
                     var b_tuple = (b_tuple_lo << 0) + (b_tuple_hi << 4)
-                    dst_k_ptr + (4 * nn).store(b_tuple)
+                    dst_k_ptr + 4 * nn).store(b_tuple)
                     dst_k_ptr += 4 * n_groups
 
         dst_ptr += n_groups * k_groups * bytes_per_group_int4

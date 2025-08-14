@@ -726,7 +726,7 @@ fn gemm_kernel_amd[
                         (Int(m), Int(n)), result_vec
                     )
                 else:
-                    c.ptr + (global_offset).store[alignment=alignment](
+                    c.ptr + global_offset).store[alignment=alignment](
                         result_vec
                     )
     else:

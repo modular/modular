@@ -207,7 +207,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             for idx1 in range(kernel_cols // simd_size):
                 alias alignment = alignof[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
-                var b_val = b_ptr + (16 * idx1).load[
+                var b_val = (b_ptr + 16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]

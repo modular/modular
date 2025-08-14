@@ -958,7 +958,7 @@ struct ConvDirectNHWC[
                 else:
                     output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
-                        output_ptr + (j * simd_size).load[
+                        output_ptr + j * simd_size).load[
                             width=simd_size
                         ](),
                     )
