@@ -4688,12 +4688,9 @@ struct LayoutTensor[
             self.ptr.offset(slice_offset)
         )
 
-    alias TransposeType[
-        M: Int = Self.shape[0](),
-        N: Int = Self.shape[1](),
-    ] = LayoutTensor[
+    alias TransposeType = LayoutTensor[
         dtype,
-        composition(layout, Layout([N, M], [M, 1])),
+        layout.transpose(),
         origin,
         address_space=address_space,
         element_layout=element_layout,
@@ -4702,24 +4699,12 @@ struct LayoutTensor[
     ]
 
     @always_inline
-    fn transpose[
-        M: Int = Self.shape[0](),
-        N: Int = Self.shape[1](),
-    ](self) -> Self.TransposeType[M, N]:
-        """Create a transposed view of a rank-2 tensor.
+    fn transpose(self) -> Self.TransposeType:
+        """Create a transposed view of a tensor.
 
         This method creates a view of the tensor with its dimensions swapped, effectively
         converting rows to columns and columns to rows. The transposition is performed
         without copying data, by adjusting the tensor's layout information.
-
-        Constraints:
-            - Only works with rank-2 tensors.
-
-        Parameters:
-            M: The size of the first dimension (rows) of the original tensor.
-               Defaults to the static shape value of the first dimension.
-            N: The size of the second dimension (columns) of the original tensor.
-               Defaults to the static shape value of the second dimension.
 
         Returns:
             A view of the tensor with dimensions transposed (rows become columns and vice versa).
@@ -4754,11 +4739,15 @@ struct LayoutTensor[
 
         - The transposed tensor shares the same memory as the original tensor,
             so modifications to one will affect the other.
-        - Only works with rank-2 tensors.
         - For optimal performance when repeatedly accessing the transposed data,
             consider creating a physical copy with the transposed layout.
+        - Transpose only works with statically known shapes.
         """
-        return Self.TransposeType[M, N](self.ptr)
+        constrained[
+            layout.all_dims_known(),
+            "Transpose only works with statically known shapes.",
+        ]()
+        return Self.TransposeType(self.ptr)
 
     alias ReshapeType[
         dst_layout: Layout,
