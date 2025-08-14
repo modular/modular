@@ -489,6 +489,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                                                  ASTDecl &traitDecl,
                                                  SMLoc smLocation) {
   StringRef implName = "impl";
+  StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
   auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
   Location location = shared.diags.translateLocation(smLocation);
@@ -508,8 +509,11 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   // Give the struct a parameter "impl" of metatype trait.
   SmallVector<ParamDeclAttr> implParameters;
   ParamDeclAttr implType = ParamDeclAttr::get(implName, traitType);
+  ParamDeclAttr originSetParam =
+      ParamDeclAttr::get(originSet, OriginSetType::get(ctx));
   Type paramType = ParamType::get(ParamDeclRefAttr::get(implType));
   implParameters.push_back(implType);
+  implParameters.push_back(originSetParam);
   ASTType selfType(paramType);
 
   // Create a struct with a single field of type "impl".
@@ -639,6 +643,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
     FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
     SmallVector<TypedAttr> params;
     params.push_back(ParamDeclRefAttr::get(implType));
+    params.push_back(ParamDeclRefAttr::get(originSetParam));
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
       return UnboundAttr::get(reference.getType());
@@ -650,6 +655,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
 
     SmallVector<ParamDeclAttr> paramDecls;
     paramDecls.push_back(implType);
+    paramDecls.push_back(originSetParam);
     llvm::append_range(paramDecls, impl.getInputParams());
     SymbolConstantAttr symbolConstant =
         SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
@@ -1773,7 +1779,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
 
   // Create the wrapper instance by emitting a call to the Wrapper
   // constructor.
-  LIT::StructType closureWrapperType = wrapper.bindReference(witnessTable);
+  LIT::StructType closureWrapperType =
+      wrapper.bindReference({witnessTable, closure.getCaptureOrigins()});
   VarDeclOp var = builder.create<VarDeclOp>(
       location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
@@ -1794,7 +1801,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
   FnTypeGeneratorType fullSig =
       LIT::getFullSignature(wrapper, init.getFuncTypeGenerator());
   SmallVector<TypedAttr> paramArgs;
+  paramArgs.reserve(2);
   paramArgs.push_back(closure.getTypeValue());
+  paramArgs.push_back(closure.getCaptureOrigins());
   auto boundSig = fullSig.getSpecializedGenerator(
       paramArgs, /*evaluationContext=*/nullptr, location);
   TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
