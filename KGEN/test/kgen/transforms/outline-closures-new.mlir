@@ -25,7 +25,7 @@ kgen.generator @foo_del(%self:!kgen.pointer<struct<(index,index)>> owned_in_mem)
 // CHECK: kgen.generator @closure_types(%arg0: index, %arg1: !kgen.pointer<struct<(index, index)>>) {
 // CHECK-NEXT: [[CAP:%.*]] = pop.stack_allocation 1 x struct<(struct<(index, index)>) memoryOnly> marked
 // CHECK-NEXT: %1 = kgen.struct.gep %0[0] : <struct<(struct<(index, index)>) memoryOnly>>
-// CHECK-NEXT: kgen.call @foo_copy(%1, %arg1) : (!kgen.pointer<struct<(index, index)>> read_mem, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none
+// CHECK-NEXT: kgen.call @foo_copy(%arg1, %1) : (!kgen.pointer<struct<(index, index)>> read_mem, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none
 // CHECK-NEXT: kgen.return
 // CHECK-NEXT: }
 kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {

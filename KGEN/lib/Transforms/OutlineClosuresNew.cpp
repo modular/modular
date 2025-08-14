@@ -613,7 +613,7 @@ void ClosureLifter::storeCaptures(ImplicitLocOpBuilder &b, Value captureStruct,
       StringRef name = symbol.getSymbol().getRootReference();
       Operation *op = symtab.lookup(name);
       GeneratorOp function = cast<GeneratorOp>(op);
-      SmallVector<Value> values = {slot, captureMechanism.origin};
+      SmallVector<Value> values = {captureMechanism.origin, slot};
       b.create<KGEN::CallOp>(function.getFunctionType().getResults(), symbol,
                              ValueRange(values));
     } else {
