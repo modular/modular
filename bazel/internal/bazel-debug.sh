@@ -83,7 +83,7 @@ elif [[ "$kind" == py_test ]]; then
   subcommand="test"
   default_config="debug-pytest"
   before_target+=("//bazel:lldb_wrapper")
-elif [[ "$kind" == binary_test ]]; then
+elif [[ "$kind" == cc_test ]]; then
   # cc_test has an underlying binary that is debuggable with bazel run
   target="$target.debug"
 elif [[ "$kind" == mojo_test ]]; then
