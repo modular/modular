@@ -288,17 +288,18 @@ A Mojo type is *copyable* if one of the following is true:
 - It's a [trivial type](#trivial-types) like `Int`, which is trivially copyable
   and movable.
 
-When Mojo encounters an assignment statement that doesn't use the [transfer
-sigil (`^`)](/mojo/manual/values/ownership#transfer-arguments-var-and-), it
-tries to make a copy of the right-side value by calling upon that type's copy
-constructor: the `__copyinit__()` method.
+Just like the `+` and `-` [operators invoke special
+methods](/mojo/manual/operators#implement-operators-for-custom-types) for
+adjacent types, so does the `=` sign. In specific circumstances, the `=` sign
+will try to make a copy of the right-side value by calling upon that type's
+copy constructor: the `__copyinit__()` method.
 
 For example, the `MyPet` type above does not have a copy constructor,
 so this code fails to compile:
 
 ```mojo
-var mine = MyPet("Loki", 4)
-var yours = mine  # This requires a copy, but MyPet has no copy constructor
+var mine = MyPet("Loki", 4)  # Calls the MyPet constructor
+var yours = mine  # Tries to make a copy, but MyPet has no copy constructor
 ```
 
 To make a struct copyable, you need to:
