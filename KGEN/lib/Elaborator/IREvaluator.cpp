@@ -761,18 +761,22 @@ static std::optional<std::string> getDTypeAsString(KGENDType dtype) {
 /// Print a KGENDType, following the naming scheme in the Mojo DType struct.
 /// NOTE: It would be better to have custom type name printing that can be
 /// implemented on the struct directly.
-static void printDType(raw_ostream &os, KGENDType dtype) {
-  if (auto dtypeStr = getDTypeAsString(dtype))
-    os << "stdlib.builtin.dtype.DType." << *dtypeStr;
-  else
+static void printDType(raw_ostream &os, KGENDType dtype, bool qualified) {
+  if (auto dtypeStr = getDTypeAsString(dtype)) {
+    if (qualified)
+      os << "stdlib.builtin.dtype.";
+    os << "DType." << *dtypeStr;
+  } else {
     dtype.print(os);
+  }
 }
 
 void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
-                                  TypedAttr value) {
+                                  TypedAttr value, bool qualifiedBuiltins) {
   TypeSwitch<TypedAttr>(value)
-      .Case<DTypeConstantAttr>(
-          [&](auto dtypeConstant) { printDType(os, dtypeConstant.getDType()); })
+      .Case<DTypeConstantAttr>([&](auto dtypeConstant) {
+        printDType(os, dtypeConstant.getDType(), qualifiedBuiltins);
+      })
       .Case<IntegerAttr>([&](auto intAttr) {
         // Print booleans nicely.
         if (intAttr.getType().isSignlessInteger(1))
@@ -786,7 +790,7 @@ void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
         if (auto typeValue = dyn_cast<TypeValueType>(typeAttr.getTypeValue())) {
           auto instanceRef =
               cast<TypeInstanceRefAttr>(typeValue.getTypeValue());
-          os << stringifyTypeInstanceRef(instanceRef);
+          os << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins);
           return;
         }
 
@@ -799,7 +803,7 @@ void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
       .Case<StructAttr>([&](auto structAttr) {
         os << "{";
         llvm::interleaveComma(structAttr.getValues(), os, [&](TypedAttr value) {
-          printParamValue(os, decl, value);
+          printParamValue(os, decl, value, qualifiedBuiltins);
         });
         os << "}";
       })
@@ -827,21 +831,39 @@ void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
           });
           os << "]";
         }
-        os << " : stdlib.builtin.simd.SIMD[";
-        printDType(os, dType);
+        os << " : ";
+        if (qualifiedBuiltins)
+          os << "stdlib.builtin.simd.";
+        os << "SIMD[";
+        printDType(os, dType, qualifiedBuiltins);
         os << ", " << values.size() << "]";
       })
       .Default([&](auto value) { os << "<unprintable>"; });
 }
 
 std::string
-IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef) {
+IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
+                                      bool qualifiedBuiltins) {
   ParamNode *genNode =
       elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
-  // Print the type name first.
+  // Print the type name first. A few common types can be printed more tersely.
+  /// NOTE: It would be better to have custom type name printing that can be
+  /// implemented on the struct directly.
   std::string name = genOp.getSymName().str();
+  if (!qualifiedBuiltins && name.starts_with("stdlib::")) {
+    if (name == "stdlib::builtin::simd::SIMD")
+      name = "SIMD";
+    else if (name == "stdlib::builtin::int::Int")
+      name = "Int";
+    else if (name == "stdlib::builtin::uint::UInt")
+      name = "UInt";
+    else if (name == "stdlib::builtin::bool::Bool")
+      name = "Bool";
+    else if (name == "stdlib::collections::string::string::String")
+      name = "String";
+  }
   name = std::regex_replace(name, std::regex("::"), ".");
 
   ArrayRef<TypedAttr> paramValues = genNode->inputParams.getValue();
@@ -854,7 +876,7 @@ IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef) {
     llvm::interleaveComma(llvm::zip(paramDecls, paramValues), os,
                           [&](auto pair) {
                             auto [decl, value] = pair;
-                            printParamValue(os, decl, value);
+                            printParamValue(os, decl, value, qualifiedBuiltins);
                           });
 
     name += "[" + paramValuesStr + "]";
@@ -864,6 +886,13 @@ IREvaluator::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef) {
 
 FailureOr<TypedAttr>
 IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
+  auto qualifiedBuiltins =
+      dyn_cast<BoolAttr>(getTypeNameAttr.getQualifiedBuiltins());
+  if (!qualifiedBuiltins) {
+    emitError({*errorLoc, "'get_type_name' name did not narrow to a constant"});
+    return failure();
+  }
+
   // Find the struct generator for the instantiated type ref.
   TypedAttr typeRef = getTypeNameAttr.getTypeValue();
   if (!isa<TypeInstanceRefAttr>(typeRef)) {
@@ -872,8 +901,9 @@ IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   }
 
   TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
-  std::string name = stringifyTypeInstanceRef(instanceRef);
-  return {StringAttr::get(name, getTypeNameAttr.getType())};
+  return {StringAttr::get(
+      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
+      getTypeNameAttr.getType())};
 }
 
 //===----------------------------------------------------------------------===//
