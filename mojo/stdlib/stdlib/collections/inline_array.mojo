@@ -230,7 +230,7 @@ struct InlineArray[
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == self.unsafe_ptr().offset(size),
+            ptr == self.unsafe_ptr() + size,
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )

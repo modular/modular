@@ -746,7 +746,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         constrained[rank <= _MAX_RANK]()
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
     fn _offset(
@@ -755,7 +755,7 @@ struct NDBuffer[
         Scalar[dtype], address_space=address_space, mut=mut, origin=origin, **_
     ]:
         constrained[rank <= _MAX_RANK]()
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
     fn _offset(
@@ -772,7 +772,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         constrained[rank <= _MAX_RANK]()
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
     fn __getitem__(self, *idx: Int) -> Scalar[dtype]:
@@ -860,7 +860,7 @@ struct NDBuffer[
             DimList(tile_sizes),
             address_space=address_space,
         ](
-            self.data.offset(offset),
+            self.data + offset,
             dynamic_shape=shape,
             dynamic_stride=self.dynamic_stride,
         )
