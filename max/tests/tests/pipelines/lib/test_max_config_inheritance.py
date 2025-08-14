@@ -27,7 +27,8 @@ class TestConfig(MAXConfig):
     test_int: int = 42
     test_bool: bool = True
 
-    def help(self) -> dict[str, str]:
+    @staticmethod
+    def help() -> dict[str, str]:
         return {
             "test_field": "A test string field",
             "test_int": "A test integer field",

@@ -37,7 +37,8 @@ class TestConfig(MAXConfig):
     test_int: int = 42
     test_bool: bool = True
 
-    def help(self) -> dict[str, str]:
+    @staticmethod
+    def help() -> dict[str, str]:
         return {
             "test_field": "A test string field",
             "test_int": "A test integer field",
@@ -51,7 +52,8 @@ class MissingSectionNameConfig(MAXConfig):
 
     test_field: str = "value"
 
-    def help(self) -> dict[str, str]:
+    @staticmethod
+    def help() -> dict[str, str]:
         return {"test_field": "A test field"}
 
 
