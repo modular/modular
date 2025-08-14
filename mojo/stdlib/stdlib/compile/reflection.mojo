@@ -57,14 +57,24 @@ fn get_linkage_name[
 fn get_type_name[
     type_type: AnyTrivialRegType, //,
     type: type_type,
+    *,
+    qualified_builtins: Bool = False,
 ]() -> StaticString:
     """Returns the struct name of the given type parameter.
 
     Parameters:
         type_type: Type of type.
         type: A mojo type.
+        qualified_builtins: Whether to print fully qualified builtin type names
+            (e.g. `stdlib.builtin.int.Int`) or shorten them (e.g. `Int`).
 
     Returns:
         Type name.
     """
-    return __mlir_attr[`#kgen.get_type_name<`, type, `> : !kgen.string`]
+    return __mlir_attr[
+        `#kgen.get_type_name<`,
+        type,
+        `, `,
+        qualified_builtins.value,
+        `> : !kgen.string`,
+    ]

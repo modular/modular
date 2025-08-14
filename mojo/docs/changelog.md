@@ -142,6 +142,12 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - Updated `layout_tensor` copy related functions to support 2D and 3D
   threadblock dimensions.
 
+- The `compile.reflection.get_type_name` utility now has limited capability to
+  print parametric types, e.g. `SIMD[DType.float32, 4]` instead of just `SIMD`.
+  If the parameter is not printable, an `<unprintable>` placeholder is printed
+  instead. A new `qualified_builtins` flag also allows users to control the
+  verbosity for the most common (but not all) builtin types.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
