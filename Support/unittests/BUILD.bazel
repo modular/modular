@@ -20,6 +20,7 @@ modular_cc_test(
         "MathExtras.cpp",
         "ProcessTest.cpp",
         "RandomTest.cpp",
+        "StringExtrasTest.cpp",
         "VersionTest.cpp",
     ],
     deps = [
