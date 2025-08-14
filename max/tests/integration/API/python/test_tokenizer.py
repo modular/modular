@@ -297,6 +297,35 @@ def test_tokenizer_encode_stop_criteria(
     assert np.array_equal(context.eos_sequences[0], [0])
 
 
+def test_tokenizer_stores_eos_token_ids(
+    modular_ai_llama_3_1_local_path: str,
+) -> None:
+    """Tests that all eos token ids stored in the huggingface config are added
+    to the tokenizer's eos token ids.
+    """
+    # Must pass in PipelineConfig so the tokenizer can access the
+    # huggingface config.
+    pipeline_config = PipelineConfig(
+        model_path=modular_ai_llama_3_1_local_path,
+    )
+
+    # Test single eos token id
+    pipeline_config.model_config.huggingface_config.eos_token_id = 123456
+    tokenizer = TextTokenizer(
+        model_path=modular_ai_llama_3_1_local_path,
+        pipeline_config=pipeline_config,
+    )
+    assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123456}
+
+    # Test list of eos token ids
+    pipeline_config.model_config.huggingface_config.eos_token_id = [123, 456]
+    tokenizer = TextTokenizer(
+        model_path=modular_ai_llama_3_1_local_path,
+        pipeline_config=pipeline_config,
+    )
+    assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123, 456}
+
+
 @pytest.mark.asyncio
 async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
