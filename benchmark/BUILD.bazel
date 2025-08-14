@@ -54,7 +54,7 @@ modular_py_library(
     name = "benchmark_config",
     srcs = ["benchmark_config.py"],
     data = [
-        ":benchmark_config_yaml",
+        ":benchmark_config_yaml_files",
     ],
     imports = ["."],
     visibility = ["//visibility:public"],
@@ -64,8 +64,8 @@ modular_py_library(
 )
 
 pkg_files(
-    name = "benchmark_config_yaml",
-    srcs = ["base_benchmark_config.yaml"],
+    name = "benchmark_config_yaml_files",
+    srcs = glob(["*.yaml"]),
     visibility = ["//visibility:public"],
 )
 
