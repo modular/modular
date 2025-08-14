@@ -12,6 +12,21 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "shared_mlp_impl",
+    testonly = True,
+    srcs = ["shared_mlp_impl.py"],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("pytest-mock"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
 modular_py_test(
     name = "nn_tests",
     size = "large",
@@ -20,11 +35,13 @@ modular_py_test(
         exclude = [
             "*_gpu.py",
             "shared_conv_impl.py",
+            "shared_mlp_impl.py",
         ],
     ),
     imports = ["."],
     deps = [
         ":shared_conv_impl",
+        ":shared_mlp_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
@@ -134,8 +151,10 @@ modular_py_test(
         "test.resources:gpu-memory": "20",
     },
     gpu_constraints = ["//:has_4_gpus"],
+    imports = ["."],
     tags = ["gpu"],
     deps = [
+        ":shared_mlp_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
