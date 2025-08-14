@@ -1,9 +1,8 @@
-load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "scheduler",
     srcs = glob(["*.py"]),
-    data = NIXL_PLUGINS_DATA,
     imports = ["../../.."],
     deps = [
         "//SDK/lib/API/python/max:_core",

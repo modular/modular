@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "NIXL_PLUGINS_DATA", "modular_py_binary", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,7 +61,6 @@ modular_py_binary(
     srcs = [
         "pipelines.py",
     ],
-    data = NIXL_PLUGINS_DATA,
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
     },
