@@ -17,6 +17,7 @@ _OTHER_TESTS = [
     "test_semaphore_reduction.mojo",
     "test_tma.mojo",
     "test_tcgen05.mojo",
+    "test_tma_block_reduce.mojo",
 ]
 
 mojo_filecheck_test(
@@ -99,6 +100,22 @@ mojo_test(
     srcs = ["test_tcgen05.mojo"],
     tags = ["gpu"],
     target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_tma_block_reduce.mojo.test",
+    srcs = ["test_tma_block_reduce.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "@mojo//:layout",
         "@mojo//:linalg",
