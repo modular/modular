@@ -231,7 +231,9 @@ static llvm::Error createReplBreakpoint(Target &target) {
       &containingModules, /*containingSourceFiles=*/nullptr,
       /*func_name=*/"mojo_repl_main", lldb::eFunctionNameTypeAuto,
       lldb::eLanguageTypeUnknown, /*offset=*/0,
-      /*skip_prologue=*/eLazyBoolCalculate, /*internal=*/true,
+      /*offset_is_insn_count=*/false,
+      /*skip_prologue=*/eLazyBoolCalculate,
+      /*internal=*/true,
       /*request_hardware=*/false);
   if (breakpoint->GetNumLocations() == 0)
     return createStringError(

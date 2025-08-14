@@ -22,9 +22,11 @@
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Threading.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/SCCIterator.h"
@@ -316,6 +318,32 @@ bool CallGraphNode::isAllInlined() {
 void CallGraph::completeFunctionProcessing(CallGraphNode *caller) {
   if (failed(pms.getPassManager().run(caller->func)))
     innerPipelineFailed = true;
+
+  // If we updated the debug info in-place then performed a transformation, we
+  // may have violated the debug info rules. Check with verifier. If deferred,
+  // then no need to correct since a module wide sweep will occur later on to
+  // correct debug info.
+  bool isImmediate = !(updateAttrName.has_value() && *updateAttrName);
+  if (isImmediate) {
+    mlir::MLIRContext *ctx = caller->func.getContext();
+    bool failedVerify = false;
+
+    {
+      mlir::ScopedDiagnosticHandler silence(ctx, [&](mlir::Diagnostic &d) {
+        if (d.getSeverity() == mlir::DiagnosticSeverity::Error)
+          failedVerify = true;
+        return mlir::success();
+      });
+
+      failedVerify = failed(mlir::verify(caller->func));
+    }
+    // We may have optimized away ops that conform to
+    // DebugInfo::InlinedSubprogramScoped. If that is the case, update the debug
+    // info again to correct the DI scopes.
+    if (failedVerify)
+      KGEN::maybeUpdateDebugInfo(caller->func, mlir::StringAttr(), false);
+  }
+
   caller->doneInlining.copy().emplace();
   endWork();
 }
