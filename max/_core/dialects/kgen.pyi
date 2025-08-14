@@ -528,10 +528,13 @@ class GetTypeNameAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
+        qualified_builtins: max._core.dialects.builtin.TypedAttr,
         type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def qualified_builtins(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
 
