@@ -77,11 +77,11 @@ fn simd_load[
 
     if buffer.type is DType.bool:
         var v = strided_load[simd_width](
-            buffer.data.bitcast[UInt8]().offset(flat_index),
+            buffer.data.bitcast[UInt8]() + flat_index,
             stride,
         )
         return v.cast[buffer.type]()
-    return strided_load[simd_width](buffer.data.offset(flat_index), stride)
+    return strided_load[simd_width](buffer.data + flat_index, stride)
 
 
 @always_inline

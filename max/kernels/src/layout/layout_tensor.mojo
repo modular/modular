@@ -1750,7 +1750,7 @@ struct LayoutTensor[
 
         return (
             Element[index_type=linear_idx_type]
-            .load(self.ptr.offset(offset), self.runtime_element_layout)
+            .load(self.ptr + offset, self.runtime_element_layout)
             .element_data
         )
 
@@ -2143,7 +2143,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr + offset)
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
@@ -2172,7 +2172,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr + offset)
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
@@ -2202,7 +2202,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr + offset)
 
     @always_inline("nodebug")
     fn __setitem__(
@@ -2237,7 +2237,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr + offset)
 
     fn __setitem__(
         self,
@@ -2278,7 +2278,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr + offset)
 
     @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -2346,7 +2346,7 @@ struct LayoutTensor[
         - No operation is performed on the prefetched data.
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            self.ptr.offset(self._offset(m, n))
+            self.ptr + self._offset(m, n)
         )
 
     @always_inline("nodebug")
@@ -3131,7 +3131,7 @@ struct LayoutTensor[
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_layout.shape.value[i] = shape_i
 
-            return tile_type(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr + offset, runtime_layout)
 
         else:
             # Dynamic layout, use strides
@@ -3153,7 +3153,7 @@ struct LayoutTensor[
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_layout.shape.value[i] = shape_i
 
-            return tile_type(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr + offset, runtime_layout)
 
     @always_inline
     fn tile_with_offset[
@@ -3230,7 +3230,7 @@ struct LayoutTensor[
                     runtime_layout.shape.value[i] = shape_i
 
             return (
-                tile_type(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr + offset, runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3256,7 +3256,7 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return (
-                tile_type(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr + offset, runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3517,7 +3517,7 @@ struct LayoutTensor[
                 address_space=address_space,
                 element_layout=element_layout,
                 alignment=alignment,
-            ](self.ptr.offset(i * tile_size * stride))
+            ](self.ptr + i * tile_size * stride)
 
         return tiles
 
@@ -3828,12 +3828,12 @@ struct LayoutTensor[
             @parameter
             if distribute_type.masked:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                 )
 
         else:
@@ -3890,12 +3890,12 @@ struct LayoutTensor[
             @parameter
             if self.element_layout.all_dims_known():
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                     self.runtime_element_layout,
                 )
@@ -4001,7 +4001,7 @@ struct LayoutTensor[
             if ret_tensor_type.masked:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4012,7 +4012,7 @@ struct LayoutTensor[
             else:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                     ),
                     offset_coords,
                     swizzled_offset,
@@ -4072,7 +4072,7 @@ struct LayoutTensor[
             if self.element_layout.all_dims_known():
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4083,7 +4083,7 @@ struct LayoutTensor[
             else:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4457,7 +4457,7 @@ struct LayoutTensor[
 
         var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
 
-        return Self.SliceType[d0_slice, d1_slice](self.ptr.offset(offset))
+        return Self.SliceType[d0_slice, d1_slice](self.ptr + offset)
 
     alias SliceType2D[
         d0_slice: Slice,
