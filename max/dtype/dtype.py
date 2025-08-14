@@ -7,21 +7,23 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from max._core.dtype import DType as DType
 
 
-def _missing(value) -> DType | None:  # noqa: ANN001
+def _missing(value: Any) -> DType | None:
     if isinstance(value, str):
         return _MLIR_TO_DTYPE[value]
     return None
 
 
-def _repr(self) -> str:  # noqa: ANN001
+def _repr(self: DType) -> str:
     return self.name
 
 
-def _mlir(self) -> str:  # noqa: ANN001
+def _mlir(self: DType) -> str:
     return _DTYPE_TO_MLIR[self]
 
 
@@ -60,7 +62,7 @@ _NUMPY_TO_DTYPE = {
 }
 
 
-def _to_numpy(self) -> np.dtype:  # noqa: ANN001
+def _to_numpy(self: DType) -> np.dtype:
     """Converts this ``DType`` to the corresponding NumPy dtype.
 
     Returns:
@@ -160,7 +162,7 @@ except ImportError as e:
 
 
 DType._missing_ = _missing  # type: ignore[method-assign]
-DType.__repr__ = _repr  # type: ignore[method-assign]
+DType.__repr__ = _repr  # type: ignore[method-assign, assignment]
 DType._mlir = property(_mlir)  # type: ignore[assignment]
 DType.to_numpy = _to_numpy  # type: ignore[method-assign]
 DType.from_numpy = _from_numpy  # type: ignore[method-assign]

@@ -13,7 +13,7 @@ from collections.abc import Hashable, Iterable, Mapping, Sequence
 from concurrent import futures
 from functools import partial
 from pathlib import Path
-from typing import Callable, Union
+from typing import Callable, Union, overload
 
 from max import mlir
 from max._core import Attribute
@@ -461,14 +461,36 @@ class MaxOp:
         )
 
 
+@overload
 def graph_op(
-    fn=None,  # noqa: ANN001
+    fn: Callable,
     name: str | None = None,
     kernel_library: Path | KernelLibrary | None = None,
     input_types: Sequence[TensorType] | None = None,
     output_types: Sequence[TensorType] | None = None,
     num_outputs: int | None = None,
-):
+) -> CustomOpDef: ...
+
+
+@overload
+def graph_op(
+    fn: None = None,
+    name: str | None = None,
+    kernel_library: Path | KernelLibrary | None = None,
+    input_types: Sequence[TensorType] | None = None,
+    output_types: Sequence[TensorType] | None = None,
+    num_outputs: int | None = None,
+) -> Callable[[Callable], CustomOpDef]: ...
+
+
+def graph_op(
+    fn: Callable | None = None,
+    name: str | None = None,
+    kernel_library: Path | KernelLibrary | None = None,
+    input_types: Sequence[TensorType] | None = None,
+    output_types: Sequence[TensorType] | None = None,
+    num_outputs: int | None = None,
+) -> CustomOpDef | Callable[[Callable], CustomOpDef]:
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
     This decorator allows you to define larger graphs using [MAX graph
@@ -541,7 +563,7 @@ def graph_op(
         A PyTorch custom operation that can be called with torch.Tensor arguments.
     """
 
-    def decorator(fn):  # noqa: ANN001
+    def decorator(fn: Callable) -> CustomOpDef:
         library = kernel_library or KernelLibrary(mlir.Context())
         op = MaxOp(
             fn,
