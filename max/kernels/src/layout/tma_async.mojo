@@ -848,9 +848,7 @@ struct TMATensorTile[
     @always_inline
     fn async_store(
         self,
-        src: LayoutTensor[
-            dtype, layout, address_space = AddressSpace.SHARED, **_
-        ],
+        src: LayoutTensor[dtype, _, address_space = AddressSpace.SHARED, **_],
         coords: Tuple[UInt, UInt],
     ):
         """
