@@ -49,8 +49,6 @@ fn test_naive_blockwise_fp8_matmul[
     var N = n.value
     var K = k.value
 
-    constrained[BLOCK_SCALE_M == 1, "BLOCK_SCALE_M must be 1"]()
-
     print(
         "== test_naive_blockwise_fp8_matmul",
         input_type,
@@ -234,6 +232,6 @@ fn main() raises:
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
-                Index(1, 64, 16),
+                Index(32, 64, 16),
                 transpose_b=transpose_b,
             ](ctx, handle, dynamic(128), static[128](), static[128]())

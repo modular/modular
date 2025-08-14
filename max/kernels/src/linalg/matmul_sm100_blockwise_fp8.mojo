@@ -69,8 +69,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_scales_type: DType,
-    b_scales_type: DType,
+    accum_type: DType,
     a_layout: Layout,
     c_layout: Layout,
     a_scales_layout: Layout,
@@ -94,19 +93,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        accum_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
     constrained[transpose_b, "Only support transposed B"]()
     constrained[num_threads == 128]()
-
-    alias accum_type = get_accum_type[a_type]()
-
     constrained[
-        b_scales_type == a_scales_type == accum_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
+        accum_type == DType.float32, "Only support float32 for accumulator"
     ]()
 
     alias N = c_layout.shape[1].value()
@@ -142,6 +137,17 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     alias B_SCALING_BLOCK_N = N // b_scales_n
     alias B_SCALING_BLOCK_K = K // b_scales_k
     alias A_SCALING_BLOCK = K // a_scales_k
+    constrained[
+        BK == B_SCALING_BLOCK_K == B_SCALING_BLOCK_N == A_SCALING_BLOCK,
+        "Only support SCALING SIZE of 128! got:"
+        + String(BK)
+        + " "
+        + String(B_SCALING_BLOCK_K)
+        + " "
+        + String(B_SCALING_BLOCK_N)
+        + " "
+        + String(A_SCALING_BLOCK),
+    ]()
 
     alias a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -187,7 +193,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
     alias a_scales_smem_tile_t = LayoutTensor[
-        a_scales_type,
+        accum_type,
         a_scales_smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -209,7 +215,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
     alias a_scales_smem_tile_t_3D = LayoutTensor[
-        a_scales_type,
+        accum_type,
         a_scales_smem_layout_3D,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -227,12 +233,11 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         ((b_size * sizeof[b_type]()) % 128) == 0, "preserve alignment"
     ]()
     constrained[
-        ((a_scales_size * sizeof[a_scales_type]()) % 16) == 0,
-        "preserve alignment",
+        ((a_scales_size * sizeof[accum_type]()) % 16) == 0, "preserve alignment"
     ]()
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
+    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[accum_type]]()
 
     # 3D view of the same shared memory tile are used for TMA loads
     # 2D view of the same shared memory tile are used for MMA operations
@@ -253,7 +258,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     alias a_expected_bytes = a_size * sizeof[a_type]()
     alias b_expected_bytes = b_size * sizeof[b_type]()
-    alias a_scales_expected_bytes = a_scales_size * sizeof[a_scales_type]()
+    alias a_scales_expected_bytes = a_scales_size * sizeof[accum_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
     tma_mbar = (
@@ -370,7 +375,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             ](tmem_addr + ld_iter * 8 * repeat)
             tcgen05_load_wait()  # wait for the load to finish
 
-            var b_scale: Scalar[b_scales_type]
+            var b_scale: Scalar[accum_type]
 
             @parameter
             if BN != BK:
@@ -383,16 +388,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
-                    b_scale = rebind[Scalar[b_scales_type]](
-                        b_scales[idx0, k_iter]
-                    )
+                    b_scale = rebind[Scalar[accum_type]](b_scales[idx0, k_iter])
                 else:
-                    b_scale = rebind[Scalar[b_scales_type]](
+                    b_scale = rebind[Scalar[accum_type]](
                         b_scales[idx0 + 1, k_iter]
                     )
 
             else:
-                b_scale = rebind[Scalar[b_scales_type]](
+                b_scale = rebind[Scalar[accum_type]](
                     b_scales[block_idx.x, k_iter]
                 )
 
@@ -404,9 +407,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var local_m = m_offset + (j % 2) * 8
                 var a_scale = a_scales_smem_tile_2D_view[0, local_m]
 
-                var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
-                    Scalar[accum_type]
-                ](b_scale)
+                var scale = a_scale * b_scale
 
                 c_frag[ld_iter * temp_cfrags_size + 2 * j] += c_frag_temp[
                     2 * j
@@ -495,8 +496,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_scales_type: DType,
-    b_scales_type: DType,
+    accum_type: DType,
     a_layout: Layout,
     c_layout: Layout,
     a_scales_layout: Layout,
@@ -520,9 +520,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        accum_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
     # NOTE: This wrapper is nessecary because batched blockwise scaling has a wrapper kernel
@@ -534,8 +534,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_type,
         b_type,
         c_type,
-        a_scales_type,
-        b_scales_type,
+        accum_type,
         a_layout,
         c_layout,
         a_scales_layout,
@@ -572,8 +571,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    a_scales_type: DType,
-    b_scales_type: DType,
+    accum_type: DType,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -585,8 +583,8 @@ fn matmul_sm100_blockwise_scaled_fp8[
     c: LayoutTensor[c_type, c_layout, *_, **_],
     a: LayoutTensor[a_type, a_layout, *_, **_],
     b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    a_scales: LayoutTensor[accum_type, a_scales_layout, *_, **_],
+    b_scales: LayoutTensor[accum_type, b_scales_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
     constrained[
@@ -595,13 +593,8 @@ fn matmul_sm100_blockwise_scaled_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-
-    constrained[
-        a_scales_type == b_scales_type and a_scales_type is DType.float32,
-        "Only support float32 for scales",
+        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
+        "Only support bfloat16 and float8_e4m3fn",
     ]()
 
     alias a_layout_tensor_3D = LayoutTensor[
@@ -629,7 +622,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     ]
 
     alias a_scales_layout_tensor_3D = LayoutTensor[
-        a_scales_type,
+        accum_type,
         _3D_layout[a_scales.layout, a_scales.rank],
         MutableAnyOrigin,
         address_space = a_scales.address_space,
@@ -671,34 +664,29 @@ fn matmul_sm100_blockwise_scaled_fp8[
     var N = c.dim(1)
     var K = a_3D.dim(2)
 
-    var a_scales_dim0 = a_scales_3D.dim(1)
-    var a_scales_dim1 = a_scales_3D.dim(2)
-    var b_scales_dim0 = b_scales.dim(0)
-    var b_scales_dim1 = b_scales.dim(1)
+    var a_scales_1 = a_scales_3D.dim(2)
+    debug_assert(a_scales_1 == M, "a_scales.dim(0) must be equal to M")
 
-    if (
-        a_scales_dim0 != b_scales_dim1
-        or K % a_scales_dim0 != 0
-        or (K // a_scales_dim0) != BK
-    ):
-        raise Error(
-            "a_scales_3D.dim(1) must be equal to b_scales.dim(1) and K must be"
-            " divisible by a_scales.dim(0) and (K // a_scales.dim(0)) must be"
-            " equal to 128"
-        )
+    var a_scales_0 = a_scales_3D.dim(1)
+    debug_assert(
+        K % a_scales_0 == 0 and (K // a_scales_0) == BK,
+        (
+            "K must be divisible by a_scales.dim(1) and BK must be equal to K"
+            " // a_scales.dim(1)"
+        ),
+    )
 
-    if N % b_scales_dim0 != 0 or (N // b_scales_dim0) != BK:
-        raise Error(
-            "N must be divisible by b_scales.dim(0) and (N // b_scales.dim(0)) "
-            " must be equal to 128"
-        )
-
-    var padding_size = 16 // sizeof[a_scales_type]()
-    if a_scales_dim1 % padding_size != 0:
-        raise Error(
-            "a_scales_3D.dim(2) must be divisible by 16 bytes. This is required"
-            " by NVIDIA SM90+ TMA instructions!"
-        )
+    var b_scales_0 = b_scales.dim(0)
+    var b_scales_1 = b_scales.dim(1)
+    debug_assert(
+        (N % b_scales_0 == 0 and (N // b_scales_0) == BK)
+        and (K % b_scales_1 == 0 and (K // b_scales_1) == BK),
+        (
+            "N must be divisible by b_scales.dim(0) and BK must be equal to N"
+            " // b_scales.dim(0) and K must be divisible by b_scales.dim(1) and"
+            " BK must be equal to K // b_scales.dim(1)"
+        ),
+    )
 
     var logger = Logger()
     logger.info(
@@ -741,7 +729,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     ](ctx, b_3D)
 
     var a_scales_tma_op = create_tma_tile[
-        a_scales_type,
+        accum_type,
         3,
         Index(1, 1, BM),
         __tile_layout = Layout.row_major(1, 1, BM),
@@ -751,7 +739,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
 
     alias smem_use = (
         BM * sizeof[a_type]() + BN * sizeof[b_type]()
-    ) * BK + 24 + sizeof[a_scales_type]() * BM
+    ) * BK + 24 + sizeof[accum_type]() * BM
 
     alias block_dim = 128
 
@@ -759,8 +747,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
         a_type,
         b_type,
         c_type,
-        a_scales_type,
-        b_scales_type,
+        accum_type,
         __type_of(a_3D).layout,
         __type_of(c).layout,
         __type_of(a_scales_3D).layout,
