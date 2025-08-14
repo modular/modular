@@ -198,6 +198,20 @@ public:
                             std::optional<size_t> stmtIndent = std::nullopt);
 };
 
+/// This is all the state built up when parsing a capture signature.
+class ParsedCaptureList {
+public:
+  /// Any arguments specified.
+  SmallVector<std::pair<StringRef, CaptureConvention>> parsedCaptures;
+
+  /// Parse a capture list
+  ParseResult parseCaptureList(ParserBase &p);
+
+  /// Parse the result specifier starting with a `->` if present.
+  void parseResultIfPresent(ParserBase &p,
+                            std::optional<size_t> stmtIndent = std::nullopt);
+};
+
 /// This contains the result state from type checking a parameter signature.
 class TypeCheckedFnSignature {
 public:

@@ -31,7 +31,10 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt | simple_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] ['->' result_type] ['as' NAME] ':' suite
+funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [unified_capture] ['->' result_type] ['as' NAME] ':' suite
+unified_capture: UNIFIED ['{' [capture_list] '}']
+capture_list: capture_item (',' capture_item)* [',']
+capture_item: (VAR | OWNED | REF) NAME
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
@@ -201,7 +204,7 @@ classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' s
 
 typeconvexpr: atom trailer* | functype
 typeconv: (['*'|VAR|OWNED|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
-functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* ['[' test ']'] ['->' test]
+functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* [unified_capture] ['[' test ']'] ['->' test]
 
 arglist: argument (',' argument)* [',']
 
