@@ -201,8 +201,19 @@ struct NVSHMEMIVersion:
         self.patch = 9
 
 
+fn _get_prefix[scope: SHMEMScope]() -> StaticString:
+    @parameter
+    if scope == SHMEMScope.default:
+        return "nvshmem_"
+    else:
+        return "nvshmemx_"
+
+
 fn _dtype_to_nvshmem_type[
-    prefix: StaticString, dtype: DType, suffix: StaticString
+    prefix: StaticString,
+    dtype: DType,
+    suffix: StaticString,
+    scope: StaticString = "",
 ]() -> StaticString:
     """
     Returns the NVSHMEM name for the given dtype surrounded by the given prefix
@@ -244,31 +255,31 @@ fn _dtype_to_nvshmem_type[
 
     @parameter
     if dtype is DType.float16:
-        return get_static_string[prefix, "half", suffix]()
+        return get_static_string[prefix, "half", suffix, scope]()
     elif dtype is DType.bfloat16:
-        return get_static_string[prefix, "bfloat16", suffix]()
+        return get_static_string[prefix, "bfloat16", suffix, scope]()
     elif dtype is DType.float32:
-        return get_static_string[prefix, "float", suffix]()
+        return get_static_string[prefix, "float", suffix, scope]()
     elif dtype is DType.float64:
-        return get_static_string[prefix, "double", suffix]()
+        return get_static_string[prefix, "double", suffix, scope]()
     elif dtype is DType.int8:
-        return get_static_string[prefix, "int8", suffix]()
+        return get_static_string[prefix, "int8", suffix, scope]()
     elif dtype is DType.uint8:
-        return get_static_string[prefix, "uint8", suffix]()
+        return get_static_string[prefix, "uint8", suffix, scope]()
     elif dtype is DType.int16:
-        return get_static_string[prefix, "int16", suffix]()
+        return get_static_string[prefix, "int16", suffix, scope]()
     elif dtype is DType.uint16:
-        return get_static_string[prefix, "uint16", suffix]()
+        return get_static_string[prefix, "uint16", suffix, scope]()
     elif dtype is DType.int32:
-        return get_static_string[prefix, "int32", suffix]()
+        return get_static_string[prefix, "int32", suffix, scope]()
     elif dtype is DType.uint32:
-        return get_static_string[prefix, "uint32", suffix]()
+        return get_static_string[prefix, "uint32", suffix, scope]()
     elif dtype is DType.int64:
-        return get_static_string[prefix, "int64", suffix]()
+        return get_static_string[prefix, "int64", suffix, scope]()
     elif dtype is DType.uint64:
-        return get_static_string[prefix, "uint64", suffix]()
+        return get_static_string[prefix, "uint64", suffix, scope]()
     elif dtype is DType.index:
-        return get_static_string[prefix, "size", suffix]()
+        return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[
             StaticString, operation="_dtype_to_nvshmem_type"
@@ -420,14 +431,17 @@ fn nvshmemx_team_init() -> c_int:
 
 
 fn nvshmem_put[
-    dtype: DType
+    dtype: DType, //,
+    scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_put"]()
+    alias symbol = _dtype_to_nvshmem_type[
+        _get_prefix[scope](), dtype, "_put", scope.value
+    ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
@@ -438,23 +452,26 @@ fn nvshmem_p[
     external_call[symbol, NoneType](dest, value, pe)
 
 
-fn nvshmem_g[
-    dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
-    return external_call[symbol, Scalar[dtype]](source, pe)
-
-
 fn nvshmem_get[
-    dtype: DType
+    dtype: DType, //,
+    scope: SHMEMScope,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
     nelems: c_size_t,
     pe: c_int,
 ):
-    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_get"]()
+    alias symbol = _dtype_to_nvshmem_type[
+        _get_prefix[scope](), dtype, "_get", scope.value
+    ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
+
+
+fn nvshmem_g[
+    dtype: DType
+](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+    alias symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
+    return external_call[symbol, Scalar[dtype]](source, pe)
 
 
 # ===----------------------------------------------------------------------=== #

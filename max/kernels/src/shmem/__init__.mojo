@@ -79,4 +79,5 @@ from .shmem_api import (
     SHMEM_TEAM_NODE,
     SHMEM_TEAM_SHARED,
     SHMEM_TEAM_WORLD,
+    SHMEMScope,
 )

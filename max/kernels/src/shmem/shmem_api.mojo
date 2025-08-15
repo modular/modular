@@ -103,6 +103,31 @@ from ._nvshmem import (
 
 alias shmem_team_t = c_int
 
+
+struct SHMEMScope(Copyable, EqualityComparable, Movable):
+    """Enables following the OpenSHMEM spec by default for put/get/iput/iget
+    etc. While allowing NVIDIA extensions for block and warp scopes by passing a
+    parameter."""
+
+    var value: StaticString
+
+    alias default = Self("")
+    """Execute RMA operation at global scope"""
+    alias block = Self("_block")
+    """Execute RMA operation at thread block scope (NVIDIA extension)"""
+    alias warp = Self("_warp")
+    """Execute RMA operation at warp scope (NVIDIA extension)"""
+
+    fn __init__(out self, value: StaticString):
+        self.value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.value == other.value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return self.value != other.value
+
+
 # ===----------------------------------------------------------------------=== #
 # Constants
 # ===----------------------------------------------------------------------=== #
@@ -378,7 +403,8 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
 
 
 fn shmem_get[
-    dtype: DType
+    dtype: DType,
+    scope: SHMEMScope = SHMEMScope.default,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -402,7 +428,7 @@ fn shmem_get[
 
     @parameter
     if is_nvidia_gpu():
-        nvshmem_get(dest, source, nelems, pe)
+        nvshmem_get[scope](dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_get"]()
 
@@ -432,7 +458,8 @@ fn shmem_g[
 
 
 fn shmem_put[
-    dtype: DType
+    dtype: DType, //,
+    kind: SHMEMScope = SHMEMScope.default,
 ](
     dest: UnsafePointer[Scalar[dtype]],
     source: UnsafePointer[Scalar[dtype]],
@@ -458,7 +485,7 @@ fn shmem_put[
 
     @parameter
     if is_nvidia_gpu():
-        nvshmem_put(dest, source, nelems, pe)
+        nvshmem_put[kind](dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_put"]()
 
