@@ -17,7 +17,7 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -413,3 +413,22 @@ def test_range_non_scalar_inputs(array) -> None:  # noqa: ANN001
                 start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
             )
             graph.output(out)
+
+
+def test_range_with_dim_respects_dtype() -> None:
+    """Tests that ops.range respects the dtype parameter when using Dim objects."""
+    # Test case from the bug report: using Dim objects with explicit float32 dtype
+    with Graph("range_dim_dtype", input_types=()) as graph:
+        range_call = ops.range(
+            Dim(0),  # start
+            Dim(1),  # stop
+            Dim(1),  # step
+            out_dim=Dim(1),
+            device=DeviceRef.CPU(),
+            dtype=DType.float32,  # Explicitly requesting float32
+        )
+        graph.output(range_call)
+        # The bug is that this assertion fails - it returns int64 instead of float32
+        assert range_call.dtype == DType.float32, (
+            f"Expected float32 but got {range_call.dtype}"
+        )
