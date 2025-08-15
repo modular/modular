@@ -143,7 +143,7 @@ PINS = {
     "torchmetrics": "torchmetrics@1.7.2",
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
-    "transformers": "transformers@4.55.0",
+    "transformers": "transformers@4.55.2",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
     "types-pyyaml": "types-pyyaml@6.0.12.20240917",
     "types-setuptools": "types-setuptools@75.5.0.20241121",
@@ -3067,7 +3067,7 @@ def targets():
         ":torch@multiple",
         ":tqdm-multiprocess@0.0.11",
         ":tqdm@4.66.5",
-        ":transformers@4.55.0",
+        ":transformers@4.55.2",
         ":word2number@1.1",
         ":zstandard@0.23.0",
     ]
@@ -4529,7 +4529,7 @@ def targets():
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":torch@multiple",
-        ":transformers@4.55.0",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -4655,7 +4655,7 @@ def targets():
         ":safetensors@0.4.4",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.55.0",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -5977,7 +5977,7 @@ def targets():
         ":scipy@1.13.1",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.55.0",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -6632,7 +6632,7 @@ def targets():
     )
 
     _tokenicer_0_0_4_deps = [
-        ":transformers@4.55.0",
+        ":transformers@4.55.2",
     ]
 
     _tokenicer_0_0_4_build_deps = [
@@ -7473,7 +7473,7 @@ def targets():
         testonly = "traitlets" in _TESTONLY_DEPS,
     )
 
-    _transformers_4_55_0_deps = [
+    _transformers_4_55_2_deps = [
         ":filelock@3.16.1",
         ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
@@ -7487,14 +7487,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_transformers@4.55.0",
-        actual = "@pycross_lock_file_wheel_transformers_4.55.0_py3_none_any//file",
+        name = "_wheel_transformers@4.55.2",
+        actual = "@pycross_lock_file_wheel_transformers_4.55.2_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "transformers@4.55.0",
-        deps = _transformers_4_55_0_deps,
-        wheel = ":_wheel_transformers@4.55.0",
+        name = "transformers@4.55.2",
+        deps = _transformers_4_55_2_deps,
+        wheel = ":_wheel_transformers@4.55.2",
         testonly = "transformers" in _TESTONLY_DEPS,
     )
 
@@ -18727,12 +18727,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_transformers_4.55.0_py3_none_any",
+        name = "pycross_lock_file_wheel_transformers_4.55.2_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/1c/93/bcb22fb52ed65084c0199270832aa4cdd4b41296d896f3e7ade188bccb68/transformers-4.55.0-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/db/5a/022ac010bedfb5119734cf9d743cf1d830cb4c604f53bb1552216f4344dc/transformers-4.55.2-py3-none-any.whl",
         ],
-        sha256 = "29d9b8800e32a4a831bb16efb5f762f6a9742fef9fce5d693ed018d19b106490",
-        downloaded_file_path = "transformers-4.55.0-py3-none-any.whl",
+        sha256 = "097e3c2e2c0c9681db3da9d748d8f9d6a724c644514673d0030e8c5a1109f1f1",
+        downloaded_file_path = "transformers-4.55.2-py3-none-any.whl",
     )
 
     maybe(
