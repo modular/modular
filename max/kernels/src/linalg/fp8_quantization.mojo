@@ -112,8 +112,8 @@ fn quantize_dynamic_scaled_fp8[
     scales_dtype: DType, //,
     group_size_or_per_token: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, *_],
-    scales: NDBuffer[mut=True, scales_dtype, 2, *_],
+    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutableAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 2, MutableAnyOrigin],
     input: NDBuffer[in_dtype, 2, *_],
     scale_ub: Float32,
     ctx: DeviceContext,
@@ -145,10 +145,14 @@ fn quantize_dynamic_scaled_fp8[
         group_size,
     ]
 
-    ctx.enqueue_function[kernel](
+    # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
+    # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
+    var expected_input: NDBuffer[in_dtype, 2, MutableAnyOrigin] = input
+
+    ctx.enqueue_function_checked[kernel, kernel](
         scaled_output,
         scales,
-        input,
+        expected_input,
         scale_ub.cast[scales_dtype](),
         grid_dim=(input.dim[0](), n_groups, 1),
         block_dim=warps_per_block * WARP_SIZE,
@@ -389,7 +393,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,
