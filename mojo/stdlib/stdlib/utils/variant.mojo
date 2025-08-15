@@ -10,33 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines a Variant type.
-
-You can use this type to implement variant/sum types. For example:
-
-```mojo
-from utils import Variant
-
-alias IntOrString = Variant[Int, String]
-fn to_string(mut x: IntOrString) -> String:
-  if x.isa[String]():
-    return x[String]
-  # x.isa[Int]()
-  return String(x[Int])
-
-# They have to be mutable for now, and implement Copyable & Movable
-var an_int = IntOrString(4)
-var a_string = IntOrString("I'm a string!")
-var who_knows = IntOrString(0)
-import random
-if random.random_ui64(0, 1):
-    who_knows.set[String]("I'm actually a string too!")
-
-print(to_string(an_int))
-print(to_string(a_string))
-print(to_string(who_knows))
-```
-"""
+"""Defines a Variant type."""
 
 from os import abort
 from sys.intrinsics import _type_is_eq
@@ -80,6 +54,7 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
 
     ```mojo
     from utils import Variant
+    import random
 
     alias IntOrString = Variant[Int, String]
 
@@ -91,15 +66,17 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
     var an_int = IntOrString(4)
     var a_string = IntOrString("I'm a string!")
     var who_knows = IntOrString(0)
+    # Randomly change who_knows to a string
+    random.seed()
+    if random.random_ui64(0, 1):
+        who_knows.set[String]("I'm also a string!")
 
     print(a_string[String])      # => I'm a string!
     print(an_int[Int])           # => 4
-    print(to_string(who_knows))  # => 0
-
-    who_knows.set[String]("I'm actually a string too!")
+    print(to_string(who_knows))  # Either 0 or "I'm also a string!"
 
     if who_knows.isa[String]():
-        print("It's a String:", who_knows[String])
+        print("It's a String!")
     ```
 
     Example usage for error handling:
