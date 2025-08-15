@@ -1,0 +1,260 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from sys.ffi import external_call, c_int, c_size_t
+from sys import is_nvidia_gpu, CompilationTarget
+from collections.optional import OptionalReg
+from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from gpu.host import (
+    DeviceContext,
+    ConstantMemoryMapping,
+    DeviceFunction,
+    DeviceStream,
+    LaunchAttribute,
+    FuncAttribute,
+    DeviceAttribute,
+    Dim,
+)
+from gpu.host.device_context import (
+    _DumpPath,
+    _checked,
+    _CharPtr,
+    _DeviceContextPtr,
+)
+from os import getenv, setenv
+from sys import (
+    CompilationTarget,
+    is_amd_gpu,
+    has_nvidia_gpu_accelerator,
+    sizeof,
+    argv,
+)
+from sys.ffi import c_int, external_call
+from ._mpi import (
+    get_mpi_comm_world,
+    MPI_Init,
+    MPI_Comm_rank,
+    MPI_Comm_size,
+    MPI_Finalize,
+)
+from .shmem_api import (
+    shmem_team_t,
+    SHMEM_TEAM_NODE,
+    shmem_finalize,
+    shmem_init,
+    shmem_barrier_all_on_stream,
+    shmem_module_init,
+)
+
+
+struct SHMEMContext:
+    """Usable as a context manager to run kernels on a GPU with SHMEM support,
+    on exit it will finalize SHMEM and clean up resources.
+
+    Example:
+
+    ```mojo
+    from shmem import SHMEMContext
+
+    with SHMEMContext() as ctx:
+        ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+    ```
+    """
+
+    var _ctx: DeviceContext
+
+    fn __init__(out self, team: shmem_team_t = SHMEM_TEAM_NODE) raises:
+        """Initializes a device context with SHMEM support.
+
+        This constructor sets up MPI, initializes SHMEM, and creates a device
+        context for the current PE's assigned GPU device.
+
+        Warning: if you're not using this as a context manager, you must call
+        `shmem_finalize()` or `SHMEMContext.finalize()` manually.
+
+        Raises:
+            If initialization fails.
+        """
+        constrained[
+            has_nvidia_gpu_accelerator(),
+            "SHMEMContext is currently only available on NVIDIA GPUs",
+        ]()
+        shmem_init()
+        var mype = shmem_team_my_pe(team)
+        self._ctx = DeviceContext(device_id=Int(mype))
+
+    fn __enter__(var self) -> Self:
+        """Context manager entry method.
+
+        Returns:
+            Self for use in with statements.
+        """
+        return self^
+
+    fn __del__(deinit self):
+        """Context manager exit method.
+
+        Automatically finalizes SHMEM when exiting the context.
+        """
+        self.finalize()
+
+    fn finalize(mut self):
+        """Finalizes the SHMEM runtime environment.
+
+        Cleans up SHMEM and MPI resources.
+        """
+        shmem_finalize()
+
+    fn __moveinit__(out self, deinit other: Self):
+        """Copy constructor for DeviceContextSHMEM.
+
+        Args:
+            other: The instance to copy from.
+        """
+        self._ctx = other._ctx^
+
+    fn barrier_all(self) raises:
+        """Performs a barrier synchronization across all PEs.
+
+        All PEs must call this function before any PE can proceed past the
+        barrier.
+
+        Raises:
+            If the barrier operation fails.
+        """
+        shmem_barrier_all_on_stream(self._ctx.stream())
+
+    fn enqueue_create_buffer[
+        dtype: DType
+    ](self, size: Int) raises -> SHMEMBuffer[dtype]:
+        """Creates a SHMEM buffer that can be accessed by all PEs.
+
+        Parameters:
+            dtype: The data type of elements in the buffer.
+
+        Args:
+            size: Number of elements in the buffer.
+
+        Returns:
+            A SHMEMBuffer instance for the allocated memory.
+
+        Raises:
+            String: If buffer creation fails.
+        """
+        return SHMEMBuffer[dtype](self._ctx, size)
+
+    @always_inline
+    @parameter
+    fn enqueue_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *Ts: AnyType,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The dtype of the function to launch.
+            func: The function to launch.
+            Ts: The dtypes of the arguments being passed to the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self._ctx.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        shmem_module_init(gpu_kernel)
+
+        self._ctx._enqueue_function_unchecked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @always_inline
+    fn synchronize(self) raises:
+        """Blocks until all asynchronous calls on the stream associated with
+        this device context have completed.
+
+        Raises:
+            If synchronization fails.
+        """
+        # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
+        self._ctx.synchronize()

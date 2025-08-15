@@ -13,10 +13,11 @@
 
 from sys import has_nvidia_gpu_accelerator, CompilationTarget
 from sys.ffi import external_call
+from sys import sizeof
 from gpu.host import DeviceContext
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
-from .host import shmem_malloc, shmem_free
+from .shmem_api import shmem_malloc, shmem_free
 
 
 struct SHMEMBuffer[dtype: DType](Sized):
@@ -69,7 +70,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 self._ctx_ptr,
                 dst_ptr,
                 self._data,
-                self._size,
+                self._size * sizeof[dtype](),
             )
         )
 

@@ -12,17 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA, CUstream
-from sys import argv, sizeof
 from sys.ffi import (
     _find_dylib,
     _Global,
     _OwnedDLHandle,
-    external_call,
     _get_dylib_function,
+    c_int,
 )
-from sys.param_env import env_get_string
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

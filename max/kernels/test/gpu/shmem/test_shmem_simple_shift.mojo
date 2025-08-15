@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 
+# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n 1 %t
+# RUN: %mpirun -n $NUM_GPUS %t
 
 from testing import assert_equal
 from shmem import (
     shmem_my_pe,
     shmem_n_pes,
-    shmem_int_p,
-    DeviceContextSHMEM,
+    shmem_p,
+    SHMEMContext,
 )
 from pathlib import cwd, Path
 from os.path import dirname
@@ -35,23 +36,24 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
 
-    shmem_int_p(destination, mype, peer)
+    shmem_p(destination, mype, peer)
 
 
 def main():
-    with DeviceContextSHMEM() as shmem:
-        var destination = shmem.enqueue_create_buffer[DType.int32](1)
+    var ctx = SHMEMContext()
+    var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
-        shmem.enqueue_function[simple_shift_kernel](
-            destination.unsafe_ptr(), grid_dim=1, block_dim=1
-        )
+    ctx.enqueue_function[simple_shift_kernel](
+        destination.unsafe_ptr(), grid_dim=1, block_dim=1
+    )
 
-        shmem.barrier_all()
+    ctx.barrier_all()
 
-        var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+    var msg = Int32(0)
+    destination.enqueue_copy_to(UnsafePointer(to=msg))
 
-        print("PE:", shmem.my_pe(), "received message:", msg)
-        shmem.synchronize()
+    ctx.synchronize()
 
-        assert_equal(msg, (shmem.my_pe() + 1) % shmem.n_pes())
+    var mype = shmem_my_pe()
+    print("PE:", mype, "received message:", msg)
+    assert_equal(msg, (mype + 1) % shmem_n_pes())
