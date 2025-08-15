@@ -34,7 +34,7 @@ from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
     AudioGenerationSchedulerOutput,
 )
-from max.serve.scheduler.text_generation_scheduler import BatchType
+from max.serve.scheduler.text_batch_constructor import BatchType
 
 
 def create_queues() -> dict[str, Queue]:
@@ -123,36 +123,25 @@ def create_paged_manager(
     return kv_manager
 
 
-def request_zmq_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
-
-
-def response_zmq_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
-
-
-def cancel_zmq_endpoint() -> str:
+def generate_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
 def create_paged_scheduler(
-    request_zmq_endpoint,  # noqa: ANN001
-    response_zmq_endpoint,  # noqa: ANN001
-    cancel_zmq_endpoint,  # noqa: ANN001
-    max_seq_len=2048,  # noqa: ANN001
-    num_blocks=9999,  # noqa: ANN001
-    max_batch_size=512,  # noqa: ANN001
-    page_size=128,  # noqa: ANN001
-    max_forward_steps_tg=10,  # noqa: ANN001
-    target_tokens_per_batch_ce=8192,  # noqa: ANN001
-    enable_prefix_caching=False,  # noqa: ANN001
-    enable_in_flight_batching=False,  # noqa: ANN001
-    enable_kvcache_swapping_to_host=False,  # noqa: ANN001
-    max_queue_size_tg=None,  # noqa: ANN001
-    min_batch_size_tg=None,  # noqa: ANN001
-    ce_delay_ms=0.0,  # noqa: ANN001
-    enable_prioritize_first_decode=False,  # noqa: ANN001
-) -> AudioGenerationScheduler:
+    max_seq_len: int = 2048,
+    num_blocks: int = 9999,
+    max_batch_size: int = 512,
+    page_size: int = 128,
+    max_forward_steps_tg: int = 10,
+    target_tokens_per_batch_ce: int = 8192,
+    enable_prefix_caching: bool = False,
+    enable_in_flight_batching: bool = False,
+    enable_kvcache_swapping_to_host: bool = False,
+    max_queue_size_tg: int | None = None,
+    min_batch_size_tg: int | None = None,
+    ce_delay_ms: float = 0.0,
+    enable_prioritize_first_decode: bool = False,
+) -> tuple[AudioGenerationScheduler, ZmqPushSocket[tuple[str, TTSContext]]]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
@@ -180,12 +169,31 @@ def create_paged_scheduler(
     scheduler = AudioGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        request_zmq_endpoint=request_zmq_endpoint,
-        response_zmq_endpoint=response_zmq_endpoint,
-        cancel_zmq_endpoint=cancel_zmq_endpoint,
+        request_zmq_endpoint=generate_zmq_endpoint(),
+        response_zmq_endpoint=generate_zmq_endpoint(),
+        cancel_zmq_endpoint=generate_zmq_endpoint(),
         paged_manager=paged_manager,
     )
-    return scheduler
+
+    # Create a push socket for the "APIWorker" to submit requests to
+    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
+        zmq_endpoint=scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
+    )
+
+    # Wire up unused pull sockets
+    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
+        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        deserialize=msgpack_numpy_decoder(
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ),
+    )
+    _ = ZmqPushSocket[list[str]](
+        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
+    )
+
+    return scheduler, push_socket
 
 
 class FakeAudioGeneratorPipeline(AudioGenerator):
@@ -406,27 +414,11 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     max_seq_len = 2048
     page_size = 128
     num_blocks = int(max_seq_len / page_size * num_reqs)
-    scheduler = create_paged_scheduler(
-        response_zmq_endpoint=response_zmq_endpoint(),
-        request_zmq_endpoint=request_zmq_endpoint(),
-        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+    scheduler, push_socket = create_paged_scheduler(
         max_seq_len=max_seq_len,
         max_batch_size=100,
         num_blocks=num_blocks,
         page_size=page_size,
-    )
-
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    # Create this so the schedule process has a client to send to.
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
     )
 
     # Check that we would exceed max_seq_len during TG step
@@ -458,10 +450,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
     prompt_len = 500
     output_tokens = 16
 
-    scheduler = create_paged_scheduler(
-        response_zmq_endpoint=response_zmq_endpoint(),
-        request_zmq_endpoint=request_zmq_endpoint(),
-        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+    scheduler, push_socket = create_paged_scheduler(
         enable_in_flight_batching=False,
     )
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
@@ -511,29 +500,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     output_tokens = 16
     prefix_len = 384
 
-    scheduler = create_paged_scheduler(
-        response_zmq_endpoint=response_zmq_endpoint(),
-        request_zmq_endpoint=request_zmq_endpoint(),
-        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+    scheduler, push_socket = create_paged_scheduler(
         enable_prefix_caching=True,
         enable_prioritize_first_decode=enable_prioritize_first_decode,
-    )
-
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
-    )
-
-    _ = ZmqPushSocket[list[str]](
-        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility
@@ -593,29 +562,9 @@ def test_paged_scheduler_max_queue_size_tg(
     prompt_len = 500
     output_tokens = 16
 
-    scheduler = create_paged_scheduler(
-        response_zmq_endpoint=response_zmq_endpoint(),
-        request_zmq_endpoint=request_zmq_endpoint(),
-        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+    scheduler, push_socket = create_paged_scheduler(
         max_batch_size=32,
         max_queue_size_tg=max_queue_size_tg,
-    )
-
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
-    )
-
-    _ = ZmqPushSocket[list[str]](
-        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility
@@ -698,31 +647,11 @@ def test_paged_scheduler_tg_batching(
     prompt_len = 500
     output_tokens = 16
 
-    scheduler = create_paged_scheduler(
-        response_zmq_endpoint=response_zmq_endpoint(),
-        request_zmq_endpoint=request_zmq_endpoint(),
-        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+    scheduler, push_socket = create_paged_scheduler(
         min_batch_size_tg=min_batch_size_tg,
         max_batch_size=max_batch_size,
         max_queue_size_tg=max_queue_size_tg,
         target_tokens_per_batch_ce=16384,
-    )
-
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
-    )
-
-    _ = ZmqPushSocket[list[str]](
-        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
     )
 
     # set seed for reproducibility
