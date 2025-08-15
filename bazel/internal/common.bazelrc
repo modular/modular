@@ -122,7 +122,7 @@ build --@llvm-project//mlir:enable_cuda=true
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries
-build:macos --remote_download_regex='.*\.a$'
+build:macos --remote_download_regex='.*\.(a|dylib)$'
 build --experimental_remote_cache_eviction_retries=3
 build --grpc_keepalive_time=30s
 build --remote_upload_local_results
