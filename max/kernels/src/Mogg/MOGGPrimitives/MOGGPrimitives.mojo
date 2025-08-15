@@ -433,6 +433,71 @@ fn get_buffer_data(
 
 
 # ===-----------------------------------------------------------------------===#
+# Mojo generation hooks
+# ===-----------------------------------------------------------------------===#
+
+
+@register_internal("mogg.async.__del__")
+@no_inline
+fn mogg_async_del(async_ptr: OpaquePointer):
+    var ptr = UnsafePointer(to=async_ptr)
+    external_call["KGEN_CompilerRT_DestructAsyncRefs", NoneType](1, ptr, False)
+
+
+@register_internal("mogg.async.unpack")
+@no_inline
+fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: OpaquePointer) -> T:
+    return external_call["KGEN_CompilerRT_GetValueFromAsync", OpaquePointer](
+        async_ptr
+    ).bitcast[T]()[0]
+
+
+@register_internal("mogg.tensor.__init__")
+@no_inline
+fn mogg_tensor_init[
+    dtype: DType,
+    rank: Int,
+    mut: Bool,
+    input: IO,
+    static_shape: DimList,
+    static_stride: DimList,
+    alignment: Int,
+](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
+    io_spec = IOSpec[mut, input](),
+    static_spec = StaticTensorSpec[dtype, rank](
+        static_shape,
+        static_stride,
+        alignment,
+        AddressSpace.GENERIC,
+        True,
+        None,
+        None,
+        None,
+    ),
+]:
+    alias static_spec = StaticTensorSpec[dtype, rank](
+        static_shape,
+        static_stride,
+        alignment,
+        AddressSpace.GENERIC,
+        True,
+        None,
+        None,
+        None,
+    )
+    return ManagedTensorSlice[
+        io_spec = IOSpec[mut, input](),
+        static_spec=static_spec,
+    ](ptr.bitcast[Scalar[dtype]](), shape)
+
+
+@register_internal("mogg.async.ready")
+@no_inline
+fn mogg_async_ready(async_ptr: OpaquePointer):
+    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
+
+
+# ===-----------------------------------------------------------------------===#
 # MGP Common Primitives
 # ===-----------------------------------------------------------------------===#
 
