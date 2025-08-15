@@ -31,25 +31,25 @@ benchmark_config:
   host: "localhost"
   port: 8000
   endpoint: "/v1/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
-  
+
   # Request configuration (serving-specific)
   max_concurrency: 32  # Maximum concurrent requests (optimized for serving benchmarks)
   lora: null  # Optional LoRA name
-  
+
   # Workload configuration (serving-specific)
   max_benchmark_duration_s: null  # Maximum benchmark duration in seconds
   num_chat_sessions: null  # Number of multiturn chat sessions
   delay_between_chat_turns: null  # Delay between chat turns in ms
-  
+
   # Output control (serving-specific extensions)
   output_lengths: null  # Path to YAML file with output lengths or int
-  
+
   # Traffic control (serving-specific)
   request_rate: 16.0  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   ttft_skip_requests: 10  # Skip first N requests for TTFT measurements
   chat_warmup_delay_ms: 100.0  # Delay between starting chat sessions
-  
+
   # Dataset-specific parameters (serving workloads)
   sonnet_input_len: 550
   sonnet_prefix_len: 200
@@ -63,10 +63,10 @@ benchmark_config:
   random_max_num_unique_sys_prompt: 1
   random_distribution_type: "normal"  # choices: uniform, normal
   random_num_turns: 1
-  
+
   # Control flags (serving-specific)
   skip_test_prompt: false
   collect_gpu_stats: true  # Enable GPU stats collection for serving benchmarks
-  
+
   # Result saving (serving-specific extensions)
   server_args: ""  # Server arguments string

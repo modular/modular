@@ -22,13 +22,7 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import (
-    Any,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Any, TypeVar, Union, get_args, get_origin
 
 import yaml
 from max.dtype import DType
@@ -386,13 +380,16 @@ def deep_merge_max_configs(
 
 
 def resolve_max_config_inheritance(
-    config_dict: dict[str, Any], config_class: type[MAXConfig]
+    config_dict: dict[str, Any],
+    config_class: type[MAXConfig],
+    config_file_path: Path | None = None,
 ) -> dict[str, Any]:
     """Resolve configuration inheritance by loading base config and merging.
 
     Args:
         config_dict: The current configuration dictionary.
         config_class: The config class being loaded.
+        config_file_path: Path to the config file being loaded (used to resolve relative paths).
 
     Returns:
         Merged configuration dictionary with inheritance resolved.
@@ -404,12 +401,12 @@ def resolve_max_config_inheritance(
     # Try to load the base config
     try:
         base_config_path = Path(depends_on)
-        if not base_config_path.is_absolute():
-            raise ValueError(
-                f"Relative path inheritance not supported: {depends_on}. "
-                f"Please use an absolute path for the 'depends_on' configuration."
-            )
-        elif not base_config_path.exists():
+
+        # If the path is relative and we have a config file path, resolve it relative to the config file's directory
+        if not base_config_path.is_absolute() and config_file_path is not None:
+            base_config_path = config_file_path.parent / base_config_path
+
+        if not base_config_path.exists():
             raise FileNotFoundError(
                 f"Base configuration file not found: {base_config_path}"
             )
@@ -428,7 +425,9 @@ def resolve_max_config_inheritance(
 
         # Recursively resolve inheritance in base config
         base_config_dict = resolve_max_config_inheritance(
-            config_dict=base_config_dict, config_class=config_class
+            config_dict=base_config_dict,
+            config_class=config_class,
+            config_file_path=base_config_path,
         )
 
         # Merge base config with current config (current takes precedence)
@@ -446,6 +445,7 @@ def _extract_max_config_data(
     config_dict: dict[str, Any],
     config_class: type[MAXConfig],
     section_name: str | None = None,
+    config_file_path: Path | None = None,
 ) -> dict[str, Any]:
     """Extract config data for a specific MAXConfig class from MAXConfig files.
 
@@ -488,7 +488,9 @@ def _extract_max_config_data(
 
     # Handle inheritance via depends_on
     config_dict = resolve_max_config_inheritance(
-        config_dict=config_dict, config_class=config_class
+        config_dict=config_dict,
+        config_class=config_class,
+        config_file_path=config_file_path,
     )
 
     # Look for the appropriate config section
@@ -603,6 +605,7 @@ class MAXConfig:
             config_dict=config_dict,
             config_class=cls,
             section_name=section_name,
+            config_file_path=config_path,
         )
 
         # Get the dataclass fields for this MAXConfig class.
