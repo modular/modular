@@ -891,6 +891,7 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
         output_lengths: Sequence[int] | None,
+        shuffle: bool = True,
     ) -> Sequence[SampledRequest]:
         """Sample requests from an Axolotl-formatted dataset.
         The dataset should be in the following JSON format:
@@ -935,10 +936,18 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
 
         print("Total number of prompts:", len(prompts))
 
-        # Randomly sample with replacement
-        sampled_prompts = np.random.choice(
-            prompts, size=num_requests, replace=True
-        )
+        if shuffle:
+            if output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for shuffling + pinned output lengths"
+                )
+            # Randomly sample with replacement
+            sampled_prompts = np.random.choice(
+                prompts, size=num_requests, replace=True
+            )
+        else:
+            num_repeats = int(np.ceil(num_requests / len(prompts)))
+            sampled_prompts = np.array((prompts * num_repeats)[0:num_requests])
 
         sampled_requests: list[SampledRequest] = []
         for i, prompt in enumerate(sampled_prompts):

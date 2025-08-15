@@ -1517,6 +1517,9 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
