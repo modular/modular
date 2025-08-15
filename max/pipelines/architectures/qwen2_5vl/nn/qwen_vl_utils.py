@@ -121,8 +121,15 @@ def to_rgb(pil_image: Image.Image) -> Image.Image:
 def fetch_image(ele: dict, size_factor: int = IMAGE_FACTOR) -> Image.Image:
     if "image" in ele:
         image = ele["image"]
+        if isinstance(image, dict):
+            # Support for OpenAI image format
+            image = image["file_id"]
     else:
         image = ele["image_url"]
+        if isinstance(image, dict):
+            # Support for OpenAI image_url format
+            image = image["url"]
+
     image_obj = None
     if isinstance(image, Image.Image):
         image_obj = image

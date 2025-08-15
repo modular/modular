@@ -110,7 +110,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             images=image_inputs or images,
             videos=video_inputs,
             padding=True,
-            return_tensors="np",
+            return_tensors="pt",
         )
 
         if "input_ids" not in processed_inputs:
