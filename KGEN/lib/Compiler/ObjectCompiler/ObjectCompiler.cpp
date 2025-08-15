@@ -1879,7 +1879,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       std::unique_ptr<llvm::MCContext> mcContext;
 
       if (emissionKind == EmitAs::ASM) {
-
         // Ensure Module data layout matches TargetMachine data layout to avoid
         // assertion failure
         if (isMetalTarget &&
@@ -1942,15 +1941,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed to generate .air and .metallib", loc));
         } else {
-          // This is mostly for AMD GPU codegen, but works for CPU as well
-          // (mostly for testing).
-          // Ensure Module data layout matches TargetMachine data layout to
-          // avoid assertion failure
-          if (module.getDataLayoutStr() !=
-              tm.createDataLayout().getStringRepresentation()) {
-            module.setDataLayout(tm.createDataLayout());
-          }
-
           if (failed(runLlcPasses(
                   module, options, tm, *codeBuf, machineModuleInfo, mcContext,
                   llvm::CodeGenFileType::ObjectFile,
