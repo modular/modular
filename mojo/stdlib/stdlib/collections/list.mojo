@@ -83,16 +83,155 @@ struct _ListIter[
 struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
-    """The `List` type is a dynamically-allocated list.
+    """A dynamically-allocated and resizable list.
+
+    This is Mojo's primary dynamic array implementation, meaning the list can
+    grow and shrink in size at runtime. However, all elements in a `List` must
+    be the same type `T`, determined at compile time.
+
+    You can create a `List` in several ways:
+
+    ```mojo
+    # Empty list
+    var empty_list = List[Int]()
+
+    # With pre-allocated capacity
+    var preallocated = List[String](capacity=100)
+
+    # With initial size and fill value
+    var filled = List[Float64](length=10, fill=0.0)
+
+    # With initial values and inferred type (Int)
+    var numbers = [1, 2, 3, 4, 5]
+    ```
+
+    Be aware of the following characteristics:
+
+    - **Type safety**: All elements must be the same type `T`, determined at
+      compile time. This is more restrictive than Python's lists but it
+      improves performance:
+
+      ```mojo
+      var int_list = [1, 2, 3]        # List[Int]
+      var str_list = ["a", "b", "c"]  # List[String]
+      var mixed = [1, "hello"]        # Error! All elements must be same type
+      ```
+
+      However, you can get around this by defining your list type as
+      [`Variant`](/mojo/stdlib/utils/variant/Variant). This is a discriminated
+      union type, meaning it can store any number of different types that can
+      vary at runtime.
+
+    - **Value semantics:** A `List` is value semantic by default, so
+      assignment creates a deep copy of all elements:
+
+      ```mojo
+      var list1 = [1, 2, 3]
+      var list2 = list1        # Deep copy
+      list2.append(4)
+      print(list1.__str__())   # => [1, 2, 3]
+      print(list2.__str__())   # => [1, 2, 3, 4]
+      ```
+
+      This is different from Python, where assignment creates a reference to
+      the same list. For more information, read about [value
+      semantics](/mojo/manual/values/value-semantics).
+
+    - **Iteration uses immutable references**: When iterating a list, you get
+      immutable references to the actual elements, unless you specify `ref`:
+
+      ```mojo
+      var numbers = [10, 20, 30]
+
+      # Default behavior creates immutable (read-only) references
+      for num in numbers:
+          num += 1  # error: expression must be mutable
+
+      # Using `ref` gets mutable (read-write) references
+      for ref num in numbers:
+          num += 1  # Modifies the original elements
+      print(numbers.__str__())  # => [11, 21, 31]
+      ```
+
+    - **Out of bounds access**: Accessing elements with invalid indices will
+      cause undefined behavior:
+
+      ```mojo
+      var my_list = [1, 2, 3]
+      print(my_list[5])  # Undefined behavior (out of bounds)
+      ```
+
+      For safe access, you should manually check bounds or use methods that
+      handle errors gracefully:
+
+      ```mojo
+      var my_list = [1, 2, 3]
+      if 5 < len(my_list):
+          print(my_list[5])  # Safe: check bounds first
+      else:
+          print("Index out of bounds")
+
+      # Some methods like index() raise exceptions
+      try:
+          var idx = my_list.index(99)  # Raises ValueError if not found
+          print("Found at index:", idx)
+      except:
+          print("Value not found in list")
+      ```
+
+    Examples:
+
+    ```mojo
+    var my_list = [10, 20, 30]
+
+    # Add elements
+    my_list.append(40)           # [10, 20, 30, 40]
+    my_list.insert(1, 15)        # [10, 15, 20, 30, 40]
+    my_list.extend([50, 60])     # [10, 15, 20, 30, 40, 50, 60]
+
+    # Access elements
+    print(my_list[0])            # 10 (first element)
+    print(my_list[-1])           # 60 (last element)
+    my_list[1] = 25              # Modify element: [10, 25, 20, 30, 40, 50, 60]
+
+    # Remove elements
+    print(my_list.pop())      # Removes and returns last element (60)
+    print(my_list.pop(2))     # Removes element at index 2 (20)
+
+    # List properties
+    print('len:', len(my_list))          # Current number of elements
+    print('cap:', my_list.capacity)      # Current allocated capacity
+
+    # Multiply a list
+    var repeated = [1, 2] * 3
+    print(repeated.__str__())    # [1, 2, 1, 2, 1, 2]
+
+    # Iterate over a list:
+    var fruits = ["apple", "banana", "orange"]
+
+    # Iterate by value (immutable references)
+    for fruit in fruits:
+        print(fruit)
+
+    # Iterate backwards by value
+    for fruit in reversed(fruits):
+        print(fruit)
+
+    # Iterate by index
+    for i in range(len(fruits)):
+        print(i, fruits[i])
+
+    # Concatenate with + and +=
+    fruits += ["mango"]
+    var more_fruits = fruits + ["grape", "kiwi"]
+    print(more_fruits.__str__())
+    ```
 
     Parameters:
-        T: The type of the elements.
-        hint_trivial_type: A hint to the compiler that the type T is trivial.
-            It's not mandatory, but if set, it allows some optimizations.
-
-    Notes:
-        It supports pushing and popping from the back resizing the underlying
-        storage as needed.  When it is deallocated, it frees its memory.
+        T: The type of elements stored in the list.
+        hint_trivial_type: A hint to the compiler that type `T` is
+           trivial (it can be copied with simple memory operations).
+           Defaults to `False`.
     """
 
     # Fields
