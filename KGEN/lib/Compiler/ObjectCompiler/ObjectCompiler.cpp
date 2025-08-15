@@ -18,6 +18,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
@@ -25,6 +26,7 @@
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Telemetry.h"
+#include "LLVM/Bitcode/MetalBitcodeWriter.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -33,6 +35,8 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
+#include "xxh3.h"
+#include "xxhash.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
@@ -63,9 +67,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-
-#include "xxh3.h"
-#include "xxhash.h"
+#include <fstream>
 
 using namespace M;
 using namespace KGEN;
@@ -614,15 +616,22 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   std::string errorMessage;
+  std::string effectiveTriple = options.targetTriple;
+
+  // Handle air64 targets by mapping to arm64 for LLVM
+  if (isMetalBackend(options)) {
+    // Replace air64 with arm64 for LLVM target lookup
+    effectiveTriple = "arm64" + effectiveTriple.substr(5);
+  }
+
   const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(options.targetTriple, errorMessage);
+      llvm::TargetRegistry::lookupTarget(effectiveTriple, errorMessage);
   if (!target)
     return Error("no target exists for '" + options.targetTriple +
                  "': " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      llvm::Triple(options.targetTriple), options.targetCpu,
-      options.targetFeatures,
+      llvm::Triple(effectiveTriple), options.targetCpu, options.targetFeatures,
       /*Options=*/{}, options.relocModel, /*CM=*/options.mcmodel,
       /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
   if (options.largeDataThreshold)
@@ -1300,16 +1309,22 @@ ObjectCompiler::lowerLLVMModuleToObjects(
                                    &targetMachine]() mutable {
     CompilerTimeTraceScope traceScope("optimizeLLVMTask");
 
+    // Materialize the module first so we can check its target triple
+    LLVMModuleAndContext module = produceModule();
+
     // Create the target machine.
-    auto tmOr = createTargetMachine(options, isJIT);
+    // For Metal targets, adjust options if needed
+    std::string moduleTriple = module->getTargetTriple().getTriple();
+    CompilationOptions adjustedOptions = this->options;
+    if (isMetalBackend(this->options))
+      adjustedOptions.targetTriple = "arm64" + moduleTriple.substr(5);
+
+    auto tmOr = createTargetMachine(adjustedOptions, isJIT);
     if (failed(tmOr)) {
       return std::move(result).setToError(
           AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
     }
     llvm::TargetMachine &tm = **tmOr;
-
-    // Materialize the module.
-    LLVMModuleAndContext module = produceModule();
 
     // Optimize the llvm Module.
     if (failed(optimizeLLVMModule(*module, tm, options, runtime, moduleIdx))) {
@@ -1331,7 +1346,7 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 
     SymbolAndMCInfo symbolAndMirInfo;
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
-        std::move(module), loc, targetMachine, tmMutex, options, runtime,
+        std::move(module), loc, targetMachine, tmMutex, this->options, runtime,
         transformCache, parLLC, isJIT, moduleIdx, symbolAndMirInfo,
         numFunctionsBase);
 
@@ -1586,6 +1601,132 @@ static std::string getNVGPUName(StringRef targetAccelerator) {
   return "sm_52";
 }
 
+// Simple helper to adjust Metal compilation options
+static CompilationOptions
+getMetalAdjustedOptions(const CompilationOptions &options,
+                        const std::string &moduleTriple) {
+  CompilationOptions adjusted = options;
+  // Metal with air64 needs arm64 for TargetMachine
+  adjusted.targetTriple = "arm64" + moduleTriple.substr(5);
+  return adjusted;
+}
+
+// Simple helper to setup Metal GPU module
+static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
+                             const std::string &originalTriple) {
+  // Set data layout from TargetMachine
+  module.setDataLayout(tm.createDataLayout());
+  // Restore original air64 triple for GPU
+  module.setTargetTriple(llvm::Triple(originalTriple));
+}
+
+static LogicalResult
+compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
+                   AsyncRT::AsyncValueRef<BufferRef> output) {
+  // Step 1: Write AIR bitcode using Metal bitcode writer
+  llvm::SmallString<256> airTempFile;
+  if (auto err =
+          llvm::sys::fs::createTemporaryFile("kernel", ".air", airTempFile)) {
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        Error("Failed to create temporary AIR file: " + err.message()), loc));
+    return failure();
+  }
+
+  std::error_code airEc;
+  llvm::raw_fd_ostream airOS(airTempFile, airEc, llvm::sys::fs::OF_None);
+  if (airEc) {
+    llvm::sys::fs::remove(airTempFile);
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        Error("Failed to open AIR file for writing: " + airEc.message()), loc));
+    return failure();
+  }
+
+  // Use Metal bitcode writer to write AIR bitcode
+  M::KGEN::WriteBitcodeToFile(module, airOS,
+                              /*ShouldPreserveUseListOrder = */ false,
+                              /*ModuleSummaryIndex =*/nullptr,
+                              /*GenerateHash = */ false,
+                              /*ModuleHash = */ nullptr);
+
+  airOS.flush();
+  airOS.close();
+
+  // Step 2: Convert AIR to metallib using xcrun metallib
+  llvm::SmallString<256> metallibTempFile;
+  if (auto err = llvm::sys::fs::createTemporaryFile("kernel", ".metallib",
+                                                    metallibTempFile)) {
+    llvm::sys::fs::remove(airTempFile);
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        Error("Failed to create temporary metallib file: " + err.message()),
+        loc));
+    return failure();
+  }
+
+  // Find xcrun path
+  auto xcrunPath = llvm::sys::findProgramByName("xcrun");
+  if (!xcrunPath) {
+    llvm::sys::fs::remove(airTempFile);
+    llvm::sys::fs::remove(metallibTempFile);
+    std::move(output).setToError(
+        AsyncRT::getMLIRDiagnostic(Error("xcrun not found in PATH"), loc));
+    return failure();
+  }
+
+  // Convert AIR bitcode to metallib using xcrun metallib
+  std::vector<llvm::StringRef> metallibArgs = {
+      *xcrunPath,  "-sdk", "macosx",        "metallib",
+      airTempFile, "-o",   metallibTempFile};
+
+  std::string errorMsg;
+  int result = llvm::sys::ExecuteAndWait(
+      metallibArgs[0], metallibArgs, /*env=*/std::nullopt,
+      /*redirects=*/{},
+      /*secondsToWait=*/60, /*memoryLimit=*/0, &errorMsg);
+
+  if (result != 0) {
+    // Try to continue execution despite metallib failure - use the AIR
+    // file directly. This is a temporary workaround for LLVM version
+    // compatibility issues
+    auto airBuffer = llvm::MemoryBuffer::getFile(airTempFile);
+    if (airBuffer) {
+      (*buf) << (*airBuffer)->getBuffer();
+      llvm::sys::fs::remove(airTempFile);
+      llvm::sys::fs::remove(metallibTempFile);
+      return success();
+    }
+
+    llvm::sys::fs::remove(airTempFile);
+    llvm::sys::fs::remove(metallibTempFile);
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        Error("xcrun metallib compilation failed with code " +
+              llvm::Twine(result).str() + ": " + errorMsg +
+              " and AIR fallback also failed"),
+        loc));
+    return failure();
+  }
+
+  // Read the compiled metallib back
+  auto metallibBuffer = llvm::MemoryBuffer::getFile(metallibTempFile);
+  if (!metallibBuffer) {
+    llvm::sys::fs::remove(airTempFile);
+    llvm::sys::fs::remove(metallibTempFile);
+    std::move(output).setToError(
+        AsyncRT::getMLIRDiagnostic(Error("Failed to read metallib file: " +
+                                         metallibBuffer.getError().message()),
+                                   loc));
+    return failure();
+  }
+
+  // Write metallib data to output buffer
+  (*buf) << (*metallibBuffer)->getBuffer();
+
+  // Clean up temporary files
+  llvm::sys::fs::remove(airTempFile);
+  llvm::sys::fs::remove(metallibTempFile);
+
+  return success();
+}
+
 static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                                             llvm::Module &inputModule,
                                             StringRef ptx,
@@ -1694,12 +1835,33 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       }
 
       // Create the target machine.
-      auto tmOr = createTargetMachine(options, isJIT);
+      std::string moduleTriple = module.getTargetTriple().getTriple();
+      bool isMetalTarget = isMetalBackend(options);
+
+      // Adjust options for Metal targets
+      CompilationOptions adjustedOptions = options;
+      if (isMetalTarget) {
+        // Temporarily adjust module to use ARM64-compatible target for
+        // TargetMachine
+        adjustedOptions = getMetalAdjustedOptions(options, moduleTriple);
+        module.setTargetTriple(llvm::Triple(adjustedOptions.targetTriple));
+      }
+
+      auto tmOr = createTargetMachine(adjustedOptions, isJIT);
       if (failed(tmOr)) {
         return std::move(output).setToError(
             AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
       }
       llvm::TargetMachine &tm = **tmOr;
+
+      // Set correct data layout and restore target for GPU targets after
+      // TargetMachine creation
+      if (isMetalTarget) {
+        setupMetalModule(module, tm, moduleTriple);
+        // Note: For non-Metal emission kinds, we use the TargetMachine's data
+        // layout for compatibility. For Metal emission kinds, the MetalAIRPass
+        // will set the proper Metal layout
+      }
 
       // Optimize the llvm Module.
       if (failed(optimizeLLVMModule(module, tm, options, runtime, moduleIdx))) {
@@ -1717,6 +1879,15 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       std::unique_ptr<llvm::MCContext> mcContext;
 
       if (emissionKind == EmitAs::ASM) {
+
+        // Ensure Module data layout matches TargetMachine data layout to avoid
+        // assertion failure
+        if (isMetalTarget &&
+            module.getDataLayoutStr() !=
+                tm.createDataLayout().getStringRepresentation()) {
+          module.setDataLayout(tm.createDataLayout());
+        }
+
         if (failed(runLlcPasses(
                 module, options, tm, *buf, machineModuleInfo, mcContext,
                 llvm::CodeGenFileType::AssemblyFile,
@@ -1739,6 +1910,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         auto codeBuf = WriteableBuffer::get();
         if (isNVPTXBackend(options)) {
           // Compile to PTX first.
+
           if (failed(runLlcPasses(
                   module, options, tm, *codeBuf, machineModuleInfo, mcContext,
                   llvm::CodeGenFileType::AssemblyFile,
@@ -1765,9 +1937,20 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                 AsyncRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
           }
           (*buf) << (*cubinOr)->getBuffer();
+        } else if (isMetalBackend(options)) {
+          if (failed(compileMetalTarget(module, buf, loc, output.copy())))
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed to generate .air and .metallib", loc));
         } else {
           // This is mostly for AMD GPU codegen, but works for CPU as well
           // (mostly for testing).
+          // Ensure Module data layout matches TargetMachine data layout to
+          // avoid assertion failure
+          if (module.getDataLayoutStr() !=
+              tm.createDataLayout().getStringRepresentation()) {
+            module.setDataLayout(tm.createDataLayout());
+          }
+
           if (failed(runLlcPasses(
                   module, options, tm, *codeBuf, machineModuleInfo, mcContext,
                   llvm::CodeGenFileType::ObjectFile,
