@@ -98,6 +98,7 @@ class SchedulerOutput:
             input_tokens if input_tokens is not None else self.batch_size
         )
         self.cached_tokens = cached_tokens if cached_tokens is not None else 0
+        self.num_terminated = 0
 
     @property
     def cache_hit_rate(self) -> float:
@@ -105,13 +106,6 @@ class SchedulerOutput:
         if total_tokens == 0:
             return 0.0
         return self.cached_tokens / total_tokens
-
-    @property
-    def num_terminated(self) -> int:
-        # This is the difference between the number of request in the batch before
-        # and after the batch was scheduled.
-        # TODO: Make this less hacky.
-        return self.batch_size - len(self.batch_inputs)
 
     def __bool__(self) -> bool:
         return self.batch_size > 0

@@ -259,21 +259,16 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _handle_terminated_responses(
         self,
-        batch_executed: dict[str, Union[TextContext, TextAndVisionContext]],
+        sch_output: SchedulerOutput,
         batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Task that handles responses"""
-        for request_id, response in batch_responses.items():
+        for req_id, response in batch_responses.items():
             if not response.is_done:
                 continue
-
-            # Release from cache
-            self.pipeline.release(request_id)
-            del batch_executed[request_id]
-
-            # Remove from active batch
-            if request_id in self.batch_constructor.tg_reqs:
-                del self.batch_constructor.tg_reqs[request_id]
+            sch_output.num_terminated += 1
+            self.pipeline.release(req_id)
+            del self.batch_constructor.tg_reqs[req_id]
 
     @traced
     def _handle_chunked_requests(
@@ -312,19 +307,6 @@ class TokenGenerationScheduler(Scheduler):
                     {req_id: SchedulerResult.cancelled()}
                 )
 
-    @traced
-    def _stream_responses_to_frontend(
-        self, batch_responses: dict[str, TextGenerationOutput]
-    ) -> None:
-        if not batch_responses:
-            return
-
-        responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
-        for request_id, response in batch_responses.items():
-            responses[request_id] = SchedulerResult.create(response)
-
-        self.response_q.put_nowait(responses)
-
     def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0
         batch_to_execute = sch_output.batch_inputs
@@ -332,25 +314,26 @@ class TokenGenerationScheduler(Scheduler):
         METRICS.batch_size(len(batch_to_execute))
 
         # execute the batch
-        batch_responses = self.pipeline.execute(
+        responses = self.pipeline.execute(
             TextGenerationInputs(batch_to_execute, sch_output.num_steps)
         )
 
         # If there is a chunked request, we put it back into the request queue
-        self._handle_chunked_requests(batch_to_execute, batch_responses)
-
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
+        self._handle_chunked_requests(batch_to_execute, responses)
 
         # add the encoded requests to the continuous batch
-        for req_id in batch_to_execute:
-            if req_id not in self.batch_constructor.tg_reqs:
-                self.batch_constructor.tg_reqs[req_id] = batch_to_execute[
-                    req_id
-                ]
+        self.batch_constructor.tg_reqs |= batch_to_execute
+
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(sch_output, responses)
 
         # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses)
+        self.response_q.put_nowait(
+            {
+                req_id: SchedulerResult.create(response)
+                for req_id, response in responses.items()
+            }
+        )
 
 
 def load_text_generation_scheduler(
