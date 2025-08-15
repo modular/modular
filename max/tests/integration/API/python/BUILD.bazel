@@ -50,15 +50,7 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
-        requirement("click"),
-        requirement("gguf"),
         requirement("hypothesis"),
-        requirement("llguidance"),
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("msgspec"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -99,16 +91,8 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
-        requirement("click"),
-        requirement("gguf"),
-        requirement("hypothesis"),
         # Not used directly, needed to load some models
         requirement("sentencepiece"),
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("msgspec"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -133,16 +117,10 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
-        requirement("click"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
-        requirement("torch"),
-        requirement("transformers"),
     ],
 )
 
@@ -172,11 +150,6 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
-        requirement("click"),
-        requirement("gguf"),
-        requirement("torch"),
-        requirement("transformers"),
     ],
 )
 
