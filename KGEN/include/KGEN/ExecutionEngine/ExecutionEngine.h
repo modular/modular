@@ -71,7 +71,7 @@ public:
   template <typename ReturnT, typename... Args>
   __attribute__((no_sanitize("function"))) ReturnT invoke(Args... args) {
     // Cast the function pointer and invoke it directly.
-    return ((ReturnT(*)(Args...))fn)(std::forward<Args>(args)...);
+    return ((ReturnT (*)(Args...))fn)(std::forward<Args>(args)...);
   }
 
   /// Return the pointer to the compiled function.
