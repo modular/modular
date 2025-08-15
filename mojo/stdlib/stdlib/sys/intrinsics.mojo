@@ -27,7 +27,7 @@ from sys.info import _is_sm_9x_or_newer, is_gpu
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
-from .info import is_amd_gpu, is_nvidia_gpu, sizeof
+from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, sizeof
 
 
 # Check that the dimension is either x, y, or z.
@@ -1074,6 +1074,8 @@ struct _ThreadIdx(Defaultable):
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
         elif is_amd_gpu():
             return "llvm.amdgcn.workitem.id." + dim
+        elif is_apple_gpu():
+            return "llvm.air.thread_position_in_threadgroup." + dim
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
@@ -1119,6 +1121,8 @@ struct _BlockIdx(Defaultable):
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
         elif is_amd_gpu():
             return "llvm.amdgcn.workgroup.id." + dim
+        elif is_apple_gpu():
+            return "llvm.air.threadgroup_position_in_grid." + dim
         else:
             return CompilationTarget.unsupported_target_error[
                 StaticString,
@@ -1181,6 +1185,16 @@ struct _BlockDim(Defaultable):
                 Int(
                     llvm_intrinsic[
                         intrinsic_name, Int32, has_side_effect=False
+                    ]()
+                )
+            )
+        elif is_apple_gpu():
+            return UInt(
+                Int(
+                    llvm_intrinsic[
+                        "llvm.air.threads_per_threadgroup." + dim,
+                        Int32,
+                        has_side_effect=False,
                     ]()
                 )
             )
