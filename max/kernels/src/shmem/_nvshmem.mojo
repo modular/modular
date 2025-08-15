@@ -458,6 +458,19 @@ fn nvshmem_get[
 
 
 # ===----------------------------------------------------------------------=== #
+# 8: Signaling Operations
+# https://docs.nvidia.com/nvshmem/api/gen/api/collectives.html
+# ===----------------------------------------------------------------------=== #
+
+
+@extern("nvshmemx_signal_op")
+fn nvshmemx_signal_op(
+    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+):
+    ...
+
+
+# ===----------------------------------------------------------------------=== #
 # 10: Collective Communication
 # https://docs.nvidia.com/nvshmem/api/gen/api/collective.html
 # ===----------------------------------------------------------------------=== #
@@ -486,3 +499,27 @@ fn nvshmemx_barrier_all_on_stream(stream: CUstream):
         "nvshmemx_barrier_all_on_stream",
         fn (CUstream) -> NoneType,
     ]()(stream)
+
+
+# ===----------------------------------------------------------------------=== #
+# 11: Point-To-Point Synchronization
+# https://docs.nvidia.com/nvshmem/api/gen/api/sync.html
+# ===----------------------------------------------------------------------=== #
+
+
+@extern("nvshmem_signal_wait_until")
+fn nvshmem_signal_wait_until(
+    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+):
+    ...
+
+
+# ===----------------------------------------------------------------------=== #
+# 12: Memory Ordering
+# https://docs.nvidia.com/nvshmem/api/gen/api/ordering.html
+# ===----------------------------------------------------------------------=== #
+
+
+@extern("nvshmem_fence")
+fn nvshmem_fence():
+    ...

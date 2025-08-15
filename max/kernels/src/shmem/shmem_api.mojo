@@ -62,6 +62,7 @@ from ._mpi import (
 from ._nvshmem import (
     nvshmem_barrier_all,
     nvshmem_calloc,
+    nvshmem_fence,
     nvshmem_free,
     nvshmem_g,
     nvshmem_get,
@@ -71,18 +72,29 @@ from ._nvshmem import (
     nvshmem_p,
     nvshmem_put,
     nvshmem_put,
+    nvshmem_signal_wait_until,
     nvshmem_team_my_pe,
     nvshmemx_barrier_all_on_stream,
     nvshmemx_cumodule_init,
     nvshmemx_hostlib_finalize,
     nvshmemx_init_status,
     nvshmemx_init,
+    nvshmemx_signal_op,
     NVSHMEMXInitAttr,
     NVSHMEM_TEAM_INVALID,
     NVSHMEM_TEAM_SHARED,
     NVSHMEM_TEAM_WORLD,
     NVSHMEMX_INIT_WITH_MPI_COMM,
     NVSHMEMX_TEAM_NODE,
+    NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_NE,
+    NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_SENTINEL,
+    NVSHMEM_SIGNAL_SET,
+    NVSHMEM_SIGNAL_ADD,
 )
 
 # ===----------------------------------------------------------------------=== #
@@ -99,6 +111,17 @@ alias SHMEM_TEAM_INVALID: shmem_team_t = NVSHMEM_TEAM_INVALID
 alias SHMEM_TEAM_SHARED: shmem_team_t = NVSHMEM_TEAM_SHARED
 alias SHMEM_TEAM_NODE: shmem_team_t = NVSHMEMX_TEAM_NODE
 alias SHMEM_TEAM_WORLD: shmem_team_t = NVSHMEM_TEAM_WORLD
+
+alias SHMEM_CMP_EQ: c_int = NVSHMEM_CMP_EQ
+alias SHMEM_CMP_NE: c_int = NVSHMEM_CMP_NE
+alias SHMEM_CMP_GT: c_int = NVSHMEM_CMP_GT
+alias SHMEM_CMP_LE: c_int = NVSHMEM_CMP_LE
+alias SHMEM_CMP_LT: c_int = NVSHMEM_CMP_LT
+alias SHMEM_CMP_GE: c_int = NVSHMEM_CMP_GE
+alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
+
+alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
+alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
 
 # ===----------------------------------------------------------------------=== #
@@ -495,6 +518,67 @@ fn shmem_barrier_all():
 
 
 # ===----------------------------------------------------------------------=== #
+# 11: Point-to-point Synchronization Routines
+# ===----------------------------------------------------------------------=== #
+
+
+fn shmem_signal_wait_until(
+    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+):
+    """Wait for a variable on the local PE to change from a signaling operation.
+
+    Args:
+        sig_addr: Local address of the remotely accessible source signal variable.
+        cmp: The comparison operator that compares sig_addr with cmp_value.
+        cmp_value: The value against which the object pointed to by sig_addr
+            will be compared.
+
+    shmem_signal_wait_until operation blocks until the value contained in the
+    signal data object, sig_addr, at the calling PE satisfies the wait
+    condition. In a program with single-threaded or multithreaded PEs, the
+    sig_addr object at the calling PE is expected only to be updated as a
+    signal. This routine can be used to implement point-to-point synchronization
+    between PEs or between threads within the same PE. A call to this routine
+    blocks until the value of sig_addr at the calling PE satisfies the wait
+    condition specified by the comparison operator, cmp, and comparison value,
+    cmp_value. Implementations must ensure that shmem_signal_wait_until do not
+    return before the update of the memory indicated by sig_addr is fully
+    complete.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_signal_wait_until"
+        ]()
+
+
+# ===----------------------------------------------------------------------=== #
+# 12: Memory Ordering Routines
+# ===----------------------------------------------------------------------=== #
+
+
+fn shmem_fence():
+    """Ensures ordering of delivery of operations on symmetric data objects.
+
+    All operations on symmetric data objects issued to a particular PE on the
+    given context prior to the call to shmem_fence are guaranteed to be
+    delivered before any subsequent operations on symmetric data objects to the
+    same PE on the same context. shmem_fence guarantees order of delivery, not
+    completion. It does not guarantee order of delivery of nonblocking Get or
+    values fetched by nonblocking AMO routines.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        nvshmem_fence()
+    else:
+        CompilationTarget.unsupported_target_error[operation="shmem_fence"]()
+
+
+# ===----------------------------------------------------------------------=== #
 # Outside of the OpenSHMEM spec
 # ===----------------------------------------------------------------------=== #
 # These are functions outside of the OpenSHMEM spec that have specific function
@@ -502,6 +586,30 @@ fn shmem_barrier_all():
 # nvshmemx_cumodule_init for initializing the device_state into constant memory.
 # Functions outside the spec are prefixed with `nvshmemx_`. These functions will
 # be generalized to support both NVSHMEM and ROCSHMEM where possible.
+
+
+fn shmem_signal_op(
+    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+):
+    """The nvshmemx_signal_op operation atomically updates sig_addr with signal
+    using operation sig_op on the specified PE. This operation can be used
+    together with wait and test routines for efficient point-to-point
+    synchronization.
+
+    Args:
+        sig_addr: Symmetric address of the signal word to be updated.
+        signal: The value used to update sig_addr.
+        sig_op: Operation used to update sig_addr with signal.
+        pe: PE number of the remote PE.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_signal_op"
+        ]()
 
 
 fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
