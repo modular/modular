@@ -199,7 +199,7 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:has_4_gpus"],
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/engine",
