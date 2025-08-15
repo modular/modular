@@ -20,6 +20,9 @@ namespace M::KGEN::MOGGPreElab {
 // kernel.
 constexpr StringLiteral kernelRegistrationAttr = "mogg.kernel";
 
+// The name of the registered function at parse time.
+constexpr StringLiteral mojoSymbolName = "mogg.mojo.name";
+
 inline bool isKernel(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kernelRegistrationAttr);
 }

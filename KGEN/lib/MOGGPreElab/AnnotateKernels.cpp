@@ -12,6 +12,7 @@
 #include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "Support/AssertStream.h"
+#include "Support/Compiler/OperationUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -131,6 +132,23 @@ StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
   return cast<StringAttr>(callee.getParamValues()[2]);
 }
 
+StringAttr getFullyResolvedMojoName(LIT::ASTDeclInterface op) {
+  MLIRContext *ctx = op.getContext();
+  SmallVector<std::string> names;
+  do {
+    names.push_back(op.getDeclName().str());
+  } while ((op = dyn_cast<LIT::ASTDeclInterface>(op->getParentOp())) &&
+           !isa<LIT::PackageOp>(op));
+
+  std::stringstream ss;
+  ss << names.back();
+  names.pop_back();
+  for (auto name : llvm::reverse(names))
+    ss << "." << name;
+
+  return StringAttr::get(ctx, ss.str());
+}
+
 template <typename StructDeclOrFnTy>
 void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
   SmallVector<TypedAttr> decoratorsToCopy;
@@ -165,7 +183,11 @@ void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
       auto str = getStringAttrFromStaticStringDecorator(apply.getOperand(1));
       newAttrs.push_back(NamedAttribute{str, builder.getUnitAttr()});
       decoratorsToCopy.pop_back();
+      // Keeping track of the original name of the function as it goes through
+      // lowering and name mangling.
     }
+    obj->setAttr(builder.getStringAttr(mojoSymbolName),
+                 getFullyResolvedMojoName(obj));
   }
 
   if (!kernelRegistrations.empty()) {
@@ -905,6 +927,11 @@ public:
         auto func = dyn_cast<LIT::FnOp>(curOp);
         if (!func)
           continue;
+
+        // Keeping track of the original name of the function as it goes through
+        // lowering and name mangling.
+        func->setAttr(builder.getStringAttr(mojoSymbolName),
+                      getFullyResolvedMojoName(func));
 
         if (func.getSourceName() == kExecuteFuncName) {
           if (!processStructExecuteFunc(moduleOp, registrationInfo,
