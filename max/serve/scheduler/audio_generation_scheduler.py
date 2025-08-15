@@ -37,7 +37,7 @@ from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
-from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
+from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
 
@@ -239,12 +239,7 @@ class AudioGenerationScheduler(Scheduler):
         )
 
     def _retrieve_pending_requests(self) -> None:
-        while True:
-            try:
-                req_id, req_data = self.request_q.get_nowait()
-                self.pending_reqs.append((req_id, req_data))
-            except queue.Empty:
-                break
+        self.pending_reqs.extend(self.request_q.drain_nowait())
 
     @traced
     def _handle_terminated_responses(
@@ -314,9 +309,7 @@ class AudioGenerationScheduler(Scheduler):
         ce_batch: dict[str, TTSContext] = {}
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
-        max_input_len = (
-            self.scheduler_config.target_tokens_per_batch_ce or float("inf")
-        )
+        max_input_len = self.scheduler_config.target_tokens_per_batch_ce
 
         input_len = 0
 
@@ -399,7 +392,6 @@ class AudioGenerationScheduler(Scheduler):
     def run_iteration(self) -> None:
         # Construct the batch to execute
         t0 = time.monotonic()
-        self._retrieve_pending_requests()
         batch = next(self.batch_generator)
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0

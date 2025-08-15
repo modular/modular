@@ -271,6 +271,15 @@ class ZmqPullSocket(Generic[T]):
     def get_nowait(self, **kwargs) -> T:
         return self.get(flags=zmq.NOBLOCK, **kwargs)
 
+    def drain_nowait(self) -> list[T]:
+        msgs = []
+        while True:
+            try:
+                msgs.append(self.get_nowait())
+            except queue.Empty:
+                break
+        return msgs
+
 
 class ZmqRouterSocket(Generic[T]):
     """ZMQ ROUTER socket for N:1 communication patterns with identity-based routing."""
