@@ -1157,7 +1157,7 @@ struct SIMD[dtype: DType, size: Int](
             size == 1,
             (
                 "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.gt(...)?"
+                "did you mean to use `SIMD.gt(...)`?"
             ),
         ]()
         return Bool(self.gt(rhs))
@@ -1176,7 +1176,7 @@ struct SIMD[dtype: DType, size: Int](
             size == 1,
             (
                 "Greater than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.ge(...)?"
+                "did you mean to use `SIMD.ge(...)`?"
             ),
         ]()
         return Bool(self.ge(rhs))
@@ -1195,7 +1195,7 @@ struct SIMD[dtype: DType, size: Int](
             size == 1,
             (
                 "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.lt(...)?"
+                "did you mean to use `SIMD.lt(...)`?"
             ),
         ]()
         return Bool(self.lt(rhs))
@@ -1214,7 +1214,7 @@ struct SIMD[dtype: DType, size: Int](
             size == 1,
             (
                 "Less than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.le(...)?"
+                "did you mean to use `SIMD.le(...)`?"
             ),
         ]()
         return Bool(self.le(rhs))
