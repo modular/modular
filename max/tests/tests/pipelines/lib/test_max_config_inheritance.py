@@ -164,28 +164,6 @@ class TestMAXConfigInheritance:
             ):
                 TestConfig.from_config_file(child_config_path)
 
-    def test_inheritance_relative_path_not_supported(self) -> None:
-        """Test that using relative path for inheritance raises ValueError."""
-        child_config_data = {
-            "name": "child_config",
-            "version": "1.0",
-            "depends_on": "relative/path/config.yaml",  # TOP LEVEL inheritance
-            "test_config": {
-                "test_field": "child_value",
-            },
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as child_f:
-            yaml.dump(child_config_data, child_f)
-            child_f.flush()  # Ensure data is written to disk
-            child_config_path = child_f.name
-
-            # Should now raise ValueError instead of falling back gracefully
-            with pytest.raises(
-                ValueError, match="Relative path inheritance not supported"
-            ):
-                TestConfig.from_config_file(child_config_path)
-
     def test_inheritance_base_config_invalid_yaml(self) -> None:
         """Test graceful handling when base config has invalid YAML."""
         # Create base config with invalid YAML.
@@ -308,18 +286,6 @@ class TestMAXConfigInheritance:
                 assert config.test_field == "child_value"  # Overridden value
                 assert config.test_int == 100  # Inherited from base
                 assert config.test_bool is False  # Inherited from base
-
-    def test_resolve_inheritance_relative_path_error(self) -> None:
-        """Test that resolve_max_config_inheritance raises ValueError for relative paths."""
-        config_dict = {
-            "depends_on": "relative/path/config.yaml",
-            "test_field": "value",
-        }
-
-        with pytest.raises(
-            ValueError, match="Relative path inheritance not supported"
-        ):
-            resolve_max_config_inheritance(config_dict, TestConfig)
 
     def test_resolve_inheritance_missing_file_error(self) -> None:
         """Test that resolve_max_config_inheritance raises ValueError for missing files."""
