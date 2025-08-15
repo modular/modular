@@ -303,7 +303,7 @@ modular_shared_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":DeviceContext",
+        ":DeviceContextImpl",
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
