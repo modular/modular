@@ -31,8 +31,8 @@ constexpr std::underlying_type_t<Enum> to_underlying(Enum e) {
 template <typename ForwardIterator, typename UnaryFunctor,
           typename NullaryFunctor>
 auto failableInterleave(ForwardIterator begin, ForwardIterator end,
-                        UnaryFunctor eachFn,
-                        NullaryFunctor betweenFn) -> decltype(betweenFn()) {
+                        UnaryFunctor eachFn, NullaryFunctor betweenFn)
+    -> decltype(betweenFn()) {
   if (begin == end)
     return success();
   if (failed(eachFn(*begin)))

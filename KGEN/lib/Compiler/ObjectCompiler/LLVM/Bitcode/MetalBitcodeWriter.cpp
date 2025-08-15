@@ -2517,7 +2517,7 @@ void ModuleBitcodeWriter::writeMetadataRecords(
   if (MDs.empty())
     return;
 
-    // Initialize MDNode abbreviations.
+  // Initialize MDNode abbreviations.
 #define HANDLE_MDNODE_LEAF(CLASS) unsigned CLASS##Abbrev = 0;
 #include "llvm/IR/Metadata.def"
 
