@@ -83,6 +83,10 @@ struct _DeviceStreamCpp:
     pass
 
 
+struct _DeviceEventCpp:
+    pass
+
+
 struct _DeviceTimerCpp:
     pass
 
@@ -96,6 +100,7 @@ alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
 alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
 alias _DeviceMulticastBufferPtr = UnsafePointer[_DeviceMulticastBufferCpp]
 alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
+alias _DeviceEventPtr = UnsafePointer[_DeviceEventCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _DeviceContextScopePtr = UnsafePointer[_DeviceContextScopeCpp]
 alias _CharPtr = UnsafePointer[UInt8]
@@ -1485,6 +1490,74 @@ struct DeviceStream(Copyable, Movable):
             ](self._handle)
         )
 
+    @always_inline
+    fn enqueue_wait_for(self, event: DeviceEvent) raises:
+        """Makes this stream wait for the specified event.
+
+        This function inserts a wait operation into this stream that will
+        block all subsequent operations in the stream until the specified
+        event has been recorded and completed.
+
+        Args:
+            event: The event to wait for.
+
+        Raises:
+            If the wait operation fails.
+        """
+        # const char *AsyncRT_DeviceStream_enqueue_enqueue_wait_for(const DeviceStream *stream, const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_waitForEvent",
+                _CharPtr,
+                _DeviceStreamPtr,
+                _DeviceEventPtr,
+            ](self._handle, event._handle)
+        )
+
+    @always_inline
+    fn record_event(self, event: DeviceEvent) raises:
+        """Records an event in this stream.
+
+        This function records the given event at the current point in this stream.
+        All operations in the stream that were enqueued before this call will
+        complete before the event is triggered.
+
+        Args:
+            event: The event to record.
+
+        Raises:
+            If event recording fails.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create event on the default stream
+        var event = default_stream.create_event()
+
+        # Wait for the event on the new stream
+        new_stream.enqueue_wait_for(event)
+
+        # Stream 2 can continue
+        default_stream.record_event(event)
+        ```
+        """
+        # const char *AsyncRT_DeviceStream_event_record(const DeviceStream *stream, const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_eventRecord",
+                _CharPtr,
+                _DeviceStreamPtr,
+                _DeviceEventPtr,
+            ](self._handle, event._handle)
+        )
+
     @parameter
     @always_inline
     fn enqueue_function[
@@ -1590,6 +1663,146 @@ struct DeviceStream(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+        )
+
+
+struct DeviceEvent(Copyable, Movable):
+    """Represents a GPU event for synchronization between streams.
+
+    A DeviceEvent allows for fine-grained synchronization between different
+    GPU streams. Events can be recorded in one stream and waited for in another,
+    enabling efficient coordination of asynchronous GPU operations.
+
+    Example:
+
+    ```mojo
+    from gpu.host import DeviceContext
+
+    var ctx = DeviceContext()
+
+    var default_stream = ctx.stream()
+    var new_stream = ctx.create_stream()
+
+    # Create event in default_stream
+    var event = ctx.create_event()
+
+    # Wait for the event in new_stream
+    new_stream.enqueue_wait_for(event)
+
+    # Stream 2 can continue
+    default_stream.record_event(event)
+    ```
+    """
+
+    var _handle: _DeviceEventPtr
+    """Internal handle to the native event object."""
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, stream: DeviceStream) raises:
+        """Creates a new event recorded on the given stream.
+
+        Args:
+            stream: The stream to record the event on.
+
+        Raises:
+            - If event creation or recording fails.
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceStream_enqueue_event(const DeviceEvent **result, const DeviceStream *stream)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_eventCreate",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceStreamPtr,
+            ](UnsafePointer(to=result), stream._handle)
+        )
+        self._handle = result
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, ctx: DeviceContext) raises:
+        """Creates a new event recorded on the given context's default stream.
+
+        Args:
+            ctx: The device context to record the event on.
+
+        Raises:
+            - If event creation or recording fails.
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceContext_enqueue_event(const DeviceEvent **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enqueue_event",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceContextPtr,
+            ](UnsafePointer(to=result), ctx._handle)
+        )
+        self._handle = result
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, existing: _DeviceEventPtr):
+        """Creates a DeviceEvent from an existing pointer.
+
+        Args:
+            existing: Pointer to existing DeviceEvent.
+        """
+        # Increment the reference count.
+        external_call["AsyncRT_DeviceEvent_retain", NoneType, _DeviceEventPtr](
+            existing
+        )
+        self._handle = existing
+
+    @doc_private
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of an existing event by incrementing its reference count.
+
+        Args:
+            existing: The event to copy.
+        """
+        # Increment the reference count.
+        external_call["AsyncRT_DeviceEvent_retain", NoneType, _DeviceEventPtr](
+            existing._handle
+        )
+        self._handle = existing._handle
+
+    @doc_private
+    fn __moveinit__(out self, deinit existing: Self):
+        """Moves an existing event into this one.
+
+        Args:
+            existing: The event to move from.
+        """
+        self._handle = existing._handle
+
+    fn __del__(deinit self):
+        """Releases resources associated with this event."""
+        # void AsyncRT_DeviceEvent_release(const DeviceEvent *event)
+        external_call["AsyncRT_DeviceEvent_release", NoneType, _DeviceEventPtr](
+            self._handle,
+        )
+
+    @always_inline
+    fn synchronize(self) raises:
+        """Blocks the calling CPU thread until this event completes.
+
+        This function waits until the event has been recorded and all
+        operations before the event in the stream have completed.
+
+        Raises:
+            If synchronization fails.
+        """
+        # const char *AsyncRT_DeviceEvent_synchronize(const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceEvent_synchronize",
+                _CharPtr,
+                _DeviceEventPtr,
+            ](self._handle)
         )
 
 
@@ -5386,6 +5599,51 @@ struct DeviceContext(Copyable, Movable):
     fn stream(self) raises -> DeviceStream:
         return DeviceStream(self)
 
+    @always_inline
+    fn create_event(self) raises -> DeviceEvent:
+        """Creates a new event on this device context.
+
+        Creates a new event that can be used for synchronization between streams.
+
+        Returns:
+            A DeviceEvent that can be used for synchronization.
+
+        Raises:
+            If event creation fails.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create event in default_stream
+        var event = ctx.create_event()
+
+        # Wait for the event in new_stream
+        new_stream.enqueue_wait_for(event)
+
+        # Stream 2 can continue
+        default_stream.record_event(event)
+        ```
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceContext_event_create(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_eventCreate",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceContextPtr,
+                c_uint,
+            ](UnsafePointer(to=result), self._handle, c_uint(0))
+        )
+        return DeviceEvent(result)
+
     fn stream_priority_range(self) raises -> StreamPriorityRange:
         """Returns the range of stream priorities supported by this device context.
 
@@ -5437,7 +5695,6 @@ struct DeviceContext(Copyable, Movable):
 
         ```mojo
         from gpu.host import DeviceContext
-
         var ctx = DeviceContext()
         var priority = ctx.stream_priority_range().largest
         var stream = ctx.create_stream(priority=priority, blocking=False)
