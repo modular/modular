@@ -16,6 +16,7 @@ from os.atomic import Atomic
 
 import gpu.warp as warp
 from buffer import NDBuffer
+from builtin.device_passable import DevicePassable
 from gpu.host.info import H100
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
@@ -560,7 +561,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](Copyable, MHATileScheduler, Movable):
+](Copyable, DevicePassable, MHATileScheduler, Movable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.
@@ -692,3 +693,47 @@ struct QueuedTileScheduler[
         return ts.unsafe_seq_info[tile_shape, num_heads, ragged, Self.schedule](
             state.idx
         )
+
+    # `trait DevicePassable` implementation
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @no_inline
+    @staticmethod
+    fn get_type_name() -> String:
+        """Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            "QueuedTileScheduler[tile_shape = ",
+            String(tile_shape),
+            ", num_heads = ",
+            String(num_heads),
+            ", decoding = ",
+            String(decoding),
+            ", num_ctas = ",
+            String(num_ctas),
+            ", schedule = ",
+            String(schedule._value),
+            "]",
+        )
+
+    @no_inline
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
