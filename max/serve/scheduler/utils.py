@@ -14,16 +14,31 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
+from typing import TYPE_CHECKING
 
+from max.interfaces import (
+    AudioGenerator,
+    AudioGeneratorOutput,
+    Pipeline,
+    SchedulerResult,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import TTSContext
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .text_batch_constructor import (
     BatchType,
+    ContextType,
     SchedulerOutput,
     TokenGenerationSchedulerConfig,
 )
+
+if TYPE_CHECKING:
+    from .audio_generation_scheduler import AudioGenerationSchedulerOutput
 
 logger = logging.getLogger("max.serve")
 
@@ -138,3 +153,48 @@ def log_metrics(
         f"{blocks_copied_str}"
         f"All Preemptions: {total_preemption_count} reqs"
     )
+
+
+def maybe_restore_chunked_request(
+    batch: dict[str, ContextType],
+    responses: dict[str, TextGenerationOutput],
+    ce_reqs: OrderedDict[str, ContextType],
+) -> None:
+    # Only the last request in a batch could be chunked. We discard its response
+    # and put it back into the request queue if it is chunked.
+    last_req = list(batch.values())[-1]
+    if last_req.active_idx - last_req.start_idx > 1:
+        req_id, data = batch.popitem()
+        ce_reqs[req_id] = data
+        ce_reqs.move_to_end(req_id, last=False)
+        del responses[req_id]
+
+
+def release_terminated_requests(
+    sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
+    responses: dict[str, TextGenerationOutput]
+    | dict[str, AudioGeneratorOutput],
+    pipeline: Pipeline | AudioGenerator,
+    tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
+) -> None:
+    for req_id, response in responses.items():
+        if not response.is_done:
+            continue
+        sch_output.num_terminated += 1
+        pipeline.release(req_id)
+        del tg_reqs[req_id]
+
+
+def release_cancelled_requests(
+    cancel_q: ZmqPullSocket[list[str]],
+    response_q: ZmqPushSocket[dict[str, SchedulerResult]],
+    tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
+    pipeline: Pipeline | AudioGenerator,
+) -> None:
+    for req_ids in cancel_q.drain_nowait():
+        for req_id in req_ids:
+            if req_id not in tg_reqs:
+                continue
+            pipeline.release(req_id)
+            del tg_reqs[req_id]
+            response_q.put_nowait({req_id: SchedulerResult.cancelled()})

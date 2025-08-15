@@ -39,7 +39,12 @@ from .text_batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
-from .utils import log_metrics
+from .utils import (
+    log_metrics,
+    maybe_restore_chunked_request,
+    release_cancelled_requests,
+    release_terminated_requests,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -123,44 +128,19 @@ class TokenGenerationScheduler(Scheduler):
         )
 
         # handle cancelled requests
-        self._handle_cancelled_requests()
-
-    @traced
-    def _handle_terminated_responses(
-        self,
-        sch_output: SchedulerOutput,
-        batch_responses: dict[str, TextGenerationOutput],
-    ) -> None:
-        """Task that handles responses"""
-        for req_id, response in batch_responses.items():
-            if not response.is_done:
-                continue
-            sch_output.num_terminated += 1
-            self.pipeline.release(req_id)
-            del self.batch_constructor.tg_reqs[req_id]
-
-    @traced
-    def _handle_chunked_requests(
-        self,
-        batch_executed: dict[str, Union[TextContext, TextAndVisionContext]],
-        batch_responses: dict[str, TextGenerationOutput],
-    ) -> None:
-        """Handle chunked requests"""
-        if not self.scheduler_config.enable_chunked_prefill:
-            return
-
-        # Only the last request in a batch could be chunked. We discard its response
-        # and put it back into the request queue if it is chunked.
-        last_req = list(batch_executed.values())[-1]
-        if last_req.active_idx - last_req.start_idx > 1:
-            req_id, data = batch_executed.popitem()
-            self.batch_constructor.ce_reqs[req_id] = data
-            self.batch_constructor.ce_reqs.move_to_end(req_id, last=False)
-
-            batch_responses.pop(req_id)
+        release_cancelled_requests(
+            self.cancel_q,
+            self.response_q,
+            self.batch_constructor.tg_reqs,
+            self.pipeline,
+        )
 
     @traced
     def _handle_cancelled_requests(self) -> None:
+        """Handle cancelled requests"""
+        if not self.scheduler_config.enable_chunked_prefill:
+            return
+
         while True:
             try:
                 req_ids = self.cancel_q.get_nowait()
@@ -186,13 +166,22 @@ class TokenGenerationScheduler(Scheduler):
         )
 
         # If there is a chunked request, we put it back into the request queue
-        self._handle_chunked_requests(batch_to_execute, responses)
+        maybe_restore_chunked_request(
+            batch_to_execute,
+            responses,
+            self.batch_constructor.ce_reqs,
+        )
 
         # add the encoded requests to the continuous batch
         self.batch_constructor.tg_reqs |= batch_to_execute
 
         # remove terminated requests from the batch
-        self._handle_terminated_responses(sch_output, responses)
+        release_terminated_requests(
+            sch_output,
+            responses,
+            self.pipeline,
+            self.batch_constructor.tg_reqs,
+        )
 
         # send the responses to the API process
         self.response_q.put_nowait(
