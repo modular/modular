@@ -1017,8 +1017,9 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
   // If no explicit taskId but we have a device hint, route to appropriate
   // thread. Guard negative hints and avoid pinning to main when it only
   // donates.
-  if (taskId == kDefaultTaskId && workItem.deviceHint != kNoDevicePreference &&
-      workItem.deviceHint >= 0 && numWorkers > 0) {
+  if ((taskId == kDefaultTaskId) &&
+      (workItem.deviceHint != kNoDevicePreference) &&
+      (workItem.deviceHint >= 0) && (numWorkers > 0)) {
     // Simple modulo mapping: device N -> thread N % numWorkers.
     size_t target = static_cast<size_t>(workItem.deviceHint) % numWorkers;
     // When mainWillDonate is true, worker 0 is the 'main' queue which is only
