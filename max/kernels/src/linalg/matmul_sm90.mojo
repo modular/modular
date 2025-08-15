@@ -90,6 +90,8 @@ from .utils_gpu import (
 from .matmul_loadop_sm90 import async_load_AB
 from logger import Logger
 
+from gpu.host.device_context import DeviceBuffer
+
 
 @always_inline
 fn cluster_size[cluster_shape: StaticTuple[Int32, 3]]() -> Int32:
@@ -898,9 +900,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    lut_ptr: UnsafePointer[
-        UInt32, address_space = AddressSpace.GLOBAL
-    ] = UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL](),
+    lut_ptr: DeviceBuffer[DType.uint32],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
 
@@ -954,7 +954,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             # a 32-bit (UInt32) value that encodes a block's Hilbert-swizzled coordinates as
             # upper 16 bits = y, lower 16 bits = x
             var linear: UInt32 = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-            var packed: UInt32 = lut_ptr[linear]
+            var packed: UInt32 = lut_ptr.unsafe_ptr()[linear]
             var new_x: UInt32 = packed & 0xFFFF
             var new_y: UInt32 = packed >> 16
             block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
@@ -2241,13 +2241,13 @@ fn warp_specialize_gemm_with_multicasting[
             __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
         ](ctx, c)
 
-    var lut_ptr = UnsafePointer[UInt32]()
+    var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
 
     @parameter
     if hilbert_swizzle:
         var grid_x = ceildiv(N, BN)
         var grid_y = ceildiv(M, BM)
-        lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)._unsafe_ptr()
+        lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
