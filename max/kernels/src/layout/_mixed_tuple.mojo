@@ -534,7 +534,7 @@ fn crd2idx[
     """Calculate the index from a coordinate tuple."""
     alias shape_len = Shape.__len__()
     alias stride_len = Stride.__len__()
-    alias index_len = Index.__len__()
+    alias crd_len = Index.__len__()
 
     @parameter
     if Shape.is_tuple() and Stride.is_tuple() and shape_len == stride_len:
@@ -544,35 +544,35 @@ fn crd2idx[
         var result: Scalar[out_type] = 0
 
         @parameter
-        if index_len > 1:  # tuple tuple tuple
-            var index_t = to_mixed_int_tuple(crd)
+        if crd_len > 1:  # tuple tuple tuple
+            var crd_t = to_mixed_int_tuple(crd)
 
             @parameter
             for i in range(shape_len):
                 result += crd2idx[out_type=out_type](
-                    index_t[i], shape_t[i], stride_t[i]
+                    crd_t[i], shape_t[i], stride_t[i]
                 )
 
             return result
         else:  # "int" tuple tuple
-            var int_crd = 0 if index_len == 0 else crd.value()
+            var crd_int = 0 if crd_len == 0 else crd.value()
 
             alias last_elem_idx = shape_len - 1
 
             @parameter
             for i in range(last_elem_idx):
-                var quotient, remainder = divmod(int_crd, shape_t[i].product())
+                var quotient, remainder = divmod(crd_int, shape_t[i].product())
                 result += crd2idx[out_type=out_type](
                     Idx(remainder), shape_t[i], stride_t[i]
                 )
-                int_crd = quotient
+                crd_int = quotient
             return result + crd2idx[out_type=out_type](
-                Idx(int_crd), shape_t[last_elem_idx], stride_t[last_elem_idx]
+                Idx(crd_int), shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
 
         @parameter
-        if index_len > 1:
+        if crd_len > 1:
             constrained[False, "crd is a tuple but shape and stride are not"]()
             return abort[Scalar[out_type]]()
         else:
