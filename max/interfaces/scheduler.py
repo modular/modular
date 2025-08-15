@@ -3,30 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from enum import Enum
 from typing import Generic, Optional
 
 import msgspec
 
 from .pipeline import PipelineOutputType
-
-
-class SchedulerStatus(str, Enum):
-    """
-    Represents the status of a scheduler operation for a specific pipeline execution.
-
-    The scheduler manages the execution of pipeline operations and returns status updates
-    to indicate the current state of the pipeline execution. This enum defines the possible
-    states that a pipeline operation can be in from the scheduler's perspective.
-
-    """
-
-    ACTIVE = "active"
-    """Indicates that the scheduler executed the pipeline operation successfully and request remains active."""
-    CANCELLED = "cancelled"
-    """Indicates that the pipeline operation was cancelled before completion; no further data will be provided."""
-    COMPLETE = "complete"
-    """Indicates that the pipeline operation was previously finished and no further data should be streamed."""
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
@@ -43,7 +24,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
 
     """
 
-    status: SchedulerStatus
+    is_done: bool
     """The current status of the pipeline operation from the scheduler's perspective."""
 
     result: Optional[PipelineOutputType]
@@ -55,43 +36,19 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
         Create a SchedulerResult representing a cancelled pipeline operation.
 
         Returns:
-            SchedulerResult: A SchedulerResult with CANCELLED status and no result.
+            SchedulerResult: A SchedulerResult that is done.
         """
-        return SchedulerResult(status=SchedulerStatus.CANCELLED, result=None)
+        return SchedulerResult(is_done=True, result=None)
 
     @classmethod
-    def complete(cls, result: PipelineOutputType) -> "SchedulerResult":
+    def create(cls, result: PipelineOutputType) -> "SchedulerResult":
         """
-        Create a SchedulerResult representing a completed pipeline operation.
+        Create a SchedulerResult representing a pipeline operation with some result.
 
         Args:
-            result: The final pipeline output data.
+            result: The pipeline output data.
 
         Returns:
-            SchedulerResult: A SchedulerResult with COMPLETE status and the final result.
+            SchedulerResult: A SchedulerResult with a result.
         """
-        return SchedulerResult(status=SchedulerStatus.COMPLETE, result=result)
-
-    @classmethod
-    def active(cls, result: PipelineOutputType) -> "SchedulerResult":
-        """
-        Create a SchedulerResult representing an active pipeline operation.
-
-        Args:
-            result: The current pipeline output data (may be partial for streaming operations).
-
-        Returns:
-            SchedulerResult: A SchedulerResult with ACTIVE status and the provided result.
-        """
-        return SchedulerResult(status=SchedulerStatus.ACTIVE, result=result)
-
-    @property
-    def stop_stream(self) -> bool:
-        """
-        Determine if the pipeline operation stream should continue based on the current status.
-
-        Returns:
-            bool: True if the pipeline operation stream should stop (CANCELLED or COMPLETE),
-                  False if it should continue (ACTIVE).
-        """
-        return self.status != SchedulerStatus.ACTIVE
+        return SchedulerResult(is_done=result.is_done, result=result)
