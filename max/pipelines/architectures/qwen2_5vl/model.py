@@ -816,7 +816,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
             decoder_position_ids.append(temp_position_ids)
 
-        decoder_position_ids = np.concatenate(decoder_position_ids, axis=0)
+        decoder_position_ids = np.concatenate(decoder_position_ids, axis=1)
 
         # position_ids is a 2D tensor that is passed down to the 2D RoPE kernel in the decoder along with mrope_section
         # Convert to uint32 to match the expected dtype in the language model

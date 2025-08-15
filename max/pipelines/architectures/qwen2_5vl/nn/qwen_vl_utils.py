@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import logging
 import math
 import os
@@ -133,6 +134,8 @@ def fetch_image(ele: dict, size_factor: int = IMAGE_FACTOR) -> Image.Image:
     image_obj = None
     if isinstance(image, Image.Image):
         image_obj = image
+    elif isinstance(image, bytes):
+        image_obj = Image.open(io.BytesIO(image))
     elif image.startswith("http://") or image.startswith("https://"):
         # fix memory leak issue while using BytesIO
         with requests.get(image, stream=True) as response:
