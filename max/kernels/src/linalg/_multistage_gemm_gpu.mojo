@@ -930,7 +930,7 @@ fn multistage_gemm_kernel[
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if m < M and n < N:
-                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment = alignof[SIMD[c_type, src_simd_width_y]](),
                 ]()
@@ -1031,7 +1031,7 @@ fn multistage_gemm_kernel[
                 var bid = (
                     block_idx_swizzle[1] + block_dim.x * block_idx_swizzle[0]
                 )
-                var semaphore = Semaphore(locks.offset(bid), Int(thread_idx.x))
+                var semaphore = Semaphore(locks + (bid), Int(thread_idx.x))
                 semaphore.fetch()
                 semaphore.wait(Int(block_idx.z))
 

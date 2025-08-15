@@ -72,11 +72,11 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr.offset(prefetch_offset + idx * simd_size))
+                ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
-        var a_ptr = a.data.offset(global_offset.M * K + global_k)
+        var a_ptr = a.data + (global_offset.M * K + global_k)
 
         alias c_type = c_local.type
 
@@ -115,7 +115,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.data + (global_offset.M * c_stride + global_offset.N)
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N

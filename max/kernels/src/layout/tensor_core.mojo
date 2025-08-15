@@ -1316,7 +1316,7 @@ fn _load_matrix_frag[
     )
 
     return ld_matrix[res.size, transpose=transposed](
-        mma_tile.ptr.offset(lane_offset)
+        mma_tile.ptr + lane_offset
     )
 
 

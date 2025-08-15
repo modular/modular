@@ -258,7 +258,7 @@ struct IntArray:
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(self._data.offset(offset), source._data, size)
+        memcpy(self._data + offset, source._data, size)
 
     @always_inline("nodebug")
     fn copy_from(
@@ -273,7 +273,7 @@ struct IntArray:
             size: Number of elements to copy.
         """
         memcpy(
-            self._data.offset(dst_offset), source._data.offset(src_offset), size
+            self._data + dst_offset, source._data + src_offset, size
         )
 
 

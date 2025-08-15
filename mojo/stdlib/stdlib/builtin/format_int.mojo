@@ -342,7 +342,7 @@ fn _try_write_int[
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    buf.unsafe_ptr().offset(offset).init_pointee_copy(
+    (buf.unsafe_ptr() + offset).init_pointee_copy(
         0
     )  # Write NUL terminator at the end
 
@@ -360,7 +360,7 @@ fn _try_write_int[
 
             # Write the char representing the value of the least significant
             # digit.
-            buf.unsafe_ptr().offset(offset).init_pointee_copy(
+            (buf.unsafe_ptr() + offset).init_pointee_copy(
                 digit_chars_array[Int(digit_value)]
             )
 

@@ -207,10 +207,10 @@ struct MHAPosition[
         exp_sum_offset = Self.num_heads * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
-        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer().offset(
+        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer() + (
             exp_sum_offset
         )
-        qk_max_ptr = exp_sum_ptr.offset(
+        qk_max_ptr = exp_sum_ptr + (
             Self.num_heads * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)

@@ -573,7 +573,7 @@ fn logsoftmax[
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
             var output_buffer_view = NDBuffer[dtype, 1](
-                output.data.offset(buffer_offset), inner_dim
+                output.data + (buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
@@ -657,7 +657,7 @@ fn _softmax_cpu[
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
             var output_buffer_view = NDBuffer[dtype, 1](
-                output.data.offset(buffer_offset), inner_dim
+                output.data + (buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 

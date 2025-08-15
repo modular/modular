@@ -468,11 +468,11 @@ fn mla_decoding[
     # split-k intermediate buffers
     var qk_max_batch_ptr = __type_of(qk_max_ptr)()
     if qk_max_ptr:
-        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+        qk_max_batch_ptr = qk_max_ptr + (qk_max_offset)
 
     var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
     if exp_sum_ptr:
-        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
+        exp_sum_batch_ptr = exp_sum_ptr + (exp_sum_offset)
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -513,9 +513,9 @@ fn mla_decoding[
         use_score_mod=use_score_mod,
         decoding_warp_split_k=decoding_warp_split_k,
     ](
-        q_ptr.offset(q_batch_offset),
+        q_ptr + (q_batch_offset),
         k,
-        output_ptr.offset(output_batch_offset),
+        output_ptr + (output_batch_offset),
         exp_sum_batch_ptr,
         qk_max_batch_ptr,
         scale,
@@ -1579,14 +1579,14 @@ fn mla_prefill[
         write_softmax_info=write_softmax_info,
         use_cascade_attention=use_cascade_attention,
     ](
-        q_ptr.offset(q_batch_offset),
+        q_ptr + (q_batch_offset),
         k,
         v,
         k_rope,
-        output_ptr.offset(o_batch_offset),
-        softmax_info_accum_ptr.offset(softmax_info_offset),
-        prev_output_ptr.offset(o_batch_offset),
-        prev_softmax_info_accum_ptr.offset(softmax_info_offset),
+        output_ptr + (o_batch_offset),
+        softmax_info_accum_ptr + (softmax_info_offset),
+        prev_output_ptr + (o_batch_offset),
+        prev_softmax_info_accum_ptr + (softmax_info_offset),
         scale,
         seq_len,
         max_seq_len,

@@ -31,8 +31,8 @@ fn copy_via_shared(
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thId),
-        mem_buff.offset(thId),
+        src_global + (thId),
+        mem_buff + (thId),
     )
 
     var m_barrier = stack_allocation[

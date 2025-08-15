@@ -419,13 +419,13 @@ fn blackwell_tma_pair_umma_kernel[
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
             st_matrix[simd_width=4](
-                upper.ptr.offset(
+                upper.ptr + (
                     st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                 ),
                 d_reg_upper_packed,
             )
             st_matrix[simd_width=4](
-                lower.ptr.offset(
+                lower.ptr + (
                     st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                 ),
                 d_reg_lower_packed,
@@ -442,7 +442,7 @@ fn blackwell_tma_pair_umma_kernel[
         var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr + (BM * TMA_BN * thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,

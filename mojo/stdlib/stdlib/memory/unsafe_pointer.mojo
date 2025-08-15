@@ -209,21 +209,6 @@ struct UnsafePointer[
         )
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The new constructed UnsafePointer.
-        """
-        return __mlir_op.`pop.offset`(self.address, index(idx))
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [origin, address_space] type:
@@ -253,7 +238,7 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset))
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -571,7 +556,7 @@ struct UnsafePointer[
             The loaded value.
         """
         constrained[offset.dtype.is_integral(), "offset must be integer"]()
-        return self.offset(Int(offset)).load[
+        return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -607,7 +592,7 @@ struct UnsafePointer[
         Returns:
             The loaded value.
         """
-        return self.offset(offset).load[
+        return (self + offset).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -645,7 +630,7 @@ struct UnsafePointer[
             val: The value to store.
         """
         constrained[mut, _must_be_mut_err]()
-        self.offset(offset).store[alignment=alignment, volatile=volatile](val)
+        (self + offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -678,7 +663,7 @@ struct UnsafePointer[
         """
         constrained[mut, _must_be_mut_err]()
         constrained[offset_type.is_integral(), "offset must be integer"]()
-        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
+        (self + Int(offset))._store[alignment=alignment, volatile=volatile](
             val
         )
 

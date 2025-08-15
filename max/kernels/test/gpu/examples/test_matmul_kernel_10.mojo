@@ -161,7 +161,7 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                aa_ptr.offset(Int((inner_row_a + offset) * K + inner_col_a * 4))
+                aa_ptr + (Int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
             @parameter
@@ -175,7 +175,7 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                bb_ptr.offset(Int((inner_row_b + offset) * N + inner_co_ib * 4))
+                bb_ptr + (Int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.store[alignment=16](
                 Index((inner_row_b + offset) * BN + inner_co_ib * 4),
@@ -240,8 +240,8 @@ fn sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr.offset(Int(BK))  # move BK columns to right
-        bb_ptr = bb_ptr.offset(Int(BK * N))  # move BK rows down
+        aa_ptr = aa_ptr + (Int(BK))  # move BK columns to right
+        bb_ptr = bb_ptr + (Int(BK * N))  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -253,7 +253,7 @@ fn sgemm_warp_tiling_kernel[
             # Move C pointer to current warp subtile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr.offset(
+            var C_interim = cc_ptr + (
                 Int((M_offset_subtile) * N + N_offset_subtile)
             )
 

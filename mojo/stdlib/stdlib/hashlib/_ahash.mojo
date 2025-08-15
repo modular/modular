@@ -58,7 +58,7 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
                 data.bitcast[Scalar[DType.uint32]]().load().cast[DType.uint64]()
             )
             var b = (
-                data.offset(length - 4)
+                (data + length - 4)
                 .bitcast[Scalar[DType.uint32]]()
                 .load()
                 .cast[DType.uint64]()
@@ -69,7 +69,7 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
             var a = (
                 data.bitcast[Scalar[DType.uint16]]().load().cast[DType.uint64]()
             )
-            var b = data.offset(length - 1).load().cast[DType.uint64]()
+            var b = (data + length - 1).load().cast[DType.uint64]()
             return U128(a, b)
     else:
         # len 0-1
@@ -142,7 +142,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         if length > 8:
             if length > 16:
                 var tail = (
-                    data.offset(length - 16)
+                    (data + length - 16)
                     .bitcast[Scalar[DType.uint64]]()
                     .load[width=2]()
                 )
@@ -150,7 +150,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                 var offset = 0
                 while length - offset > 16:
                     var block = (
-                        data.offset(offset)
+                        (data + offset)
                         .bitcast[Scalar[DType.uint64]]()
                         .load[width=2]()
                     )
@@ -159,7 +159,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             else:
                 var a = data.bitcast[Scalar[DType.uint64]]().load()
                 var b = (
-                    data.offset(length - 8)
+                    (data + length - 8)
                     .bitcast[Scalar[DType.uint64]]()
                     .load()
                 )

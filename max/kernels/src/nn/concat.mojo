@@ -58,7 +58,7 @@ fn memcpy_or_fuse[
 ) raises:
     @parameter
     if not epilogue_fn:
-        memcpy(dest_data.offset(out_byte_offset), src_data, n)
+        memcpy(dest_data + (out_byte_offset), src_data, n)
     else:
         alias func = epilogue_fn.value()
         alias simd_width = simdwidthof[dtype]()
@@ -235,7 +235,7 @@ fn _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data.offset(overlap_rel_start),
+                        input_data + (overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
                         output.dynamic_shape,
                     )
@@ -249,13 +249,13 @@ fn _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data.offset(overlap_rel_start),
+                        input_data + (overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
                         output.dynamic_shape,
                     )
                     # Now, fully-aligned sections:
-                    var in_ptr = input_data.offset(overlap_full_rel_start)
-                    var end_in_ptr = input_data.offset(overlap_full_rel_end)
+                    var in_ptr = input_data + (overlap_full_rel_start)
+                    var end_in_ptr = input_data + (overlap_full_rel_end)
                     var out_ptr_offset = (
                         output_wc_offset
                         + overlap_full_rel_start // input_wc * output_wc
@@ -758,7 +758,7 @@ fn _concat_gpu[
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.data.offset(input_size),
+                    output.data + (input_size),
                     inputs[i].num_elements(),
                     owning=False,
                 )

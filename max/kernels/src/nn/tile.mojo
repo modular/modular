@@ -131,8 +131,8 @@ fn tile[
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
                 for rep in range(repeats[repeats_len - 1]):
-                    var src_ptr = input.ptr.offset(input_src_index)
-                    var dst_ptr = output.ptr.offset(
+                    var src_ptr = input.ptr + (input_src_index)
+                    var dst_ptr = output.ptr + (
                         output_src_index + rep * output_src_stride
                     )
                     memcpy(dst_ptr, src_ptr, count)
@@ -167,8 +167,8 @@ fn tile[
                     repeats[repeats_len - 1]
                 )
                 for rep in range(repeats[repeats_len - 2] - 1):
-                    var src_ptr = output.ptr.offset(src_index)
-                    var dst_ptr = output.ptr.offset(
+                    var src_ptr = output.ptr + (src_index)
+                    var dst_ptr = output.ptr + (
                         src_index + (rep + 1) * src_index_stride
                     )
                     memcpy(dst_ptr, src_ptr, count)
@@ -195,8 +195,8 @@ fn tile[
                 * Int(repeats[repeats_len - 1])
             )
             for rep in range(repeats[repeats_len - 3] - 1):
-                var src_ptr = output.ptr.offset(src_index)
-                var dst_ptr = output.ptr.offset(
+                var src_ptr = output.ptr + (src_index)
+                var dst_ptr = output.ptr + (
                     src_index + (rep + 1) * src_index_stride
                 )
                 memcpy(dst_ptr, src_ptr, count)
@@ -218,8 +218,8 @@ fn tile[
         for rep in range(
             Int(repeats[Int(repeats.runtime_layout.shape[0]) - 4] - 1)
         ):
-            var src_ptr = output.ptr.offset(src_index)
-            var dst_ptr = output.ptr.offset(
+            var src_ptr = output.ptr + (src_index)
+            var dst_ptr = output.ptr + (
                 src_index + (rep + 1) * src_index_stride
             )
             memcpy(dst_ptr, src_ptr, count)

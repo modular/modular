@@ -402,7 +402,7 @@ fn tma_umma_warp_specialized_gemm_kernel[
                             ),
                         )
                     ](thread_idx.x, i, m_mma, 0)
-                    var offset = c_smem_tile.ptr.offset(
+                    var offset = c_smem_tile.ptr + (
                         st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                         + BM * TMA_BN * tma_n
                     )
@@ -418,7 +418,7 @@ fn tma_umma_warp_specialized_gemm_kernel[
         if elect_one_warp and thread_idx.x < BN // TMA_BN:
             fence_async_view_proxy()
 
-            var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+            var smem_offset = c_smem_tile.ptr + (BM * TMA_BN * thread_idx.x)
 
             var c_tma_tile = LayoutTensor[
                 c_type,
