@@ -35,6 +35,10 @@ from max.serve.scheduler.text_batch_constructor import (
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.scheduler.utils import (
+    maybe_restore_chunked_request,
+    release_terminated_requests,
+)
 
 
 def create_mock_pipeline() -> Mock:
@@ -199,9 +203,11 @@ def test_scheduler_handle_terminated_responses() -> None:
     scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
     sch_output = SchedulerOutput(batch_inputs=batch_executed)
-    scheduler._handle_terminated_responses(
+    release_terminated_requests(
         sch_output,
         cast(dict[str, TextGenerationOutput], batch_responses),
+        scheduler.pipeline,
+        scheduler.batch_constructor.tg_reqs,
     )
 
     assert sch_output.num_terminated == 1
@@ -225,8 +231,10 @@ def test_scheduler_handle_chunked_requests() -> None:
     batch_responses[req_1.request_id].is_done = False
     batch_responses[req_2.request_id].is_done = False
 
-    scheduler._handle_chunked_requests(
-        batch_executed, cast(dict[str, TextGenerationOutput], batch_responses)
+    maybe_restore_chunked_request(
+        batch_executed,
+        cast(dict[str, TextGenerationOutput], batch_responses),
+        scheduler.batch_constructor.ce_reqs,
     )
 
     assert req_2.request_id not in batch_executed
