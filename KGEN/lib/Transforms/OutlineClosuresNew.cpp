@@ -592,8 +592,10 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   // The closure symbol does not have the implicit argument; remove it
   argTypes.erase(argTypes.begin());
   SmallVector<Type> paramsUnmapped;
-  for (ParamDeclAttr param : closureInitData.getClosureInit().getInputParams())
-    paramsUnmapped.push_back(param.getType());
+  for (Type paramType : closureInitData.getClosureInit()
+                            .getFuncTypeGenerator()
+                            .getInputParamTypes())
+    paramsUnmapped.push_back(paramType);
   ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
       closureInitData.getGenerator(), closureInitData.regionName(),
       ClosureMethod::CALL, argTypes, closureInitData.results(),

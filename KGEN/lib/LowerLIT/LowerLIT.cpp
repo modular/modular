@@ -359,7 +359,9 @@ void LITLowerer::lowerLITOps(FnOp func) {
           closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
           closureInit.getCaptures(),
           ArrayAttr::get(b.getContext(), moveOrCopyCaptureSymbols),
-          closureInit.getInputParams(), closureInit.getInlineLevel());
+          closureInit.getInputParams().drop_front(
+              closureInit.getFuncTypeGenerator().getNumImplicitOriginDecls()),
+          closureInit.getInlineLevel());
       closureInitKgen.getBodyRegion().takeBody(closureInit.getBodyRegion());
       b.replaceOp(closureInit, closureInitKgen);
     }
