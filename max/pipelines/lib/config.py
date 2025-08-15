@@ -591,7 +591,7 @@ class PipelineConfig(MAXConfig):
 
     @staticmethod
     def help() -> dict[str, str]:
-        pipeline_help = {
+        return {
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
@@ -612,19 +612,6 @@ class PipelineConfig(MAXConfig):
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
             "experimental_device_context_buffer_cache_size": "Dictates the amount of memory to reserve for the pre-allocated pool of device memory managed by the device context. This is a temporary flag that we'll consolidate with the device_memory_utilization field in the future.",
         }
-
-        # Add help text for all MAX config classes
-        # TODO(zheng): Make this more efficient by using MaxConfig instance
-        # instead of hardcoding the config names.
-        for config_class in [SamplingConfig, ProfilingConfig]:
-            config_help = config_class.help()  # type: ignore
-            for key in config_help:
-                if key in pipeline_help:
-                    raise ValueError(
-                        f"Duplicate help key '{key}' found in {config_class.__name__}"
-                    )
-            pipeline_help.update(config_help)
-        return pipeline_help
 
     @property
     def model_config(self) -> MAXModelConfig:
