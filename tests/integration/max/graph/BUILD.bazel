@@ -40,13 +40,9 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
-    # TODO(MAXPLAT-103): Inherit transitive mojo deps
     mojo_deps = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
-        "//SDK/lib/API/mojo/max/tensor",
-        "@mojo//:register",
-        "@mojo//:stdlib",
     ],
     tags = [
         "gpu",
@@ -54,12 +50,8 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
         requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
         requirement("torchvision"),
-        requirement("pytest-asyncio"),
+        requirement("hypothesis"),
     ],
 )
