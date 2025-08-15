@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.sort import _quicksort, _SortWrapper
+from os import abort
 
 
 # DO NOT CHANGE
@@ -21,20 +22,18 @@ trait TuningConfig(Copyable, Movable, Stringable):
 
 
 # DO NOT CHANGE
-# @fieldwise_init
-# @register_passable("trivial")
 struct Table[type: TuningConfig](Stringable):
     var configs: List[type]
     var name: String
     var num_configs: UInt
 
-    @always_inline("nodebug")
     fn __init__(out self, configs: List[type], name: String):
         self.configs = configs
         self.name = name
         self.num_configs = len(configs)
+
         if not self.check():
-            print("Failed to compile table")
+            abort(String("Failed to Compile Table: [", self.name, "]"))
 
     # Method to check there are no redundancies in table (based on __str__).
     fn check(self) -> Bool:
