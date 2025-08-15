@@ -68,6 +68,8 @@ from .utils_gpu import (
     select_config,
 )
 
+from layout import LayoutTensor
+
 
 fn matmul_kernel[
     c_type: DType,
@@ -187,14 +189,17 @@ fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[Scalar[c_type]],
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    b_ptr: UnsafePointer[Scalar[b_type]],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -205,28 +210,28 @@ fn matmul_kernel_naive[
     if x >= m or y >= n:
         return
 
-    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
     var accum = Scalar[s_type]()
 
     @parameter
     if transpose_b:
-        var b = NDBuffer[b_type, 2](b_ptr, Index(n, k))
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
+            var a_val = a[x, i]
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
+                Scalar[s_type]
+            ](b[y, i].cast[s_type]())
 
     else:
-        var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
-
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
+                Scalar[s_type]
+            ](b[i, y].cast[s_type]())
 
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
-        c[Index(x, y)] = accum.cast[c_type]()
+        c[x, y] = accum.cast[c_type]()
 
 
 @fieldwise_init
@@ -307,19 +312,27 @@ fn _matmul_sm100[
             logger.info(
                 "Executing: Naive MATMUL kernel (BLOCK_DIM=", BLOCK_DIM, ")"
             )
+
+            var c_layout_tensor = from_ndbuffer_row_major(c)
+            var a_layout_tensor = from_ndbuffer_row_major(a)
+            var b_layout_tensor = from_ndbuffer_row_major(b)
+
             ctx.enqueue_function[
                 matmul_kernel_naive[
                     c_type,
                     a_type,
                     b_type,
+                    c_layout_tensor.layout,
+                    a_layout_tensor.layout,
+                    b_layout_tensor.layout,
                     BLOCK_DIM,
                     transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ](
-                c.data,
-                a.data,
-                b.data,
+                c_layout_tensor,
+                a_layout_tensor,
+                b_layout_tensor,
                 m,
                 n,
                 k,
@@ -948,19 +961,27 @@ fn _matmul_gpu[
 
     logger.info("Executing: Naive MATMUL kernel")
     alias BLOCK_DIM = 16
+
+    var c_layout_tensor = from_ndbuffer_row_major(c)
+    var a_layout_tensor = from_ndbuffer_row_major(a)
+    var b_layout_tensor = from_ndbuffer_row_major(b)
+
     ctx.enqueue_function[
         matmul_kernel_naive[
             c_type,
             a_type,
             b_type,
+            c_layout_tensor.layout,
+            a_layout_tensor.layout,
+            b_layout_tensor.layout,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ]
     ](
-        c.data,
-        a.data,
-        b.data,
+        c_layout_tensor,
+        a_layout_tensor,
+        b_layout_tensor,
         m,
         n,
         k,

@@ -20,6 +20,7 @@ from gpu import block_dim
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 def test_vendor_blas[
@@ -58,14 +59,26 @@ def test_vendor_blas[
     ctx.enqueue_copy(c_host, c_device)
 
     alias BLOCK_DIM = 16
+
+    var c_ref_tensor = from_ndbuffer_row_major(c_ref)
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+
     ctx.enqueue_function[
         matmul_kernel_naive[
-            dtype, dtype, dtype, BLOCK_DIM, transpose_b=transpose_b
+            dtype,
+            dtype,
+            dtype,
+            c_ref_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+            transpose_b=transpose_b,
         ]
     ](
-        c_ref,
-        a,
-        b,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

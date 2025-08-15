@@ -21,6 +21,7 @@ from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn swizzle_tile(
@@ -458,8 +459,6 @@ fn run_matmul_stream_k[
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
     var c_device_n = ctx.enqueue_create_buffer[type](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
@@ -480,15 +479,28 @@ fn run_matmul_stream_k[
     ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
-    ctx.enqueue_copy(a_device_n, a_host)
-    ctx.enqueue_copy(b_device_n, b_host)
-
     alias BLOCK_DIM = 16
 
-    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
-        c_device_n,
-        a_device_n,
-        b_device_n,
+    var c_buf_n = NDBuffer[type, 2](c_device_n._unsafe_ptr(), Index(M, N))
+
+    var c_tensor = from_ndbuffer_row_major(c_buf_n)
+    var a_tensor = from_ndbuffer_row_major(a_buf)
+    var b_tensor = from_ndbuffer_row_major(b_buf)
+
+    ctx.enqueue_function[
+        matmul_kernel_naive[
+            type,
+            type,
+            type,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,
@@ -510,8 +522,6 @@ fn run_matmul_stream_k[
     _ = b_device
     _ = c_device
 
-    _ = a_device_n
-    _ = b_device_n
     _ = c_device_n
 
     _ = a_host

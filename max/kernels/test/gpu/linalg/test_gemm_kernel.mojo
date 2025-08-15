@@ -27,6 +27,7 @@ from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 from utils import Index
 
@@ -209,18 +210,30 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
-        DType.float32, DType.float32, DType.float32, BLOCK_DIM
-    ]
     var c_buffer_ref = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList(M, N)
     ](c_device_ref._unsafe_ptr())
+
+    var c_tensor_ref = from_ndbuffer_row_major(c_buffer_ref)
+    var a_tensor = from_ndbuffer_row_major(mat_a)
+    var b_tensor = from_ndbuffer_row_major(mat_b)
+
+    # Naive gemm.
+    alias BLOCK_DIM = 16
+    alias gemm_naive = matmul_kernel_naive[
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+
     ctx.enqueue_function[gemm_naive](
-        c_buffer_ref,
-        mat_a,
-        mat_b,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

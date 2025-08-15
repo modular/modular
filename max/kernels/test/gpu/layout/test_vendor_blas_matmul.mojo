@@ -26,6 +26,7 @@ from internal_utils import (
 )
 from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import Backend, Handle, matmul
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn test_matmul[
@@ -69,6 +70,10 @@ fn test_matmul[
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
+    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref.tensor)
+    var a_tensor = from_ndbuffer_row_major(a_device.tensor)
+    var b_tensor = from_ndbuffer_row_major(b_device.tensor)
+
     # Run naive matmul.
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
@@ -76,13 +81,16 @@ fn test_matmul[
             DType.float32,
             input_type,
             input_type,
+            c_tensor_ref.layout,
+            a_tensor.layout,
+            b_tensor.layout,
             BLOCK_DIM,
             transpose_b=True,
         ]
     ](
-        c_device_ref.buffer,
-        a_device.buffer,
-        b_device.buffer,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

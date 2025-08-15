@@ -21,6 +21,9 @@ from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_false
 
 from utils.numerics import isnan
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
+from utils.index import IndexList
 
 
 fn run_matvec[
@@ -99,6 +102,24 @@ fn run_matvec[
 
     alias BLOCK_DIM = 16
 
+    # Create layout tensors for the naive kernel
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        c_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        a_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        b_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
@@ -107,12 +128,15 @@ fn run_matvec[
                 DType.float32,
                 DType.float32,
                 DType.float32,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
                 BLOCK_DIM,
             ]
         ](
-            c_device_n,
-            a_device_n,
-            b_device_n,
+            c_tensor,
+            a_tensor,
+            b_tensor,
             UInt(M),
             UInt(N),
             UInt(K),
