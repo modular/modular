@@ -46,6 +46,7 @@ from sys.param_env import _is_bool_like
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
 from builtin.variadics import VariadicOf
+from compile import get_type_name
 from compile.compile import CompiledFunctionInfo
 from gpu.host.compile import (
     _compile_code,
@@ -2485,7 +2486,6 @@ struct DeviceFunction[
 
                 # Now we'll check if the given argument's device_type is
                 # what the kernel expects.
-                # TODO: Print out the expected dtype if possible.
 
                 # First, check if they're handing in a device dtype, in other
                 # words, a dtype that can be passed directly and doesn't need to
@@ -2501,6 +2501,8 @@ struct DeviceFunction[
                         String(i),
                         ", received a ",
                         actual_arg_type.get_type_name(),
+                        ", but actual type name is: ",
+                        get_type_name[declared_arg_type](),
                     ]()
                 else:
                     # They handed in a host dtype, in other words, a dtype that
