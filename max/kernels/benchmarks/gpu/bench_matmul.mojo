@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import (
+    env_get_bool,
+    env_get_dtype,
+    env_get_int,
+    has_nvidia_gpu_accelerator,
+    sizeof,
+)
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -132,7 +138,7 @@ fn bench_matmul[
     if not init_on_gpu:
 
         @parameter
-        if dtype is DType.float8_e4m3fn:
+        if dtype.is_float8():
             random(a_host.tensor)
             random(b_host.tensor)
         else:
@@ -281,7 +287,7 @@ fn main() raises:
     with DeviceContext() as ctx:
 
         @parameter
-        if dtype is DType.float8_e4m3fn:
+        if has_nvidia_gpu_accelerator() and dtype.is_float8():
             with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
                 create_matmul_bench[
                     dtype,
