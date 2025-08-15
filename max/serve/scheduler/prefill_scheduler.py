@@ -246,7 +246,6 @@ class PrefillScheduler(Scheduler):
                 break
 
             prefill_request = self.prefill_requests.popleft()
-            prefill_request.context.reset()
 
             # Check if its been cancelled
             if (
