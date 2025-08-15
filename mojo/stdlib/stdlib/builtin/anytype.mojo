@@ -119,7 +119,7 @@ alias __InstanceOfImpl[Trait: AnyTrivialRegType, T: Trait] = T
 
 alias InstanceOf[Trait: AnyTrivialRegType] = __InstanceOfImpl[Trait]
 """An alias allowing users to tersely express that a function argument is an
-instance of a trait.
+instance of a type that implements a trait or trait composition.
 
 For example, instead of writing
 

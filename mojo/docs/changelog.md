@@ -80,8 +80,8 @@ what we publish.
     `KeyElement`
 
 - A new `InstanceOf` utility is introduced to reduce the syntactic load of
-  declaring function arguments of a type that implements a given trait. For
-  example, instead of writing
+  declaring function arguments of a type that implements a given trait or trait
+  composition. For example, instead of writing
 
   ```mojo
   fn foo[T: Intable, //](x: T) -> Int:
