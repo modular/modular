@@ -31,10 +31,12 @@ from max.interfaces import (
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
-from max.serve.scheduler.text_generation_scheduler import (
+from max.serve.scheduler.text_batch_constructor import (
     BatchType,
-    TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
+)
+from max.serve.scheduler.text_generation_scheduler import (
+    TokenGenerationScheduler,
 )
 from max.support.math import ceildiv
 
@@ -275,12 +277,12 @@ class BatchInfo:
 
     @classmethod
     def empty(cls) -> BatchInfo:
-        return BatchInfo(BatchType.TokenGeneration, 0, 0, 0, 0)
+        return BatchInfo(BatchType.TG, 0, 0, 0, 0)
 
     def __repr__(self) -> str:
         return (
             f"BatchInfo("
-            f"{self.batch_type.concise_name()}, "
+            f"{self.batch_type.value}, "
             f"{self.batch_size}, "
             f"{self.terminated}, "
             f"{self.num_steps}, "
@@ -291,7 +293,8 @@ class BatchInfo:
 def create_batch_and_execute(
     scheduler: TokenGenerationScheduler,
 ) -> BatchInfo:
-    batch_to_execute = scheduler._create_batch_to_execute()
+    scheduler._retrieve_pending_requests()
+    batch_to_execute = scheduler.batch_constructor.construct_batch()
     batch_size = batch_to_execute.batch_size
     batch_type = batch_to_execute.batch_type
     input_tokens = batch_to_execute.input_tokens
@@ -363,8 +366,8 @@ def enqueue_request_with_prompt(
     socket.put_nowait((context.request_id, context))
 
 
-CE = BatchType.ContextEncoding
-TG = BatchType.TokenGeneration
+CE = BatchType.CE
+TG = BatchType.TG
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])

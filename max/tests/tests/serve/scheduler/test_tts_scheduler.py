@@ -289,12 +289,12 @@ class BatchInfo:
 
     @classmethod
     def empty(cls) -> BatchInfo:
-        return BatchInfo(BatchType.TokenGeneration, 0, 0, 0, 0)
+        return BatchInfo(BatchType.TG, 0, 0, 0, 0)
 
     def __repr__(self) -> str:
         return (
             f"BatchInfo("
-            f"{self.batch_type.concise_name()}, "
+            f"{self.batch_type.value}, "
             f"{self.batch_size}, "
             f"{self.terminated}, "
             f"{self.num_steps}, "
@@ -395,8 +395,8 @@ def enqueue_request_with_prompt(
     socket.put_nowait((req_id, context))
 
 
-CE = BatchType.ContextEncoding
-TG = BatchType.TokenGeneration
+CE = BatchType.CE
+TG = BatchType.TG
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])
