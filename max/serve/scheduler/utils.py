@@ -174,7 +174,7 @@ def release_terminated_requests(
     sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
     responses: dict[str, TextGenerationOutput]
     | dict[str, AudioGeneratorOutput],
-    pipeline: Pipeline | AudioGenerator,
+    pipeline: Pipeline | AudioGenerator[TTSContext],
     tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
 ) -> None:
     for req_id, response in responses.items():
@@ -189,7 +189,7 @@ def release_cancelled_requests(
     cancel_q: ZmqPullSocket[list[str]],
     response_q: ZmqPushSocket[dict[str, SchedulerResult]],
     tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
-    pipeline: Pipeline | AudioGenerator,
+    pipeline: Pipeline | AudioGenerator[TTSContext],
 ) -> None:
     for req_ids in cancel_q.drain_nowait():
         for req_id in req_ids:
