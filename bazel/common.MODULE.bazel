@@ -130,6 +130,8 @@ single_version_override(
     patches = [
         # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
         "//bazel/public-patches:grpc-no-macos-x86.patch",
+        # TODO: Drop when logspew is fixed
+        "//bazel/public-patches:grpc-warnings.patch",
     ],
     version = "1.73.1",
 )
