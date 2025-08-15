@@ -115,6 +115,7 @@ struct Bool(
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
+    Intable,
     Movable,
     Representable,
     Stringable,

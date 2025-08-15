@@ -257,6 +257,7 @@ struct SIMD[dtype: DType, size: Int](
     Floorable,
     Hashable,
     Indexer,
+    Intable,
     Movable,
     Powable,
     Representable,

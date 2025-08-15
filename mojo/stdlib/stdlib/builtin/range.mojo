@@ -72,8 +72,9 @@ struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
 
     @always_inline
     fn __getitem__[I: Indexer](self, idx: I) -> Int:
-        debug_assert(Int(idx) < self.__len__(), "index out of range")
-        return index(idx)
+        var i = Int(index(idx))
+        debug_assert(i < self.__len__(), "index out of range")
+        return i
 
     @always_inline
     fn __reversed__(self) -> _StridedRange:

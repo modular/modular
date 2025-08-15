@@ -322,7 +322,7 @@ struct LinkedList[
         elem.free()
         return value^
 
-    fn pop[I: Indexer](mut self, var i: I) raises -> ElementType:
+    fn pop[I: Indexer, //](mut self, var i: I) raises -> ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -387,7 +387,7 @@ struct LinkedList[
         elem.free()
         return value^
 
-    fn maybe_pop[I: Indexer](mut self, var i: I) -> Optional[ElementType]:
+    fn maybe_pop[I: Indexer, //](mut self, var i: I) -> Optional[ElementType]:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -403,7 +403,7 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        var current = self._get_node_ptr(Int(i))
+        var current = self._get_node_ptr(Int(index(i)))
 
         if not current:
             return Optional[ElementType]()
@@ -662,7 +662,7 @@ struct LinkedList[
         return not (self == other)
 
     fn _get_node_ptr[
-        I: Indexer
+        I: Indexer, //
     ](ref self, idx: I) -> UnsafePointer[Node[ElementType]]:
         """Get a pointer to the node at the specified index.
 

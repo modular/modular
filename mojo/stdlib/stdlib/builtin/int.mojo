@@ -42,13 +42,11 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer(Intable):
+trait Indexer:
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
-    types like `UInt` to not have to be converted to an `Int` first. This type
-    is implicitly convertible to an `Int`, so can be used anywhere an `Int` can
-    e.g. for comparisons.
+    types like `UInt` to not have to be converted to an `Int` first.
     """
 
     fn __index__(self) -> __mlir_type.index:
@@ -223,6 +221,7 @@ struct Int(
     Hashable,
     ImplicitlyBoolable,
     Indexer,
+    Intable,
     IntervalElement,
     KeyElement,
     Movable,

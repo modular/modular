@@ -37,6 +37,7 @@ struct UInt(
     ExplicitlyCopyable,
     Hashable,
     Indexer,
+    Intable,
     KeyElement,
     Movable,
     Representable,

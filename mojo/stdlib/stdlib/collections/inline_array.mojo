@@ -432,7 +432,9 @@ struct InlineArray[
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
+        constrained[
+            -size <= Int(index(idx)) < size, "Index must be within bounds."
+        ]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
         return self.unsafe_get(normalized_index)
 
@@ -499,8 +501,8 @@ struct InlineArray[
         debug_assert(
             0 <= Int(i) < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            Int(idx),
-            " should be less than: ",
+            Int(i),
+            " should be greater than or equal to 0 and less than ",
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
