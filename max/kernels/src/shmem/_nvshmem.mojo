@@ -487,6 +487,25 @@ fn nvshmemx_signal_op(
     ...
 
 
+fn nvshmem_put_signal_nbi[
+    dtype: DType
+](
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
+    nelems: Int,
+    sig_addr: UnsafePointer[UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
+):
+    alias symbol = _dtype_to_nvshmem_type[
+        "nvshmem_", dtype, "_put_signal_nbi"
+    ]()
+    external_call[symbol, NoneType](
+        dest, source, nelems, sig_addr, signal, sig_op, pe
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # 10: Collective Communication
 # https://docs.nvidia.com/nvshmem/api/gen/api/collective.html

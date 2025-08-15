@@ -71,7 +71,7 @@ from ._nvshmem import (
     nvshmem_n_pes,
     nvshmem_p,
     nvshmem_put,
-    nvshmem_put,
+    nvshmem_put_signal_nbi,
     nvshmem_signal_wait_until,
     nvshmem_team_my_pe,
     nvshmemx_barrier_all_on_stream,
@@ -512,6 +512,83 @@ fn shmem_p[
         nvshmem_p(dest, value, pe)
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_p"]()
+
+
+# ===----------------------------------------------------------------------=== #
+# 8: Signaling Operations
+# ===----------------------------------------------------------------------=== #
+
+
+fn shmem_put_signal_nbi[
+    dtype: DType
+](
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
+    nelems: Int,
+    sig_addr: UnsafePointer[UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
+):
+    """
+    The nonblocking put-with-signal routines provide a method for copying data
+    from a contiguous local data object to a data object on a specified PE and
+    subsequently updating a remote flag to signal completion.
+
+    dest: Symmetric address of the data object to be updated on the remote PE.
+        The type of dest should match that implied in the SYNOPSIS section.
+    source: Local address of data object containing the data to be copied. The type
+        of source should match that implied in the SYNOPSIS section.
+    nelems: Number of elements in the dest and source arrays. For
+        shmem_putmem_signal_nbi and shmem_ctx_putmem_signal_nbi, elements are bytes.
+    sig_addr: Symmetric address of the signal data object to be updated on the remote
+        PE as a signal.
+    signal: Unsigned 64-bit value that is used for updating the remote signal
+        data object.
+    sig_op: Signal operator that represents the type of update to be performed on
+        the remote signal data object.
+    pe: PE number of the remote PE relative to the team associated with the
+        given ctx when provided, or the default context otherwise.
+
+    The nonblocking put-with-signal routines provide a method for copying data
+    from a contiguous local data object to a data object on a specified PE and
+    subsequently updating a remote flag to signal completion.
+
+    The routines return after initiating the operation. The operation is
+    considered complete after a subsequent call to shmem_quiet. At the
+    completion of shmem_quiet, the data has been copied out of the source array
+    on the local PE and delivered into the dest array on the destination PE.
+
+    The delivery of signal flag on the remote PE indicates only the delivery of
+    its corresponding dest data words into the data object on the remote PE.
+    Furthermore, two successive nonblocking put-with-signal routines, or a
+    nonblocking put-with-signal routine with another data transfer may deliver
+    data out of order unless a call to shmem_fence is introduced between the two
+    calls.
+
+    The sig_op signal operator determines the type of update to be performed on
+    the remote sig_addr signal data object.
+
+    An update to the sig_addr signal data object through a nonblocking
+    put-with-signal routine completes as if performed atomically as described in
+    Section 9.8.1. The various options as described in Section 9.8.2 can be used
+    as the sig_op signal operator.
+
+    The dest and sig_addr data objects must both be remotely accessible. The
+    sig_addr and dest could be of different kinds, for example, one could be a
+    global/static C variable and the other could be allocated on the symmetric
+    heap.  sig_addr and dest may not be overlapping in memory
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        nvshmem_put_signal_nbi(
+            dest, source, nelems, sig_addr, signal, sig_op, pe
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_put_signal_nbi"
+        ]()
 
 
 # ===----------------------------------------------------------------------=== #

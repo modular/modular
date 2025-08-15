@@ -479,3 +479,11 @@ struct SHMEMContext:
         """
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         self._ctx.synchronize()
+
+    fn get_device_context(self) -> DeviceContext:
+        """Returns the device context associated with this SHMEM context.
+
+        Returns:
+            The device context associated with this SHMEM context.
+        """
+        return self._ctx

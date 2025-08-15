@@ -63,6 +63,7 @@ from .shmem_api import (
     shmem_n_pes,
     shmem_p,
     shmem_put,
+    shmem_put_signal_nbi,
     shmem_signal_op,
     shmem_signal_wait_until,
     shmem_team_my_pe,
