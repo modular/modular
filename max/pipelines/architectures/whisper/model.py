@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
@@ -65,7 +64,7 @@ class Whisper(PipelineModel):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
@@ -81,18 +80,20 @@ class Whisper(PipelineModel):
         )
         self.model = self.load_model(session)
 
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
+    def load_model(self, session: InferenceSession) -> Model:
         """
         Load the Whisper speech recognition model.
         """
         logger.info("Building and compiling Whisper encoder-decoder model...")
         before = time.perf_counter()
+        if self.adapter:
+            state_dict = self.adapter(dict(self.weights.items()))
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
         graph = build_graph(
-            self.pipeline_config,
-            self.weights,  # type: ignore
+            state_dict,
             self.huggingface_config,
             self.encoding.dtype,
             DeviceRef.from_device(self.devices[0]),
@@ -102,9 +103,7 @@ class Whisper(PipelineModel):
         logger.info(f"Building graph took {after_build - before:.6f} seconds")
 
         before_compile = time.perf_counter()
-        model = session.load(
-            graph, weights_registry=self.weights.allocated_weights
-        )
+        model = session.load(graph, weights_registry=state_dict)
         after = time.perf_counter()
 
         logger.info(
