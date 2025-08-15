@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-trait-lifecycle-methods
 # trait Defaultable
 #     fn __init__(out self): ...
 
@@ -36,3 +37,5 @@ struct Thing(MassProducible):
 
 def main():
     var thing = factory[Thing]()
+    # end-trait-lifecycle-methods
+    _ = thing^

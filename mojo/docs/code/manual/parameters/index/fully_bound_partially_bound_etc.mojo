@@ -53,7 +53,10 @@ fn use_kw_struct(k: KeyWordStruct[**_]):
 
 
 def main():
+    # start-partially-bound-example
     alias StringKeyDict = Dict[String, _]
     var b: StringKeyDict[UInt8] = {"answer": 42}
+    # end-partially-bound-example
+    _ = b^
 
     use_kw_struct(KeyWordStruct[10, kw_only=11]())

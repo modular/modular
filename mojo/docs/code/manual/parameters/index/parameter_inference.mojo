@@ -18,6 +18,7 @@ fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
     return 1 / sqrt(x)
 
 
+# start-infer-struct-param
 struct One[Type: Writable & Copyable & Movable]:
     var value: Type
 
@@ -28,8 +29,12 @@ struct One[Type: Writable & Copyable & Movable]:
 def use_one():
     s1 = One(123)
     s2 = One("Hello")
+    # end-infer-struct-param
+    _ = s1^
+    _ = s2^
 
 
+# start-infer-constructor-static-param
 struct Two[Type: Writable & Copyable & Movable]:
     var val1: Type
     var val2: Type
@@ -48,6 +53,8 @@ def use_two():
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two different values
+    # end-infer-constructor-static-param
+    _ = s3^
 
 
 def main():

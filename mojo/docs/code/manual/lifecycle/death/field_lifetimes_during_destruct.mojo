@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-field-lifetimes-during-destruct
 fn consume(var str: String):
     print("Consumed", str)
 
@@ -40,3 +41,5 @@ struct TwoStrings:
 
 def main():
     var two_strings = TwoStrings("foo", "bar")
+    # end-field-lifetimes-during-destruct
+    _ = two_strings^

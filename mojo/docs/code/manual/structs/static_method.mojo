@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-static-method-define
 struct Logger:
     fn __init__(out self):
         pass
@@ -19,9 +20,13 @@ struct Logger:
     @staticmethod
     fn log_info(message: String):
         print("Info: ", message)
+        # end-static-method-define
 
 
 def main():
+    # start-static-method-invoke
     Logger.log_info("Static method called.")
     var l = Logger()
     l.log_info("Static method called from instance.")
+    # end-static-method-invoke
+    _ = l^
