@@ -27,6 +27,12 @@ from .utils_gpu import MatmulConfig
 from .matmul_sm90 import warp_specialize_gemm_with_multicasting
 from .matmul_sm90_splitk import warp_specialize_gemm_with_multicasting_splitk
 
+
+from internal_utils import Table, TuningConfig
+from utils.index import Index, IndexList
+
+alias MAX_M = Int.MAX
+
 # TODO: Move to a general location and use for all dispatch
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
@@ -115,12 +121,6 @@ fn matmul_dispatch_sm90[
 # FP8 (e4m3fn) Dispatch
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import Table, TuningConfig
-from utils.index import Index, IndexList
-
-
-alias MAX_M = Int.MAX
-
 
 @fieldwise_init
 @register_passable("trivial")
@@ -144,7 +144,7 @@ struct TuningConfigSM90(TuningConfig):
 
 # llama-405B-FP8 gemm shapes
 alias llama_405b_fp8_list = List(
-    #####################################################
+    ##############################
     # N=16384 and K=2048
     TuningConfigSM90(
         M=64,
@@ -224,7 +224,7 @@ alias llama_405b_fp8_list = List(
         grid_shape=Index(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
-    #####################################################
+    ##############################
     # N=2304 and K=16384
     TuningConfigSM90(
         M=64,
@@ -330,7 +330,7 @@ alias llama_405b_fp8_list = List(
         grid_shape=None,  # Index(16, 8), None
         schedule=MatmulSchedule.TILE2D,
     ),
-    #####################################################
+    ##############################
     # N=13312 and K=16384
     TuningConfigSM90(
         M=64,
@@ -410,7 +410,7 @@ alias llama_405b_fp8_list = List(
         grid_shape=Index(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
-    #####################################################
+    ##############################
     # N=16384 and K=6656
     TuningConfigSM90(
         M=64,
@@ -452,6 +452,55 @@ alias llama_405b_fp8_list = List(
         schedule=MatmulSchedule.TILE2D,
     ),
 )
+
+alias llama_405b_fp8_table = Table(llama_405b_fp8_list, "llama_405b_fp8")
+
+# llama-8B-FP8 gemm shapes
+alias llama_8b_fp8_list = List(
+    ##############################
+    # ignore N and K for this table.
+    TuningConfigSM90(
+        M=128,
+        N=-1,
+        K=-1,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(64, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=8,
+        num_consumer=1,
+        partitioned_multicast=True,
+        grid_shape=None,
+        schedule=MatmulSchedule.NONE,
+    ),
+    TuningConfigSM90(
+        M=1024,
+        N=-1,
+        K=-1,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=6,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=None,
+        schedule=MatmulSchedule.NONE,
+    ),
+    TuningConfigSM90(
+        M=MAX_M,
+        N=-1,
+        K=-1,
+        mma_shape=IndexList[3](64, 128, 32),
+        block_tile_shape=Index(128, 128, 128),
+        cluster_shape=Index(2, 1, 1),
+        num_pipeline_stages=6,
+        num_consumer=2,
+        partitioned_multicast=True,
+        grid_shape=Index(8, H100.sm_count // 8),
+        schedule=MatmulSchedule.TILE2D,
+    ),
+)
+
+alias llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 
 
 fn matmul_dispatch_sm90_fp8[
@@ -519,64 +568,47 @@ fn matmul_dispatch_sm90_fp8[
         return DISPATCH_HIT
 
     @parameter
-    if (
-        (static_N == 16384 and static_K == 2048)
-        or (static_N == 2304 and static_K == 16384)
-        or (static_N == 13312 and static_K == 16384)
-        or (static_N == 16384 and static_K == 6656)
-    ):
+    @always_inline("nodebug")
+    fn _dispatch[entry: TuningConfigSM90]() raises:
+        alias config = MatmulConfig[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            mma_shape = entry.mma_shape,
+        ](
+            block_tile_shape=entry.block_tile_shape,
+            cluster_shape=entry.cluster_shape,
+            num_pipeline_stages=entry.num_pipeline_stages,
+            num_consumer=entry.num_consumer,
+            partitioned_multicast=entry.partitioned_multicast,
+            pdl_level=pdl_level,
+        )
+        warp_specialize_gemm_with_multicasting[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            config=config,
+            schedule = entry.schedule,
+            grid_shape = entry.grid_shape,
+        ](
+            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+            ctx,
+        )
 
-        @parameter
-        fn _select_table() -> List[TuningConfigSM90]:
-            return llama_405b_fp8_list
-
-        alias T = Table[_select_table(), "table"]()
-
-        @parameter
-        @always_inline
-        fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
-            return x.K == static_K and x.N == static_N
-
-        # First, filter by static params N and K
-        alias nk_idx_list = T.query_index[rule_eq_nk]()
-
+    @parameter
+    @always_inline("nodebug")
+    fn _search[
+        T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
+    ]() raises -> Int:
         @parameter
         @always_inline
         fn get_m(x: TuningConfigSM90) -> Int:
             return x.M
 
-        alias m_values = T.query_values[Int, get_m, nk_idx_list]()
-
-        @parameter
-        @always_inline("nodebug")
-        fn _dispatch[entry: TuningConfigSM90]() raises:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = entry.mma_shape,
-            ](
-                block_tile_shape=entry.block_tile_shape,
-                cluster_shape=entry.cluster_shape,
-                num_pipeline_stages=entry.num_pipeline_stages,
-                num_consumer=entry.num_consumer,
-                partitioned_multicast=entry.partitioned_multicast,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                schedule = entry.schedule,
-                grid_shape = entry.grid_shape,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
+        alias m_values = T.query_values[Int, get_m, domain]()
 
         @parameter
         for static_m in m_values:
@@ -587,7 +619,7 @@ fn matmul_dispatch_sm90_fp8[
                 return x.M == static_m
 
             if m <= static_m:
-                alias idx_list = T.query_index[rule_eq_m, domain=nk_idx_list]()
+                alias idx_list = T.query_index[rule_eq_m, domain=domain]()
 
                 @parameter
                 if idx_list:
@@ -598,21 +630,26 @@ fn matmul_dispatch_sm90_fp8[
                     # dynamic m is in the range but cannot find any corresponding config in the table.
                     break
 
-        # dynamic m is outside the range, pick the config for largest value of M.
-        alias max_m = m_values[len(m_values) - 1]
+        return DISPATCH_MISS
+
+    # llama-405B-FP8 gemm shapes
+    @parameter
+    if (
+        (static_N == 16384 and static_K == 2048)
+        or (static_N == 2304 and static_K == 16384)
+        or (static_N == 13312 and static_K == 16384)
+        or (static_N == 16384 and static_K == 6656)
+    ):
 
         @parameter
         @always_inline
-        fn rule_eq_max_m(x: TuningConfigSM90) -> Bool:
-            return x.M == max_m
+        fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
+            return x.K == static_K and x.N == static_N
 
-        alias idx_list = T.query_index[rule_eq_max_m, domain=nk_idx_list]()
-
-        @parameter
-        if idx_list:
-            alias entry = T.configs[idx_list[0]]
-            _dispatch[entry]()
-            return DISPATCH_HIT
+        # First, filter by static params N and K
+        alias nk_idx_list = llama_405b_fp8_table.query_index[rule_eq_nk]()
+        # Search the table for matching values of M within domain
+        return _search[llama_405b_fp8_table, domain=nk_idx_list]()
 
     # llama-8B-FP8 gemm shapes
     elif (
@@ -621,89 +658,9 @@ fn matmul_dispatch_sm90_fp8[
         or (static_N == 28672 and static_K == 4096)
         or (static_N == 4096 and static_K == 14336)
     ):
-        if m <= 128:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(64, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=8,
-                num_consumer=1,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        elif m <= 1024:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=6,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        else:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128, 32),
-            ](
-                block_tile_shape=Index(128, 128, 128),
-                cluster_shape=Index(2, 1, 1),
-                num_pipeline_stages=6,
-                num_consumer=2,
-                partitioned_multicast=True,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
+        # Search the table for matching values of M, no domain specified.
+        return _search[llama_8b_fp8_table]()
+
     else:
         # for gemms with small n and k we fall back the naive kernel
         alias BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()

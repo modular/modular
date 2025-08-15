@@ -164,11 +164,9 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
 fn main() raises:
     var m = arg_parse("m", 0)
-    TuningTableAMD.check()
     print(String(TuningTableAMD))
     dispatch_matmul_amd[static_n=1, static_k=1](m)
 
     print("-----------------------------------------------------------")
-    TuningTableNvidia.check()
     print(String(TuningTableNvidia))
     dispatch_matmul_nvidia[static_n=8192, static_k=8192](m)

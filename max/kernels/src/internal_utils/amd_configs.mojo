@@ -47,4 +47,4 @@ alias configs_amd = List[TuningConfigAMD](
 )
 
 # Make sure to register the above configs in the ConfigTable.
-alias TuningTableAMD = Table[configs_amd, "TuningTableAMD"]()
+alias TuningTableAMD = Table(configs_amd, "TuningTableAMD")

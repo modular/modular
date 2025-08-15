@@ -855,4 +855,4 @@ alias configs = List(
 )
 
 
-alias TuningTableNvidia = Table[configs, "TuningTableNvidia"]()
+alias TuningTableNvidia = Table(configs, "TuningTableNvidia")
