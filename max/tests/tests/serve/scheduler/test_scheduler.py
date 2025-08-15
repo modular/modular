@@ -196,13 +196,15 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_responses[mock_1.request_id].tokens = [Mock()]
     batch_responses[mock_2.request_id].is_done = True  # req2 is terminated
     batch_responses[mock_2.request_id].tokens = []
+    scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
+    sch_output = SchedulerOutput(batch_inputs=batch_executed)
     scheduler._handle_terminated_responses(
-        batch_executed, cast(dict[str, TextGenerationOutput], batch_responses)
+        sch_output,
+        cast(dict[str, TextGenerationOutput], batch_responses),
     )
 
-    assert mock_2.request_id not in batch_executed
-    # Cache cleanup is now handled by pipeline.release()
+    assert sch_output.num_terminated == 1
     assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.release.assert_called_once()
 
@@ -240,10 +242,6 @@ def test_handle_cancelled_requests() -> None:
         {mock_request.request_id: mock_request}
     )
 
-    cancel_push_socket = ZmqPushSocket[list[str]](
-        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
     cancel_push_socket.put([mock_request.request_id])
     time.sleep(1)
 
@@ -268,16 +266,6 @@ def test_schedule_ce() -> None:
         num_steps=1,
     )
 
-    # Create a response queue endpoint to receive from.
-    response_pull_socket = ZmqPullSocket[
-        dict[str, SchedulerResult[TextGenerationOutput]]
-    ](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[TextGenerationOutput]]
-        ),
-    )
-
     scheduler._schedule(sch_output)
 
     assert mock_request.request_id in scheduler.batch_constructor.tg_reqs
@@ -288,30 +276,13 @@ def test_schedule_ce() -> None:
 
 
 def test_schedule_ce_with_chunked_prefill() -> None:
-    scheduler, _, _, _ = create_scheduler()
+    scheduler, request_push_socket, response_pull_socket, _ = create_scheduler()
 
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_request = create_mock_request(seq_len=30)
-    # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    # Create a response queue endpoint to receive from.
-    response_pull_socket = ZmqPullSocket[
-        dict[str, SchedulerResult[TextGenerationOutput]]
-    ](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[TextGenerationOutput]]
-        ),
-    )
 
     request_push_socket.put((mock_request.request_id, mock_request))
     time.sleep(1)
@@ -343,7 +314,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
 
 def test_schedule_mixed_ce_tg() -> None:
-    scheduler, _, _, _ = create_scheduler()
+    scheduler, request_push_socket, _, _ = create_scheduler()
 
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
@@ -354,13 +325,6 @@ def test_schedule_mixed_ce_tg() -> None:
     assert mock_request_tg.active_idx == 10
     assert mock_request_tg.end_idx == 10
 
-    # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
     request_push_socket.put_nowait(
         (mock_request_tg.request_id, mock_request_tg)
     )

@@ -453,17 +453,6 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
     scheduler, push_socket = create_paged_scheduler(
         enable_in_flight_batching=False,
     )
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
-    )
 
     for _ in range(num_prompts):
         enqueue_request(

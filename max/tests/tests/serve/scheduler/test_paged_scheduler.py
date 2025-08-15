@@ -448,16 +448,15 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        # chunked prefill causes some requests to appear to be "terminated"
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 1, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 1000),
         BatchInfo(CE, 1, 0, 1, 123),
         BatchInfo(TG, 1, 0, 10, 1),
         BatchInfo(TG, 1, 0, 10, 1),
@@ -527,18 +526,18 @@ def test_paged_scheduler_basic_small_batch_size_with_chunked_prefill() -> None:
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 6, 1, 1, 8192),
-        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
         BatchInfo(CE, 3, 0, 1, 3116),
         BatchInfo(TG, 13, 0, 10, 13),
         BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 6, 1, 1, 8192),
-        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
         BatchInfo(CE, 3, 0, 1, 3116),
         BatchInfo(TG, 13, 0, 10, 13),
         BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 6, 1, 1, 8192),
-        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
+        BatchInfo(CE, 6, 0, 1, 8192),
         BatchInfo(CE, 3, 0, 1, 3116),
         BatchInfo(TG, 13, 0, 10, 13),
         BatchInfo(TG, 13, 13, 3, 13),
@@ -575,12 +574,12 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
     # This is rounded up to 17 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 18, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 18, 1, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 8192),
         BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
@@ -623,8 +622,8 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # This is rounded up to 71 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 71, 1, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 71, 0, 1, 8192),
         BatchInfo(CE, 14, 0, 1, 1552),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
@@ -668,10 +667,10 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # The first batch doesn't get cache hits so it is smaller.
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 28, 1, 1, 8192),
-        BatchInfo(CE, 28, 1, 1, 8192),
-        BatchInfo(CE, 28, 1, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 28, 0, 1, 8192),
+        BatchInfo(CE, 28, 0, 1, 8192),
+        BatchInfo(CE, 28, 0, 1, 8192),
         BatchInfo(CE, 3, 0, 1, 616),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
@@ -714,11 +713,11 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # This is rounded up to 19 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 20, 1, 1, 8192),
-        BatchInfo(CE, 19, 1, 1, 8192),
-        BatchInfo(CE, 20, 1, 1, 8192),
-        BatchInfo(CE, 20, 1, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 20, 0, 1, 8192),
+        BatchInfo(CE, 19, 0, 1, 8192),
+        BatchInfo(CE, 20, 0, 1, 8192),
+        BatchInfo(CE, 20, 0, 1, 8192),
         BatchInfo(CE, 9, 0, 1, 3716),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
@@ -894,12 +893,12 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
     # now include TG requests.
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 33, 1, 1, 8192),
-        BatchInfo(CE, 50, 1, 1, 8192),
-        BatchInfo(CE, 66, 1, 1, 8192),
-        BatchInfo(CE, 82, 1, 1, 8192),
-        BatchInfo(CE, 98, 1, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 33, 0, 1, 8192),
+        BatchInfo(CE, 50, 0, 1, 8192),
+        BatchInfo(CE, 66, 0, 1, 8192),
+        BatchInfo(CE, 82, 0, 1, 8192),
+        BatchInfo(CE, 98, 0, 1, 8192),
         BatchInfo(CE, 100, 0, 1, 1188),
         BatchInfo(TG, 100, 32, 10, 100),
         BatchInfo(TG, 68, 68, 6, 68),
@@ -1037,7 +1036,7 @@ def test_paged_scheduler_dont_oom_during_cow() -> None:
     time.sleep(1)
 
     batch_info = create_batch_and_execute(scheduler)
-    assert batch_info == BatchInfo(CE, 1, 1, 1, 200)
+    assert batch_info == BatchInfo(CE, 1, 0, 1, 200)
 
     # Request B needs 1 block
     enqueue_request(
