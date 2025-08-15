@@ -23,7 +23,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from memory import memcpy
+from memory import memcpy, memset_zero
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -139,6 +139,11 @@ def execute_ragged_flash_attention[
         max_full_context_length,
     )
 
+    # num_paged_blocks = 1,
+    # num_layers = 2
+    # page_size = 512
+    # (total_blocks - 1) * self._stride() + Self.page_size
+    # Self.page_size
     kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
@@ -165,12 +170,15 @@ def execute_ragged_flash_attention[
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval
+            block_sz = min(page_size, seq_len - block_idx * page_size)
 
             for kv_idx in range(2):
+                paged_ptr = kv_block_paged_host.tensor._offset(
+                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                )
+                n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 memcpy(
-                    kv_block_paged_host.tensor._offset(
-                        IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
-                    ),
+                    paged_ptr,
                     kv_block_continuous_host.tensor._offset(
                         IndexList[6](
                             continuous_idx,
@@ -181,8 +189,16 @@ def execute_ragged_flash_attention[
                             0,
                         )
                     ),
-                    page_size * kv_params.num_heads * kv_params.head_size,
+                    n_cpy,
                 )
+                if block_sz < page_size:
+                    memset_zero(
+                        paged_ptr + n_cpy,
+                        (page_size - block_sz)
+                        * kv_params.num_heads
+                        * kv_params.head_size,
+                    )
+
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
@@ -233,6 +249,7 @@ def execute_ragged_flash_attention[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
+
     for bs in range(batch_size):
         prompt_len = valid_lengths[bs]
         ragged_offset = Int(input_row_offsets_host.tensor[bs])

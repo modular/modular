@@ -22,7 +22,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu import WARP_SIZE
 from gpu.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -49,13 +48,11 @@ from gpu.tcgen05 import (
 )
 from layout.int_tuple import IntTuple
 from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     copy_local_to_shared,
     copy_sram_to_dram,
-    cp_async_k_major,
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -63,21 +60,20 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
+from layout.tma_async import (
+    PipelineState,
+    SharedMemBarrier,
+    TMANestedTensorTile,
 )
-from layout.tma_async import PipelineState, SharedMemBarrier
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import stack_allocation
 from memory import stack_allocation, bitcast
 from nn.mha_fa3_utils import (
     MHAPosition,
+    _apply_mask,
     _get_position,
     _produce,
-    _apply_mask,
+    q_out_tma,
     valid_length_managed_tensor_slice_to_ndbuffer,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
@@ -105,7 +101,6 @@ from nn.softmax import (
     _rowsum,
 )
 from sys import alignof, simdwidthof, sizeof
-from sys import sizeof
 from tensor_internal import ManagedTensorSlice
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -356,7 +351,7 @@ trait AsyncTensorAccumulator:
         ...
 
     @always_inline
-    fn wait_group[wgmma_left_in_flight: Int = 0](mut self):
+    fn wait(mut self):
         ...
 
 
@@ -383,7 +378,7 @@ trait AsyncTensorAccumulatorTS:
         ...
 
     @always_inline
-    fn wait_group[wgmma_left_in_flight: Int = 0](mut self):
+    fn wait(mut self):
         ...
 
 
@@ -1050,7 +1045,7 @@ struct SM100TensorAccumulatorSS[
         mma_arrive(self.mbar)
 
     @always_inline
-    fn wait_group[wgmma_left_in_flight: Int = 0](mut self):
+    fn wait(mut self):
         self.mbar[0].wait(self.phase)
         self.phase ^= 1
 
@@ -1223,17 +1218,17 @@ struct SM100TensorAccumulatorTS[
         mma_arrive(self.mbar)
 
     @always_inline
-    fn wait_group[wgmma_left_in_flight: Int = 0](mut self):
+    fn wait(mut self):
         self.mbar[0].wait(self.phase)
         self.phase ^= 1
 
 
 @always_inline
 fn mha_sm100_dispatch[
+    q_type: DType,
     kv_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
     output_type: DType,
     max_prompt_len_t: OptionallyStaticInt,
     partition_t: MHAPartitionScheme, //,
@@ -1244,9 +1239,10 @@ fn mha_sm100_dispatch[
     _is_cache_length_accurate: Bool,
 ](
     output: UnsafePointer[Scalar[output_type]],
-    q: UnsafePointer[Scalar[type]],
+    q_arg: UnsafePointer[Scalar[q_type]],
     k: kv_t,
     v: kv_t,
+    num_rows_q: Int,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -1290,6 +1286,11 @@ fn mha_sm100_dispatch[
     constrained[
         num_threads % 128 == 0, "num_threads = " + String(num_threads)
     ]()
+    constrained[
+        config.type == kv_t.dtype and config.type == q_type,
+        "config, kv, and q types must all match for FA3.",
+    ]()
+    q = rebind[UnsafePointer[Scalar[kv_t.dtype]]](q_arg)
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,
@@ -1307,14 +1308,25 @@ fn mha_sm100_dispatch[
     alias num_scheduler_heads = config.num_heads // group if decoding else config.num_heads
     # if decoding,
     alias scheduler_tile_shape = 1 if decoding else BM
-
-    alias accum_type = get_accum_type[config.type]()
+    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    q_tma = q_out_tma[
+        group if decoding else Int(BM),
+        config.depth,
+        swizzle_mode,
+        q_num_heads = config.num_heads,
+        decoding=decoding,
+    ](ctx, q, num_rows_q)
+    k_tma = k.create_tma_tile[BN, config.depth, swizzle_mode, is_k_major=True](
+        ctx
+    )
+    v_tma = v.create_tma_tile[BN, config.depth, swizzle_mode, is_k_major=False](
+        ctx
+    )
 
     alias scheduler_t = TransientScheduler[
         scheduler_tile_shape, num_scheduler_heads
     ]
     alias kernel_sm100 = _mha_sm100[
-        new_config.type,
         kv_t,
         output_type,
         mask_t,
@@ -1327,6 +1339,7 @@ fn mha_sm100_dispatch[
         _is_cache_length_accurate=_is_cache_length_accurate,
         max_seq_len_t=max_prompt_len_t,
         partition_t=partition_t,
+        swizzle_mode=swizzle_mode,
     ]
     var scheduler: scheduler_t = scheduler_t()
     gd = scheduler_t.grid_dim(batch_size, block_x)
@@ -1337,10 +1350,11 @@ fn mha_sm100_dispatch[
         @parameter
         if partition_t.do_partition:
             ctx.enqueue_function[kernel_sm100](
-                q,
-                k,
-                v,
+                q_tma,
+                k_tma,
+                v_tma,
                 output,
+                k,
                 scale,
                 batch_size,
                 max_cache_valid_length,
@@ -1358,10 +1372,11 @@ fn mha_sm100_dispatch[
             )
         else:
             ctx.enqueue_function[kernel_sm100](
-                q,
-                k,
-                v,
+                q_tma,
+                k_tma,
+                v_tma,
                 output,
+                k,
                 scale,
                 batch_size,
                 max_cache_valid_length,
@@ -1382,10 +1397,11 @@ fn mha_sm100_dispatch[
         @parameter
         if partition_t.do_partition:
             ctx.enqueue_function[kernel_sm100](
-                q,
-                k,
-                v,
+                q_tma,
+                k_tma,
+                v_tma,
                 output,
+                k,
                 scale,
                 batch_size,
                 max_prompt_len,
@@ -1404,10 +1420,11 @@ fn mha_sm100_dispatch[
             )
         else:
             ctx.enqueue_function[kernel_sm100](
-                q,
-                k,
-                v,
+                q_tma,
+                k_tma,
+                v_tma,
                 output,
+                k,
                 scale,
                 batch_size,
                 max_prompt_len,
@@ -1425,13 +1442,15 @@ fn mha_sm100_dispatch[
             )
 
 
+@__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         config.num_threads[True]()
     )
 )
 fn _mha_sm100[
-    q_type: DType,
     kv_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
@@ -1444,12 +1463,34 @@ fn _mha_sm100[
     _is_cache_length_accurate: Bool,
     max_seq_len_t: OptionallyStaticInt,
     partition_t: MHAPartitionScheme,
+    swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: scheduler_t,
-    q_ptr_arg: UnsafePointer[Scalar[q_type]],
+    q_tma_op: TMANestedTensorTile[
+        kv_t.dtype,
+        max(group, 8) if _is_decoding[max_seq_len_t]() else Int(
+            config.block_m()
+        ),
+        64 if _is_decoding[max_seq_len_t]() else config.depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    k_tma_op: TMANestedTensorTile[
+        kv_t.dtype,
+        config.block_n(),
+        config.depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    v_tma_op: TMANestedTensorTile[
+        kv_t.dtype,
+        config.block_n(),
+        config.depth,
+        swizzle_mode,
+        is_k_major=False,
+    ],
+    o_ptr_arg: UnsafePointer[Scalar[output_type]],
     k: kv_t,
-    v: kv_t,
-    output_ptr_arg: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: max_seq_len_t,  # sequence length after padding.
@@ -1473,12 +1514,11 @@ fn _mha_sm100[
       TODO: use more optimized kernels for them
 
     """
-    alias k_type = kv_t.dtype
-    alias v_type = kv_t.dtype
-    constrained[q_type == k_type and k_type == v_type]()
+    alias kv_type = kv_t.dtype
+    constrained[kv_type == config.type]()
     alias decoding: Bool = _is_decoding[max_seq_len_t]()
 
-    alias simd_size: Int = simdwidthof[q_type]()
+    alias simd_size: Int = simdwidthof[kv_type]()
 
     alias num_consumer_threads: Int = config.num_consumer_threads()
     alias num_consumer_warps = num_consumer_threads // 32
@@ -1549,11 +1589,9 @@ fn _mha_sm100[
     # warp group idx gives index into sets of 16 lanes
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
     # warp_group_tid = tid % 128
-    alias q_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias k_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias v_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    alias accum_type = get_accum_type[kv_type]()
     alias wgmma_0_t = SM100TensorAccumulatorSS[
-        config.type,
+        kv_type,
         accum_type,
         MMA_M=MMA_M,  # 128
         MMA_N=MMA_N0,  # 64
@@ -1561,14 +1599,14 @@ fn _mha_sm100[
         BN=BN,  # 128
         BK=BK,  # depth # 256
         num_consumer_threads=num_consumer_threads,
-        swizzle_a=q_swizzle,
-        swizzle_b=k_swizzle,
+        swizzle_a=swizzle_mode,
+        swizzle_b=swizzle_mode,
         transpose_b=True,
     ]
     # Second WGMMA is a
     # BM x BN tile of p_frag @ BN x depth tile of V
     alias wgmma_1_t = SM100TensorAccumulatorTS[
-        config.type,
+        kv_type,
         accum_type,
         MMA_M=MMA_M,
         MMA_N=MMA_N1,  # depth
@@ -1576,61 +1614,50 @@ fn _mha_sm100[
         BN=MMA_N1,  # depth
         BK=BN,
         num_consumer_threads=num_consumer_threads,
-        swizzle_b=v_swizzle,
+        swizzle_b=swizzle_mode,
         transpose_b=False,
     ]
 
     # var warp_x: UInt32 = warp_id % num_warps_n
 
     # first wgmma is BM x BK @ BK x BN
-    alias q_smem_layout = tile_layout_k_major[
-        DType.bfloat16, BM, BK, swizzle_mode=q_swizzle
+    alias q_smem_layout_producer = q_tma_op.layout
+    alias q_smem_layout_consumer = tile_layout_k_major[
+        DType.bfloat16, BM, depth, swizzle_mode=swizzle_mode
     ]()
-    alias k_smem_layout = tile_layout_k_major[
-        DType.bfloat16, BN, BK, swizzle_mode=k_swizzle
-    ]()
-    # second wgmma is BM x BN @ BN x BK
-    alias v_smem_layout = tile_layout_mn_major[
-        DType.bfloat16, BN, BK, swizzle_mode=v_swizzle
-    ]()
+    alias k_smem_layout = k_tma_op.layout
+    alias v_smem_layout = v_tma_op.layout
 
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = config.q_smem_size(True, False)
-    q_smem = rebind[
-        UnsafePointer[
-            Scalar[q_type], address_space = AddressSpace.SHARED, alignment=16
-        ]
-    ](
-        external_memory[
-            Scalar[q_type],
-            address_space = AddressSpace.SHARED,
-            alignment=16,
-            name="mha_dynamic_shared_memory",
-        ]()
-    )
-    q_smem_iter = LayoutTensorIter[
-        q_type,
-        q_smem_layout,
+    alias q_smem_size = q_smem_layout_consumer.size()
+    q_smem = external_memory[
+        Scalar[kv_type],
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        name="mha_dynamic_shared_memory",
+    ]()
+
+    @parameter
+    @always_inline("nodebug")
+    fn q_producer[
+        depth_idx: Int
+    ]() -> LayoutTensor[
+        kv_type,
+        q_smem_layout_producer,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
-    ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    q_type,
-                    q_smem_layout,
-                    MutableAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        q_smem_size,
-    )
+        alignment=128,
+    ]:
+        # alias stride = q_smem_layout_consumer.stride[1][1].value()
+        # alias depth_offset = depth_idx * stride
+        alias depth_offset = q_smem_layout_consumer(
+            IntTuple(0, 64 * depth_idx)
+        ) if decoding else 0
+        return {q_smem + depth_offset}
+
     # We have `num_pipeline_stages` instances of each
     alias kv_smem_size = config.kv_smem_size(True)
-    kv_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    kv_smem = q_smem + q_smem_size
 
     # var head_idx: UInt32 = block_idx.y
     # var q_tile_idx: UInt32 = block_idx.x
@@ -1638,7 +1665,6 @@ fn _mha_sm100[
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
-    alias accum_type = get_accum_type[q_type]()
     # p_frag_size is 2 * WM//8 * MMA_N//8
     # that is, we have a (WM//8) x (MMA_N//8) grid of 8x4<1x2> blocks
     # Each such block has 2 elements.
@@ -1764,7 +1790,7 @@ fn _mha_sm100[
     wgmma_1 = wgmma_1_t(mma_mbar + 2)
     ptr_tmem_addr = (mma_mbar + 3).bitcast[UInt32]()  # 8
 
-    alias USE_TMA = False
+    alias USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
     alias num_producer_regs = 56 if num_consumer_warps == 4 else (
         (24 if USE_TMA else 56) if num_consumer_warps == 8 else 32
@@ -1813,7 +1839,7 @@ fn _mha_sm100[
         @parameter
         for i in range(pipeline_stages):
             # until we can use TMA, we need 128 producers working on async copies
-            produced_mbar_kv[i].init(128)
+            produced_mbar_kv[i].init(1)
             consumed_mbar_kv[i].init(num_consumer_threads)
 
     alias position_t = MHAPosition[BM, BN, depth, num_heads, group, decoding]
@@ -1826,15 +1852,14 @@ fn _mha_sm100[
             k,
             max_seq_len,
             num_keys_arg,
-            valid_length,
             kv_input_row_offsets,
         )
 
     var position: position_t = get_position(initial_seq_info)
 
-    q_pipeline_state = PipelineState[2]()
-
     barrier()
+    var start: UInt32
+    var end: UInt32
     # For intra-warp overlap, we initiate wgmmas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
@@ -1843,47 +1868,36 @@ fn _mha_sm100[
     if warp_group_idx == 0:
         # producer
         warpgroup_reg_dealloc[num_producer_regs]()
+        if thread_idx.x != 0:
+            return
         write_pipeline_states = PipelineState[pipeline_stages]()
 
         @parameter
         if partition_t.do_partition:
-            start, end = position.get_start_and_end_for_partitions[BN=BN](
+            startend = position.get_start_and_end_for_partitions[BN=BN](
                 partition
             )
+            start = startend[0]
+            end = startend[1]
             if start >= end:
                 return
-
-        # note that Q does not wait or arrive...
-        # it assumes you can use K's
-        @parameter
-        @always_inline("nodebug")
-        fn produce_q(
-            position: position_t,
-            pipeline_idx: UInt32,
-        ):
-            # Query global memory iterator
-            q_gmem_block = position.q_out_gmem_tensor(q_ptr_arg)
-            q_smem_sub = q_smem_iter.next_unsafe(Int(pipeline_idx))[]
-
-            # these copies get committed with the first `K`
-            cp_async_k_major(q_smem_sub, q_gmem_block)
-
-        alias kv_gmem_layout = Layout(
-            IntTuple(Int(BN), Int(depth)),
-            IntTuple(Int(kv_num_heads * depth), 1),
-        )
+        else:
+            # delay partitioning until after we've begun copying `q`
+            start = 0
+            end = 0
 
         @parameter
         @always_inline("nodebug")
         fn k_tile(
             idx: UInt32,
             out k_smem: LayoutTensor[
-                kv_t.dtype,
+                kv_type,
                 k_smem_layout,
                 MutableAnyOrigin,
                 address_space = AddressSpace.SHARED,
                 layout_int_type = DType.int32,
                 linear_idx_type = DType.int32,
+                alignment=128,
             ],
         ):
             alias sz = BN * depth
@@ -1894,84 +1908,87 @@ fn _mha_sm100[
         fn v_tile(
             idx: UInt32,
             out v_smem: LayoutTensor[
-                kv_t.dtype,
+                kv_type,
                 v_smem_layout,
                 MutableAnyOrigin,
                 address_space = AddressSpace.SHARED,
                 layout_int_type = DType.int32,
                 linear_idx_type = DType.int32,
+                alignment=128,
             ],
         ):
             alias sz = BN * depth
-            v_smem = __type_of(v_smem)(
-                rebind[
-                    UnsafePointer[
-                        Scalar[v_type], address_space = AddressSpace.SHARED
-                    ]
-                ](kv_smem)
-                + sz * idx
-            )
+            v_smem = __type_of(v_smem)(kv_smem + sz * idx)
 
         @parameter
         @always_inline("nodebug")
         fn produce_k[
             wait: Bool
-        ](
-            mut state: PipelineState[pipeline_stages],
-            kv_tile_start_row: UInt32,
-            position: position_t,
-        ):
+        ](mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32,):
             var write_idx: UInt32 = state.index()
             var write_phase: UInt32 = state.phase()
-            _produce[kv_num_heads, axis=1, wait=wait](
-                write_idx,
-                write_phase,
-                kv_tile_start_row,
-                position,
-                consumed_mbar_kv,
-                produced_mbar_kv,
-                k,
-                k_tile(write_idx),
-            )
+
+            ref p_mbar = produced_mbar_kv[write_idx]
+            k_sub = k_tile(write_idx)
+
+            @parameter
+            if wait:
+                consumed_mbar_kv[write_idx].wait(write_phase)
+                alias bytes = BN * depth * sizeof[kv_t.dtype]()
+                p_mbar.expect_bytes(bytes)
+            k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
             state.step()
 
         @parameter
-        @always_inline("nodebug")
-        fn produce_v[
-            wait: Bool
-        ](
+        @always_inline
+        fn produce_v(
             mut state: PipelineState[pipeline_stages],
-            kv_tile_start_row: UInt32,
-            position: position_t,
+            row: UInt32,
+            col: UInt32,
         ):
             var write_idx: UInt32 = state.index()
             var write_phase: UInt32 = state.phase()
-            _produce[kv_num_heads, axis=0, wait=wait](
-                write_idx,
-                write_phase,
-                kv_tile_start_row,
-                position,
-                consumed_mbar_kv,
-                produced_mbar_kv,
-                v,
-                v_tile(write_idx),
-            )
+
+            ref p_mbar = produced_mbar_kv[write_idx]
+            v_sub = v_tile(write_idx)
+            consumed_mbar_kv[write_idx].wait(write_phase)
+            alias bytes = BN * depth * sizeof[kv_t.dtype]()
+            p_mbar.expect_bytes(bytes)
+            v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
             state.step()
 
-        produce_q(position, q_pipeline_state.index())
+        alias q_copy_rows = max(group, 8) if decoding else Int(BM)
+        alias qk_bytes = (q_copy_rows + BN) * depth * sizeof[kv_type]()
+        produced_mbar_kv[0].expect_bytes(qk_bytes)
 
-        start, end = position.get_start_and_end_for_partitions[BN=BN](partition)
+        @parameter
+        for d in range((depth // 64) if decoding else 1):
+            q_tma_op.async_copy(
+                q_producer[d](),
+                produced_mbar_kv[0],
+                (UInt(position.q_col + 64 * d), UInt(position.q_row)),
+            )
+
+        @parameter
+        if not partition_t.do_partition:
+            startend = position.get_start_and_end_for_partitions[BN=BN](
+                partition
+            )
+            start = startend[0]
+            end = startend[1]
         var kv_tile_start_row: UInt32 = start
+        var kv_col: UInt32 = k.col_idx(position.kv_head_idx())
 
         while (
             position.mask_status(mask, kv_tile_start_row)
             == TileMaskStatus.FULL_MASK
         ):
             kv_tile_start_row += BN
+        var kv_row: UInt32 = k.row_idx(position.prompt_idx, kv_tile_start_row)
 
-        produce_k[False](write_pipeline_states, kv_tile_start_row, position)
+        produce_k[False](write_pipeline_states, kv_row, kv_col)
 
-        var kv_tile_start_row_prev: UInt32 = kv_tile_start_row
+        var kv_row_prev: UInt32 = kv_row
 
         # wait to flip phase, but only bother after producing
         # there isn't any memory we can throttle
@@ -1996,24 +2013,13 @@ fn _mha_sm100[
                 == TileMaskStatus.FULL_MASK
             ):
                 continue
-            produce_k[True](
-                write_pipeline_states,
-                kv_tile_start_row,
-                position,
-            )
-            produce_v[True](
-                write_pipeline_states,
-                kv_tile_start_row_prev,
-                position,
-            )
+            kv_row = k.row_idx(position.prompt_idx, kv_tile_start_row)
+            produce_k[True](write_pipeline_states, kv_row, kv_col)
+            produce_v(write_pipeline_states, kv_row_prev, kv_col)
             # cache old
-            kv_tile_start_row_prev = kv_tile_start_row
+            kv_row_prev = kv_row
 
-        produce_v[True](
-            write_pipeline_states,
-            kv_tile_start_row_prev,
-            position,
-        )
+        produce_v(write_pipeline_states, kv_row_prev, kv_col)
 
     else:
         warpgroup_reg_alloc[num_consumer_regs]()
@@ -2038,7 +2044,7 @@ fn _mha_sm100[
             wgmma_0.init()
             wgmma_1.init()
 
-        qk_desc = wgmma_0_t.mma_descriptors(q_smem_iter.ptr, kv_smem)
+        qk_desc = wgmma_0_t.mma_descriptors(q_smem, kv_smem)
 
         q_desc = qk_desc.get_a()
         k_desc = qk_desc.get_b()
@@ -2133,9 +2139,9 @@ fn _mha_sm100[
 
         @parameter
         @always_inline
-        fn q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
-            q = q_desc + Int(BM * BK * sizeof[q_type]() * q_idx)
-            k = k_desc + Int(BN * depth * sizeof[k_type]() * read_idx)
+        fn q_mul_k(read_idx: UInt32, read_phase: UInt32):
+            q = q_desc
+            k = k_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
 
             wgmma_0.mma(
@@ -2148,7 +2154,7 @@ fn _mha_sm100[
         @parameter
         @always_inline("nodebug")
         fn p_mul_v(read_idx: UInt32, read_phase: UInt32, scale_c: UInt32):
-            v = v_desc + Int(BN * depth * sizeof[v_type]() * read_idx)
+            v = v_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
             wgmma_1.mma(
                 rebind[wgmma_1_t.a_t](p_desc),
@@ -2159,15 +2165,15 @@ fn _mha_sm100[
 
         @parameter
         @always_inline
-        fn wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
-            wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
+        fn wait_for_q_mul_k(read_idx: UInt32):
+            wgmma_0.wait()  # P is available
             _ = consumed_mbar_kv[read_idx].arrive()
             p_accumulator.copy_to(p_reg_tile)
 
         @parameter
         @always_inline
         fn wait_for_p_mul_v(read_idx: UInt32):
-            wgmma_1.wait_group[0]()  # output is available
+            wgmma_1.wait()  # output is available
             _ = consumed_mbar_kv[read_idx].arrive()
             output_accumulator.copy_to(output_reg_tile)
 
@@ -2229,7 +2235,6 @@ fn _mha_sm100[
         @always_inline
         fn write_output(
             position: position_t,
-            q_idx: UInt32,
             rowsum_inv: __type_of(rowsum),
         ):
             vout = vectorize_o_reg_tile()
@@ -2243,7 +2248,7 @@ fn _mha_sm100[
                 for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
-            var output_ptr: UnsafePointer[Scalar[output_type]] = output_ptr_arg
+            var output_ptr: UnsafePointer[Scalar[output_type]] = o_ptr_arg
 
             @parameter
             if decoding and partition_t.do_partition:
@@ -2256,7 +2261,7 @@ fn _mha_sm100[
             constrained[
                 output_type.is_half_float(), "we don't support Float32 output"
             ]()
-            constrained[sizeof[q_type]() == sizeof[output_type]()]()
+            constrained[sizeof[kv_type]() == sizeof[output_type]()]()
             alias swizzle = make_swizzle[
                 num_rows = WM // 2, row_size=BN, access_size=8
             ]()
@@ -2266,7 +2271,7 @@ fn _mha_sm100[
                 output_type,
                 Layout.row_major(BM, depth),
                 address_space = AddressSpace.SHARED,
-            ]((q_smem + q_idx * q_tile_size).bitcast[Scalar[output_type]]())
+            ]((q_smem).bitcast[Scalar[output_type]]())
             accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
                 Int(warp_y), Int(warp_x)
             )
@@ -2297,7 +2302,9 @@ fn _mha_sm100[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
 
-        start, end = position.get_start_and_end_for_partitions[BN=BN](partition)
+        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        start = startend[0]
+        end = startend[1]
 
         @parameter
         if (
@@ -2317,7 +2324,7 @@ fn _mha_sm100[
                 if elect_one_warp:
                     tcgen05_release_allocation_lock[cta_group]()
                     tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
-                write_output(position, q_pipeline_state.index(), rowsum)
+                write_output(position, rowsum)
                 return
         var kv_tile_start_row: UInt32 = start
         var mask_status: TileMaskStatus
@@ -2334,15 +2341,10 @@ fn _mha_sm100[
         q_mul_k(
             read_idx_q,
             read_pipeline_states.phase(),
-            q_pipeline_state.index(),
         )
         read_pipeline_states.step()
-        wait_for_q_mul_k[0](read_idx_q)
-        apply_mask(
-            position,
-            mask_status,
-            kv_tile_start_row,
-        )
+        wait_for_q_mul_k(read_idx_q)
+        apply_mask(position, mask_status, kv_tile_start_row)
         rowmax.copy_from(
             _rowmax_online_softmax[1, mma_thread_layout, use_exp2=True](
                 vectorize_p_reg_tile(), rowmax, init_rowmax=True
@@ -2354,8 +2356,6 @@ fn _mha_sm100[
         ]()
         rowsum.copy_from(_rowsum[mma_thread_layout](vectorize_p_reg_tile()))
 
-        var q_idx_old: UInt32 = q_pipeline_state.index()
-        var q_phase_old: UInt32 = q_pipeline_state.phase()
         var output_scale: UInt32 = 0
         # Consumption order:
         # Preheader: Q0, K0
@@ -2377,9 +2377,7 @@ fn _mha_sm100[
             var read_idx_q: UInt32 = read_pipeline_states.index()
             # start wgmmas
             q_mul_k(
-                read_idx_q,
-                read_pipeline_states.phase(),
-                q_pipeline_state.index(),
+                read_idx_q, read_pipeline_states.phase()
             )  # can't rw `p_reg_tile`
             read_pipeline_states.step()
             var read_idx_v: UInt32 = read_pipeline_states.index()
@@ -2388,15 +2386,9 @@ fn _mha_sm100[
             )  # can't rw output or pfrag
             output_scale = 1
             read_pipeline_states.step()
-            p_reg_tensor = wait_for_q_mul_k[1](
-                read_idx_q
-            )  # can rw `p_reg_tile`
+            p_reg_tensor = wait_for_q_mul_k(read_idx_q)
 
-            apply_mask(
-                position,
-                mask_status,
-                kv_tile_start_row,
-            )
+            apply_mask(position, mask_status, kv_tile_start_row)
             score_frag_rowmax = _rowmax_online_softmax[
                 1, mma_thread_layout, use_exp2=True
             ](vectorize_p_reg_tile(), rowmax, False)
@@ -2442,7 +2434,7 @@ fn _mha_sm100[
         @parameter
         for row in range(num_rows_per_warp):
             rowsum[row] = recip(rowsum[row])[0]
-        wgmma_1.wait_group()
+        wgmma_1.wait()
 
         output_accumulator.copy_to(output_reg_tile)
         constrained[
@@ -2454,5 +2446,5 @@ fn _mha_sm100[
         if elect_one_warp:
             tcgen05_release_allocation_lock[cta_group]()
             tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
-        write_output(position, q_pipeline_state.index(), rowsum)
+        write_output(position, rowsum)
         # don't arrive

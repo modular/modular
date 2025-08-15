@@ -406,7 +406,14 @@ struct ContinuousBatchingKVCache[
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
         var total_blocks = self.blocks.dim[0]()
-        var rows = total_blocks * self._stride()
+        # An axis's size is 1 + maximum valid idx
+        # Idx calc is:
+        # block_idx * self._stride() + tok_idx
+        # max values
+        # (total_blocks - 1) * self._stride() + self.blocks.dim[1]() - 1
+        # yields number of rows:
+        # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
         alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
@@ -573,10 +580,20 @@ struct PagedKVCache[
         is_k_major=is_k_major,
     ]:
         """Creates a TMA tile for this KV cache."""
-        # Paged cache is [total_num_blocks, page_size, num_heads, head_size]
+        # Paged cache collection is (where `$idx` means subsetting that idx):
+        # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
+        #
+        # An axis's size is 1 + maximum valid idx
+        # Idx calc is:
+        # block_idx * self._stride() + tok_in_block_idx
+        # max values
+        # (total_blocks - 1) * self._stride() + Self.page_size - 1
+        # yields number of rows:
+        # (total_blocks - 1) * self._stride() + Self.page_size
+        #
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
-        var rows = total_blocks * self._stride()
+        var rows = (total_blocks - 1) * self._stride() + Self.page_size
         alias cols = Int(Self.kv_params.num_heads * Self.kv_params.head_size)
         alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
         rt_layout = RuntimeLayout[layout].row_major(
