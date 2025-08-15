@@ -9,8 +9,8 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-from sys.info import os_is_macos, os_is_linux
+from sys.info import CompilationTarget
 # CHECK: True
-print(os_is_macos())
+print(CompilationTarget.is_macos())
 # CHECK: False
-print(os_is_linux())
+print(CompilationTarget.is_linux())
