@@ -858,10 +858,10 @@ struct ConvTransposedPacked[
                     Index(h, w),
                 )
 
-                input_base = input_base + (
+                input_base = input_base + Index(
                     height * self.conv_shape.c,
                 )
-                output_base = output_base + (
+                output_base = output_base + Index(
                     height * self.conv_shape.stride[1] * self.conv_shape.f
                 )
 
@@ -945,10 +945,10 @@ struct ConvTransposedPacked[
                         Index(d, h, w),
                     )
 
-                    input_base = input_base + (
+                    input_base = input_base + Index(
                         height * self.conv_shape.c,
                     )
-                    output_base = output_base + (
+                    output_base = output_base + Index(
                         height * self.conv_shape.stride[2] * self.conv_shape.f
                     )
 

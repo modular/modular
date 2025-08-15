@@ -1341,10 +1341,10 @@ struct ConvDirectNHWC[
                 wo,
             )
 
-            input_base = input_base + (
+            input_base = input_base + Index(
                 height * self.conv_shape.stride[0] * self.conv_shape.c,
             )
-            output_base = output_base + (height * self.conv_shape.f)
+            output_base = output_base + Index(height * self.conv_shape.f)
 
         tile_middle_unswitch_boundaries[
             work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
@@ -1422,10 +1422,10 @@ struct ConvDirectNHWC[
                     Index(ho, wo),
                 )
 
-                input_base = input_base + (
+                input_base = input_base + Index(
                     height * self.conv_shape.stride[1] * self.conv_shape.c,
                 )
-                output_base = output_base + (height * self.conv_shape.f)
+                output_base = output_base + Index(height * self.conv_shape.f)
 
             tile_middle_unswitch_boundaries[
                 work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
@@ -1513,10 +1513,10 @@ struct ConvDirectNHWC[
                         Index(do, ho, wo),
                     )
 
-                    input_base = input_base + (
+                    input_base = input_base + Index(
                         height * self.conv_shape.stride[2] * self.conv_shape.c,
                     )
-                    output_base = output_base + (height * self.conv_shape.f)
+                    output_base = output_base + Index(height * self.conv_shape.f)
 
                 tile_middle_unswitch_boundaries[
                     work_fn,
