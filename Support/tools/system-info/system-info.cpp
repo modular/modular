@@ -15,6 +15,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Host.h"
 #include <filesystem>
 
 using namespace M;
@@ -120,7 +121,9 @@ int main(int argc, char **argv) {
     std::string cpu = cli.cpu;
     if (cpu.empty())
       cpu = cli.arch;
-    auto targetInfoOr = M::getMArchTargetInfo(cli.arch, cpu, /*mtune=*/{});
+    std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+    auto targetInfoOr =
+        M::getMArchTargetInfo(hostTriple, cli.arch, cpu, /*mtune=*/{});
     if (targetInfoOr.isError())
       return reportError(targetInfoOr.getError());
     hostInfo = HostMachineInfo::fromTargetInfo(*targetInfoOr);

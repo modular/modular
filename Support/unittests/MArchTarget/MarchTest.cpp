@@ -23,29 +23,27 @@ TEST(ArchTarget, GetFeatures) {
 
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ctx.loadDialect<MDialect>();
-#if defined(__linux__) && defined(MODULAR_X86_64)
-  auto targetInfo = M::getMArchFeatures(&ctx, "skylake-avx512", "generic", "");
+  auto targetInfo = M::getMArchFeatures(&ctx, "x86_64-unknown-linux-gnu",
+                                        "skylake-avx512", "generic", "");
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
-#elif defined(__APPLE__) && defined(MODULAR_X86_64)
-  auto targetInfo = M::getMArchFeatures(&ctx, "x86-64", "apple", "");
+
+  targetInfo = M::getMArchFeatures(&ctx, "x86_64-apple-macosx11.0", "x86-64",
+                                   "apple", "");
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
   EXPECT_EQ(targetInfo->getArch(), "x86-64");
-#elif defined(__APPLE__) && defined(MODULAR_ARM_NEON)
-  auto targetInfo = M::getMArchFeatures(&ctx, "arm64", "apple-m1", "");
+
+  targetInfo = M::getMArchFeatures(&ctx, "arm64-apple-macosx11.0", "arm64",
+                                   "apple-m1", "");
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
   EXPECT_EQ(targetInfo->getArch(), "apple-m1");
-#endif
 }
 
 TEST(ArchTarget, getMArchTargetInfo) {
   llvm::InitializeAllTargets();
 
-  ErrorOr<TargetInfo> info =
-      M::getMArchTargetInfo("armv8.2-a", "neoverse-n1", "");
+  ErrorOr<TargetInfo> info = M::getMArchTargetInfo(
+      "aarch64-unknown-linux-gnu", "armv8.2-a", "neoverse-n1", "");
   ASSERT_FALSE(info.isError()) << info.getError();
   EXPECT_EQ(info->arch, "neoverse-n1");
-  // FIXME(#17421): The triple's OS name is set to the host machine's OS name,
-  // which is incorrect for cross-compilation. So here we only test the first 2
-  // components of the triple, so as not to include the host OS mame.
-  EXPECT_THAT(info->triple.str(), testing::StartsWith("aarch64-unknown-"));
+  EXPECT_EQ(info->triple.str(), "aarch64-unknown-linux-gnu");
 }

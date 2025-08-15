@@ -62,8 +62,8 @@ std::string getHostCPUFeatures();
 /// specified, `-mcpu=generic` will be used.
 ///
 /// `-mtune` will specify the CPU to specifically tune code for.
-ErrorOr<TargetInfo> getMArchTargetInfo(StringRef march, StringRef mcpu,
-                                       StringRef mtune);
+ErrorOr<TargetInfo> getMArchTargetInfo(StringRef targetTriple, StringRef march,
+                                       StringRef mcpu, StringRef mtune);
 
 /// Returns the CPU features for a given target triple and CPU.
 ErrorOr<std::vector<std::string>> getFeatures(StringRef triple, StringRef cpu);

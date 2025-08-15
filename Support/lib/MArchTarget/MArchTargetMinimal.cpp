@@ -109,7 +109,8 @@ std::string M::getHostCPUFeatures() {
   return encodeFeatures(targetInfoOr->features);
 }
 
-ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
+ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
+                                          StringRef march, StringRef mcpu,
                                           StringRef mtune) {
   using namespace llvm;
 
@@ -119,7 +120,7 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
 
   // `-march` has different meaning depending on the architecture. Determine the
   // LLVM target triple and CPU from it.
-  Triple triple;
+  Triple triple = llvm::Triple(targetTriple);
   auto opts = std::make_shared<clang::TargetOptions>();
 
   auto processExts = [&opts](StringRef &m) {
@@ -172,7 +173,6 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
     // Check for an AArch64 CPU.
   } else if (std::optional<AArch64::CpuInfo> aarch64Cpu =
                  AArch64::parseCpu(mcpu)) {
-    triple.setArchName(march);
     triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = mcpu;
 
@@ -207,17 +207,6 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
   // "armv8.2-a". In this case, the vendor is set to "a", which is unknown.
   if (triple.getVendor() == Triple::UnknownVendor)
     triple.setVendor(Triple::VendorType::UnknownVendor);
-
-    // Set the OS name (see #17241).
-#ifdef __linux__
-  triple.setOS(llvm::Triple::OSType::Linux);
-#elif __APPLE__
-  triple.setOS(llvm::Triple::OSType::MacOSX);
-#elif _WIN32
-  triple.setOS(Triple::Triple::OSType::Win32);
-#else
-#error "unsupported operating system."
-#endif
 
   opts->Triple = triple.str();
 

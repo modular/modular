@@ -1,6 +1,5 @@
-// RUN: kgen %s -elaborate -S -o - -march=skylake-avx512+crc64 -mtune=skylake-avx512 | FileCheck %s --check-prefixes=CHECK,CHECK-TUNE
+// RUN: kgen %s -elaborate -S -o - --target-triple=x86_64-unknown-linux -march=skylake-avx512+crc64 -mtune=skylake-avx512 | FileCheck %s --check-prefixes=CHECK,CHECK-TUNE
 // RUN: kgen %s -elaborate -S -o - --target-triple=x86_64-unknown-linux --target-cpu=skylake-avx512 | FileCheck %s --check-prefixes=CHECK,CHECK-TARGET
-// REQUIRES: system-linux
 
 // CHECK: M.target_info = #M.target<triple = "x86_64-unknown-linux", arch = "skylake-avx512",
 // CHECK-TUNE-SAME: features = "+adx,+aes,+avx,+avx2,+avx512bw,+avx512cd,+avx512dq,+avx512f,+avx512vl,+bmi,+bmi2,+clflushopt,+clwb,+cmov,+crc32,+crc64,+cx16,+cx8,+evex512,+f16c,+fma,+fsgsbase,+fxsr,+invpcid,+lzcnt,+mmx,+movbe,+pclmul,+pku,+popcnt,+prfchw,+rdrnd,+rdseed,+sahf,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+ssse3,+x87,+xsave,+xsavec,+xsaveopt,+xsaves",
