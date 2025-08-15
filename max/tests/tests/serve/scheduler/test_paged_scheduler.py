@@ -470,6 +470,87 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
     assert len(actual) == len(expected) and actual == expected
 
 
+def test_paged_scheduler_basic_small_batch_size() -> None:
+    prompt_len = 100
+    output_tokens = 13
+    max_batch_size = 13
+    num_requests = 40
+    scheduler, push_socket = create_paged_scheduler(
+        max_batch_size=max_batch_size,
+    )
+
+    for _ in range(num_requests):
+        enqueue_request(
+            push_socket,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+    time.sleep(1)
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, input_tokens
+        BatchInfo(CE, 13, 0, 1, 1300),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 13, 0, 1, 1300),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 13, 0, 1, 1300),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 1, 0, 1, 100),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 3, 1),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert len(actual) == len(expected) and actual == expected
+
+
+def test_paged_scheduler_basic_small_batch_size_with_chunked_prefill() -> None:
+    prompt_len = 1500
+    output_tokens = 13
+    max_batch_size = 13
+    num_requests = 40
+    scheduler, push_socket = create_paged_scheduler(
+        max_batch_size=max_batch_size,
+        enable_chunked_prefill=True,
+    )
+
+    for _ in range(num_requests):
+        enqueue_request(
+            push_socket,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+    time.sleep(1)
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, input_tokens
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 3, 0, 1, 3116),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 3, 0, 1, 3116),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 6, 1, 1, 8192),
+        BatchInfo(CE, 3, 0, 1, 3116),
+        BatchInfo(TG, 13, 0, 10, 13),
+        BatchInfo(TG, 13, 13, 3, 13),
+        BatchInfo(CE, 1, 0, 1, 1500),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 3, 1),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert len(actual) == len(expected) and actual == expected
+
+
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
     None
 ):
