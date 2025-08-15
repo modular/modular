@@ -202,3 +202,66 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     for tensor in outputs:
         assert isinstance(tensor, Tensor)
         assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+def test_allreduce_signal_buffer_too_small_error_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that allreduce provides helpful error message when signal buffer is too small."""
+    # Need at least 2 GPUs for actual allreduce communication
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    # Use 2 GPUs.
+    num_gpus = 2
+
+    # Monkeypatch the signal buffer size to be extremely small.
+    monkeypatch.setattr(Signals, "NUM_BYTES", 1)
+
+    # Set up multiple GPUs.
+    gpu_devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices=gpu_devices)
+
+    # Build graph with inputs on multiple GPUs.
+    input_types = [
+        TensorType(dtype=DType.float32, shape=[64, 64], device=gpu_devices[i])
+        for i in range(num_gpus)
+    ]
+
+    # Combine tensor types and signal buffer types.
+    all_input_types = input_types + list(signals.input_types())
+
+    with Graph(
+        "allreduce_small_signal",
+        input_types=all_input_types,
+    ) as graph:
+        # Get tensor inputs from each GPU
+        tensor_inputs = [graph.inputs[i].tensor for i in range(num_gpus)]
+        signal_buffers = [inp.buffer for inp in graph.inputs[num_gpus:]]
+
+        # Perform allreduce across GPUs
+        allreduce_outputs = ops.allreduce.sum(tensor_inputs, signal_buffers)
+        graph.output(*allreduce_outputs)
+
+    # Create session and compile.
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+    compiled = session.load(graph)
+
+    # Create input tensors on each device.
+    input_tensors = [
+        Tensor.zeros((64, 64), dtype=DType.float32).to(devices[i])
+        for i in range(num_gpus)
+    ]
+
+    # Synchronize devices.
+    for dev in devices:
+        dev.synchronize()
+
+    # Execute and expect error.
+    error_regex = r"Expected signal buffer to be at least \d+ bytes, but got \d+\. This error can appear when running large requests through MAX serve without chunked prefill\. If so, try enabling chunked prefill with --enable-chunked-prefill\. Otherwise, consider increasing the signal buffer size\."
+
+    with pytest.raises(ValueError, match=error_regex):
+        compiled.execute(*input_tensors, *signals.buffers())

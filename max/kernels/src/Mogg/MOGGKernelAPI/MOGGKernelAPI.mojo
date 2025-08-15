@@ -8070,10 +8070,16 @@ fn _check_signal_buffer_size(
     var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
     if signal_buffer_size < min_signal_buffer_size:
         raise Error(
-            "expected signal buffer to be at least ",
+            "Expected signal buffer to be at least ",
             min_signal_buffer_size,
             " bytes, but got ",
             signal_buffer_size,
+            (
+                ". This error can appear when running large requests through"
+                " MAX serve without chunked prefill. If so, try enabling"
+                " chunked prefill with --enable-chunked-prefill. Otherwise,"
+                " consider increasing the signal buffer size."
+            ),
         )
 
 
