@@ -36,7 +36,7 @@ from .pipeline_variants import (
 )
 from .queue import MAXQueue
 from .request import Request, RequestID
-from .scheduler import SchedulerResult, SchedulerStatus
+from .scheduler import SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
 from .tokenizer import PipelineTokenizer
@@ -81,7 +81,6 @@ __all__ = [
     "SamplingParams",
     "SamplingParamsInput",
     "SchedulerResult",
-    "SchedulerStatus",
     "SharedMemoryArray",
     "TextGenerationContextType",
     "TextGenerationContextType",
