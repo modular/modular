@@ -707,7 +707,6 @@ fn gemm_kernel_amd[
                         alignment = alignof[SIMD[c_type, 4]](),
                     ]()
                     .cast[c_type]()
-                )
 
                 alias alignment = alignof[SIMD[c_type, 4]]()
 
