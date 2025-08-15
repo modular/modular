@@ -34,7 +34,6 @@
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include <filesystem>

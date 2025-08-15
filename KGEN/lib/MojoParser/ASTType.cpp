@@ -488,35 +488,6 @@ static SymbolRefAttr tryGetSymbolName(TypedAttr param) {
   return {};
 }
 
-/// Return a string to use when pretty printing the given kgen dtype.
-static std::string getDTypeAsString(KGENDType dtype) {
-  // Follow the library spelling for exposed dtypes where they differ.
-  switch (dtype.getValue()) {
-  case KGENDType::si8:
-    return "int8";
-  case KGENDType::ui8:
-    return "uint8";
-  case KGENDType::si16:
-    return "int16";
-  case KGENDType::ui16:
-    return "uint16";
-  case KGENDType::si32:
-    return "int32";
-  case KGENDType::ui32:
-    return "uint32";
-  case KGENDType::si64:
-    return "int64";
-  case KGENDType::ui64:
-    return "uint64";
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, ...)                              \
-  case KGENDType::SHORT_NAME:                                                  \
-    return #LONG_NAME;
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-  default:
-    return dtype.getAsString();
-  }
-}
 static bool isKnownNonStaticMethod(SharedState *diagShared,
                                    SymbolRefAttr callee) {
   if (!diagShared) // Need SharedState to figure this out.
@@ -825,7 +796,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return printDemangledParam(os, memAttr.getValue(), diagShared);
 
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
-    os << getDTypeAsString(dtypeAttr.getDType());
+    os << dtypeAttr.getDType().getAsString(/*libForm=*/true);
     return;
   }
 

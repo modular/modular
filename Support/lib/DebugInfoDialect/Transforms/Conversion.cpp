@@ -8,7 +8,6 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace M;

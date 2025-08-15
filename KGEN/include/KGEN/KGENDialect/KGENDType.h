@@ -61,26 +61,12 @@ public:
   }
 
   /// Return the element type for it's string representation.
-  static FailureOr<KGENDType> getFromString(StringRef str) {
-    if (str == "address")
-      return KGENDType(ExtraCases::address);
-    if (str == "index")
-      return KGENDType(ExtraCases::index);
-    auto dtype = DType::getFromString(str);
-    if (succeeded(dtype))
-      return KGENDType(*dtype);
-    return failure();
-  }
+  static FailureOr<KGENDType> getFromString(StringRef str);
 
   /// Return a string form of this eltType suitable for printing and error
-  /// messages.
-  std::string getAsString() const {
-    if (isAddress())
-      return "address";
-    if (isIndex())
-      return "index";
-    return DType::getAsString();
-  }
+  /// messages. If the `libForm` flag is true, then the result will will follow
+  /// the library spelling, e.g. `uint16` instead of `ui16`.
+  std::string getAsString(bool libForm = false) const;
 };
 
 inline raw_ostream &operator<<(raw_ostream &os, KGENDType value) {

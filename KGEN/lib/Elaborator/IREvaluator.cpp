@@ -696,80 +696,13 @@ static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
   }
 }
 
-/// Return a string representation of a KGENDType, following the naming scheme
-/// in the Mojo DType struct. Returns std::nullopt if the dtype is not known.
-static std::optional<std::string> getDTypeAsString(KGENDType dtype) {
-  switch (dtype.getValue()) {
-  case KGENDType::invalid:
-    return "invalid";
-  case KGENDType::kBool:
-    return "bool";
-  case KGENDType::index:
-    return "index";
-  case KGENDType::ui1:
-    return "_uint1";
-  case KGENDType::ui2:
-    return "_uint2";
-  case KGENDType::ui4:
-    return "_uint4";
-  case KGENDType::ui8:
-    return "uint8";
-  case KGENDType::si8:
-    return "int8";
-  case KGENDType::ui16:
-    return "uint16";
-  case KGENDType::si16:
-    return "int16";
-  case KGENDType::ui32:
-    return "uint32";
-  case KGENDType::si32:
-    return "int32";
-  case KGENDType::ui64:
-    return "uint64";
-  case KGENDType::si64:
-    return "int64";
-  case KGENDType::ui128:
-    return "uint128";
-  case KGENDType::si128:
-    return "int128";
-  case KGENDType::ui256:
-    return "uint256";
-  case KGENDType::si256:
-    return "int256";
-  case KGENDType::f8e3m4:
-    return "float8_e3m4";
-  case KGENDType::f8e4m3fn:
-    return "float8_e4m3fn";
-  case KGENDType::f8e4m3fnuz:
-    return "float8_e4m3fnuz";
-  case KGENDType::f8e5m2:
-    return "float8_e5m2";
-  case KGENDType::f8e5m2fnuz:
-    return "float8_e5m2fnuz";
-  case KGENDType::bf16:
-    return "bfloat16";
-  case KGENDType::f16:
-    return "float16";
-  case KGENDType::f32:
-    return "float32";
-  case KGENDType::f64:
-    return "float64";
-  default:
-    return std::nullopt;
-  }
-}
-
 /// Print a KGENDType, following the naming scheme in the Mojo DType struct.
 /// NOTE: It would be better to have custom type name printing that can be
 /// implemented on the struct directly.
 static void printDType(raw_ostream &os, KGENDType dtype, bool qualified) {
-  if (auto dtypeStr = getDTypeAsString(dtype)) {
-    if (qualified)
-      os << "stdlib.builtin.dtype.";
-    os << "DType." << *dtypeStr;
-  } else {
-    dtype.print(os);
-  }
+  if (qualified)
+    os << "stdlib.builtin.dtype.";
+  os << "DType." << dtype.getAsString(/*libForm=*/true);
 }
 
 void IREvaluator::printParamValue(raw_ostream &os, ParamDeclAttr decl,
