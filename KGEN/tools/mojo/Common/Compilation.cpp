@@ -299,7 +299,8 @@ ErrorOrSuccess M::parseTargetOptions(
   ErrorOr<TargetInfoAttr> targetOr = nullptr;
   if (!mArch.empty() || !mCpu.empty()) {
     // Use `-march` to determine the feature set.
-    targetOr = getMArchFeatures(&ctx, mArch, mCpu, mTune);
+    targetOr = getMArchFeatures(&ctx, compilationOptions.targetTriple, mArch,
+                                mCpu, mTune);
   } else {
     // Use the full triple, specific CPU, and manually specified features to
     // get the target info.

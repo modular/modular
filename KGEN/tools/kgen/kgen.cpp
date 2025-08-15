@@ -336,16 +336,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     ErrorOr<TargetInfoAttr> targetOr = nullptr;
     if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
       // Detect if the user accidentally specified any of the `--target-*`.
-      if (options.targetTriple != llvm::sys::getDefaultTargetTriple() ||
-          options.targetCpu != llvm::sys::getHostCPUName() ||
+      if (options.targetCpu != llvm::sys::getHostCPUName() ||
           options.targetFeatures != getHostCPUFeatures())
         return failure(clOptions.reportError(
-            "--target-triple, --target-cpu, or --target-features specified at "
+            "--target-cpu or --target-features specified at "
             "the same time as -march or -mcpu"));
 
       // Use `-march` to determine the feature set.
-      targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu,
-                                  clOptions.mtune);
+      targetOr = getMArchFeatures(ctx, clOptions.targetTriple, clOptions.march,
+                                  clOptions.mcpu, clOptions.mtune);
     } else {
       // If the user provided the target triple without specifying a CPU,
       // default to `generic`.
