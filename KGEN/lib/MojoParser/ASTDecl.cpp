@@ -10,7 +10,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
