@@ -266,6 +266,11 @@ class DecodeScheduler(Scheduler):
                         # Remove from pending requests.
                         self.pending_prefill_requests.remove(request_id)
 
+                        # Send a cancel request to the prefill node
+                        self.dispatcher_client.send(
+                            MessageType.CANCEL_REQUEST, request_id
+                        )
+
                         # Send the cancelled result back to the response q
                         self.response_push_socket.put_nowait(
                             {request_id: SchedulerResult.cancelled()}

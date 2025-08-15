@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from typing import Union
 
 from max._core import nixl
-from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -87,6 +92,10 @@ class PrefillScheduler(Scheduler):
             MessageType.TRANSFER_ENGINE_REQUEST,
             self.handle_transfer_engine_request,
         )
+        self.dispatcher_client.register_request_handler(
+            MessageType.CANCEL_REQUEST,
+            self.handle_cancel_request,
+        )
 
         self.request_id_to_reply_context: dict[str, ReplyContext] = {}
         self.prefill_requests: deque[PrefillRequest] = deque()
@@ -98,6 +107,15 @@ class PrefillScheduler(Scheduler):
             tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
+
+        self.outstanding_cancelled_requests: set[RequestID] = set()
+
+    @traced
+    def handle_cancel_request(
+        self, message: RequestID, reply_context: ReplyContext
+    ) -> None:
+        """Handles a cancel request by adding the request ID to the set of outstanding cancelled requests."""
+        self.outstanding_cancelled_requests.add(message)
 
     @traced
     def handle_transfer_engine_request(
@@ -230,6 +248,16 @@ class PrefillScheduler(Scheduler):
             prefill_request = self.prefill_requests.popleft()
             prefill_request.context.reset()
 
+            # Check if its been cancelled
+            if (
+                prefill_request.context.request_id
+                in self.outstanding_cancelled_requests
+            ):
+                self.outstanding_cancelled_requests.remove(
+                    prefill_request.context.request_id
+                )
+                continue
+
             if not self.paged_manager.contains(prefill_request.id):
                 self.paged_manager.external_claim(prefill_request.id)
 
@@ -270,8 +298,14 @@ class PrefillScheduler(Scheduler):
         while self.active_batch:
             req_id, input_context = self.active_batch.popitem()
 
-            # Get Remote Metadata.
             prefill_request = self.pending_transfers.pop(req_id)
+
+            # If cancelled, throw away result.
+            if req_id in self.outstanding_cancelled_requests:
+                self.outstanding_cancelled_requests.remove(req_id)
+                continue
+
+            # Get Remote Metadata.
             remote_metadata = self.transfer_engine.remote_connections[
                 prefill_request.transfer_engine_name
             ]
