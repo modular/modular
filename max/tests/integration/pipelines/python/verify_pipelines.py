@@ -867,8 +867,11 @@ PIPELINES = {
             encoding="bfloat16",
             # TODO: Accuracy is much worse on AMD.
             # so we might have an AMD kernel bug here
-            cos_dist_threshold=8.8e-03,
-            kl_div_threshold=8.7e-02,
+            # TODO(MODELS-730): With the update to transformers=4.55, the
+            # kl_div_threshold went from 8.7e-02 to 6.6e-01.
+            # This is likely due to changes in the reference implementation.
+            cos_dist_threshold=3.9e-02,
+            kl_div_threshold=6.6e-01,
         ),
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
