@@ -241,7 +241,8 @@ class TokenGenerationScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
-        self._schedule(batch_to_execute)
+        with Tracer(f"_schedule({batch_to_execute})"):
+            self._schedule(batch_to_execute)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
@@ -281,6 +282,9 @@ class TokenGenerationScheduler(Scheduler):
         batch_responses: dict[str, TextGenerationOutput],
     ) -> None:
         """Handle chunked requests"""
+        if not self.scheduler_config.enable_chunked_prefill:
+            return
+
         # Only the last request in a batch could be chunked. We discard its response
         # and put it back into the request queue if it is chunked.
         last_req = list(batch_executed.values())[-1]
@@ -324,51 +328,32 @@ class TokenGenerationScheduler(Scheduler):
 
         self.response_q.put_nowait(responses)
 
-    def _schedule_ce(self, sch_output: SchedulerOutput) -> None:
-        batch_to_execute = sch_output.batch_inputs
-
-        # execute the batch
-        batch_responses = self.pipeline.execute(
-            TextGenerationInputs(
-                batch_to_execute, num_steps=sch_output.num_steps
-            )
-        )
-        # put the unfinished request back into the queue, and delete its responses
-        if self.scheduler_config.enable_chunked_prefill:
-            self._handle_chunked_requests(batch_to_execute, batch_responses)
-
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-        # add the encoded requests to the continuous batch
-        for req_id in batch_to_execute:
-            self.batch_constructor.tg_reqs[req_id] = batch_to_execute[req_id]
-
-        # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses)
-
-    def _schedule_tg(self, sch_output: SchedulerOutput) -> None:
+    def _schedule(self, sch_output: SchedulerOutput) -> None:
+        assert sch_output.batch_size > 0
         batch_to_execute = sch_output.batch_inputs
 
         METRICS.batch_size(len(batch_to_execute))
+
         # execute the batch
         batch_responses = self.pipeline.execute(
             TextGenerationInputs(batch_to_execute, sch_output.num_steps)
         )
+
+        # If there is a chunked request, we put it back into the request queue
+        self._handle_chunked_requests(batch_to_execute, batch_responses)
+
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
 
+        # add the encoded requests to the continuous batch
+        for req_id in batch_to_execute:
+            if req_id not in self.batch_constructor.tg_reqs:
+                self.batch_constructor.tg_reqs[req_id] = batch_to_execute[
+                    req_id
+                ]
+
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
-
-    def _schedule(self, sch_output: SchedulerOutput) -> None:
-        assert sch_output.batch_size > 0
-
-        with Tracer(f"_schedule({sch_output})"):
-            if sch_output.batch_type == BatchType.CE:
-                self._schedule_ce(sch_output)
-            else:
-                assert sch_output.batch_type == BatchType.TG
-                self._schedule_tg(sch_output)
 
 
 def load_text_generation_scheduler(
