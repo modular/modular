@@ -1,0 +1,13 @@
+diff --git a/python/private/python_repository.bzl b/python/private/python_repository.bzl
+index cb0731e6..8c999f57 100644
+--- a/python/private/python_repository.bzl
++++ b/python/private/python_repository.bzl
+@@ -266,8 +266,6 @@ define_hermetic_runtime_toolchain_impl(
+     else:
+         attrs["urls"] = urls
+ 
+-    return attrs
+-
+ python_repository = repository_rule(
+     _python_repository_impl,
+     doc = "Fetches the external tools needed for the Python toolchain.",
