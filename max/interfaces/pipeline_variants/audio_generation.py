@@ -17,7 +17,7 @@ from typing import Generic, Optional, Protocol, Union, runtime_checkable
 import msgspec
 import numpy as np
 from max.interfaces.context import BaseContext, SamplingParams
-from max.interfaces.request import Request
+from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
 
@@ -170,11 +170,12 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
         """
         ...
 
-    def release(self, context: AudioGeneratorContext) -> None:
-        """Releases resources associated with this context.
+    def release(self, request_id: RequestID) -> None:
+        """Release any resources or state associated with a specific request.
 
         Args:
-            context (AudioGeneratorContext): Finished context.
+            request_id (RequestID): The unique identifier of the request to
+                release resources for.
         """
         ...
 
