@@ -278,7 +278,7 @@ def test_schedule_ce() -> None:
         ),
     )
 
-    scheduler._schedule_ce(sch_output)
+    scheduler._schedule(sch_output)
 
     assert mock_request.request_id in scheduler.batch_constructor.tg_reqs
     assert isinstance(scheduler.pipeline, Mock)
@@ -325,7 +325,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
         batch_type=BatchType.CE, batch_inputs=batch_to_execute
     )
 
-    scheduler._schedule_ce(sch_output)
+    scheduler._schedule(sch_output)
 
     assert mock_request.request_id not in scheduler.batch_constructor.tg_reqs
 
@@ -375,7 +375,7 @@ def test_schedule_mixed_ce_tg() -> None:
         batch_type=BatchType.CE, batch_inputs=batch_to_execute
     )
 
-    scheduler._schedule_ce(sch_output)
+    scheduler._schedule(sch_output)
     # req1 has been put in `active_batch`
 
     mock_request_ce = create_mock_request(seq_len=30)
@@ -406,7 +406,7 @@ def test_schedule_tg() -> None:
         num_steps=scheduler.scheduler_config.max_forward_steps_tg,
     )
 
-    scheduler._schedule_tg(sch_output)
+    scheduler._schedule(sch_output)
 
     assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.execute.assert_called_once_with(
