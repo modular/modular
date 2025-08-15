@@ -141,6 +141,11 @@ public:
   size_t numThreads = 0;
 
   bool disableWarnings = false;
+
+  // Whether or not to run the MOGGPreElab pipeline. This is necessary to avoid
+  // false errors like a missing `execute` function on graph generated mojo
+  // text.
+  bool runMOGGPreElab = true;
 };
 
 // Return true if target triple is `air64-`

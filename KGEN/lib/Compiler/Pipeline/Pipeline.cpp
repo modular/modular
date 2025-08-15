@@ -31,8 +31,10 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
 
-  pm.addPass(MOGGPreElab::createAnnotateKernels());
-  pm.addPass(MOGGPreElab::createVerifyKernels());
+  if (options.runMOGGPreElab) {
+    pm.addPass(MOGGPreElab::createAnnotateKernels());
+    pm.addPass(MOGGPreElab::createVerifyKernels());
+  }
 }
 
 /// This populates the early pipeline passes of the KGEN compiler that lowers
