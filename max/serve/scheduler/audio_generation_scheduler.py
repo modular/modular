@@ -70,7 +70,7 @@ class SchedulerLogger:
         batch_execution_time_s: float,
         num_steps: int,
     ) -> None:
-        batch_type = batch.batch_type.concise_name()
+        batch_type = batch.batch_type.value
         batch_creation_latency_str = to_human_readable_latency(
             batch_creation_time_s
         )
@@ -305,7 +305,7 @@ class AudioGenerationScheduler(Scheduler):
 
         return AudioGenerationSchedulerOutput(
             scheduled_reqs,
-            batch_type=BatchType.TokenGeneration,
+            batch_type=BatchType.TG,
         )
 
     def _create_ce_batch(self) -> AudioGenerationSchedulerOutput:
@@ -333,9 +333,7 @@ class AudioGenerationScheduler(Scheduler):
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
 
-        return AudioGenerationSchedulerOutput(
-            ce_batch, batch_type=BatchType.ContextEncoding
-        )
+        return AudioGenerationSchedulerOutput(ce_batch, batch_type=BatchType.CE)
 
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
         assert batch.batch_size > 0
