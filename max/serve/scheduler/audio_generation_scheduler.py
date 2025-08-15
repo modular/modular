@@ -349,15 +349,9 @@ class AudioGenerationScheduler(Scheduler):
         self._handle_terminated_responses(batch, responses)
 
         # send the responses to the API process
-        def _to_sch_result(response: AudioGeneratorOutput) -> SchedulerResult:
-            if response.is_done:
-                return SchedulerResult.complete(response)
-            else:
-                return SchedulerResult.active(response)
-
         self.response_q.put_nowait(
             {
-                req_id: _to_sch_result(response)
+                req_id: SchedulerResult.create(response)
                 for req_id, response in responses.items()
             }
         )

@@ -321,10 +321,7 @@ class TokenGenerationScheduler(Scheduler):
 
         responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
         for request_id, response in batch_responses.items():
-            if response.is_done:
-                responses[request_id] = SchedulerResult.complete(response)
-            else:
-                responses[request_id] = SchedulerResult.active(response)
+            responses[request_id] = SchedulerResult.create(response)
 
         self.response_q.put_nowait(responses)
 

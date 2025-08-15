@@ -401,12 +401,7 @@ class DecodeScheduler(Scheduler):
 
         stream_responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
         for request_id, response in responses.items():
-            if response.is_done:
-                stream_responses[request_id] = SchedulerResult.complete(
-                    response
-                )
-            else:
-                stream_responses[request_id] = SchedulerResult.active(response)
+            stream_responses[request_id] = SchedulerResult.create(response)
 
         self.push_to_response_socket(stream_responses)
 

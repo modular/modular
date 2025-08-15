@@ -110,7 +110,7 @@ class EmbeddingsScheduler(Scheduler):
         # send the responses to the API process
         self.response_q.put_nowait(
             {
-                request_id: SchedulerResult.complete(response)
+                request_id: SchedulerResult.create(response)
                 for request_id, response in batch_responses.items()
             }
         )
