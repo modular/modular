@@ -26,6 +26,7 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
+from max.interfaces.request import RequestID
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextContext, TTSContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -254,7 +255,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
 
         return responses
 
-    def release(self, _: TTSContext) -> None:
+    def release(self, request_id: RequestID) -> None:
         pass
 
     @property
