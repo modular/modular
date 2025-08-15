@@ -85,13 +85,13 @@ async def _create_context(
         messages = cast(list[TextGenerationRequestMessage], request.messages)
         return await tokenizer.new_context(
             TextGenerationRequest(
-                request_id="", model_name="", messages=messages
+                request_id=str(uuid.uuid4()), model_name="", messages=messages
             )
         )
     else:
         return await tokenizer.new_context(
             TextGenerationRequest(
-                request_id="",
+                request_id=str(uuid.uuid4()),
                 model_name="",
                 prompt=request.prompt,
                 images=[load_bytes(image_url) for image_url in request.images],
