@@ -2725,6 +2725,31 @@ struct DeviceFunction[
         )
         return Int(result)
 
+    @always_inline
+    fn occupancy_max_active_blocks_per_multiprocessor(
+        self, block_size: Int, dynamic_shared_mem_size: Int
+    ) raises -> Int:
+        """Returns the maximum number of active blocks per multiprocessor for the given function.
+        """
+        var result: Int32 = 0
+        # const char *AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor(int *numBlocks, const DeviceContext *ctx, const DeviceFunction *func, int blockSize, size_t dynamicSharedMemSize)
+        _checked(
+            external_call[
+                "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
+                _CharPtr,
+                UnsafePointer[Int32],
+                _DeviceFunctionPtr,
+                Int32,
+                _SizeT,
+            ](
+                UnsafePointer(to=result),
+                self._handle,
+                block_size,
+                dynamic_shared_mem_size,
+            )
+        )
+        return Int(result)
+
 
 struct DeviceExternalFunction:
     """Represents an external device function loaded from PTX/SASS assembly.
