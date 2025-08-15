@@ -155,11 +155,14 @@ build --strategy=TestRunner=remote,worker,sandboxed,standalone
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
 build:ci-no-config --disk_cache=
-build:ci-no-config --remote_grpc_log=.derived/bazel/logs/grpc.log
 build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+
+build:ci --config=ci-no-config
+# Set CI builds to lower priority than local builds, some CI builds override this
+build:ci --remote_execution_priority=20
 
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test
