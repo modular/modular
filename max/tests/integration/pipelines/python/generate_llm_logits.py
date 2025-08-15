@@ -480,7 +480,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
             # it's not a problem, but it's a good idea to disable it anyway.)
             enable_chunked_prefill=False,
             # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.8,
+            device_memory_utilization=0.4,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
