@@ -20,7 +20,12 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from max.driver import load_devices
 from max.engine import InferenceSession
-from max.graph.weights import load_weights
+from max.graph.weights import (
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.interfaces import EmbeddingsGenerator, EmbeddingsOutput, InputContext
 from max.nn import ReturnLogits
 from max.profiler import Tracer, traced
@@ -41,9 +46,11 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel],
-        **unused_kwargs,
+        eos_token_id: int,
+        weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         self._pipeline_config = pipeline_config
+        self._weight_adapters = weight_adapters
         # Initialize Session.
         devices = load_devices(self._pipeline_config.model_config.device_specs)
         session = InferenceSession(devices=devices)
@@ -80,7 +87,9 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             devices=devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
-            adapter=None,
+            adapter=self._weight_adapters.get(
+                weights_format(weight_paths), None
+            ),
             return_logits=ReturnLogits.ALL,
         )
 
