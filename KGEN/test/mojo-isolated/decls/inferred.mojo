@@ -155,9 +155,9 @@ struct MyOptional[T: Copyable & Movable]:
 fn testMyOptional(a: MyOptional[MyFancyStruct]):
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a.__eq__(a)
-    # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
+    # CHECK: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = MyOptional.__eq__(a, a)
-    # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
+    # CHECK: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a == a
 
 

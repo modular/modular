@@ -430,10 +430,10 @@ fn testContextSensitiveKeyword(out x: Int, out2: Int):
 fn ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
-    _ = a.x
+    _ = a.x+1
     # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
     # CHECK: = lit.ref.load [[BY]]
-    _ = b.y
+    _ = b.y+1
 
     # It is ok to mutate owned values.
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
@@ -464,10 +464,10 @@ fn ownedConventionReg(
 ):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK:  = lit.ref.load [[AX]]
-    _ = a.x
+    _ = a.x+1
     # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
     # CHECK:  = lit.ref.load [[BY]]
-    _ = b.y
+    _ = b.y+1
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <{1}>

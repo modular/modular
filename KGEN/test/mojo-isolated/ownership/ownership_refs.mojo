@@ -501,7 +501,7 @@ struct FieldSensitiveUse:
         self.x = RefResultStruct()
         # CHECK: [[TMP:%.*]] = lit.call {{.*}}RefResultStruct::@"method
         _ = self.x.method()
-        # CHECK-NEXT: lit.ref.load [[TMP]]
+        # CHECK-NEXT: lit.ownership.use [[TMP]]
         self.y = String()
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
         # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}([[TMP]])

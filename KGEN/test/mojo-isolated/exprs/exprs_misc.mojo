@@ -67,9 +67,13 @@ def test_var_decl_patterns(c: Bool):
   if c:
     (var x) = 42
 
+  # This must load X to add to it.
   # CHECK: lit.ref.load %x
-  (var _) = x
-  # CHECK: lit.ref.load %x
+  # CHECK: lit.call {{.*}}Int::@"__add__{{.*}}
+  (var _) = x+1
+
+  # This should not load X.
+  # CHECK-NOT: lit.ref.load %x
   (var _) = x
 
   var lf : RHSInferenceStruct
@@ -248,7 +252,7 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     _ = a in b
-    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])

@@ -193,9 +193,8 @@ fn make_closure(x: Int):
 
 # CHECK: lit.fn @"take_closure{{.*}}"<f: [[TRAIT]]>[imm *"myFunc`"](%myFunc: !lit.ref<:[[TRAIT]] f, imm *"myFunc`"> read_mem, %x: !Int1) -> !kgen.none
 # CHECK-NEXT: %0 = lit.call[!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) -> !Int1>: #kgen.get_witness<:!Int f, "{{.*}}::fn(y: Int) -> Int", "__call__">][imm *"myFunc`"](%myFunc, %x)
+# CHECK-NEXT: lit.ownership.use %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT: lit.return %none : !kgen.none
-# CHECK-NEXT: lit.end_fn
 fn take_closure[f: fn (y: Int) unified -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
 

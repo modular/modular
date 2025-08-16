@@ -10,14 +10,16 @@
 # RValue tests
 ##===----------------------------------------------------------------------===##
 
+fn use[T: AnyType](a: T): pass
 
 # CHECK-LABEL: lit.fn @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}@Tuple<:variadic<!AnyType> []>,
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
-    _ = ()
+    use(())
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK-NEXT: [[AREF:%.*]] = lit.var.decl "anonymous*"
+    # CHECK: [[AREF:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.ref.store %a, [[AREF]]
     # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut [[AREF]] : <!Int, mut [[ALT:.*]]>
     # CHECK-NEXT: [[BREF:%.*]] = lit.var.decl "anonymous*"
@@ -28,28 +30,34 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
-    _ = (a, b)
+    use((a, b))
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK: = lit.ref.pack.create({{%[0-9]+}}, {{%[0-9]+}})
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
-    _ = a, b
+    # CHECK: %t3 = lit.var.decl "t3"
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t3)
+    var t3 = a, b
+    use(t3)
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
-    _ = (a,)
+    use((a,))
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
-    _ = (a,)
+    use((a,))
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
-    # CHECK: %c = lit.var.decl "c"
-    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %c)
-    var c = a,
-
+    # CHECK: %t2 = lit.var.decl "t2"
+    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t2)
+    var t2 = a,
+    use(t2)
+    # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
 ##===----------------------------------------------------------------------===##
 # LValue tests
