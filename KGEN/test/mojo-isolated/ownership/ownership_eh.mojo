@@ -235,11 +235,12 @@ fn propagate_reg_error() raises:
     # CHECK:        lifetime.end [[RESULT]]
     # CHECK:        lit.error_return
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   lit.call {{.*}}@RegExample::@"__del__{{.*}}([[RESULT]])
-    # CHECK-NEXT:   lifetime.end [[RESULT]]
     # CHECK-NEXT:   mark_consumed %__error__
     # CHECK-NEXT:   yield
     # CHECK-NEXT: }
+    # CHECK-NEXT: lit.ownership.use [[RESULT]]
+    # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__del__{{.*}}([[RESULT]])
+    # CHECK-NEXT: lifetime.end [[RESULT]]
     _ = may_throw()
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
@@ -372,15 +373,18 @@ fn raising_use(var value: MemExample):
         # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}(%value)
         # CHECK-NEXT: if [[IS_ERR]]
         # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
-        # CHECK-NEXT:   lifetime.end %__try_error__
+        # CHECK-NEXT:   lit.var.lifetime.end %__try_error__
         # CHECK-NEXT:   mark_consumed [[VAL]]
-        # CHECK-NEXT:   lifetime.end [[VAL]]
+        # CHECK-NEXT:   lit.var.lifetime.end [[VAL]]
         # CHECK-NEXT:   lit.try.raise
         # CHECK-NEXT: } else {
-        # CHECK-NEXT:   call {{.*}}@MemExample::@"__del__{{.*}}([[VAL]])
-        # CHECK-NEXT:   lifetime.end [[VAL]]
         # CHECK-NEXT:   mark_consumed %__try_error__
-        # CHECK-NEXT:   lifetime.end %__try_error__
+        # CHECK-NEXT:   lit.var.lifetime.end %__try_error__
+        # CHECK-NEXT:   hlcf.yield
+        # CHECK-NEXT: }
+        # CHECK-NEXT: lit.ownership.use [[VAL]]
+        # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}([[VAL]])
+        # CHECK-NEXT: lifetime.end [[VAL]]
         _ = borrow_and_return(value)
     except:
         pass

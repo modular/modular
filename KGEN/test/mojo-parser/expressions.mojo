@@ -87,9 +87,7 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %v2)
   var v2 : MemoryOnlyPair = a
 
-  # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} synth
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %anonymous2A)
+  # CHECK-NEXT: lit.ownership.use %a
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
@@ -136,12 +134,14 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
+  # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
   _ = MemoryOnlyInt()
+  # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[IMMREF2:%.*]] = lit.ref.immut %regX
@@ -651,8 +651,6 @@ fn patterns():
 
   # Discard pattern with different types.
   (_) = someInt
-  # CHECK: [[TMP:%.*]] = lit.ref.load %someInt
-
   (_) = 1.0
 
   # CHECK: %someFloat32 = lit.var.decl "someFloat32" var
@@ -751,8 +749,9 @@ def walrus_implicit_decl():
   # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
-  # CHECK-NEXT: lit.call {{.*}}([[THREE]], [[VAR_A]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[THREE]], [[VAR_A]])
   _ = simpleMath(a := 3, a)
+  # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # CHECK-NEXT: hlcf.elif {
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
@@ -938,7 +937,8 @@ fn dynamic_attribute():
     var obj = DynamicObject()
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}<:string "some_attr">([[IMMREF]],
-    _ = obj.some_attr
+    var a = obj.some_attr
+
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}<:string "some_attr">([[IMMREF]], {{.*}}, %[[VALUE]])

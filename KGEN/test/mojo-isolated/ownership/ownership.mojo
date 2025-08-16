@@ -139,7 +139,7 @@ fn destructors(var arg0: MemExample):
   # expected-warning @+1 {{assignment to 'someInt' was never used}}
   var someInt = 4
   someInt = 5  # silence var warning.
-  # CHECK-NEXT: = lit.ref.load %someInt
+  # CHECK-NEXT: lit.ownership.use %someInt
   # CHECK-NEXT: lifetime.end %someInt
   _ = someInt^
 
@@ -197,13 +197,17 @@ struct Complicated:
 fn testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # This should run the destructor.
   # CHECK-NEXT: [[REF1:%.*]] = lit.ref.from_pointer %ptr end_uninit :
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF1]])
+  # CHECK-NEXT: lit.ownership.use [[REF1]]
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
   # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: lit.ownership.use [[REF2]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF2]])
   _ = __get_address_as_owned_value(ptr)
+
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF1]])
+
 
 # CHECK-LABEL: lit.fn @"testTakePointeeAsOwned2
 fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
@@ -765,6 +769,8 @@ fn variadic_field_sensitivity():
   var memPair = MemPair()
 
   # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
+  # One for the transfer, one for the assignment to _.
+  # CHECK-NEXT: lit.ownership.use [[AREF]]
   # CHECK-NEXT: lit.ownership.use [[AREF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AREF]])
   _ = memPair.a^  # Destroy a.
