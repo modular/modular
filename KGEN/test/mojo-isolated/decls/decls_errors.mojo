@@ -493,7 +493,9 @@ fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{no matching function in initialization}}
   _ = InitOverloaded("foo")
 
-
+  # Ambiguous initializer list assigning to discard pattern needs to be an error.
+  # expected-error @+1 {{cannot emit initializer list without a contextual type}}
+  _ = {a = 1, b = 2}
 
 ##===----------------------------------------------------------------------===##
 # Decorators

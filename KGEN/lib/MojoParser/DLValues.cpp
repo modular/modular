@@ -60,24 +60,22 @@ CValue DiscardDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
 
 CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
                                  IREmitter &emitter) const {
-  // If 'value' is a DLValue like a subscript index, emit it as an RValue to
-  // load to fully evaluate it.  It would be weird for "_ = dict[i]" to not call
-  // the getitem method.
-  if (value.ir.getIfDLValue())
-    return emitter.emitRValue(value, EC_Assignment, elementType);
-
-  // Otherwise just returned the input value unmodified. This ensures we don't
-  // load/copy lvalues in expressions like "_ = someVariable".  We do emit an
-  // ownership use to extend the origin of the value to here and disable "unused
-  // value" warnings.
+  // If the source already has an MLIR representation (thus is an MLValue,
+  // SBValue etc) just returned the input value unmodified. This ensures we
+  // don't load/copy lvalues in expressions like "_ = someVariable".  We do emit
+  // an ownership use to extend the origin of the value to here and disable
+  // "unused value" warnings.
   if (auto mlirValue = value.ir.getMlirValue()) {
     emitter.builder->create<OwnershipUseOp>(value.expr->getLocation(emitter),
                                             mlirValue);
-  } else {
-    // We just completely ignore PValues here, don't materialize them.
-    assert(value.ir.getIfPValue() && "unknown IRValue type");
+    return value.ir;
   }
-  return value.ir;
+
+  // If 'value' is a DLValue like a subscript index, emit it as an RValue to
+  // load to fully evaluate it.  It would be weird for "_ = dict[i]" to not
+  // call the getitem method. This also handles PValues (which are already
+  // RValues, so no materialization happens here.
+  return emitter.emitRValue(value, EC_Assignment, elementType);
 }
 
 //===----------------------------------------------------------------------===//
