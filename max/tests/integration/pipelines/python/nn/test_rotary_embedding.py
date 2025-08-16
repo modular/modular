@@ -273,7 +273,9 @@ def test_dynamic_rope_freqs_cis(
             device=DeviceRef.CPU(),
         )
         # Simulate runtime position_ids that require growing buffer.
-        dummy_position_ids = ops.range(0, long_seq_len, 1, dtype=DType.int64)
+        dummy_position_ids = ops.range(
+            0, long_seq_len, 1, dtype=DType.int64, device=DeviceRef.CPU()
+        )
         rope.maybe_update_freqs(dummy_position_ids)
         graph.output(rope.freqs_cis)
 

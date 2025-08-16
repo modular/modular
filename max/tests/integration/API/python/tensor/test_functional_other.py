@@ -241,7 +241,7 @@ def test_permute():
 
 def test_range():
     device_ref = DeviceRef.from_device(DEVICE)
-    result = F.range(0, 10, 1, device=device_ref)
+    result = F.range(0, 10, 1, dtype=DType.int32, device=device_ref)
     result._sync_realize()
     assert result.real
 
