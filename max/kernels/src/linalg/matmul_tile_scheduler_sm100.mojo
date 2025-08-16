@@ -71,7 +71,7 @@ struct TileScheduler[
     cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
         dtype = DType.uint32
     ](1, 1, 1),
-    rasterize_order: RasterOrder = RasterOrder.AlongM,
+    rasterize_order: RasterOrder = RasterOrder.AlongN,
 ]:
     alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
     alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
