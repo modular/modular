@@ -44,10 +44,7 @@ from max.serve.queue.zmq_queue import (
     generate_zmq_ipc_path,
 )
 from max.serve.scheduler import PrefillRequest, PrefillResponse
-from max.serve.scheduler.decode_scheduler import (
-    DecodeScheduler,
-    DecodeSchedulerConfig,
-)
+from max.serve.scheduler.decode_scheduler import DecodeScheduler
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
 from max.serve.scheduler.text_batch_constructor import (
     TokenGenerationSchedulerConfig,
@@ -168,9 +165,10 @@ def decode_scheduler(
         decode_client.start()
 
         # Initialize scheduler config
-        config = DecodeSchedulerConfig(
+        config = TokenGenerationSchedulerConfig(
             max_batch_size_tg=4,
             max_forward_steps_tg=8,
+            max_batch_size_ce=4,
         )
 
         return DecodeScheduler(
