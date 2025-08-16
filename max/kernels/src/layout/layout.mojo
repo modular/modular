@@ -1075,14 +1075,12 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    @parameter
-    fn num_tiles() -> Int:
-        return __mlir_op.`pop.variadic.size`(tile_sizes)
+    alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
-    var layout_list = LayoutList(capacity=num_tiles())
+    var layout_list = LayoutList(capacity=num_tiles)
 
     @parameter
-    for i in range(num_tiles()):
+    for i in range(num_tiles):
         alias arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 

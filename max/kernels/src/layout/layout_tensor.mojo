@@ -133,22 +133,6 @@ fn _project_on_axis[
 alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
-fn _get_len[*values: Int]() -> Int:
-    """Returns the number of variadic integer parameters.
-
-    This utility function counts the number of integer parameters passed to a
-    variadic template function. It's used internally for handling variable
-    numbers of dimensions, tile sizes, or other integer parameters.
-
-    Parameters:
-        values: Variadic integer parameters to count.
-
-    Returns:
-        The count of variadic integer parameters.
-    """
-    return __mlir_op.`pop.variadic.size`(values)
-
-
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     """Calculates the size of a slice in a specific layout dimension.
 
@@ -3095,7 +3079,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        alias num_tiles = _get_len[*tile_sizes]()
+        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3189,7 +3173,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        alias num_tiles = _get_len[*tile_sizes]()
+        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3343,7 +3327,7 @@ struct LayoutTensor[
         ```
         """
 
-        alias tiles_rank = _get_len[*tile_sizes]()
+        alias tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
         alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,

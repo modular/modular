@@ -2300,10 +2300,6 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         @parameter
-        fn variadic_len[*mask: Int]() -> Int:
-            return __mlir_op.`pop.variadic.size`(mask)
-
-        @parameter
         fn _convert_variadic_to_pop_array[
             *mask: Int
         ]() -> __mlir_type[`!pop.array<`, output_size.value, `, `, Int, `>`]:
@@ -2330,7 +2326,7 @@ struct SIMD[dtype: DType, size: Int](
             return array
 
         constrained[
-            output_size == variadic_len[*mask](),
+            output_size == stdlib.builtin.variadic_size(mask),
             "size of the mask must match the output SIMD size",
         ]()
         return __mlir_op.`pop.simd.shuffle`[

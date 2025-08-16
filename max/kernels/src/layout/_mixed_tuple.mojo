@@ -273,11 +273,8 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
             The number of elements in the tuple.
         """
 
-        @parameter
-        fn variadic_size(x: VariadicOf[MixedIntTupleLike]) -> Int:
-            return __mlir_op.`pop.variadic.size`(x)
-
-        return variadic_size(element_types)
+        alias result = stdlib.builtin.variadic_size(element_types)
+        return result
 
     fn __len__(self) -> Int:
         """Get the length of the tuple.

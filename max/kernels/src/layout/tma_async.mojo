@@ -72,12 +72,10 @@ from utils.index import Index, IndexList
 fn _to_int_tuple[*vals: Int]() -> IntTuple:
     res = IntTuple()
 
-    @parameter
-    fn length() -> Int:
-        return __mlir_op.`pop.variadic.size`(vals)
+    alias num_vals = stdlib.builtin.variadic_size(vals)
 
     @parameter
-    for i in range(length()):
+    for i in range(num_vals):
         res.append(vals[i])
     return res
 

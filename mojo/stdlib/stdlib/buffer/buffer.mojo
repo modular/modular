@@ -840,12 +840,10 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        @parameter
-        fn num_tile_sizes() -> Int:
-            return __mlir_op.`pop.variadic.size`(tile_sizes)
+        alias num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
 
         constrained[
-            num_tile_sizes() == rank,
+            num_tile_sizes == rank,
             "The tile should have the same rank as the buffer",
         ]()
 

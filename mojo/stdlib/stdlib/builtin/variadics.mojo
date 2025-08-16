@@ -24,6 +24,32 @@ alias VariadicOf[T: _AnyTypeMetaType] = __mlir_type[`!kgen.variadic<`, T, `>`]
 """Represents a raw variadic sequence of types that satisfy the specified trait."""
 
 
+@always_inline("nodebug")
+fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
+    """Returns the length of a variadic sequence.
+
+    Parameters:
+        T: The type of values in the sequence.
+
+    Returns:
+        The length of the variadic sequence.
+    """
+    return __mlir_op.`pop.variadic.size`(seq)
+
+
+@always_inline("nodebug")
+fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
+    """Returns the length of a variadic sequence.
+
+    Parameters:
+        T: The trait that types in the sequence must conform to.
+
+    Returns:
+        The length of the variadic sequence.
+    """
+    return __mlir_op.`pop.variadic.size`(seq)
+
+
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
 # ===-----------------------------------------------------------------------===#
@@ -492,10 +518,6 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-
-        @parameter
-        fn variadic_size(x: VariadicOf[element_trait]) -> Int:
-            return __mlir_op.`pop.variadic.size`(x)
 
         alias result = variadic_size(element_types)
         return result
