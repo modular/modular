@@ -496,7 +496,7 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline,
-) -> Optional[PagedKVCacheManager]:
+) -> PagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")

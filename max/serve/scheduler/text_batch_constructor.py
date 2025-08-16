@@ -23,6 +23,7 @@ from typing import Union
 from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextAndVisionContext, TextContext
+from max.pipelines.lib import PipelineConfig
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
@@ -43,7 +44,7 @@ class TokenGenerationSchedulerConfig:
     max_batch_size_ce: int
     """The maximum number of requests that can be in the context encoding batch."""
 
-    target_tokens_per_batch_ce: int
+    target_tokens_per_batch_ce: int = 8192
     """The target total number of tokens to encode in the context encoding batch."""
 
     enable_chunked_prefill: bool = True
@@ -72,6 +73,23 @@ class TokenGenerationSchedulerConfig:
         if self.max_forward_steps_tg <= 0:
             msg = f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
             raise ValueError(msg)
+
+    @classmethod
+    def from_pipeline_config(
+        cls, pipeline_config: PipelineConfig
+    ) -> TokenGenerationSchedulerConfig:
+        return cls(
+            max_batch_size_tg=pipeline_config.max_batch_size
+            if pipeline_config.max_batch_size is not None
+            else 1,
+            max_forward_steps_tg=pipeline_config.max_num_steps
+            if pipeline_config.max_num_steps != -1
+            else 1,
+            max_batch_size_ce=pipeline_config.max_ce_batch_size,
+            target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
+            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+        )
 
 
 class BatchType(Enum):

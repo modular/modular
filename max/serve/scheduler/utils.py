@@ -46,10 +46,12 @@ logger = logging.getLogger("max.serve")
 def log_metrics(
     sch_config: TokenGenerationSchedulerConfig,
     sch_output: SchedulerOutput,
-    paged_manager: PagedKVCacheManager | None,
+    paged_cache: PagedKVCacheManager | None,
     batch_creation_time_s: float,
     batch_execution_time_s: float,
+    num_pending_reqs: int,
     total_preemption_count: int,
+    log_level: int = logging.DEBUG,
 ) -> None:
     batch_size = sch_output.batch_size
     batch_type = sch_output.batch_type
@@ -59,7 +61,6 @@ def log_metrics(
         1 if batch_type == BatchType.CE else sch_config.max_forward_steps_tg
     )
     num_generated_tokens = batch_size * num_steps
-    num_pending_reqs = len(sch_output.batch_inputs)
 
     def to_human_readable_throughput(tps: float) -> str:
         if tps >= 1_000:
@@ -93,9 +94,10 @@ def log_metrics(
 
     METRICS.batch_size(batch_size)
 
-    if paged_manager is None:
+    if paged_cache is None:
         assert cached_tokens == 0
-        logger.debug(
+        logger.log(
+            log_level,
             f"Executed {batch_type.value} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {num_pending_reqs} reqs | "
@@ -103,31 +105,31 @@ def log_metrics(
             f"Prompt Tput: {prompt_throughput_str}, "
             f"Generation Tput: {generation_throughput_str} | "
             f"Batch creation: {batch_creation_latency_str}, "
-            f"Execution: {batch_execution_latency_str}"
+            f"Execution: {batch_execution_latency_str}",
         )
         return
 
     # KVCache specific metrics
-    used_pct = paged_manager.used_blocks_pct
+    used_pct = paged_cache.used_blocks_pct
     cache_hit_rate = sch_output.cache_hit_rate
-    total_blocks = paged_manager.total_num_pages
+    total_blocks = paged_cache.total_num_pages
 
     host_kvcache_str = ""
-    if paged_manager.enable_kvcache_swapping_to_host:
-        host_committed_pct = paged_manager.host_committed_block_pct
-        host_total_blocks = paged_manager.total_num_host_pages
+    if paged_cache.enable_kvcache_swapping_to_host:
+        host_committed_pct = paged_cache.host_committed_block_pct
+        host_total_blocks = paged_cache.total_num_host_pages
         host_kvcache_str = f"Host KVCache Usage: {host_committed_pct:.1%} of {host_total_blocks} blocks, "
 
     blocks_copied_str = ""
-    blocks_copied = paged_manager.num_blocks_copied
-    if paged_manager.enable_prefix_caching:
-        if paged_manager.enable_kvcache_swapping_to_host:
+    blocks_copied = paged_cache.num_blocks_copied
+    if paged_cache.enable_prefix_caching:
+        if paged_cache.enable_kvcache_swapping_to_host:
             blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D, {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
-        elif paged_manager.enable_prefix_caching:
+        elif paged_cache.enable_prefix_caching:
             blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D | "
-        paged_manager.reset_num_blocks_copied()
+        paged_cache.reset_num_blocks_copied()
 
-    used_blocks = paged_manager.total_num_pages - len(paged_manager.free_blocks)
+    used_blocks = paged_cache.total_num_pages - len(paged_cache.free_blocks)
 
     cache_hits = sch_output.cached_tokens
     cache_misses = sch_output.input_tokens
@@ -138,7 +140,8 @@ def log_metrics(
     METRICS.cache_hits(cache_hits)
     METRICS.cache_misses(cache_misses)
 
-    logger.debug(
+    logger.log(
+        log_level,
         f"Executed {batch_type.value} batch with {batch_size} reqs | "
         f"Terminated: {terminated_reqs} reqs, "
         f"Pending: {num_pending_reqs} reqs | "
@@ -151,7 +154,7 @@ def log_metrics(
         f"{host_kvcache_str}"
         f"Cache hit rate: {cache_hit_rate:.1%} | "
         f"{blocks_copied_str}"
-        f"All Preemptions: {total_preemption_count} reqs"
+        f"All Preemptions: {total_preemption_count} reqs",
     )
 
 

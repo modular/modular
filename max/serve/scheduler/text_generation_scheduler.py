@@ -119,12 +119,14 @@ class TokenGenerationScheduler(Scheduler):
 
         # Log batch metrics
         log_metrics(
-            self.scheduler_config,
-            batch_to_execute,
-            self.batch_constructor.paged_cache,
-            batch_creation_time_s,
-            batch_execution_time_s,
-            self.batch_constructor.total_preemption_count,
+            sch_config=self.scheduler_config,
+            sch_output=batch_to_execute,
+            paged_cache=self.batch_constructor.paged_cache,
+            batch_creation_time_s=batch_creation_time_s,
+            batch_execution_time_s=batch_execution_time_s,
+            num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            total_preemption_count=self.batch_constructor.total_preemption_count,
+            log_level=logging.INFO,
         )
 
         # handle cancelled requests
@@ -201,17 +203,8 @@ def load_text_generation_scheduler(
     pipeline_config: PipelineConfig,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
-    scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=pipeline_config.max_batch_size
-        if pipeline_config.max_batch_size is not None
-        else 1,
-        max_forward_steps_tg=pipeline_config.max_num_steps
-        if pipeline_config.max_num_steps != -1
-        else 1,
-        max_batch_size_ce=pipeline_config.max_ce_batch_size,
-        target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
-        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-        enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+    scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config
     )
 
     # Retrieve Paged Manager
