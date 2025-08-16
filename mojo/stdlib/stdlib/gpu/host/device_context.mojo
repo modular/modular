@@ -6233,6 +6233,78 @@ struct DeviceContext(Copyable, Movable):
             )
         )
 
+    @staticmethod
+    fn enable_all_peer_access() raises:
+        """Enable peer-to-peer memory access between all available accelerators.
+
+        This function detects all available accelerators in the system and enables
+        peer-to-peer (P2P) memory access between every pair of devices.
+
+        When peer access is enabled, kernels running on one device can directly access
+        memory allocated on another device without going through host memory. This is
+        crucial for efficient multi-GPU operations like allreduce.
+
+        The function is a no-op when:
+        - No accelerators are available
+        - Only one accelerator is available
+        - Peer access is already enabled between devices
+
+        Raises:
+            Error: If peer access cannot be enabled between any pair of devices.
+                   This can happen if the hardware doesn't support P2P access or if
+                   there's a configuration issue.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        # Enable P2P access between all GPUs
+        DeviceContext.enable_all_peer_access()
+
+        # Now GPUs can directly access each other's memory
+        ```
+        """
+        # Get number of available devices
+        var num_devices = DeviceContext.number_of_devices()
+        if num_devices < 2:
+            return  # Nothing to do
+
+        # Create device contexts for all devices
+        var devices = List[DeviceContext](capacity=num_devices)
+        for i in range(num_devices):
+            devices.append(DeviceContext(device_id=i))
+
+        # Enable peer access between every pair of devices
+        for i in range(num_devices):
+            for j in range(num_devices):
+                if i == j:
+                    continue
+
+                # Check if peer access is possible.
+                if not devices[i].can_access(devices[j]):
+                    raise Error(
+                        "Cannot enable peer access from GPU "
+                        + String(i)
+                        + " to GPU "
+                        + String(j)
+                        + ": hardware does not support P2P access"
+                    )
+
+                try:
+                    devices[i].enable_peer_access(devices[j])
+                except e:
+                    # Ignore "already enabled" errors.
+                    if "PEER_ACCESS_ALREADY_ENABLED" not in String(e):
+                        raise Error(
+                            "Failed to enable peer access from GPU "
+                            + String(i)
+                            + " to GPU "
+                            + String(j)
+                            + ": "
+                            + String(e)
+                        )
+
 
 struct DeviceMulticastBuffer[dtype: DType]:
     """Represents a multicast memory object enables special memory operations to be broadcast
