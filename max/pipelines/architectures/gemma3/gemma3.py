@@ -217,10 +217,11 @@ class Gemma3TextModel(Module):
         if self.return_logits == ReturnLogits.VARIABLE and h:
             # Create range and gather indices for variable logits
             return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
                 out_dim="return_n_logits_range",
+                dtype=DType.int64,
                 device=self.devices[0],
             )
             last_indices = [
@@ -240,10 +241,11 @@ class Gemma3TextModel(Module):
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
             )
             offsets = ops.range(
-                ops.constant(0, DType.int64, device=self.devices[0]),
+                0,
                 last_indices[0].shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
+                dtype=DType.int64,
                 device=self.devices[0],
             )
 

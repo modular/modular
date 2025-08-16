@@ -1042,6 +1042,7 @@ class HasTensorValue(Protocol):
 
 
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
+Scalar = Union[int, float, np.integer, np.floating, Dim]
 StrongTensorValueLike = Union[
     _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
 ]
@@ -1050,8 +1051,17 @@ TensorValueLike = Union[StrongTensorValueLike, Numeric]
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
+_scalar = (int, float, np.integer, np.floating, Dim)
 _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
+
+
+def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
+    return isinstance(obj, _numeric)
+
+
+def _is_scalar(obj: Any) -> TypeGuard[Scalar]:
+    return isinstance(obj, _scalar)
 
 
 def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:

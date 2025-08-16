@@ -139,16 +139,16 @@ class RejectionSampler(nn.Module):
             shape=[Dim("batch_size"), Dim("total_num_steps")],
         )
 
+        _, total_num_steps = rejected_tokens.shape
+
         # Calculate first rejected_token idx
         first_rejected_token = ops.argmax(
             ops.broadcast_to(
                 ops.range(
-                    ops.shape_to_tensor([rejected_tokens.shape[1]])
-                    .reshape(())
-                    .cast(DType.int32),
-                    ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU()),
-                    ops.constant(-1, dtype=DType.int32, device=DeviceRef.CPU()),
-                    out_dim="total_num_steps",
+                    rejected_tokens.shape[1],
+                    stop=0,
+                    step=-1,
+                    dtype=DType.int32,
                     device=self.device,
                 ),
                 shape=[rejected_tokens.shape[0], Dim("total_num_steps")],
@@ -292,9 +292,10 @@ class RejectionSamplerWithResiduals(nn.Module):
         # TODO: remove this when/if KERN-1862 is resolved
         argmax_weights = ops.range(
             rejected_with_sentinel.shape[1],
-            ops.constant(0, dtype=DType.int64, device=DeviceRef.CPU()),
-            ops.constant(-1, dtype=DType.int64, device=DeviceRef.CPU()),
+            stop=0,
+            step=-1,
             out_dim=rejected_with_sentinel.shape[1],
+            dtype=DType.int64,
             device=self.device,
         )
         first_rejected_index = ops.argmax(

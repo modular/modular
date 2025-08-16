@@ -72,9 +72,7 @@ class RotaryEmbedding(Module):
 
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
-        iota = ops.range(
-            0, n - 1, 2, out_dim=n // 2, dtype=DType.float64, device=self.device
-        )
+        iota = ops.range(0, n, step=2, dtype=DType.float64, device=self.device)
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
         return inv_freq
@@ -95,12 +93,7 @@ class RotaryEmbedding(Module):
 
             # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
             t = ops.range(
-                0,
-                self.max_seq_len * 2.0,
-                1,
-                out_dim=self.max_seq_len * 2,
-                device=self.device,
-                dtype=DType.float32,
+                0, self.max_seq_len * 2, device=self.device, dtype=DType.float32
             )
             # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
             freqs = ops.outer(t, inv_freqs)  # [max_seq_len*2, head_dim // 2]
@@ -268,9 +261,7 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
         if self._freqs_cis is None:
             t = ops.range(
                 0,
-                self.max_seq_len_cached * 2.0,
-                1,
-                out_dim=self.max_seq_len_cached * 2,
+                self.max_seq_len_cached * 2,
                 device=self.device,
                 dtype=DType.float32,
             )
@@ -443,12 +434,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             inv_freqs = self._compute_yarn_freqs()
 
             t = ops.range(
-                0,
-                self.max_seq_len,
-                1,
-                out_dim=self.max_seq_len,
-                device=self.device,
-                dtype=DType.float32,
+                0, self.max_seq_len, device=self.device, dtype=DType.float32
             )
             freqs = ops.outer(t, inv_freqs)
             cos = ops.cos(freqs) * _mscale
@@ -469,15 +455,8 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         if self.scaling_params is None:
             raise ValueError("scaling_params must be provided")
 
-        dim_2 = Dim(self.dim // 2)
-
-        start = ops.constant(0, dtype=DType.float32, device=DeviceRef.CPU())
-        end = ops.constant(
-            self.dim, dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        step = ops.constant(2, dtype=DType.float32, device=DeviceRef.CPU())
         range_output = ops.range(
-            start, end, step, out_dim=dim_2, device=self.device
+            0, self.dim, step=2, dtype=DType.float32, device=self.device
         )
 
         freq_base = self.theta ** (range_output / float(self.dim))
@@ -502,7 +481,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
 
         # Ensure the mask has the correct dimension
         inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
-            low, high, dim_2
+            low, high, Dim(self.dim // 2)
         ).cast(DType.float32)
 
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
@@ -609,10 +588,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             max += 0.001  # Prevent singularity
 
         linear_func = (
-            ops.range(
-                0, dim, 1, out_dim=dim, device=self.device, dtype=DType.int64
-            ).cast(DType.float32)
-            - min
+            ops.range(0, dim, device=self.device, dtype=DType.float32) - min
         ) / (max - min)
 
         return ops.min(ops.max(linear_func, 0), 1)
@@ -744,9 +720,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             # Generate position ids for the "short" part (0 to original_max_position)
             t_short = ops.range(
                 0,
-                float(self.scaling_params.original_max_position),
-                1,
-                out_dim=self.scaling_params.original_max_position,
+                self.scaling_params.original_max_position,
                 device=self.device,
                 dtype=DType.float32,
             )
@@ -757,12 +731,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             long_length = long_end - long_start
 
             t_long = ops.range(
-                float(long_start),
-                float(long_end),
-                1,
-                out_dim=long_length,
-                device=self.device,
-                dtype=DType.float32,
+                long_start, long_end, device=self.device, dtype=DType.float32
             )
 
             # Compute frequencies for both parts

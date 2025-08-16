@@ -14,27 +14,25 @@
 
 from __future__ import annotations
 
-from typing import Optional, get_args
-
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
-from ..dim import DimLike
+from ..dim import Dim, DimLike
 from ..graph import Graph
 from ..type import DeviceRef
-from ..value import Numeric, TensorType, TensorValue, TensorValueLike
+from ..value import TensorType, TensorValue, TensorValueLike, _is_scalar
 from .cast import cast
-from .constant import constant
 
 
 def range(
     start: TensorValueLike,
     stop: TensorValueLike,
-    step: TensorValueLike,
-    out_dim: Optional[DimLike] = None,
-    device: DeviceRef = DeviceRef.CPU(),
-    dtype: Optional[DType] = None,
+    step: TensorValueLike = 1,
+    out_dim: DimLike | None = None,
+    *,
+    dtype: DType,
+    device: DeviceRef,
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments
@@ -58,40 +56,21 @@ def range(
         A symbolic tensor value containing the defined range of values.
     """
     if out_dim is None:
-        if (
-            isinstance(start, get_args(Numeric))
-            and isinstance(stop, get_args(Numeric))
-            and isinstance(step, get_args(Numeric))
-        ):
-            out_dim = (stop - start) // step if step != 0 else 0
-        else:
-            raise ValueError(
-                "range expected out_dim for non-numeric values as inputs!"
-            )
-
-    # Determine the dtype: explicit dtype if provided, otherwise infer or default
-    if dtype is None:
-        if isinstance(start, get_args(Numeric)):
-            # For numeric inputs, default to float32 to maintain API simplicity
-            dtype = DType.float32
-        else:
-            # For tensor inputs, infer from the inputs
-            start_tensor = TensorValue(start)
-            stop_tensor = TensorValue(stop)
-            step_tensor = TensorValue(step)
-            if start_tensor.dtype == stop_tensor.dtype == step_tensor.dtype:
-                dtype = start_tensor.dtype
-            else:
-                raise ValueError("range expected inputs of the same type!")
+        if not (_is_scalar(start) and _is_scalar(stop) and _is_scalar(step)):
+            raise ValueError("Dynamic ranges must provide an explicit out_dim")
+        # - Most combinations of scalars will work fine
+        # - Specifically mixing float and Dim doesn't work today (but could)
+        # - Telling mypy about this case specifically is hard, hence the ignore
+        out_dim = (stop - start) // step if step != 0 else 0  # type: ignore
+        if isinstance(out_dim, float):
+            out_dim = int(out_dim)
+        assert out_dim is not None
+        out_dim = Dim(out_dim)
 
     def to_dtype(value: TensorValueLike) -> TensorValue:
-        # For numeric inputs, use constant() which allows precision loss
-        # This is appropriate for range operations where we're creating indices
-        if isinstance(value, get_args(Numeric)):
-            return constant(value, dtype, DeviceRef.CPU())
-
-        # For tensor inputs, use the more strict _promote_to_strong approach
-        value = dtype_promotion._promote_to_strong(value, dtype, device)
+        value = dtype_promotion._promote_to_strong(
+            value, dtype, DeviceRef.CPU()
+        )
         if value.dtype != dtype:
             value = cast(value, dtype)
         return value
@@ -99,11 +78,12 @@ def range(
     start = to_dtype(start)
     stop = to_dtype(stop)
     step = to_dtype(step)
+    assert start.dtype == stop.dtype == step.dtype
 
-    if start.dtype != stop.dtype or stop.dtype != step.dtype:
-        raise ValueError("range expected inputs of the same type!")
-    if start.rank != 0 or stop.rank != 0 or step.rank != 0:
+    if not start.rank == stop.rank == step.rank == 0:
         raise ValueError("range expected scalar values as inputs!")
+    if not start.device == stop.device == step.device == DeviceRef.CPU():
+        raise ValueError("Range input values must be on CPU")
 
     return Graph.current._add_op(
         rmo.mo_range,
