@@ -483,3 +483,175 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
         c[x, y] = accum.cast[c_type]()
+
+
+fn naive_blockwise_scaled_fp8_grouped_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_type: DType,
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
+    a_scale_layout: Layout,
+    b_scale_layout: Layout,
+    a_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    *,
+    BLOCK_DIM_N: Int = 32,
+    BLOCK_DIM_M: Int = 16,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = DType.float32,
+](
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutableAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
+    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        transpose_b,
+        "Only support transposed B in grouped fp8 matmul.",
+    ]()
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        (
+            "Only float8_e4m3fn is supported for inputs in grouped blockwise"
+            " scaled fp8 matmul"
+        ),
+    ]()
+    constrained[
+        s_type == DType.float32,
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    var logger = Logger()
+    logger.info("Executing Naive Grouped Blockwise Scaled FP8 GEMM")
+
+    alias kernel = naive_blockwise_scaled_fp8_grouped_matmul_kernel[
+        c_layout,
+        a_layout,
+        b_layout,
+        a_scale_layout,
+        b_scale_layout,
+        a_offsets_layout,
+        expert_ids_layout,
+        c_type,
+        a_type,
+        b_type,
+        scales_type,
+        s_type,
+        transpose_b,
+        elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        a_offsets,
+        expert_ids,
+        a_scales,
+        b_scales,
+        grid_dim=(
+            ceildiv(c.dim(1), BLOCK_DIM_N),
+            ceildiv(max_num_tokens_per_expert, BLOCK_DIM_M),
+            num_active_experts,
+        ),
+        block_dim=(BLOCK_DIM_N, BLOCK_DIM_M, 1),
+    )
+
+
+fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
+    a_scale_layout: Layout,
+    b_scale_layout: Layout,
+    a_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_type: DType,
+    s_type: DType,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutableAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
+    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+):
+    constrained[
+        s_type == DType.float32,
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    var N = b.dim[1]()
+    var K = b.dim[2]()
+
+    # Indices in current expert's matmul tile
+    var n = Int(global_idx.x)
+    var m_local = Int(global_idx.y)
+
+    var expert_idx = Int(block_idx.z)
+
+    # Determine rows for this expert
+    var M_local: Int = Int(a_offsets[expert_idx + 1] - a_offsets[expert_idx])
+    if n >= N or m_local >= M_local:
+        return
+
+    var a_start_row = Int(a_offsets[expert_idx])
+
+    var expert = Int(expert_ids[expert_idx])
+    var skip = expert == -1
+    var accum = Scalar[s_type](0)
+    if not skip:
+        var a_s0 = a_scales.dim(0)
+        var a_s1 = a_scales.dim(1)
+        var b_s0 = b_scales.dim(1)
+        var b_s1 = b_scales.dim(2)
+        var MAT_A_ROWS_SCALE_SIZE = K // a_s0
+        var MAT_A_COLS_SCALE_SIZE = c.dim(0) // a_s1
+        var MAT_B_ROWS_SCALE_SIZE = N // b_s0
+        var MAT_B_COLS_SCALE_SIZE = K // b_s1
+        var m_global = a_start_row + m_local
+        var a_row_ptr = a.ptr + m_global * K
+        var b_expert_ptr = b.ptr + expert * N * K
+        for k in range(K):
+            var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[s_type]()
+            var a_scale = rebind[Scalar[s_type]](
+                a_scales[
+                    k // MAT_A_ROWS_SCALE_SIZE,
+                    m_global // MAT_A_COLS_SCALE_SIZE,
+                ]
+            )
+            var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
+                s_type
+            ]()
+            var b_scale = rebind[Scalar[s_type]](
+                b_scales[
+                    UInt(expert),
+                    n // MAT_B_ROWS_SCALE_SIZE,
+                    k // MAT_B_COLS_SCALE_SIZE,
+                ]
+            )
+            accum += a_val * b_val * a_scale * b_scale
+
+    @parameter
+    if elementwise_lambda_fn:
+        alias ep = elementwise_lambda_fn.value()
+        ep[c_type, 1](Index(a_start_row + m_local, n), accum.cast[c_type]())
+    else:
+        var c_ptr = c.ptr + a_start_row * N
+        c_ptr[m_local * N + n] = accum.cast[c_type]()
