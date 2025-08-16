@@ -178,8 +178,10 @@ modular_cc_library(
     name = "NIXL",
     data = select({
         "//:linux_x86_64": [
-            ":plugin_ucx",
-            ":plugin_ucx_verbs",
+            ":plugin_ucx_cuda",
+            ":plugin_ucx_cuda_verbs",
+            ":plugin_ucx_rocm",
+            ":plugin_ucx_rocm_verbs",
         ],
         "//conditions:default": [],
     }),
@@ -225,7 +227,7 @@ modular_cc_library(
 modular_shared_library(
     # NOTE: currently the target name is coupled to NIXL's plugin discovery
     # logic, which looks for `libplugin_*.so`.
-    name = "plugin_ucx",
+    name = "plugin_ucx_cuda",
     srcs = glob([
         "lib/NIXL/plugins/ucx/**",
         "lib/NIXL/utils/ucx/**",
@@ -237,7 +239,7 @@ modular_shared_library(
         ],
     ),
     linkopts = select({
-        # This allows us to ignore missing libcuda.so.1 and libnvidia-ml.so.1
+        # This allows us to ignore missing libcuda.so.1, libnvidia-ml.so.1 etc.
         # symbols at link time. But now it requires that they are available at
         # runtime when this plugin is loaded. This shared lib does not automatically
         # load them if they are missing. They should be loaded in advance to loading
@@ -249,6 +251,7 @@ modular_shared_library(
             "-Wl,-undefined,dynamic_lookup",
         ],
     }),
+    local_defines = ["PLUGIN_UCX_CUDA"],
     tags = [
         ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
@@ -263,12 +266,12 @@ modular_shared_library(
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
-        "@ucx_prebuilt//:ucx",
+        "@ucx_prebuilt//:ucx_cuda",
     ],
 )
 
 modular_shared_library(
-    name = "plugin_ucx_verbs",
+    name = "plugin_ucx_cuda_verbs",
     srcs = glob([
         "lib/NIXL/plugins/ucx/**",
         "lib/NIXL/utils/ucx/**",
@@ -279,6 +282,7 @@ modular_shared_library(
             "include/AsyncRT/NIXL/utils/ucx/**",
         ],
     ),
+    # Like plugin_ucx_cuda above but with additional Infiniband support.
     # We link libibverb.so directly instead of relying on user to dlopen it at
     # runtime. This is due to a weird bug where `ibv_get_device_list` would return
     # invalid contents if we do it the other way, even though it should functionally
@@ -293,6 +297,7 @@ modular_shared_library(
             "-Wl,-undefined,dynamic_lookup",
         ],
     }),
+    local_defines = ["PLUGIN_UCX_CUDA"],
     tags = [
         ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
@@ -307,7 +312,99 @@ modular_shared_library(
         ":NIXLLibOnly",
         ":NVPTX",
         ":Support",
-        "@ucx_prebuilt//:ucx_verbs",
+        "@ucx_prebuilt//:ucx_cuda_verbs",
+    ],
+)
+
+modular_shared_library(
+    # NOTE: currently the target name is coupled to NIXL's plugin discovery
+    # logic, which looks for `libplugin_*.so`.
+    name = "plugin_ucx_rocm",
+    srcs = glob([
+        "lib/NIXL/plugins/ucx/**",
+        "lib/NIXL/utils/ucx/**",
+    ]),
+    hdrs = glob(
+        [
+            "include/AsyncRT/NIXL/plugins/ucx/**",
+            "include/AsyncRT/NIXL/utils/ucx/**",
+        ],
+    ),
+    linkopts = select({
+        # Tolerate undefined symbols at build time:
+        # This allows us to ignore missing libamdhip64.so.1 etc.
+        # symbols at link time. But now it requires that they are available at
+        # runtime when this plugin is loaded. This shared lib does not
+        # automatically load them if they are missing. They should be loaded in
+        # advance to loading this plugin.
+        "@platforms//os:linux": [
+            "-Wl,-z,undefs",
+        ],
+        "@platforms//os:macos": [
+            "-Wl,-undefined,dynamic_lookup",
+        ],
+    }),
+    local_defines = ["PLUGIN_UCX_ROCM"],
+    tags = [
+        ALLOW_UNUSED_TAG,
+        "no-clang-tidy",  # Copied code doesn't conform to our style
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":DeviceContextImpl",
+        ":NIXLLibOnly",
+        ":Support",
+        "@ucx_prebuilt//:ucx_rocm",
+    ],
+)
+
+modular_shared_library(
+    name = "plugin_ucx_rocm_verbs",
+    srcs = glob([
+        "lib/NIXL/plugins/ucx/**",
+        "lib/NIXL/utils/ucx/**",
+    ]),
+    hdrs = glob(
+        [
+            "include/AsyncRT/NIXL/plugins/ucx/**",
+            "include/AsyncRT/NIXL/utils/ucx/**",
+        ],
+    ),
+    # Like plugin_ucx_rocm above but with additional Infiniband support.
+    # We link libibverb.so directly instead of relying on user to dlopen it at
+    # runtime. This is due to a weird bug where `ibv_get_device_list` would return
+    # invalid contents if we do it the other way, even though it should functionally
+    # be the same. Note that we have added libibverbs.so to sysroot so that the
+    # CI machine have this dep at build time.
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-l:libibverbs.so.1",
+            "-Wl,-z,undefs",
+        ],
+        "@platforms//os:macos": [
+            "-Wl,-undefined,dynamic_lookup",
+        ],
+    }),
+    local_defines = ["PLUGIN_UCX_ROCM"],
+    tags = [
+        ALLOW_UNUSED_TAG,
+        "no-clang-tidy",  # Copied code doesn't conform to our style
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":DeviceContext",
+        ":NIXLLibOnly",
+        ":NVPTX",
+        ":Support",
+        "@ucx_prebuilt//:ucx_rocm_verbs",
     ],
 )
 
