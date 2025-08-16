@@ -25,6 +25,7 @@ from max.entrypoints.cli import DevicesOptionType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
+from test_common.storage import load_from_tar
 from verify import DiscrepancyReport, verify
 from verify import ModelModality as Modality
 
@@ -319,6 +320,14 @@ class TagFilterParamType(click.ParamType):
         return TagFilter(must_have=required, must_not_have=forbidden)
 
 
+@dataclass
+class PregeneratedTorchGoldens:
+    tar_file: str
+    """S3 path to the tar file containing the bundled golden json files."""
+    json_file: str
+    """Name of the json file containing the golden logits."""
+
+
 def generate_llm_logits_with_optional_retry(
     *,
     framework: str,
@@ -381,11 +390,11 @@ def run_llm_verification(
     print_suggested_tolerances: bool,
     pipeline: str,
     encoding: str,
-    pregenerated_torch_goldens_rlocation: Optional[str] = None,
-    absolute_tolerance: Optional[float] = None,
-    relative_tolerance: Optional[float] = None,
-    cos_dist_threshold: Optional[float] = None,
-    kl_div_threshold: Optional[float] = None,
+    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
+    absolute_tolerance: float | None = None,
+    relative_tolerance: float | None = None,
+    cos_dist_threshold: float | None = None,
+    kl_div_threshold: float | None = None,
 ) -> VerificationVerdict:
     """Run a Llama3 verification with the given model and weights encoding.
 
@@ -395,13 +404,12 @@ def run_llm_verification(
     """
 
     # Run the torch baseline or load it from golden.
-    if pregenerated_torch_goldens_rlocation is not None:
+    if pregenerated_torch_goldens is not None:
         # This workflow runs on an A10. The Torch reference runs out of memory
         # on an A10, so it was run manually on an A100 and the result goldens
         # uploaded. Use these pre-generated goldens in this case.
-        torch_golden_path = resolve_rlocation(
-            pregenerated_torch_goldens_rlocation
-        )
+        tar_file = load_from_tar(pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
     else:
         torch_golden_path = Path(
             f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{encoding}.json"
@@ -518,11 +526,11 @@ def _make_pipeline_runner(
     *,
     pipeline: str,
     encoding: str,
-    pregenerated_torch_goldens_rlocation: Optional[str] = None,
-    absolute_tolerance: Optional[float] = None,
-    relative_tolerance: Optional[float] = None,
-    cos_dist_threshold: Optional[float] = None,
-    kl_div_threshold: Optional[float] = None,
+    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
+    absolute_tolerance: float | None = None,
+    relative_tolerance: float | None = None,
+    cos_dist_threshold: float | None = None,
+    kl_div_threshold: float | None = None,
 ) -> Callable[[DeviceKind, str, bool, bool], VerificationVerdict]:
     """
     Build and return a small closure that executes `run_llm_verification`
@@ -531,10 +539,9 @@ def _make_pipeline_runner(
     Args:
         pipeline: Name of the model / pipeline to verify.
         encoding: Weight / activation dtype (e.g. "float32", "bfloat16").
-        pregenerated_torch_goldens_rlocation: Runfiles-relative path to a
-            JSON file with cached Torch reference outputs.  If provided,
-            it is resolved via `resolve_rlocation`; otherwise Torch
-            outputs are generated on the fly.
+        pregenerated_torch_goldens: Paths to the pregenerated torch golden
+            logits. If provided, the torch golden values are read from the file.
+            Otherwise, Torch outputs are generated on the fly.
         absolute_tolerance: Per-token element-wise absolute tolerance (atol).
         relative_tolerance: Per-token element-wise relative tolerance (rtol).
         cos_dist_threshold: Per-token cosine-distance threshold
@@ -556,7 +563,7 @@ def _make_pipeline_runner(
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline=pipeline,
             encoding=encoding,
-            pregenerated_torch_goldens_rlocation=pregenerated_torch_goldens_rlocation,
+            pregenerated_torch_goldens=pregenerated_torch_goldens,
             absolute_tolerance=absolute_tolerance,
             relative_tolerance=relative_tolerance,
             cos_dist_threshold=cos_dist_threshold,
@@ -578,7 +585,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3-8b",
             encoding="float32",
-            pregenerated_torch_goldens_rlocation="torch_llama_golden/torch_llama3-8b_float32_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+                json_file="torch_llama3-8b_float32_golden.json",
+            ),
             absolute_tolerance=2.9e-2,
             relative_tolerance=9.4e-2,
             cos_dist_threshold=2.6e-6,
@@ -602,7 +612,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="mpnet",
             encoding="float32",
-            pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz",
+                json_file="torch_mpnet_float32_golden.json",
+            ),
             # On CPU, mpnet passes with all values set to `1e-4`
             # GPU specifically requires these higher tolerances (30x worse).
             absolute_tolerance=2.3e-3,
@@ -684,8 +697,9 @@ PIPELINES = {
             # This model does not run with torch and transformers.
             # It only runs with vllm.
             # For now compare to the bfloat16 goldens cause we have them.
-            pregenerated_torch_goldens_rlocation=(
-                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+                json_file="torch_llama3_1_bfloat16_golden.json",
             ),
             cos_dist_threshold=8.5e-3,
             kl_div_threshold=8.6e-2,
@@ -700,8 +714,9 @@ PIPELINES = {
             # This model does not run with torch and transformers.
             # It only runs with vllm.
             # For now compare to the bfloat16 goldens cause we have them.
-            pregenerated_torch_goldens_rlocation=(
-                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+                json_file="torch_llama3_1_bfloat16_golden.json",
             ),
             cos_dist_threshold=5.6e-3,
             kl_div_threshold=3.9e-2,
@@ -734,8 +749,9 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama4-scout",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation=(
-                "torch_llama4_golden/torch_llama4_scout_bfloat16_golden.json"
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz",
+                json_file="torch_llama4_scout_bfloat16_golden.json",
             ),
             cos_dist_threshold=5.0e-3,
             kl_div_threshold=4.0e-1,
@@ -747,7 +763,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="mistral",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz",
+                json_file="torch_nemo-instruct-2407_bfloat16_golden.json",
+            ),
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
             cos_dist_threshold=1.3e-2,
             kl_div_threshold=2.7e-2,
@@ -769,7 +788,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3-vision",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
+                json_file="torch_llama3_2_bfloat16_golden.json",
+            ),
             # Note: llama-vision is not yet using llama3 rope.
             cos_dist_threshold=1.5e-3,
             kl_div_threshold=5.4e-3,
@@ -824,7 +846,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="pixtral",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
+                json_file="torch_pixtral_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.5e-3,
             kl_div_threshold=4.5e-3,
         ),
@@ -913,7 +938,10 @@ PIPELINES = {
     #     run=_make_pipeline_runner(
     #         pipeline="llama-gptq",
     #         encoding="gptq",
-    #         pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
+    #         pregenerated_torch_goldens=PregeneratedTorchGoldens(
+    #             tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
+    #             json_file="torch_llama-gptq_golden.json",
+    #         ),
     #         cos_dist_threshold=3.3e-4,
     #         kl_div_threshold=2.7e-3,
     #     ),
@@ -924,7 +952,10 @@ PIPELINES = {
     #     run=_make_pipeline_runner(
     #         pipeline="llama-gptq-no-perm-idx",
     #         encoding="gptq",
-    #         pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
+    #         pregenerated_torch_goldens=PregeneratedTorchGoldens(
+    #             tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
+    #             json_file="torch_llama-gptq-no-perm-idx_golden.json",
+    #         ),
     #         cos_dist_threshold=3.6e-4,
     #         kl_div_threshold=1.4e-3,
     #     ),
@@ -947,7 +978,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="gemma3-1b",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_gemma3-1b_golden/torch_gemma3-1b_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz",
+                json_file="torch_gemma3-1b_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.3e-3,
             kl_div_threshold=9.4e-03,
         ),
@@ -958,7 +992,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="gemma3-multimodal",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_gemma3-multimodal_golden/torch_gemma3-multimodal_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz",
+                json_file="torch_gemma3-multimodal_bfloat16_golden.json",
+            ),
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0,
             cos_dist_threshold=2.2e-02,
@@ -971,7 +1008,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="gemma3-27b",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_gemma3-27b_golden/torch_gemma3-27b_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
+                json_file="torch_gemma3-27b_bfloat16_golden.json",
+            ),
             cos_dist_threshold=1.9e-02,
             kl_div_threshold=5.7e-01,
         ),
@@ -984,7 +1024,10 @@ PIPELINES = {
             pipeline="gemma3-27b-float8-dynamic",
             encoding="float8_e4m3fn",
             # Doesn't run with torch+transformers, so compare to bf16 goldens.
-            pregenerated_torch_goldens_rlocation="torch_gemma3-27b_golden/torch_gemma3-27b_bfloat16_golden.json",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
+                json_file="torch_gemma3-27b_bfloat16_golden.json",
+            ),
             cos_dist_threshold=2.8e-02,
             kl_div_threshold=7.0e-01,
         ),

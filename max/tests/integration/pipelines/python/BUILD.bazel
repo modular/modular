@@ -25,9 +25,6 @@ modular_py_binary(
     name = "verify",
     testonly = True,
     srcs = ["verify.py"],
-    data = [
-        "@test_llama_golden",
-    ],
     env = {
         "PIPELINES_TESTDATA": (
             "SDK/integration-test/pipelines/python/llama3/testdata"
@@ -50,17 +47,6 @@ modular_py_binary(
     data = [
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/test_common",
-        "@torch_deepseek_golden",
-        "@torch_gemma3-1b_golden",
-        "@torch_gemma3-27b_golden",
-        "@torch_gemma3-multimodal_golden",
-        "@torch_llama-gptq_golden",
-        "@torch_llama3-vision_golden",
-        "@torch_llama4_golden",
-        "@torch_llama_golden",
-        "@torch_mistral_golden",
-        "@torch_mpnet_golden",
-        "@torch_pixtral_golden",
     ],
     env = {
         # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.

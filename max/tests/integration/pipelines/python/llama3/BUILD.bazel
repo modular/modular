@@ -23,7 +23,6 @@ load(
             "//SDK:max",
             "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
-            "@test_llama_golden",
         ],
         env = {
             "MODULAR_PATH": ".",
@@ -85,8 +84,6 @@ modular_py_test(
         "//SDK:max",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
-        "@test_llama_golden",
-        "@torch_llama_golden",
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",

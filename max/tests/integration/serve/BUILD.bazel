@@ -11,7 +11,6 @@ modular_py_test(
     ],
     data = [
         "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "@test_llama_golden",
     ],
     env = {
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
@@ -41,7 +40,6 @@ modular_py_test(
     ],
     data = [
         "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "@test_llama_golden",
     ],
     env = {
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
@@ -107,7 +105,6 @@ modular_py_test(
     data = [
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "@test_llama_golden",
     ],
     env = {
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
