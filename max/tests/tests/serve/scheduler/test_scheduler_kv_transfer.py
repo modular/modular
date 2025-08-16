@@ -48,9 +48,9 @@ from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     DecodeSchedulerConfig,
 )
-from max.serve.scheduler.prefill_scheduler import (
-    PrefillScheduler,
-    PrefillSchedulerConfig,
+from max.serve.scheduler.prefill_scheduler import PrefillScheduler
+from max.serve.scheduler.text_batch_constructor import (
+    TokenGenerationSchedulerConfig,
 )
 
 
@@ -254,16 +254,18 @@ def prefill_scheduler(
         prefill_client.start()
 
         # Initialize scheduler config
-        config = PrefillSchedulerConfig(
+        config = TokenGenerationSchedulerConfig(
             max_batch_size_ce=4,
             target_tokens_per_batch_ce=128,
             enable_chunked_prefill=True,
+            max_batch_size_tg=4,
+            max_forward_steps_tg=10,
         )
 
         return PrefillScheduler(
             pipeline=mock_pipeline,
             scheduler_config=config,
-            paged_manager=prefill_paged_manager,
+            paged_cache=prefill_paged_manager,
             dispatcher_client=prefill_client,
         )
 
