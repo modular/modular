@@ -438,9 +438,6 @@ ASYNC_REQUEST_FUNCS = {
     "sglang-chat": async_request_openai_chat_completions,
 }
 
-MIN_PROMPT_LEN = 4
-MIN_OUTPUT_LEN = 4
-
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
 def set_ulimit(target_soft_limit: int = 65535) -> None:
