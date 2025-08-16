@@ -22,14 +22,12 @@ _PLATFORM_MAPPINGS = {
     "linux_aarch64": "manylinux_2_34_aarch64",
     "linux_x86_64": "manylinux_2_34_x86_64",
     "macos_arm64": "macosx_13_0_arm64",
-    "": "any",
+    # "": "any",
 }
 
 _WHEELS = [
     ("max", _PLATFORM_MAPPINGS.keys()),
-    ("max_core", _PLATFORM_MAPPINGS.keys()),
-    ("mojo_compiler", _PLATFORM_MAPPINGS.keys()),
-    ("mblack", [""]),
+    #("mblack", [""]),
 ]
 
 [
@@ -53,52 +51,14 @@ _WHEELS = [
     for name, platforms in _WHEELS
 ]
 
-_WHEELS2 = [
-    ("max", _PLATFORM_MAPPINGS.keys()),
-    ("max_core", _PLATFORM_MAPPINGS.keys()),
-    ("mojo_compiler", _PLATFORM_MAPPINGS.keys()),
-    #("mblack", [""]),
-]
+rebuild_wheel = use_repo_rule("//bazel:rebuild_wheel.bzl", "rebuild_wheel")
 
 [
-    http_archive(
-        name = "max_core_" + platform + "_wheel22",
-        url = "{}/max-{}-py3-none-{}.whl".format(
-            BASE_URL,
-            PACKAGE_VERSION,
-            _PLATFORM_MAPPINGS[platform],
-        ),
-        strip_prefix = "max-{}.data/platlib".format(PACKAGE_VERSION),
-        build_file_content = """
-py_library(
-    name = "_core",
-    data = glob(["max/*.so"]),
-    imports = ["."],
-    visibility = ["//visibility:public"],
-)
-""",
+    rebuild_wheel(
+        name = "module_platlib_" + platform,
+        version = PACKAGE_VERSION,
+        platform = platform,
+        base_url = BASE_URL,
     )
     for platform in _PLATFORM_MAPPINGS.keys()
-]
-
-[
-    [
-        http_archive(
-            name = name + "_" + platform + "_wheel2",
-            url = "{}/{}-{}-py3-none-{}.whl".format(
-                BASE_URL,
-                name,
-                PACKAGE_VERSION,
-                _PLATFORM_MAPPINGS[platform],
-            ),
-            build_file_content = """
-cc_library(
-    name = "lib",
-    srcs = glob(["**/*.so"]),
-)
-""",
-        )
-        for platform in platforms
-    ]
-    for name, platforms in _WHEELS2
 ]

@@ -30,44 +30,12 @@ _OPEN_SOURCE_GLOBS = [
 [
     pycross_wheel_library(
         name = platform + "_wheel",
-        install_exclude_globs = _OPEN_SOURCE_GLOBS + ["*/platlib/max/*.so"],
+        install_exclude_globs = _OPEN_SOURCE_GLOBS + ["*/platlib/max/_core.cpython-*"],
         tags = ["manual"],
         wheel = "@max_{}_wheel//file".format(platform),
         deps = [
-            "@max_core_{}_wheel22//:_core".format(platform),
-            # ":{}_max_core".format(platform),
-            # ":{}_mojo_compiler".format(platform),
-        ]
-    )
-    for platform in [
-        "linux_x86_64",
-        "linux_aarch64",
-        "macos_arm64",
-    ]
-]
-
-[
-    pycross_wheel_library(
-        name = platform + "_max_core",
-        # Only keep the things in the top level directory
-        # This might be wrong
-        install_exclude_globs = ["max/*/**"],
-        tags = ["manual"],
-        wheel = "@max_{}_wheel//file".format(platform),
-    )
-    for platform in [
-        "linux_x86_64",
-        "linux_aarch64",
-        "macos_arm64",
-    ]
-]
-
-[
-    pycross_wheel_library(
-        name = platform + "_mojo_compiler",
-        # install_exclude_globs = ["max/*/**"],
-        tags = ["manual"],
-        wheel = "@mojo_compiler_{}_wheel//file".format(platform),
+            "@module_platlib_{}//:max_core".format(platform),
+        ],
     )
     for platform in [
         "linux_x86_64",
