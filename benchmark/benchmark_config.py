@@ -13,22 +13,10 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-import enum
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from benchmark_datasets import DATASET_REGISTRY
 from max.pipelines.lib import MAXConfig
-
-
-class Backend(str, enum.Enum):
-    vllm = "vllm"
-    vllm_chat = "vllm-chat"
-    trt_llm = "trt-llm"
-    modular = "modular"
-    modular_chat = "modular-chat"
-    sglang = "sglang"
-    sglang_chat = "sglang-chat"
 
 
 @dataclass
@@ -129,25 +117,6 @@ class BaseBenchmarkConfig(MAXConfig):
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
 
-    @staticmethod
-    def get_default_field_choices() -> dict[str, list[str]]:
-        """Get valid choices for fields that have constrained values.
-
-        Returns:
-            Dictionary mapping field names to their valid choices.
-        """
-        return {
-            # TODO: Propagate proper enum choices here than just the string values
-            "backend": [backend.value for backend in Backend],
-            "dataset_name": list(DATASET_REGISTRY.keys()),
-            "random_distribution_type": ["uniform", "normal"],
-        }
-
-    @staticmethod
-    def get_default_required_fields() -> set[str]:
-        """Get required fields for the benchmark config."""
-        return {"model", "dataset_name"}
-
 
 @dataclass
 class ServingBenchmarkConfig(BaseBenchmarkConfig):
@@ -163,8 +132,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """
 
     # Backend and API configuration (serving-specific)
-    # TODO: Propagate proper enum choices here than just the string values
-    backend: str = Backend.modular.value
+    backend: str = "modular"
     """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
 
     base_url: Optional[str] = None
