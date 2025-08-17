@@ -15,39 +15,10 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# Subdirectories of the wheel that are part of this repo and therefore should
-# be removed so that they're not accidentally used when testing changes that
-# depend on some closed-source portions of the wheel.
-# _OPEN_SOURCE_GLOBS = [
-#     "*/platlib/modular/lib/mojo/*",
-#     "max/entrypoints/*",
-#     "max/graph/*",
-#     "max/nn/*",
-#     "max/pipelines/*",
-#     "max/serve/*",
-# ]
-
-# [
-#     py_library(
-#         name = platform + "_wheel",
-#         #install_exclude_globs = _OPEN_SOURCE_GLOBS + ["*/platlib/max/_core.cpython-*"],
-#         tags = ["manual"],
-#         #wheel = "@max_{}_wheel//file".format(platform),
-#         deps = [
-#             "@module_platlib_{}//:max_core".format(platform),
-#         ],
-#     )
-#     for platform in [
-#         "linux_x86_64",
-#         "linux_aarch64",
-#         "macos_arm64",
-#     ]
-# ]
-
 pycross_wheel_library(
     name = "mblack-lib",
     tags = ["manual"],
-    wheel = "@mblack__wheel//file",
+    wheel = "@mblack_wheel//file",
 )
 
 py_binary(

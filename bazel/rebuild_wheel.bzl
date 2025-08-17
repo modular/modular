@@ -16,20 +16,6 @@ _WHEELS = [
     ("mojo_compiler", True),
 ]
 
-# TODO: dedup
-#_DEPS_FROM_WHEEL = [
-#    "max/_core_mojo",
-#    "max/driver",
-#    "max/dtype",
-#    "max/engine",
-#    "max/interfaces",
-#    "max/mlir",
-#    "max/profiler",
-#    "max/support",
-#    "max/torch",
-#    # "max:_core",
-#]
-
 def _rebuild_wheel(rctx):
     for name, strip in _WHEELS:
         strip_prefix = "{}-{}.data/platlib/".format(name, rctx.attr.version) if strip else ""
@@ -46,26 +32,25 @@ def _rebuild_wheel(rctx):
     rctx.file(
         "BUILD.bazel",
         """
-print(glob(["**"]))
+# Subdirectories of the wheel that are part of this repo and therefore should
+# be removed so that they're not accidentally used when testing changes that
+# depend on some closed-source portions of the wheel.
+_OPEN_SOURCE_GLOBS = [
+    "modular/lib/mojo/*",
+    "max/entrypoints/*",
+    "max/graph/*",
+    "max/nn/*",
+    "max/pipelines/*",
+    "max/serve/*",
+]
+
 py_library(
     name = "max",
     data = glob([
-        "max/_core.cpython-*",
-        "max/_mlir/**",
+        "max/**",
         "modular/lib/**",
-        "modular/bin/mojo",
-        # TODO: dedup
-        "max/_core_mojo/**",
-        "max/_core_types/**",
-        "max/driver/**",
-        "max/dtype/**",
-        "max/engine/**",
-        "max/interfaces/**",
-        "max/mlir/**",
-        "max/profiler/**",
-        "max/support/**",
-        "max/torch/**",
-    ]),
+        "modular/bin/**",
+    ], exclude = _OPEN_SOURCE_GLOBS),
     visibility = ["//visibility:public"],
     imports = ["."],
 )""",
