@@ -351,6 +351,29 @@ def test_pointer_subtraction():
     ptr.free()
 
 
+# Test UnsafePointer subtraction using SIMD and multiple integer types
+def test_pointer_subtraction_simd():
+    # -----------------------------------------
+    # Allocate pointer for SIMD/indexed subtraction test
+    # -----------------------------------------
+
+    var ptr = UnsafePointer[Int].alloc(8)
+    for i in range(8):
+        ptr[i] = i
+
+    var ptr_start = ptr
+    var ptr_offset_u8  = ptr + UInt8(3)
+    var ptr_offset_u16 = ptr + UInt16(5)
+
+    # Test subtraction with different integer types
+    assert_equal(ptr_offset_u8.__sub__(ptr_start), 3)
+    assert_equal(ptr_offset_u16.__sub__(ptr_start), 5)
+    assert_equal(ptr_start.__sub__(ptr_offset_u8), -3)
+    assert_equal(ptr_offset_u8.__sub__(ptr_offset_u16), -2)
+
+    ptr.free()
+
+
 def test_load_and_store_simd():
     var ptr = UnsafePointer[Int8].alloc(16)
     for i in range(16):
