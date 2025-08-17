@@ -347,18 +347,18 @@ void LITLowerer::lowerLITOps(FnOp func) {
       lowerNestedFunction(funcOp);
     } else if (auto closureInit = dyn_cast<LIT::ClosureInitOp>(op)) {
       IRRewriter b{OpBuilder(closureInit)};
-      SmallVector<Attribute> moveOrCopyCaptureSymbols =
-          llvm::map_to_vector(closureInit.getMoveOrCopyCaptureSymbols(),
+      SmallVector<Attribute> captureConventions =
+          llvm::map_to_vector(closureInit.getCaptureConventions(),
                               [&](Attribute attr) -> Attribute {
-                                if (auto boolean = dyn_cast<BoolAttr>(attr))
-                                  return UnitAttr::get(boolean.getContext());
-                                return attr;
+                                if (isa<UnitAttr, MemSymbolTripleAttr>(attr))
+                                  return attr;
+                                return UnitAttr::get(attr.getContext());
                               });
       KGEN::ClosureInitOp closureInitKgen = b.create<KGEN::ClosureInitOp>(
           closureInit.getLoc(), closureInit->getResults().front().getType(),
           closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
           closureInit.getCaptures(),
-          ArrayAttr::get(b.getContext(), moveOrCopyCaptureSymbols),
+          ArrayAttr::get(b.getContext(), captureConventions),
           closureInit.getInputParams().drop_front(
               closureInit.getFuncTypeGenerator().getNumImplicitOriginDecls()),
           closureInit.getInlineLevel());
