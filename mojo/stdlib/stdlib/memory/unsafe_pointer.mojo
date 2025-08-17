@@ -383,7 +383,7 @@ struct UnsafePointer[
         var self_addr = Int(self)
         var other_addr = Int(other)
         var element_size = sizeof[T]()
-        return (self_addr - other_addr) / element_size
+        return Int((self_addr - other_addr)[0]) / element_size
 
     @always_inline
     fn __iadd__[I: Indexer, //](mut self, offset: I):
