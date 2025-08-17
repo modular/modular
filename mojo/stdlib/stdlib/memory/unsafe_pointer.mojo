@@ -380,10 +380,10 @@ struct UnsafePointer[
         Returns:
             The number of elements (of type T) between self and other.
         """
-        var self_addr = Int(self)
-        var other_addr = Int(other)
-        var element_size = sizeof[T]()
-        return Int((self_addr - other_addr)[0]) / element_size
+        var self_addr: Int = Int(self)
+        var other_addr: Int = Int(other)
+        var element_size: Int = sizeof[T]()
+        return (self_addr - other_addr) / element_size
 
     @always_inline
     fn __iadd__[I: Indexer, //](mut self, offset: I):
