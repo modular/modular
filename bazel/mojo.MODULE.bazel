@@ -5,11 +5,9 @@ PACKAGE_VERSION = "25.6.0.dev2025081619"
 # NOTE: Used internally when pushing new releases
 BASE_URL = "https://dl.modular.com/public/nightly/python"
 
-MOJO_URL_OVERRIDE = None
-
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
-    url_override = MOJO_URL_OVERRIDE,
+    base_url = BASE_URL,
     use_prebuilt_packages = False,
     version = PACKAGE_VERSION,
 )
