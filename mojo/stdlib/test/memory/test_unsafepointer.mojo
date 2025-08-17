@@ -330,6 +330,27 @@ def test_offset():
     ptr2.free()
 
 
+# Test UnsafePointer subtraction with standard integer offsets
+def test_pointer_subtraction():
+    # -----------------------------------------
+    # Basic pointer subtraction
+    # -----------------------------------------
+
+    var ptr = UnsafePointer[Int].alloc(8)
+    for i in range(8):
+        ptr[i] = i
+
+    var start_ptr = ptr
+    var end_ptr = ptr + 5
+
+    # Subtract two pointers to get element difference
+    assert_equal(end_ptr.__sub__(start_ptr), 5)
+    assert_equal(start_ptr.__sub__(end_ptr), -5)
+    assert_equal(end_ptr.__sub__(end_ptr), 0)
+
+    ptr.free()
+
+
 def test_load_and_store_simd():
     var ptr = UnsafePointer[Int8].alloc(16)
     for i in range(16):
@@ -401,6 +422,8 @@ def main():
     test_bool()
     test_alignment()
     test_offset()
+    test_pointer_subtraction()
+    test_pointer_subtraction_simd()
     test_load_and_store_simd()
     test_volatile_load_and_store_simd()
     test_merge()
