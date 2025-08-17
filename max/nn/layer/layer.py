@@ -305,14 +305,16 @@ class Module(Layer, ABC):
         """
         loaded_keys = set()
         missing_keys = set()
+        
         for name, layer in recursive_named_layers(self):
             weight_prefix = f"{name}." if name else ""
             for weight_name, weight in layer.layer_weights.items():
-                # Skip the shared weights, since their values are loaded with
-                # the original layers.
+                # Skip shared weights, as they are loaded with the original layers.
                 if weight_name in layer._shared_weights:
                     continue
+                
                 full_weight_name = f"{weight_prefix}{weight_name}"
+                
                 if (data := state_dict.get(full_weight_name)) is not None:
                     loaded_keys.add(full_weight_name)
                     if isinstance(data, WeightData):
@@ -324,8 +326,10 @@ class Module(Layer, ABC):
                         ).data
                     else:
                         _validate_weight_value(weight, data, full_weight_name)
+                    
                     if weight_alignment:
                         weight.align = weight_alignment
+                    
                     _check_alignment(
                         data,
                         weight.align or weight.dtype.align,
@@ -334,37 +338,31 @@ class Module(Layer, ABC):
                     self._weight_values[full_weight_name] = data
                     weight.name = full_weight_name
                 else:
-                    # Missing key: respect `strict` flag.
-                    if strict:
-                        msg = f"Could not find weight '{full_weight_name}'. "
-                        if possible_match := difflib.get_close_matches(
-                            full_weight_name, state_dict.keys(), n=1
-                        ):
-                            msg += f" Did you mean '{possible_match[0]}'?"
-                        raise ValueError(msg)
-                    else:
-                        missing_keys.add(full_weight_name)
-
-        if strict:
-            unused_keys = state_dict.keys() - loaded_keys
-            if missing_keys or len(unused_keys) > 0:
-                parts = []
-                if missing_keys:
-                    parts.append(
-                        "Missing required weights: "
-                        + ", ".join(sorted(missing_keys))
-                    )
-                if len(unused_keys) > 0:
-                    parts.append(
-                        "Unexpected keys in state_dict: "
-                        + ", ".join(sorted(unused_keys))
-                    )
-                msg = (
-                    "load_state_dict() strict=True validation failed. "
-                    + "; ".join(parts)
-                )
-                raise ValueError(msg)
-
+                    # If a key is missing, just add it to the set for later.
+                    missing_keys.add(full_weight_name)
+        
+        # After the loop, check for all errors at once if in strict mode.
+        unused_keys = state_dict.keys() - loaded_keys
+        
+        if strict and (missing_keys or unused_keys):
+            parts = []
+            if missing_keys:
+                sorted_missing = sorted(list(missing_keys))
+                parts.append(f"Missing required weights: {', '.join(sorted_missing)}")
+                
+                # Add a helpful "Did you mean?" suggestion for the first missing key.
+                first_missing_key = sorted_missing[0]
+                if possible_match := difflib.get_close_matches(
+                    first_missing_key, state_dict.keys(), n=1
+                ):
+                    parts.append(f"For '{first_missing_key}', did you mean '{possible_match[0]}'?")
+        
+            if unused_keys:
+                parts.append(f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}")
+                
+            msg = "load_state_dict() strict=True validation failed. " + "; ".join(parts)
+            raise ValueError(msg)
+        
     def state_dict(
         self, auto_initialize: bool = True
     ) -> dict[str, DLPackArray]:
