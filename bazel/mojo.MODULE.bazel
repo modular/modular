@@ -14,40 +14,23 @@ mojo.toolchain(
 use_repo(mojo, "mojo_toolchains")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-_PLATFORM_MAPPINGS = {
-    "linux_aarch64": "manylinux_2_34_aarch64",
-    "linux_x86_64": "manylinux_2_34_x86_64",
-    "macos_arm64": "macosx_13_0_arm64",
-    # "": "any",
-}
-
-_WHEELS = [
-    ("max", _PLATFORM_MAPPINGS.keys()),
-    #("mblack", [""]),
+_PLATFORMS = [
+    "linux_aarch64",
+    "linux_x86_64",
+    "macos_arm64",
 ]
 
-[
-    [
-        http_file(
-            name = name + "_" + platform + "_wheel",
-            downloaded_file_path = "{}-{}-py3-none-{}.whl".format(
-                name,
-                PACKAGE_VERSION,
-                _PLATFORM_MAPPINGS[platform],
-            ),
-            url = "{}/{}-{}-py3-none-{}.whl".format(
-                BASE_URL,
-                name,
-                PACKAGE_VERSION,
-                _PLATFORM_MAPPINGS[platform],
-            ),
-        )
-        for platform in platforms
-    ]
-    for name, platforms in _WHEELS
-]
+http_file(
+    name = "mblack_wheel",
+    downloaded_file_path = "mblack-{}-py3-none-any.whl".format(
+        PACKAGE_VERSION,
+    ),
+    url = "{}/mblack-{}-py3-none-any.whl".format(
+        BASE_URL,
+        PACKAGE_VERSION,
+    ),
+)
 
 rebuild_wheel = use_repo_rule("//bazel:rebuild_wheel.bzl", "rebuild_wheel")
 
@@ -58,5 +41,5 @@ rebuild_wheel = use_repo_rule("//bazel:rebuild_wheel.bzl", "rebuild_wheel")
         platform = platform,
         base_url = BASE_URL,
     )
-    for platform in _PLATFORM_MAPPINGS.keys()
+    for platform in _PLATFORMS
 ]
