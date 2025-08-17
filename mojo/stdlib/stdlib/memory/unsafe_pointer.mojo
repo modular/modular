@@ -381,9 +381,8 @@ struct UnsafePointer[
             The number of elements (of type T) between self and other.
         """
         # Convert pointers to Int and extract scalar from SIMD
-        var self_addr: Int = Int(self.extract(0))
-        var other_addr: Int = Int(other.extract(0))
-        
+        var self_addr: Int = bitcast[Int](self)
+        var other_addr: Int = bitcast[Int](other)
         var element_size: Int = sizeof[T]()
         return (self_addr - other_addr) / element_size
 
