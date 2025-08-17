@@ -1884,7 +1884,7 @@ static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
 static ParseResult parseClosureInitOpValue(
     OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
-    ArrayAttr &moveOrCopyCaptureSymbols, TypedAttr &captureOrigins,
+    ArrayAttr &captureConventions, TypedAttr &captureOrigins,
     KGEN::ParamDeclArrayAttr &inputParams, KGEN::InlineLevelAttr &inlineLevel,
     Region &bodyRegion, SmallVectorImpl<Type> &captureTypes, Type &resultType,
     KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable) {
@@ -1895,7 +1895,7 @@ static ParseResult parseClosureInitOpValue(
 
   // Collect the captures and symbols, if provided.
   SmallVector<TypedAttr> origins;
-  SmallVector<Attribute> memSymbolTriples;
+  SmallVector<Attribute> captureConvs;
   LogicalResult result = success();
   if (failed(p.parseOptionalRParen())) {
     do {
@@ -1912,21 +1912,22 @@ static ParseResult parseClosureInitOpValue(
       // symbol indicating the method to call.
       if (p.parseOptionalLSquare()) {
         // No attribute specified; capture by value.
-        memSymbolTriples.push_back(UnitAttr::get(p.getContext()));
+        captureConvs.push_back(UnitAttr::get(p.getContext()));
       } else {
         if (succeeded(p.parseOptionalKeyword("ref"))) {
           // capture by reference, parse the origin.
-          if (p.parseColon() ||
-              parseOriginParamValue(p, origins.emplace_back()) ||
+          TypedAttr origin;
+          if (p.parseColon() || parseOriginParamValue(p, origin) ||
               p.parseRSquare())
             return failure();
-          memSymbolTriples.push_back(BoolAttr::get(p.getContext(), true));
+          origins.push_back(origin);
+          captureConvs.push_back(origin);
         } else {
           // capture by copy/move, parse the symbol.
           MemSymbolTripleAttr triple;
           if (failed(parseMemSymbolTripleAttr(p, triple)))
             return failure();
-          memSymbolTriples.push_back(triple);
+          captureConvs.push_back(triple);
         }
       }
       result = p.parseOptionalComma();
@@ -1954,21 +1955,21 @@ static ParseResult parseClosureInitOpValue(
     return p.emitError(p.getNameLoc(),
                        "expected a !lit.ref<> with named origin");
   paramDecl = ParamDeclAttr::get(origin);
-  if (captureTypes.size() != memSymbolTriples.size())
+  if (captureTypes.size() != captureConvs.size())
     return p.emitError(p.getCurrentLocation(),
                        "expected symbols to match number of capture types");
-  moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), memSymbolTriples);
+  captureConventions = ArrayAttr::get(p.getContext(), captureConvs);
   captureOrigins = OriginSetAttr::get(p.getContext(), origins);
   return success();
 }
 
 static void printClosureInitOpValue(
     OpAsmPrinter &p, Operation *op, TypeAttr funcTypeGenerator,
-    TypeAttr functionType, ValueRange captures,
-    ArrayAttr moveOrCopyCaptureSymbols, TypedAttr captureOrigins,
-    KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
-    Region &bodyRegion, TypeRange captureTypes, Type resultType,
-    KGEN::ParamDeclAttr paramDecl, TypedAttr vtable) {
+    TypeAttr functionType, ValueRange captures, ArrayAttr captureConventions,
+    TypedAttr captureOrigins, KGEN::ParamDeclArrayAttr inputParams,
+    KGEN::InlineLevelAttr inlineLevel, Region &bodyRegion,
+    TypeRange captureTypes, Type resultType, KGEN::ParamDeclAttr paramDecl,
+    TypedAttr vtable) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
     LIT::FnTypeGeneratorType fnTypeGen =
@@ -1983,28 +1984,25 @@ static void printClosureInitOpValue(
   p << "]";
   p << "(";
   int i = 0;
-  int j = 0;
-  ArrayRef<TypedAttr> origins =
-      cast<OriginSetAttr>(captureOrigins).getOperands();
   int n = captures.size();
-  for (auto [capture, symbol] : llvm::zip(captures, moveOrCopyCaptureSymbols)) {
+  for (auto [capture, symbol] : llvm::zip(captures, captureConventions)) {
     p << capture;
-    if (!symbol) {
-      if (++i < n)
-        p << ", ";
-      continue;
-    }
     if (MemSymbolTripleAttr triple = dyn_cast<MemSymbolTripleAttr>(symbol)) {
       p << "[";
       printMemSymbolTripleAttrWithoutType(p, triple.getCopy(), triple.getMove(),
                                           triple.getDel(), paramPrinter);
       p << "]";
-    } else if (BoolAttr hasLifetime = dyn_cast<BoolAttr>(symbol)) {
-      if (hasLifetime.getValue()) {
-        p << "[ref: ";
-        printOriginParamValue(p, op, origins[j++]);
-        p << "]";
-      }
+    } else if (isa<UnitAttr>(symbol)) {
+      if (++i < n)
+        p << ", ";
+      continue;
+    } else {
+      assert(isa<TypedAttr>(symbol) &&
+             "if not captured by copy then origin needed.");
+      TypedAttr origin = cast<TypedAttr>(symbol);
+      p << "[ref: ";
+      printOriginParamValue(p, op, origin);
+      p << "]";
     }
     if (++i < n)
       p << ", ";
@@ -2025,7 +2023,7 @@ static void printClosureInitOpValue(
 }
 
 LogicalResult LIT::ClosureInitOp::verify() {
-  if (getMoveOrCopyCaptureSymbols().size() != getCaptures().size())
+  if (getCaptureConventions().size() != getCaptures().size())
     return emitOpError(
         "expected move or copy capture symbols to match number of captures");
   return success();

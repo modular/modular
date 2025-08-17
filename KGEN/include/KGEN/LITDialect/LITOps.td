@@ -1645,13 +1645,17 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
 
     There are three ways to capture a value:
     1. By move/copy
-    2. By value
+    2. By trivial copy
     3. By reference
 
-    In case 1, you will need to specify the symbol of the copy or move function.
-    In case 2, you specify nothing.
+    In case 1, you will need to specify the MemSymbolTripleAttr for the captured
+    type. The MemSymbolTriple holds copy, move, and del symbols.
+    In case 2, you specify a UnitAttr.
     In case 3, you provide the lifetime of the lit.reference typed value so that
     Mojo can ensure lifetime satefy.
+
+    The captureConvention array holds an attribute for each capture to specify
+    its convention.
 
     Example:
     ```mlir
@@ -1672,7 +1676,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
   let arguments = (ins TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
                        TypeAttrOf<FunctionType>:$functionType,
                        Variadic<AnyType>:$captures,
-                       ArrayAttr:$moveOrCopyCaptureSymbols,
+                       ArrayAttr:$captureConventions,
                        TypedAttrInterface:$captureOrigins,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_InlineLevelAttr:$inlineLevel,
@@ -1685,7 +1689,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
       `` custom<ClosureInitOpValue>($funcTypeGenerator,
                                     $functionType,
                                     $captures,
-                                    $moveOrCopyCaptureSymbols,
+                                    $captureConventions,
                                     $captureOrigins,
                                     $inputParams,
                                     $inlineLevel,

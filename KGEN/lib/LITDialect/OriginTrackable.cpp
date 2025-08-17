@@ -516,23 +516,8 @@ OverallOpValueEffect LIT::getOperationEffects(
   // A closure init is analogous to a call to a constructor of a struct.
   // Use the origin set to determine the operand effect of the captures.
   if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op)) {
-    int byRefIndex = 0;
-    OriginSetAttr originSet =
-        cast<OriginSetAttr>(closureOp.getCaptureOrigins());
-    for (auto [capture, captureAttribute] :
-         llvm::zip(closureOp->getOperands(),
-                   closureOp.getMoveOrCopyCaptureSymbols())) {
-      // If capture by reference, the operand effect is either memMut or
-      // memLoad.
-      if (isa<BoolAttr>(captureAttribute)) {
-        OriginType origin =
-            cast<OriginType>(originSet.getOperands()[byRefIndex++].getType());
-        operands.push_back({capture, origin.isMutable()
-                                         ? OperandEffect::memMut
-                                         : OperandEffect::memLoad});
-        continue;
-      }
-
+    for (auto [capture, captureAttribute] : llvm::zip(
+             closureOp->getOperands(), closureOp.getCaptureConventions())) {
       // If capture by copy, treat this as a call to the copy method of the
       // captured type, which is by borrow. If capture by move, treat this as a
       // call to the move method of the captured type, which consumes the
@@ -541,6 +526,17 @@ OverallOpValueEffect LIT::getOperationEffects(
         operands.push_back({capture, triple.getCopy()
                                          ? OperandEffect::memLoad
                                          : OperandEffect::memConsume});
+        continue;
+      }
+      if (isa<UnitAttr>(captureAttribute))
+        continue;
+      // If capture by reference, the operand effect is either memMut or
+      // memLoad.
+      if (auto typedAttr = dyn_cast<TypedAttr>(captureAttribute)) {
+        OriginType origin = cast<OriginType>(typedAttr.getType());
+        operands.push_back({capture, origin.isMutable()
+                                         ? OperandEffect::memMut
+                                         : OperandEffect::memLoad});
         continue;
       }
 

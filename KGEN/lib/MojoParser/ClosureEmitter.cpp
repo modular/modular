@@ -1676,7 +1676,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
       // Mutability casts should have been emitted during parse time.
       if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
         origins.push_back(refType.getOrigin());
-        captureInfo.push_back(BoolAttr::get(ctx, true));
+        captureInfo.push_back(refType.getOrigin());
       } else {
         captureInfo.push_back(UnitAttr::get(ctx));
       }
