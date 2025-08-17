@@ -366,6 +366,25 @@ struct UnsafePointer[
         """
         return self + (-1 * index(offset))
 
+    @always_inline("nodebug")
+    fn __sub__[T: AnyType](self: UnsafePointer[T], other: UnsafePointer[T]) -> Int:
+        """
+        Return the distance in elements between two pointers.
+
+        Parameters:
+            T: The type of element the pointer points to.
+
+        Args:
+            other: Another pointer of the same type.
+
+        Returns:
+            The number of elements (of type T) between self and other.
+        """
+        let self_addr = Int(self)
+        let other_addr = Int(other)
+        let element_size = sizeof[T]()
+        return (self_addr - other_addr) / element_size
+
     @always_inline
     fn __iadd__[I: Indexer, //](mut self, offset: I):
         """Add an offset to this pointer.
