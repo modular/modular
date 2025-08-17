@@ -53,6 +53,18 @@ single_version_override(
     version = "6.7",
 )
 
+# TODO: Remove when >0.5.0 is released
+# Note! This points to a branch, it can't be merged until a nightly goes out with the new wheels,
+# which can't go out until we have a green main here with the new wheels.
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-SOT66qBvWD1rfpXdMIi3AwIaLP/ZLLkS6wAyz8i8JII=",
+    strip_prefix = "rules_mojo-a22e73f18aaf5e8bfefb1222bc46f87c3040ce77",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/a22e73f18aaf5e8bfefb1222bc46f87c3040ce77.tar.gz",
+    ],
+)
+
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
 single_version_override(
     module_name = "rules_mypy",

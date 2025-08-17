@@ -19,40 +19,35 @@ alias(
 # be removed so that they're not accidentally used when testing changes that
 # depend on some closed-source portions of the wheel.
 _OPEN_SOURCE_GLOBS = [
-    "*/platlib/max/lib/mojo/*",
+    "*/platlib/modular/lib/mojo/*",
     "max/entrypoints/*",
     "max/graph/*",
     "max/nn/*",
     "max/pipelines/*",
     "max/serve/*",
-    "mojo/*",
 ]
 
-pycross_wheel_library(
-    name = "linux_x86_64_wheel",
-    install_exclude_globs = _OPEN_SOURCE_GLOBS,
-    tags = ["manual"],
-    wheel = "@modular_linux_x86_64//file",
-)
-
-pycross_wheel_library(
-    name = "linux_aarch64_wheel",
-    install_exclude_globs = _OPEN_SOURCE_GLOBS,
-    tags = ["manual"],
-    wheel = "@modular_linux_aarch64//file",
-)
-
-pycross_wheel_library(
-    name = "macos_arm64_wheel",
-    install_exclude_globs = _OPEN_SOURCE_GLOBS,
-    tags = ["manual"],
-    wheel = "@modular_macos_arm64//file",
-)
+[
+    pycross_wheel_library(
+        name = platform + "_wheel",
+        install_exclude_globs = _OPEN_SOURCE_GLOBS + ["*/platlib/max/_core.cpython-*"],
+        tags = ["manual"],
+        wheel = "@max_{}_wheel//file".format(platform),
+        deps = [
+            "@module_platlib_{}//:max_core".format(platform),
+        ],
+    )
+    for platform in [
+        "linux_x86_64",
+        "linux_aarch64",
+        "macos_arm64",
+    ]
+]
 
 pycross_wheel_library(
     name = "mblack-lib",
     tags = ["manual"],
-    wheel = "@mblack_wheel//file",
+    wheel = "@mblack__wheel//file",
 )
 
 py_binary(
