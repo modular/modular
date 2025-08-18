@@ -62,7 +62,6 @@ struct FastDiv[dtype: DType]:
     var _log2_shift: Int32
 
     @always_inline
-    @implicit
     fn __init__(out self, divisor: Int = 1):
         """Initializes FastDiv with the divisor.
 

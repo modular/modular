@@ -170,7 +170,6 @@ fn _check_dim[
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
-    @implicit
     fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
@@ -3188,7 +3187,6 @@ struct DeviceContext(Copyable, Movable):
         ](self._handle)
 
     @doc_private
-    @implicit
     fn __init__(out self, handle: OpaquePointer):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -3196,7 +3194,6 @@ struct DeviceContext(Copyable, Movable):
         self._retain()
 
     @doc_private
-    @implicit
     fn __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
