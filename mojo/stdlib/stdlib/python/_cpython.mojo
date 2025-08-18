@@ -196,7 +196,7 @@ struct PyObjectPtr(
     fn __int__(self) -> Int:
         return Int(self._unsized_obj_ptr)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 

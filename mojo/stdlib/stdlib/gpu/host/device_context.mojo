@@ -187,7 +187,7 @@ struct StreamPriorityRange(Copyable, Movable, Stringable, Writable):
     var least: Int
     var greatest: Int
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 

@@ -83,7 +83,7 @@ struct UMMAKind(Stringable, Writable):
         """
         return self._value != other._value
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Convert UMMA kind to a string, this can be used as the instruction qualifier.
 

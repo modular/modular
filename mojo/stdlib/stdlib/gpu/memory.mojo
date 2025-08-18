@@ -399,7 +399,7 @@ struct Fill:
         """
         return self != other
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the fill pattern.
 
@@ -621,7 +621,7 @@ struct ReduceOp:
         """
         return self != other
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the reduction operation.
 
