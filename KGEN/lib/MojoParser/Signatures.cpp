@@ -929,6 +929,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
   }
 
   auto parseArgument = [&]() -> ParseResult {
+    SMLoc captureLocation = p.getToken().getLoc();
     CaptureConvention convention;
     StringAttr name;
     if (p.consumeIf(Token::kw_var)) {
@@ -950,7 +951,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
         return failure();
     }
 
-    parsedCaptures.push_back({name.getValue(), convention});
+    parsedCaptures.push_back({name.getValue(), convention, captureLocation});
     return success();
   };
 

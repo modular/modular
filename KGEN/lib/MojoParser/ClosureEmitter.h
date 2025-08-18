@@ -72,6 +72,11 @@ public:
                       StructDeclOp wrapper, TraitDeclOp trait,
                       Location location);
 
+  static ASTDecl *addCaptureValue(ASTDecl &closure, SMLoc location,
+                                  StringRef name, CaptureConvention capture,
+                                  IREmitter &emitter,
+                                  ASTDecl *signatureDecl = nullptr);
+
 private:
   MLIRContext *ctx;
   /// The decl of the surrounding module where code should be synthesized.

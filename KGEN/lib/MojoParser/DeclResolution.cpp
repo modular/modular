@@ -1119,21 +1119,6 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   return MLValue(var);
 }
 
-/// Returns Appropriate CValue for a decl if possible.
-static CValue ASTDeclToCValue(ASTDecl *decl, OpBuilder &builder, Location loc) {
-  if (!decl)
-    return {};
-  if (auto cv = decl->getIfIRValue()) {
-    return cv;
-  } else if (auto var = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation())) {
-    if (var.getKind() != VarDeclKind::Ref)
-      return MLValue(var);
-    auto ref = builder.create<RefLoadOp>(loc, var);
-    return CValue::getMValueForRef(ref);
-  }
-  return {};
-}
-
 /// Make a copy or cast mutability if needed in the parent scope so that the
 /// semantics of the closure body are upheld. For example, consider the
 /// following:
@@ -1158,97 +1143,14 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
                                          ParsedCaptureList &captureSignature,
                                          ASTDecl &decl) {
   FnOp funcOp = cast<FnOp>(decl.getIfOperation());
-  SharedState &shared = decl.getShared();
   IREmitter emitter(*decl.getParentDecl(), OpBuilder(funcOp));
-  for (auto [name, capture] : captureSignature.parsedCaptures) {
-    ArrayRef<ASTDecl *> results =
-        decl.getParentDecl()->lookupInCurrentScope(name);
-    if (results.size() != 1) {
-      p.emitError(funcOp.getLoc(), "reference to an unknown value ") << name;
-      return failure();
-    }
-    ASTDecl *result = results.front();
-    if (auto pval = result->getIfTypeValue()) {
-      p.emitError(funcOp.getLoc(),
-                  "parameters do not have a capture convention");
-      return failure();
-    }
-
-    CValue original =
-        ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
-    CaptureConvention convention = capture;
-    CValue captureValue = original;
-    switch (capture) {
-    case CaptureConvention::kConventionMove: {
-      if (!result->getTypeDeclSelf().isMovable(decl.getLoc(), shared)) {
-        p.emitError(funcOp.getLoc(),
-                    "Cannot capture by move because the type is not movable");
-        return failure();
-      }
-      // If it was captured by move then there was a transfer operation.
-      original = MRValue(original.getMlirValue());
-      [[fallthrough]];
-    }
-    case CaptureConvention::kConventionCopy: {
-      ASTType originalType = original.getRValueType();
-      if (originalType.isTrivial(decl.getLoc(), shared)) {
-        // Remap to trivial copy convention to avoid storing symbols.
-        convention = CaptureConvention::kConventionTrivialCopy;
-      } else {
-        // If the original is immutable, cast to mutable. We promise we will
-        // make a copy later.
-        if (auto refType = dyn_cast<RefType>(original.getType().mlirType)) {
-          OriginType originType = refType.getOriginType();
-          if (originType.isMutableKnown(false)) {
-            auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
-                funcOp.getLoc(), original.getMlirValue());
-            captureValue = MBValue(refImmutOp->getResult(0));
-          }
-        }
-        ValueDest dest(EC_Capture);
-        SyntheticNode node(result->getLoc());
-        ASTExprAnd<CValue> expr{original, node};
-        LValue destLV = dest.getLValueForResult(
-            expr.expr->getLoc(), expr.ir.getRValueType(),
-            /*allowIncompatibleTypes=*/false,
-            /*requireMLValue=*/false, emitter);
-        emitter.emitStoreToLValue(expr, destLV, dest.getContext());
-        captureValue = destLV;
-      }
-      break;
-    }
-    case CaptureConvention::kConventionMut: {
-      if (auto refType = dyn_cast<RefType>(original.getType().mlirType)) {
-        OriginType originType = refType.getOriginType();
-        if (originType.isMutableKnown(false)) {
-          p.emitError(funcOp.getLoc(), "Cannot capture ")
-              << name << " by mut because the value is immutable";
-          return failure();
-        }
-      }
-      break;
-    }
-    case CaptureConvention::kConventionRead: {
-      if (auto refType = dyn_cast<RefType>(original.getType().mlirType)) {
-        OriginType originType = refType.getOriginType();
-        if (originType.isMutableKnown(true)) {
-          auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
-              funcOp.getLoc(), original.getMlirValue());
-          captureValue = MBValue(refImmutOp->getResult(0));
-        }
-      }
-      break;
-    }
-    default:
-      llvm_unreachable("All capture conventions should be handled above");
-      break;
-    }
-    shared.getDeclResolver().addFullyResolvedDecl(captureValue, name,
-                                                  sigDecl.getLoc(), &sigDecl);
-    shared.addCaptureToScope(decl, result,
-                             Capture(captureValue, convention, name));
+  bool didFail = false;
+  for (auto [name, capture, location] : captureSignature.parsedCaptures) {
+    if (!ClosureEmitter::addCaptureValue(decl, location, name, capture, emitter,
+                                         &sigDecl))
+      didFail = true;
   }
-  return success();
+  return didFail ? failure() : success();
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
