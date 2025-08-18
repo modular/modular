@@ -98,17 +98,16 @@ fn naive_grouped_matmul[
 ) raises:
     constrained[transpose_b, "Only support transposed B in grouped matmul."]()
 
-    ctx.enqueue_function[
-        naive_grouped_matmul_kernel[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ]
-    ](
+    alias kernel = naive_grouped_matmul_kernel[
+        c_type,
+        c_shape,
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,

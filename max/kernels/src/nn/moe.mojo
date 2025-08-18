@@ -258,7 +258,7 @@ fn moe_create_indices[
             topk_ids.layout,
         ]
 
-        cuda_ctx.enqueue_function[kernel](
+        cuda_ctx.enqueue_function_checked[kernel, kernel](
             token_expert_order,
             expert_start_indices,
             restore_token_order,
