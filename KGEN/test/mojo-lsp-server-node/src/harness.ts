@@ -7,6 +7,8 @@ import { setTimeout } from "timers/promises";
 import {
   ClientCapabilities,
   DidOpenTextDocumentNotification,
+  DocumentSymbol,
+  DocumentSymbolRequest,
   Hover,
   HoverRequest,
   InitializeParams,
@@ -16,6 +18,7 @@ import {
   PublishDiagnosticsParams,
   Range,
   ReferencesRequest,
+  SymbolInformation,
 } from "vscode-languageserver-protocol";
 import { createMessageConnection } from "vscode-languageserver-protocol/node";
 
@@ -204,6 +207,16 @@ export class Document {
       position,
       context: {
         includeDeclaration,
+      },
+    });
+  }
+
+  public async documentSymbols(): Promise<
+    DocumentSymbol[] | SymbolInformation[] | null
+  > {
+    return this.server.connection.sendRequest(DocumentSymbolRequest.type, {
+      textDocument: {
+        uri: this.uri,
       },
     });
   }
