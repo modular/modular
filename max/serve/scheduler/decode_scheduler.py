@@ -49,8 +49,8 @@ from .text_batch_constructor import (
 )
 from .utils import (
     OrderedDict,
+    SchedulerLogger,
     SchedulerOutput,
-    log_metrics,
     maybe_restore_chunked_request,
     release_terminated_requests,
 )
@@ -132,12 +132,13 @@ class DecodeScheduler(Scheduler):
             pipeline=pipeline,
             paged_cache=paged_manager,
         )
+        self.scheduler_logger = SchedulerLogger()
 
     @traced
     def handle_transfer_engine_response(
         self, message: KVTransferEngineMetadata
     ) -> None:
-        logger.info(f"connecting to remote transfer engine: {message.name}")
+        logger.debug(f"connecting to remote transfer engine: {message.name}")
         self.transfer_engine.connect(message)
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
@@ -383,7 +384,7 @@ class DecodeScheduler(Scheduler):
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
-        log_metrics(
+        self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             sch_output=batch_to_execute,
             paged_cache=self.paged_manager,
@@ -392,7 +393,6 @@ class DecodeScheduler(Scheduler):
             num_pending_reqs=len(self.pending_reqs)
             + len(self.pending_prefill_requests),
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            log_level=logging.INFO,
         )
 
 

@@ -44,7 +44,7 @@ from max.serve.scheduler.text_batch_constructor import (
 )
 
 from .base import Scheduler
-from .utils import log_metrics, maybe_restore_chunked_request
+from .utils import SchedulerLogger, maybe_restore_chunked_request
 
 logger = logging.getLogger("max.serve")
 
@@ -64,7 +64,6 @@ class PrefillScheduler(Scheduler):
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.paged_cache = paged_cache
-
         # Initialize Scheduler state.
         self.active_transfers: dict[
             str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
@@ -101,6 +100,7 @@ class PrefillScheduler(Scheduler):
             pipeline=pipeline,
             paged_cache=paged_cache,
         )
+        self.scheduler_logger = SchedulerLogger()
 
     @traced
     def handle_cancel_request(
@@ -114,7 +114,7 @@ class PrefillScheduler(Scheduler):
         self, message: KVTransferEngineMetadata, reply_context: ReplyContext
     ) -> None:
         """Handles a engine registration request from the dispatcher."""
-        logger.info(f"connecting to remote transfer_engine: {message.name}")
+        logger.debug(f"connecting to remote transfer_engine: {message.name}")
         self.transfer_engine.connect(message)
 
         self.dispatcher_client.send_reply(
@@ -127,7 +127,7 @@ class PrefillScheduler(Scheduler):
         self, message: PrefillRequest, reply_context: ReplyContext
     ) -> None:
         """Handles a prefill request from the dispatcher."""
-        logger.info("received request from decode node.")
+        logger.debug("received request from decode node.")
         self.batch_constructor.ce_reqs[message.id] = message.context
         self.request_id_to_reply_context[message.id] = (
             reply_context,
@@ -196,7 +196,7 @@ class PrefillScheduler(Scheduler):
             # Bump this back, so the token is returned.
             context._completion_start_idx -= 1
 
-            logger.info("initiating transfer from prefill worker.")
+            logger.debug("initiating transfer from prefill worker.")
             xfer_data = self.transfer_engine.initiate_send_xfer(
                 remote_metadata,
                 src_idx,
@@ -243,7 +243,7 @@ class PrefillScheduler(Scheduler):
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
-        log_metrics(
+        self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             sch_output=batch_to_execute,
             paged_cache=self.paged_cache,
@@ -251,7 +251,6 @@ class PrefillScheduler(Scheduler):
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            log_level=logging.INFO,
         )
 
 

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
@@ -43,61 +44,152 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max.serve")
 
 
-def log_metrics(
-    sch_config: TokenGenerationSchedulerConfig,
-    sch_output: SchedulerOutput,
-    paged_cache: PagedKVCacheManager | None,
-    batch_creation_time_s: float,
-    batch_execution_time_s: float,
-    num_pending_reqs: int,
-    total_preemption_count: int,
-    log_level: int = logging.DEBUG,
-) -> None:
-    batch_size = sch_output.batch_size
-    batch_type = sch_output.batch_type
-    assert batch_size > 0
-    terminated_reqs = sch_output.num_terminated
-    num_steps = (
-        1 if batch_type == BatchType.CE else sch_config.max_forward_steps_tg
-    )
-    num_generated_tokens = batch_size * num_steps
+class SchedulerLogger:
+    """Class to periodically log batch-level metrics to console."""
 
-    def to_human_readable_throughput(tps: float) -> str:
-        if tps >= 1_000:
-            return f"{tps / 1e3:.1f}K tok/s"
-        return f"{tps:.1f} tok/s"
+    def __init__(self, log_interval_s: float = 1):
+        """Initializes the SchedulerLogger.
 
-    # Format latency and throughput metrics
-    num_input_tokens = sch_output.input_tokens
-    prompt_throughput_str = to_human_readable_throughput(
-        num_input_tokens / batch_execution_time_s
-    )
-    generation_throughput_str = to_human_readable_throughput(
-        num_generated_tokens / batch_execution_time_s
-    )
-    batch_creation_latency_str = to_human_readable_latency(
-        batch_creation_time_s
-    )
-    batch_execution_latency_str = to_human_readable_latency(
-        batch_execution_time_s
-    )
+        Args:
+            log_interval_s: How frequently to log CE and TG batches, in seconds.
+        """
 
-    # Prompt cache hit info
-    target_tokens = (
-        sch_config.target_tokens_per_batch_ce
-        if batch_type == BatchType.CE
-        else None
-    )
-    target_tokens_str = f"{target_tokens}" if target_tokens else "INF"
-    input_tokens = sch_output.input_tokens
-    cached_tokens = sch_output.cached_tokens
+        # How frequently to log CE and TG batches.
+        # We restrict logs to at most once every 3 seconds to avoid spam.
+        self.ce_log_interval_s = log_interval_s
+        self.tg_log_interval_s = log_interval_s
 
-    METRICS.batch_size(batch_size)
+        # The last time we last logged a CE or TG batch.
+        self.time_of_last_ce_log = 0.0
+        self.time_of_last_tg_log = 0.0
 
-    if paged_cache is None:
-        assert cached_tokens == 0
-        logger.log(
-            log_level,
+    def log_metrics(
+        self,
+        sch_config: TokenGenerationSchedulerConfig,
+        sch_output: SchedulerOutput,
+        paged_cache: PagedKVCacheManager | None,
+        batch_creation_time_s: float,
+        batch_execution_time_s: float,
+        num_pending_reqs: int,
+        total_preemption_count: int,
+    ) -> None:
+        """Periodically logs batch-level metrics to console.
+
+        Args:
+            sch_config: The scheduler configuration.
+            sch_output: The scheduler output / batch.
+            paged_cache: The PagedKVCacheManager, if any.
+            batch_creation_time_s: The time it took to create the batch.
+            batch_execution_time_s: The time it took to execute the batch.
+            num_pending_reqs: The number of pending requests.
+            total_preemption_count: The total number of preemptions.
+
+        Returns:
+            None
+        """
+
+        batch_type = sch_output.batch_type
+
+        now = time.monotonic()
+        if batch_type == BatchType.CE:
+            time_since_last_ce_log = now - self.time_of_last_ce_log
+            if time_since_last_ce_log < self.ce_log_interval_s:
+                return
+            self.time_of_last_ce_log = now
+        elif batch_type == BatchType.TG:
+            time_since_last_tg_log = now - self.time_of_last_tg_log
+            if time_since_last_tg_log < self.tg_log_interval_s:
+                return
+            self.time_of_last_tg_log = now
+        else:
+            raise ValueError(f"Invalid batch type: {batch_type}")
+
+        batch_size = sch_output.batch_size
+        assert batch_size > 0
+        terminated_reqs = sch_output.num_terminated
+        num_steps = (
+            1 if batch_type == BatchType.CE else sch_config.max_forward_steps_tg
+        )
+        num_generated_tokens = batch_size * num_steps
+
+        def to_human_readable_throughput(tps: float) -> str:
+            if tps >= 1_000:
+                return f"{tps / 1e3:.1f}K tok/s"
+            return f"{tps:.1f} tok/s"
+
+        # Format latency and throughput metrics
+        num_input_tokens = sch_output.input_tokens
+        prompt_throughput_str = to_human_readable_throughput(
+            num_input_tokens / batch_execution_time_s
+        )
+        generation_throughput_str = to_human_readable_throughput(
+            num_generated_tokens / batch_execution_time_s
+        )
+        batch_creation_latency_str = to_human_readable_latency(
+            batch_creation_time_s
+        )
+        batch_execution_latency_str = to_human_readable_latency(
+            batch_execution_time_s
+        )
+
+        # Prompt cache hit info
+        target_tokens = (
+            sch_config.target_tokens_per_batch_ce
+            if batch_type == BatchType.CE
+            else None
+        )
+        target_tokens_str = f"{target_tokens}" if target_tokens else "INF"
+        input_tokens = sch_output.input_tokens
+        cache_hits = sch_output.cached_tokens
+
+        METRICS.batch_size(batch_size)
+
+        if paged_cache is None:
+            assert cache_hits == 0
+            logger.info(
+                f"Executed {batch_type.value} batch with {batch_size} reqs | "
+                f"Terminated: {terminated_reqs} reqs, "
+                f"Pending: {num_pending_reqs} reqs | "
+                f"Target: {input_tokens}/{target_tokens_str} toks | "
+                f"Prompt Tput: {prompt_throughput_str}, "
+                f"Generation Tput: {generation_throughput_str} | "
+                f"Batch creation: {batch_creation_latency_str}, "
+                f"Execution: {batch_execution_latency_str}",
+            )
+            return
+
+        # KVCache specific metrics
+        used_pct = paged_cache.used_blocks_pct
+        cache_hit_rate = sch_output.cache_hit_rate
+        total_blocks = paged_cache.total_num_pages
+
+        host_kvcache_str = ""
+        if paged_cache.enable_kvcache_swapping_to_host:
+            host_committed_pct = paged_cache.host_committed_block_pct
+            host_total_blocks = paged_cache.total_num_host_pages
+            host_kvcache_str = f"Host KVCache Usage: {host_committed_pct:.1%} of {host_total_blocks} blocks, "
+
+        cache_hit_rate_str = ""
+        blocks_copied_str = ""
+        if paged_cache.enable_prefix_caching:
+            cache_hit_rate_str = f"Cache hit rate: {cache_hit_rate:.1%} | "
+
+            blocks_copied = paged_cache.num_blocks_copied
+            if paged_cache.enable_kvcache_swapping_to_host:
+                blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D, {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
+            elif paged_cache.enable_prefix_caching:
+                blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D | "
+            paged_cache.reset_num_blocks_copied()
+
+        used_blocks = paged_cache.total_num_pages - len(paged_cache.free_blocks)
+
+        METRICS.cache_num_used_blocks(used_blocks)
+        METRICS.cache_num_total_blocks(total_blocks)
+        METRICS.cache_hit_rate(cache_hit_rate)
+        METRICS.cache_hits(cache_hits)
+        METRICS.cache_misses(input_tokens)
+
+        logger.info(
             f"Executed {batch_type.value} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {num_pending_reqs} reqs | "
@@ -105,57 +197,13 @@ def log_metrics(
             f"Prompt Tput: {prompt_throughput_str}, "
             f"Generation Tput: {generation_throughput_str} | "
             f"Batch creation: {batch_creation_latency_str}, "
-            f"Execution: {batch_execution_latency_str}",
+            f"Execution: {batch_execution_latency_str} | "
+            f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks | "
+            f"{host_kvcache_str}"
+            f"{cache_hit_rate_str}"
+            f"{blocks_copied_str}"
+            f"All Preemptions: {total_preemption_count} reqs",
         )
-        return
-
-    # KVCache specific metrics
-    used_pct = paged_cache.used_blocks_pct
-    cache_hit_rate = sch_output.cache_hit_rate
-    total_blocks = paged_cache.total_num_pages
-
-    host_kvcache_str = ""
-    if paged_cache.enable_kvcache_swapping_to_host:
-        host_committed_pct = paged_cache.host_committed_block_pct
-        host_total_blocks = paged_cache.total_num_host_pages
-        host_kvcache_str = f"Host KVCache Usage: {host_committed_pct:.1%} of {host_total_blocks} blocks, "
-
-    blocks_copied_str = ""
-    blocks_copied = paged_cache.num_blocks_copied
-    if paged_cache.enable_prefix_caching:
-        if paged_cache.enable_kvcache_swapping_to_host:
-            blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D, {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
-        elif paged_cache.enable_prefix_caching:
-            blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D | "
-        paged_cache.reset_num_blocks_copied()
-
-    used_blocks = paged_cache.total_num_pages - len(paged_cache.free_blocks)
-
-    cache_hits = sch_output.cached_tokens
-    cache_misses = sch_output.input_tokens
-
-    METRICS.cache_num_used_blocks(used_blocks)
-    METRICS.cache_num_total_blocks(total_blocks)
-    METRICS.cache_hit_rate(cache_hit_rate)
-    METRICS.cache_hits(cache_hits)
-    METRICS.cache_misses(cache_misses)
-
-    logger.log(
-        log_level,
-        f"Executed {batch_type.value} batch with {batch_size} reqs | "
-        f"Terminated: {terminated_reqs} reqs, "
-        f"Pending: {num_pending_reqs} reqs | "
-        f"Target: {input_tokens}/{target_tokens_str} toks | "
-        f"Prompt Tput: {prompt_throughput_str}, "
-        f"Generation Tput: {generation_throughput_str} | "
-        f"Batch creation: {batch_creation_latency_str}, "
-        f"Execution: {batch_execution_latency_str} | "
-        f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks, "
-        f"{host_kvcache_str}"
-        f"Cache hit rate: {cache_hit_rate:.1%} | "
-        f"{blocks_copied_str}"
-        f"All Preemptions: {total_preemption_count} reqs",
-    )
 
 
 def maybe_restore_chunked_request(
