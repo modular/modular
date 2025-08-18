@@ -981,8 +981,6 @@ fn _mha_sm90[
     q_pipeline_state = PipelineState[2]()
 
     barrier()
-    var start: UInt32
-    var end: UInt32
     # For intra-warp overlap, we initiate wgmmas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
@@ -1288,12 +1286,12 @@ fn _mha_sm90[
             )
 
         startend = position.get_start_and_end_for_partitions[BN=BN](partition)
-        start = startend[0]
-        end = startend[1]
+        var kv_tile_start_row: UInt32 = startend[0]
+        var end: UInt32 = startend[1]
 
         @parameter
         if decoding and PartitionType.do_partition:
-            if start >= end:
+            if kv_tile_start_row >= end:
                 if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
@@ -1309,7 +1307,6 @@ fn _mha_sm90[
                 write_output(position, q_pipeline_state.index(), rowsum)
                 return
 
-        var kv_tile_start_row: UInt32 = start
         var mask_status: TileMaskStatus
         while True:
             mask_status = position.mask_status(mask, kv_tile_start_row)
