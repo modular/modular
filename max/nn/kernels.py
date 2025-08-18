@@ -38,11 +38,7 @@ from .attention.mask_config import (
     MHAMaskVariant,
     PositionalEncodingVariant,
 )
-from .kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheCollection,
-)
+from .kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheCollection
 
 _MHA_MASK_CONFIG_DICT = {
     MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
@@ -815,6 +811,7 @@ def flash_attention_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    sink_weights: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -827,6 +824,17 @@ def flash_attention_ragged(
     Note that this is self attention and the KV sequence length is
     assumed to be equal to the Q sequence length.
     For KV sequence length != Q sequence length, use `cross_attention_ragged`.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape [total_seq_len, hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each batch in the input tensor with shape [batch_size + 1].
+        kv_collection: PagedKVCacheCollection object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have dtype uint32.
+        mask_variant: MHAMaskVariant specifying the type of attention mask to use.
+        scale: float value used to scale the attention scores.
+        local_window_size: int specifying the size of the local attention window, default is -1 for no local window.
+        sink_weights: Optional tensor of shape [num_heads] containing learnable sink weights for each attention head.
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -855,6 +863,20 @@ def flash_attention_ragged(
         msg = f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
+    if sink_weights is not None:
+        if sink_weights.rank != 1:
+            msg = (
+                f"expected sink_weights to have rank 1, got {sink_weights.rank}"
+            )
+            raise ValueError(msg)
+        num_attention_heads = input.shape[1]
+        if sink_weights.shape[0] != num_attention_heads:
+            msg = (
+                f"expected sink_weights to have shape [{num_attention_heads}], "
+                f"got {sink_weights.shape}"
+            )
+            raise ValueError(msg)
+
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
@@ -865,7 +887,12 @@ def flash_attention_ragged(
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+
+    # Select kernel based on whether sink_weights is provided
     op_name = f"mo.mha.ragged.{cache_strategy_str}"
+
+    if sink_weights is not None:
+        op_name += ".sink_weights"
 
     parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
     parameters["score_mod_str"] = (
@@ -873,17 +900,21 @@ def flash_attention_ragged(
     )
     parameters["local_window_size"] = local_window_size
 
+    values: MutableSequence[Value] = [
+        input,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        # NOTE: The scale argument to flash attention is constrained to float32.
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    if sink_weights is not None:
+        values.append(sink_weights)
+
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=[
-            input,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device

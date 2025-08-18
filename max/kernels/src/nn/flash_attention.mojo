@@ -25,6 +25,7 @@ from algorithm.reduction import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
@@ -570,9 +571,15 @@ struct _FlashAttention[
         count_n: Int,
         kv_seq_cnt: Int,
         scale: Float32,
+        sink_weight: Optional[Scalar[dtype]] = None,
     ):
         var qk_row_ptr = qk_block_ptr
         var o_row_ptr = o_block_ptr
+
+        var sink_logit: Scalar[dtype] = 0
+        var do_sink = sink_weight is not None
+        if do_sink:
+            sink_logit = sink_weight.value()
 
         for m in range(count_m):
             var qk_row = NDBuffer[dtype, 1](qk_row_ptr, kv_seq_cnt)
@@ -600,6 +607,9 @@ struct _FlashAttention[
                 _simd_max,
             ](qk_row, max_vals[m])
 
+            if do_sink:
+                max_val = max(max_val, sink_logit)
+
             @parameter
             @always_inline
             fn pass2_input_gen_fn[
@@ -621,6 +631,9 @@ struct _FlashAttention[
                 _simd_sum_elementwise,
                 _simd_sum,
             ](qk_row, 0)
+
+            if do_sink:
+                accum_val += exp(sink_logit - max_val)
 
             var fixup_val = exp(max_vals[m] - max_val)
 
@@ -648,6 +661,7 @@ struct _FlashAttention[
         # Max sequence length of query states.
         max_seq_len: Int,
         scale: Float32,
+        sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
 
@@ -672,6 +686,7 @@ struct _FlashAttention[
             depth_dim,
             max_seq_len,
             num_heads,
+            sink_weights,
         )
         @parameter
         fn task_func(task_id: Int):
@@ -801,6 +816,10 @@ struct _FlashAttention[
                             kv_cache_len,
                         )
 
+                    var sink_weight: Optional[Scalar[dtype]] = None
+                    if sink_weights:
+                        sink_weight = sink_weights.value()[head]
+
                     Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
                         o_block_ptr,
@@ -810,6 +829,7 @@ struct _FlashAttention[
                         count_n,
                         kv_seq_cnt,
                         scale,
+                        sink_weight,
                     )
 
                     @parameter
@@ -879,6 +899,7 @@ fn _flash_attention[
     mask_shape: IndexList[mask_rank],
     output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     var num_batches = output.dim[0]()
     var max_seq_len = output.dim[1]()
@@ -934,7 +955,15 @@ fn _flash_attention[
         q_length_fn,
         kv_cache_length_fn,
         output.shape,
-    ].run(num_batches, num_heads, depth_dim, num_kv_heads, max_seq_len, scale)
+    ].run(
+        num_batches,
+        num_heads,
+        depth_dim,
+        num_kv_heads,
+        max_seq_len,
+        scale,
+        sink_weights,
+    )
 
 
 fn flash_attention[
@@ -957,6 +986,7 @@ fn flash_attention[
     mask_shape: IndexList[mask_rank],
     output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
@@ -965,6 +995,7 @@ fn flash_attention[
         mask_shape,
         output,
         scale,
+        sink_weights,
     )
 
 
@@ -1123,6 +1154,7 @@ fn _flash_attention_kv_cache[
     v: cache_t,
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     alias kv_params = cache_t.kv_params
 
@@ -1157,7 +1189,7 @@ fn _flash_attention_kv_cache[
         mask_fn=mask_fn,
         mask_rank=mask_rank,
         output_shape=output_shape,
-    ](k, v, num_batches, num_heads, max_seq_len, scale)
+    ](k, v, num_batches, num_heads, max_seq_len, scale, sink_weights)
 
 
 @always_inline
@@ -1182,6 +1214,7 @@ fn _flash_attention_kv_cache[
     num_heads: Int,
     max_seq_len: Int,
     scale: Float32,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     alias num_kv_heads = cache_t.kv_params.num_heads
     alias depth_dim = cache_t.kv_params.head_size
@@ -1230,7 +1263,15 @@ fn _flash_attention_kv_cache[
         kv_length_fn,
         kv_cache_length_fn,
         output_shape,
-    ].run(num_batches, num_heads, depth_dim, num_kv_heads, max_seq_len, scale)
+    ].run(
+        num_batches,
+        num_heads,
+        depth_dim,
+        num_kv_heads,
+        max_seq_len,
+        scale,
+        sink_weights,
+    )
 
 
 fn flash_attention_kv_cache[
@@ -1242,6 +1283,7 @@ fn flash_attention_kv_cache[
     mask: NDBuffer[dtype, *_],
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     @always_inline
     @parameter
@@ -1254,7 +1296,9 @@ fn flash_attention_kv_cache[
     ) -> SIMD[dtype, simd_width]:
         return score_vec + mask.load[width=simd_width](idx)
 
-    _flash_attention_kv_cache[mask_fn, mask.rank](q, k, v, scale, output)
+    _flash_attention_kv_cache[mask_fn, mask.rank](
+        q, k, v, scale, output, sink_weights
+    )
 
 
 fn flash_attention_kv_cache[
@@ -1268,6 +1312,7 @@ fn flash_attention_kv_cache[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     @always_inline
     @parameter
@@ -1284,7 +1329,7 @@ fn flash_attention_kv_cache[
             Index(idx[0], idx[1], idx[2] + kv_cache_len, idx[3]), score_vec
         )
 
-    _flash_attention_kv_cache[mask_fn, 4](q, k, v, scale, output)
+    _flash_attention_kv_cache[mask_fn, 4](q, k, v, scale, output, sink_weights)
 
 
 fn flash_attention_kv_cache[
@@ -1300,6 +1345,7 @@ fn flash_attention_kv_cache[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 3, *_],
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ):
     """Entrypoint for ragged tensors."""
 
@@ -1363,4 +1409,4 @@ fn flash_attention_kv_cache[
         mask_fn,
         mask_rank,
         output_shape,
-    ](k, v, num_batches, num_heads, Int(max_seq_len), scale)
+    ](k, v, num_batches, num_heads, Int(max_seq_len), scale, sink_weights)

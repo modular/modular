@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, recip
+from math import ceildiv, exp2, recip
 from math.constants import log2e
 from sys import alignof, env_get_int, simdwidthof, sizeof
 
@@ -106,6 +106,7 @@ fn mha_sm90_dispatch[
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
+    sink: Bool,
     _is_cache_length_accurate: Bool,
 ](
     output: UnsafePointer[Scalar[output_type]],
@@ -125,6 +126,7 @@ fn mha_sm90_dispatch[
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ) raises:
     constrained[
         config.type == KVType.dtype and config.type == q_type,
@@ -209,6 +211,7 @@ fn mha_sm90_dispatch[
             group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
+            sink=sink,
             _is_cache_length_accurate=_is_cache_length_accurate,
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
@@ -233,6 +236,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     partition,
                     mask_functor,
                     score_mod_functor,
@@ -255,6 +259,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     mask_functor,
                     score_mod_functor,
                     grid_dim=SchedulerType.grid_dim(batch_size, block_x),
@@ -281,6 +286,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     partition,
                     mask_functor,
                     score_mod_functor,
@@ -304,6 +310,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     mask_functor,
                     score_mod_functor,
                     grid_dim=SchedulerType.grid_dim(batch_size, block_x),
@@ -331,6 +338,7 @@ fn mha_sm90_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             swizzle_mode=swizzle_mode,
+            sink=sink,
         ]
         var scheduler: SchedulerType = SchedulerType()
 
@@ -350,6 +358,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     partition,
                     mask_functor,
                     score_mod_functor,
@@ -373,6 +382,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     mask_functor,
                     score_mod_functor,
                     scheduler,
@@ -399,6 +409,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     partition,
                     mask_functor,
                     score_mod_functor,
@@ -423,6 +434,7 @@ fn mha_sm90_dispatch[
                     max_cache_valid_length,
                     valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
+                    sink_weights,
                     mask_functor,
                     score_mod_functor,
                     scheduler,
@@ -451,6 +463,7 @@ fn mha_sm90_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             swizzle_mode=swizzle_mode,
+            sink=sink,
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
             UInt32(H100.sm_count)
@@ -481,6 +494,7 @@ fn mha_sm90_dispatch[
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
+                    sink_weights,
                     partition,
                     rebind[MaskType](mask_functor),
                     rebind[ScoreModType](score_mod_functor),
@@ -506,6 +520,7 @@ fn mha_sm90_dispatch[
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
+                    sink_weights,
                     rebind[MaskType](mask_functor),
                     rebind[ScoreModType](score_mod_functor),
                     grid_dim=SchedulerType.grid_dim(batch_size, block_x),
@@ -534,6 +549,7 @@ fn mha_sm90_dispatch[
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
+                    sink_weights,
                     partition,
                     rebind[MaskType](mask_functor),
                     rebind[ScoreModType](score_mod_functor),
@@ -560,6 +576,7 @@ fn mha_sm90_dispatch[
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
+                    sink_weights,
                     rebind[MaskType](mask_functor),
                     rebind[ScoreModType](score_mod_functor),
                     grid_dim=SchedulerType.grid_dim(batch_size, block_x),
@@ -590,6 +607,7 @@ fn _mha_sm90[
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
+    sink: Bool,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
@@ -629,6 +647,7 @@ fn _mha_sm90[
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
+    sink_weights: OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]],
     partition: PartitionType,
     mask: MaskType,
     score_mod: ScoreModType,
@@ -823,6 +842,17 @@ fn _mha_sm90[
     alias kv_num_heads = num_heads // group
 
     alias mma_thread_layout = Layout.row_major(8, 4)
+
+    # Handle sink_weights
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
+
+    @parameter
+    if sink:
+        debug_assert(
+            Bool(sink_weights),
+            "expect sink_weights to be non-null when sink=true",
+        )
+        sink_weights_ptr = sink_weights.value().data
 
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     consumed_mbar_kv = produced_mbar_kv + pipeline_stages
@@ -1301,12 +1331,47 @@ fn _mha_sm90[
         wait_for_q_mul_k[0](read_idx_q)
 
         apply_mask(position, mask_status, kv_tile_start_row)
-        rowmax.copy_from(
-            _rowmax_online_softmax[1, mma_thread_layout, use_exp2=True](
-                vectorize_p_reg_tile(), rowmax, init_rowmax=True
-            )
+
+        # Compute initial rowmax
+        var attention_rowmax = _rowmax_online_softmax[
+            # threads layout by warp
+            1,
+            mma_thread_layout,
+            use_exp2=True,
+        ](vectorize_p_reg_tile(), rowmax, init_rowmax=True)
+
+        # Include sink_weights in rowmax computation if present
+        @parameter
+        if sink:
+            var head_idx = position.head_idx
+            var sink_weight = sink_weights_ptr[head_idx]
+
+            @parameter
+            for i in range(num_rows_per_warp):
+                attention_rowmax[i] = max(
+                    attention_rowmax[i], sink_weight.cast[accum_type]()
+                )
+
+        rowmax.copy_from(attention_rowmax)
+
+        # Compute rowsum
+        var attention_rowsum = _rowsum[mma_thread_layout](
+            vectorize_p_reg_tile()
         )
-        rowsum.copy_from(_rowsum[mma_thread_layout](vectorize_p_reg_tile()))
+
+        # Add sink weight contribution to rowsum
+        @parameter
+        if sink:
+            var head_idx = position.head_idx
+            var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
+
+            @parameter
+            for i in range(num_rows_per_warp):
+                # Compute exp2((sink_weight - rowmax[i]) * log2e)
+                var sink_contribution = exp2((sink_weight - rowmax[i]) * log2e)
+                attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
+
+        rowsum.copy_from(attention_rowsum)
 
         var position_prev: PositionType = position
         var q_idx_old: UInt32 = q_pipeline_state.index()
@@ -1365,12 +1430,27 @@ fn _mha_sm90[
 
                 apply_mask(position, mask_status, kv_tile_start_row)
                 new_q = persistent and q_idx_old != q_pipeline_state.index()
-                score_frag_rowmax = _rowmax_online_softmax[
+                # Compute rowmax for current scores
+                var current_rowmax = _rowmax_online_softmax[
                     # threads layout by warp
                     1,
                     mma_thread_layout,
                     use_exp2=True,
                 ](vectorize_p_reg_tile(), rowmax, new_q)
+
+                # Include sink_weights in rowmax if present
+                @parameter
+                if sink:
+                    var head_idx = position.head_idx
+                    var sink_weight = sink_weights_ptr[head_idx]
+
+                    @parameter
+                    for i in range(num_rows_per_warp):
+                        current_rowmax[i] = max(
+                            current_rowmax[i], sink_weight.cast[accum_type]()
+                        )
+
+                score_frag_rowmax = current_rowmax
                 if new_q:
 
                     @parameter
@@ -1440,6 +1520,25 @@ fn _mha_sm90[
                     score_frag_rowsum = rebind[__type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
+
+                    # Add sink weight contribution to score_frag_rowsum
+                    @parameter
+                    if sink:
+                        var head_idx = position.head_idx
+                        var sink_weight = sink_weights_ptr[head_idx].cast[
+                            accum_type
+                        ]()
+
+                        @parameter
+                        for i in range(num_rows_per_warp):
+                            # Compute exp2((sink_weight - rowmax[i]) * log2e)
+                            var sink_contribution = exp2(
+                                (sink_weight - rowmax[i]) * log2e
+                            )
+                            score_frag_rowsum[i] = (
+                                score_frag_rowsum[i] + sink_contribution
+                            )
+
                     _online_softmax_correction[use_exp2=True](
                         rowmax, score_frag_rowmax
                     )

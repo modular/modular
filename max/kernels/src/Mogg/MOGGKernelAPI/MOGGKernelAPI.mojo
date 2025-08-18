@@ -152,6 +152,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_continuous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
@@ -6783,6 +6784,52 @@ struct Struct_mha_ragged_paged:
             scale,
             managed_tensor_slice_to_ndbuffer(output),
             context,
+        )
+
+
+@compiler.register("mo.mha.ragged.paged.sink_weights")
+struct Struct_mha_ragged_paged_sink_weights:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        sink_weights: InputTensor[dtype=dtype, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        var sink_buf = managed_tensor_slice_to_ndbuffer(sink_weights)
+
+        generic_flash_attention_kv_cache_ragged_sink[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+        ](
+            managed_tensor_slice_to_ndbuffer(q),
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            managed_tensor_slice_to_ndbuffer(output),
+            context,
+            sink_buf,
         )
 
 

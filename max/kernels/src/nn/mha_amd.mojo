@@ -16,6 +16,7 @@ from math import ceildiv, recip
 from math.constants import log2e
 from sys import alignof, simdwidthof, sizeof
 from sys.intrinsics import readfirstlane
+from buffer import NDBuffer
 
 from algorithm.functional import unswitch
 from gpu import (
@@ -1235,6 +1236,8 @@ fn mha_single_batch_amd[
     mask_t: MHAMask,
     group: Int,
     config: MHAConfig,
+    sink: Bool = False,
+    sink_type: DType = output_type,
 ](
     output: UnsafePointer[Scalar[output_type],],
     q: UnsafePointer[Scalar[q_type],],
@@ -1246,6 +1249,7 @@ fn mha_single_batch_amd[
     batch_idx: Int,
     start_pos: Int,
     mask: mask_t,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ):
     alias token_gen = False
     alias BM = config.block_m()
@@ -1293,6 +1297,8 @@ fn mha_single_batch_amd[
 
     var q_tile_idx = block_idx.x
 
+    var q_head_idx = block_idx.y
+
     var gmem_manager = GlobalMemoryManager[
         q_type, BM, BN, BK, depth, num_heads, group, token_gen
     ](q_tile_idx, kv_head_idx, seq_len)
@@ -1306,15 +1312,27 @@ fn mha_single_batch_amd[
         .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
         .local()
         .alloc()
-        .fill(min_or_neg_inf[accum_type]())
     )
     var rowsum = (
         tb[accum_type]()
         .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
         .local()
         .alloc()
-        .fill(0)
     )
+
+    @parameter
+    if sink:
+        debug_assert(
+            Bool(sink_weights),
+            "expect sink_weights to be non-null when sink=true",
+        )
+        rowmax = rowmax.fill(
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        )
+        rowsum = rowsum.fill(1)
+    else:
+        rowmax = rowmax.fill(min_or_neg_inf[accum_type]())
+        rowsum = rowsum.fill(0)
 
     var smem_manager = SharedMemoryManager[
         q_type, BM, BN, BK, depth, num_warps_n, token_gen
@@ -1744,6 +1762,7 @@ fn mha_decoding_single_batch_amd[
     mask_t: MHAMask,
     group: Int,
     config: MHAConfig,
+    sink: Bool = False,
 ](
     output: UnsafePointer[Scalar[output_type],],
     q: UnsafePointer[Scalar[q_type],],
@@ -1758,6 +1777,7 @@ fn mha_decoding_single_batch_amd[
     batch_idx: Int,
     start_pos: Int,
     mask: mask_t,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ):
     alias token_gen = True
 
@@ -1808,7 +1828,12 @@ fn mha_decoding_single_batch_amd[
 
     var kv_head_idx = block_idx.y
 
+    alias rowwise_stride = fragment_layout.shape[0].value()
     var q_tile_idx = 0
+    var lane = lane_id()
+    var coords = idx2crd[warp_layout](lane)
+    var group_idx = coords[0] * rowwise_stride
+    var q_head_idx = block_idx.y * group + group_idx
 
     var gmem_manager = GlobalMemoryManager[
         q_type, BM, BN, BK, depth, num_heads, group, token_gen
@@ -1823,15 +1848,27 @@ fn mha_decoding_single_batch_amd[
         .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
         .local()
         .alloc()
-        .fill(min_or_neg_inf[accum_type]())
     )
     var rowsum = (
         tb[accum_type]()
         .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
         .local()
         .alloc()
-        .fill(0)
     )
+
+    @parameter
+    if sink:
+        debug_assert(
+            Bool(sink_weights),
+            "expect sink_weights to be non-null when sink=true",
+        )
+        rowmax = rowmax.fill(
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        )
+        rowsum = rowsum.fill(1)
+    else:
+        rowmax = rowmax.fill(min_or_neg_inf[accum_type]())
+        rowsum = rowsum.fill(0)
 
     var smem_manager = SharedMemoryManager[
         q_type, BM, BN, BK, depth, num_warps_n, token_gen
@@ -2112,7 +2149,7 @@ fn mha_decoding_single_batch_amd[
         if thread_idx.x < group:
             var row_sum = rowsum[0, 0][0]
             var row_max = rowmax[0, 0][0]
-            var q_head_idx = kv_head_idx * group + thread_idx.x
+
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
