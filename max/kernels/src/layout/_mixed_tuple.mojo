@@ -18,7 +18,7 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 
-trait MixedIntTupleLike(Copyable, Movable):
+trait MixedIntTupleLike(Copyable, Movable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     # Note that unlike the __len__() from Sized, this is a static method.
@@ -39,6 +39,10 @@ trait MixedIntTupleLike(Copyable, Movable):
     @staticmethod
     fn is_value() -> Bool:
         """Check if this type is a value."""
+        ...
+
+    fn __repr__(self) -> String:
+        """Get the string representation of this type."""
         ...
 
     fn value(self) -> Int:
@@ -87,6 +91,9 @@ struct ComptimeInt[val: Int](MixedIntTupleLike):
     @always_inline("nodebug")
     fn __len__() -> Int:
         return 1
+
+    fn __repr__(self) -> String:
+        return String("ComptimeInt[", self.value(), "]()")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
@@ -139,6 +146,10 @@ struct RuntimeInt[dtype: DType = DType.index](MixedIntTupleLike):
     @always_inline("nodebug")
     fn __len__() -> Int:
         return 1
+
+    @always_inline("nodebug")
+    fn __repr__(self) -> String:
+        return String("RuntimeInt(", self.value(), ")")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
@@ -275,6 +286,17 @@ struct MixedIntTuple[*element_types: MixedIntTupleLike](
 
         alias result = stdlib.builtin.variadic_size(element_types)
         return result
+
+    @always_inline("nodebug")
+    fn __repr__(self) -> String:
+        var result = String("MixedIntTuple(")
+
+        @parameter
+        for i in range(Self.__len__()):
+            result += self[i].__repr__()
+            if i < Self.__len__() - 1:
+                result += String(", ")
+        return result + String(")")
 
     fn __len__(self) -> Int:
         """Get the length of the tuple.
