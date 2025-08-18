@@ -31,6 +31,11 @@ def test_init():
     assert_equal(z.im, SIMD[DType.float32, 2](0, 0))
 
 
+def test_conj():
+    var x = ComplexFloat32(1, 2)
+    assert_equal(x.conj(), ComplexFloat32(1, -2))
+
+
 def test_math():
     var x = ComplexFloat32(1, 2)
     var y = ComplexFloat32(3, 4)
@@ -102,6 +107,7 @@ def test_exp():
 
 def main():
     test_init()
+    test_conj()
     test_math()
     test_abs()
     test_complex_str()
