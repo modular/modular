@@ -42,6 +42,10 @@ archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-dyDq75IMEe6pwZtY/VWns0gaqW1d+mr9Q9Q2VRWBHcw=",
     strip_prefix = "rules_mojo-5d9057d3148126748d4cd62d94b52065c7be1c73",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:rules_mojo_wheel_fetch.patch",
+    ],
     urls = [
         "https://github.com/modular/rules_mojo/archive/5d9057d3148126748d4cd62d94b52065c7be1c73.tar.gz",
     ],

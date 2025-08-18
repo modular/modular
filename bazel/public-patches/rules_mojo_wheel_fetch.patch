@@ -1,0 +1,47 @@
+diff --git a/mojo/extensions.bzl b/mojo/extensions.bzl
+index f6e1d91..4c77396 100644
+--- a/mojo/extensions.bzl
++++ b/mojo/extensions.bzl
+@@ -29,8 +29,10 @@ _NULL_SHAS = {
+ }
+ 
+ def _mojo_toolchain_impl(rctx):
++    base_url = rctx.attr.base_url or "https://dl.modular.com/public/nightly/python"
+     rctx.download_and_extract(
+-        url = rctx.attr.url_override or "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
++        url = "{}/max-{}-py3-none-{}.whl".format(
++            base_url,
+             rctx.attr.version,
+             _PLATFORM_MAPPINGS[rctx.attr.platform],
+         ),
+@@ -60,8 +62,8 @@ _mojo_toolchain_repository = repository_rule(
+             values = _PLATFORMS,
+             mandatory = True,
+         ),
+-        "url_override": attr.string(
+-            doc = "Override the download URL for the prebuilt package.",
++        "base_url": attr.string(
++            doc = "Override the base download URL for the prebuilt package.",
+             default = "",
+         ),
+         "use_prebuilt_packages": attr.bool(
+@@ -115,7 +117,7 @@ def _setup_toolchains(root_module, rules_mojo_module):
+             name = name,
+             version = tags.version,
+             platform = platform,
+-            url_override = tags.url_override,
++            base_url = tags.base_url,
+             use_prebuilt_packages = tags.use_prebuilt_packages,
+         )
+ 
+@@ -165,8 +167,8 @@ _toolchain_tag = tag_class(
+             doc = "The version of the Mojo toolchain to download.",
+             default = _DEFAULT_VERSION,
+         ),
+-        "url_override": attr.string(
+-            doc = "Override the download URL for the prebuilt package.",
++        "base_url": attr.string(
++            doc = "Override the base download URL for the prebuilt package.",
+             default = "",
+         ),
+         "use_prebuilt_packages": attr.bool(
