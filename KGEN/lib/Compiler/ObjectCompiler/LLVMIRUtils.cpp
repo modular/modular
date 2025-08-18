@@ -307,6 +307,8 @@ static unsigned getGPUSharedAddressSpace(const llvm::Triple &triple) {
     return mlir::NVVM::kSharedMemorySpace;
   if (triple.isAMDGPU())
     return mlir::ROCDL::ROCDLDialect::kSharedMemoryAddressSpace;
+  if (isMetalTriple(triple))
+    return MetalAddressSpace::ThreadGroup;
   llvm_unreachable(
       ("GPU shared AddressSpace not defined for target " + triple.str())
           .c_str());
