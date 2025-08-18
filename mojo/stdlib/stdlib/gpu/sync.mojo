@@ -192,7 +192,6 @@ struct AMDScheduleBarrierMask(Intable):
     alias TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
-    @implicit
     fn __init__(out self, value: Int):
         """Initializes an `AMDScheduleBarrierMask` from an integer value.
 

@@ -173,7 +173,6 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Scalar[dtype]):
         """Constructs a new atomic value.
 

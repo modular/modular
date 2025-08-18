@@ -52,7 +52,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @implicit
     fn __init__(out self, *ts: T, __set_literal__: () = ()):
         """Construct a set from initial elements.
 
@@ -67,7 +66,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             self.add(t)
 
     # TODO: Should take the list owned so we can transfer the elements out.
-    @implicit
     fn __init__(out self, elements: List[T, *_]):
         """Construct a set from a List of elements.
 

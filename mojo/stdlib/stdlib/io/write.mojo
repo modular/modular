@@ -232,7 +232,6 @@ struct _WriteBufferStack[
     var pos: Int
     var writer: Pointer[W, origin]
 
-    @implicit
     fn __init__(out self, ref [origin]writer: W):
         self.data = InlineArray[UInt8, Int(stack_buffer_bytes)](
             uninitialized=True

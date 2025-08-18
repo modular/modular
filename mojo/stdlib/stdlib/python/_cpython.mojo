@@ -239,7 +239,6 @@ struct PythonVersion(Copyable, Movable):
     var patch: Int
     """The patch version number."""
 
-    @implicit
     fn __init__(out self, version: StringSlice):
         """Initialize a PythonVersion object from a version string.
 

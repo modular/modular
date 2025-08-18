@@ -229,7 +229,6 @@ struct DType(
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Self.type):
         """Construct a DType from MLIR dtype.
 
@@ -403,9 +402,10 @@ struct DType(
     @staticmethod
     @always_inline("nodebug")
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
-        return __mlir_op.`pop.dtype.from_ui8`(
+        var res = __mlir_op.`pop.dtype.from_ui8`(
             __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
         )
+        return DType(res)
 
     @doc_private
     @always_inline("nodebug")

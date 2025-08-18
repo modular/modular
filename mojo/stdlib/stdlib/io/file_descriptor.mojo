@@ -51,7 +51,6 @@ struct FileDescriptor(Writer):
         """
         self.value = value
 
-    @implicit
     fn __init__(out self, f: FileHandle):
         """Constructs the file descriptor from a file handle.
 
