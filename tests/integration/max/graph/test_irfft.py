@@ -74,10 +74,10 @@ def test_irfft(
     normalization: str,
     input_is_complex: bool,
 ) -> None:
-    if md.accelerator_count() == 0:
-        pytest.skip("No GPU available")
-    if md.accelerator_api() != "cuda":
-        pytest.skip("NVIDIA GPUs are required for this test.")
+    assert md.accelerator_count() > 0, "No GPU available"
+    assert md.accelerator_api() == "cuda", (
+        "NVIDIA GPUs are required for this test."
+    )
     dtype = torch.complex64 if input_is_complex else torch.float32
     input_tensor = torch.randn(*input_shape, dtype=dtype).to("cuda")
     max_out = max_irfft(
