@@ -47,8 +47,8 @@ def _rebuild_wheel(rctx):
 # be removed so that they're not accidentally used when testing changes that
 # depend on some closed-source portions of the wheel.
 _OPEN_SOURCE_GLOBS = [
-    "*/platlib/lib/mojo/*",
-    "max/entrypoints/*",
+    "*/platlib/max/lib/mojo/*",
+    "max/entrypoints/**",
     "max/graph/**",
     "max/nn/**",
     "max/pipelines/**",
