@@ -9,6 +9,4 @@ tests = "./stdlib/scripts/run-tests.sh"
 format = "mojo format ./stdlib"
 
 [dependencies]
-python = ">=3.9,<3.14"
-lit = "*"
 mojo = "*"
