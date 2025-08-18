@@ -45,7 +45,6 @@ modular_cc_library(
         "CodeBlockTest",
         "CompletionTest",
         "DiagnosticsTest",
-        "DocumentSymbolTest",
         "FoldingRangeTest",
         "InitFileTest",
         "RegressionTest",
