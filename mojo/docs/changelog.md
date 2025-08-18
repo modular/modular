@@ -148,6 +148,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   instead. A new `qualified_builtins` flag also allows users to control the
   verbosity for the most common (but not all) builtin types.
 
+- Add `repr` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`, `Set`.
+  [PR #5189](https://github.com/modular/modular/pull/5189) by rd4com.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will

@@ -576,6 +576,11 @@ def test_iter():
         i -= 1
 
 
+def test_repr_wrap():
+    var l1 = LinkedList[Int](1, 2, 3)
+    assert_equal(repr(l1), "LinkedList(1, 2, 3)")
+
+
 def main():
     test_construction()
     test_linkedlist_literal()
@@ -608,3 +613,4 @@ def main():
     test_list_insert()
     test_list_eq_ne()
     test_iter()
+    test_repr_wrap()
