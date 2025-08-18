@@ -83,6 +83,35 @@ fn named_barrier[
 
 
 @always_inline("nodebug")
+fn named_barrier_arrive[
+    num_threads: Int32,
+](id: Int32 = 0):
+    """Arrives at a named synchronization barrier at the block level.
+
+    This function marks the arrival of a named synchronization barrier point using a specific barrier ID.
+
+    Parameters:
+        num_threads: The number of threads that must reach the barrier before any can proceed.
+
+    Args:
+        id: The barrier identifier (0-16). Default is 0.
+
+    Notes:
+        - Only supported on NVIDIA GPUs.
+        - Maps directly to the `nvvm.barrier.arrive` instruction.
+        - Useful for fine-grained synchronization when different subsets of threads
+          need to synchronize independently.
+        - The barrier ID must not exceed 16.
+        - All threads participating in the barrier must specify the same num_threads value.
+    """
+    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    constrained[
+        is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
+    ]()
+    __mlir_op.`nvvm.barrier.arrive`(to_i32(id), to_i32(num_threads))
+
+
+@always_inline("nodebug")
 fn barrier():
     """Performs a synchronization barrier at the block level.
 

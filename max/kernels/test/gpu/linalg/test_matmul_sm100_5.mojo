@@ -18,7 +18,12 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout.layout_tensor import LayoutTensorIter
 from gpu import WARP_SIZE, barrier
-from gpu.sync import named_barrier, syncwarp, umma_arrive_leader_cta
+from gpu.sync import (
+    named_barrier,
+    named_barrier_arrive,
+    syncwarp,
+    umma_arrive_leader_cta,
+)
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -724,9 +729,11 @@ fn blackwell_tma_pair_umma_kernel[
         clc_throttle_empty_mbar_ptr + num_clc_pipeline_stages
     ).bitcast[Int128]()
 
-    var ptr_tmem_addr = (clc_response_ptr + num_clc_pipeline_stages).bitcast[
-        UInt32
-    ]()
+    var tmem_dealloc_mbar_ptr = (
+        clc_response_ptr + num_clc_pipeline_stages
+    ).bitcast[Int64]()
+
+    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
@@ -735,6 +742,7 @@ fn blackwell_tma_pair_umma_kernel[
     clc_response = clc_response_ptr.bitcast[UInt128]()
     clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
         SharedMemBarrier
     ]()
@@ -751,9 +759,6 @@ fn blackwell_tma_pair_umma_kernel[
     var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
-    if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
-
     if elect_one_warp and elect_one_thread:
 
         @parameter
@@ -768,6 +773,8 @@ fn blackwell_tma_pair_umma_kernel[
         for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
             accum_empty_mbar[i].init(accum_pipeline_consumer_arv_count)
+
+        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * cta_group)
 
     @parameter
     for i in range(num_clc_pipeline_stages):
@@ -798,8 +805,6 @@ fn blackwell_tma_pair_umma_kernel[
     var accum_pipeline_consumer_state = PipelineState[
         num_accum_pipeline_stages
     ]()
-
-    tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -940,6 +945,12 @@ fn blackwell_tma_pair_umma_kernel[
             clc_pipe_producer_state.step()
 
     if WarpRole.is_mma():
+        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        syncwarp()
+        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+
+        tmem_addr = ptr_tmem_addr[0]
+
         while work_info.is_valid():
             # scheduler fetch next work
             next_work_info = scheduler.fetch_next_work(
@@ -983,7 +994,17 @@ fn blackwell_tma_pair_umma_kernel[
                 accum_pipeline_producer_state.step()
             work_info = next_work_info
 
+        tcgen05_release_allocation_lock[cta_group]()
+
+        # wait for epilogue to finish
+        tmem_dealloc_mbar[].wait()
+
+        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+
     if WarpRole.is_epilogue():
+        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        tmem_addr = ptr_tmem_addr[0]
+
         while work_info.is_valid():
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
@@ -1014,9 +1035,8 @@ fn blackwell_tma_pair_umma_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-    if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
+        _ = tmem_dealloc_mbar[].arrive()
 
 
 fn blackwell_matmul_tma_pair_mma[
@@ -1109,6 +1129,8 @@ fn blackwell_matmul_tma_pair_mma[
 
     alias tmem_addr_bytes = TMEM_ADDR_BYTES
 
+    alias tmem_dealloc_mbar_bytes = MBAR_BYTES
+
     alias clc_smem = (
         c_smem_bytes
         + accum_full_mbar_bytes
@@ -1119,6 +1141,7 @@ fn blackwell_matmul_tma_pair_mma[
         + clc_throttle_full_mbar_bytes
         + clc_throttle_empty_mbar_bytes
         + tmem_addr_bytes
+        + tmem_dealloc_mbar_bytes
     )
     alias smem_leftover = b200_smem - clc_smem
 
