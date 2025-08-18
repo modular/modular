@@ -811,12 +811,14 @@ ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
 }
 
 Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
+  // Install it in the symbol table and check for redefinition while doing so.
+  Operation *existing = shared.setResolvedDeclSymbol(funcOp);
   // Remember the mapping from its fully mangled symbol so we can find its AST
   // representation and body from IR references.
+  // NOTE: this has to run after `setResolvedDeclSymbol` as the call above might
+  // update the symbol name when there is a name collision.
   declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
-
-  // Install it in the symbol table and check for redefinition while doing so.
-  return shared.setResolvedDeclSymbol(funcOp);
+  return existing;
 }
 
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
