@@ -1,53 +1,44 @@
 """Define the Mojo toolchain"""
 
-MOJO_VERSION = "25.6.0.dev2025081705"
+PACKAGE_VERSION = "25.6.0.dev2025081805"
 
-# NOTE: Used internally when pushing new releases
-URL_OVERRIDE = ""
-
-MBLACK_URL_OVERRIDE = ""
+BASE_URL = "https://dl.modular.com/public/nightly/python"
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
-    url_override = URL_OVERRIDE,
+    base_url = BASE_URL,
     use_prebuilt_packages = False,
-    version = MOJO_VERSION,
+    version = PACKAGE_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-_PLATFORM_MAPPINGS = {
-    "linux_aarch64": "manylinux_2_34_aarch64",
-    "linux_x86_64": "manylinux_2_34_x86_64",
-    "macos_arm64": "macosx_13_0_arm64",
-}
+rebuild_wheel = use_repo_rule("//bazel:modular_wheel_repository.bzl", "rebuild_wheel")
+
+_PLATFORMS = [
+    "linux_aarch64",
+    "linux_x86_64",
+    "macos_arm64",
+]
 
 [
-    http_file(
-        name = "modular_{}".format(platform),
-        downloaded_file_path = "max-{}-py3-none-{}.whl".format(
-            MOJO_VERSION,
-            _PLATFORM_MAPPINGS[platform],
-        ),
-        url = URL_OVERRIDE or "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
-            MOJO_VERSION,
-            _PLATFORM_MAPPINGS[platform],
-        ),
+    rebuild_wheel(
+        name = "module_platlib_" + platform,
+        base_url = BASE_URL,
+        platform = platform,
+        version = PACKAGE_VERSION,
     )
-    for platform in [
-        "linux_x86_64",
-        "linux_aarch64",
-        "macos_arm64",
-    ]
+    for platform in _PLATFORMS
 ]
 
 http_file(
     name = "mblack_wheel",
     downloaded_file_path = "mblack-{}-py3-none-any.whl".format(
-        MOJO_VERSION,
+        PACKAGE_VERSION,
     ),
-    url = MBLACK_URL_OVERRIDE or "https://dl.modular.com/public/nightly/python/mblack-{}-py3-none-any.whl".format(
-        MOJO_VERSION,
+    url = "{}/mblack-{}-py3-none-any.whl".format(
+        BASE_URL,
+        PACKAGE_VERSION,
     ),
 )
