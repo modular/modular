@@ -80,3 +80,14 @@ pkg_files(
     strip_prefix = strip_prefix.from_pkg(""),
     visibility = ["//visibility:public"],
 )
+
+pkg_files(
+    name = "yaml_files",
+    srcs = glob(
+        [
+            "**/*.yaml",
+        ],
+    ),
+    prefix = "benchmark",
+    visibility = ["//visibility:public"],
+)
