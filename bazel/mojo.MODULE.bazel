@@ -13,6 +13,7 @@ mojo.toolchain(
 use_repo(mojo, "mojo_toolchains")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
 rebuild_wheel = use_repo_rule("//bazel:modular_wheel_repository.bzl", "rebuild_wheel")
 
 _PLATFORMS = [
