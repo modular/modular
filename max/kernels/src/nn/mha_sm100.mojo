@@ -1509,7 +1509,7 @@ fn _mha_sm100[
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
-    sink_weights: OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[NDBuffer[KVLUTType.dtype, 1, MutableAnyOrigin]],
     partition: PartitionType,
     mask: MaskType,
     score_mod: ScoreModType,

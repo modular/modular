@@ -381,7 +381,7 @@ def test_flash_attention_with_sink_weights(ctx: DeviceContext):
 def main():
     seed(42)
     with DeviceContext() as ctx:
-        # execute_flash_attention_suite(ctx)
+        execute_flash_attention_suite(ctx)
 
         # Test sink weights functionality
         test_flash_attention_with_sink_weights(ctx)
