@@ -15,6 +15,9 @@
 from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from testing import assert_true
+from sys.info import _is_sm_100x_or_newer
+from gpu.host.info import B200, GPUInfo
+from sys.info import _accelerator_arch
 
 
 def test_operation[
@@ -34,6 +37,7 @@ def test_operation[
     # backend is using FMA and not falling back to widening the inputs to
     # float32.
     # sm_90 and later has wider support for bfloat16 operations.
+    # sm_100 has support for f32x2 add/sub/mul/fma.
     var prefix: String
 
     @parameter
@@ -45,6 +49,8 @@ def test_operation[
     @parameter
     if dtype is DType.float16:
         suffix = ".f16"
+    elif dtype is DType.float32:
+        suffix = ".f32"
     else:
         suffix = ".bf16"
 
@@ -98,11 +104,22 @@ def test_fma[dtype: DType]():
     ](x: SIMD[dtype, width], y: __type_of(x), z: __type_of(x)) -> __type_of(x):
         return x * y + z
 
+    fn fma_manual[
+        width: Int
+    ](x: SIMD[dtype, width], y: __type_of(x), z: __type_of(x)) -> __type_of(x):
+        return x.fma(y, z)
+
     @parameter
     if dtype is DType.bfloat16:
         assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
+
+    elif dtype is DType.float32:
+        assert_true("fma.rn.f32 " in _compile_code[fma_manual[width=1]]())
+        assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=2]]())
+        assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=8]]())
+
     else:
         assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]())
@@ -148,3 +165,11 @@ def main():
     test_fma[DType.float16]()
 
     test_cast()
+
+    alias device = GPUInfo.from_name[_accelerator_arch()]()
+
+    @parameter
+    if device == B200:
+        test_add[DType.float32, "sm_100"]()
+        test_mul[DType.float32, "sm_100"]()
+        test_fma[DType.float32]()
