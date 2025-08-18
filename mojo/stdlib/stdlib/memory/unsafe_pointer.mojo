@@ -381,7 +381,8 @@ struct UnsafePointer[
             The number of elements (of type T) between self and other.
         """
         var element_size = sizeof[T]()
-        return (self - other) / element_size
+        var byte_diff = self - other
+        return Int(byte_diff / element_size)
 
     @always_inline
     fn __iadd__[I: Indexer, //](mut self, offset: I):
