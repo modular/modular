@@ -12,7 +12,6 @@
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
-#include "motr/motr.h"
 
 namespace M::Mojo::LSP {
 /// Class used to dispatch a response to the client and perform telemetry at the

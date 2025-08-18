@@ -10,7 +10,6 @@
 #include "LSPServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
-#include "motr/motr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
@@ -23,8 +22,6 @@ using namespace M::KGEN::LIT;
 using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
-  MOTR_TraceProgramArgs(programTrace, "mojo-lsp-server", argc, argv);
-
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::PrettyStackTraceProgram x(argc, argv);
   llvm::setBugReportMsg(

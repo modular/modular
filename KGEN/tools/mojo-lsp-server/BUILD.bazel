@@ -22,7 +22,6 @@ modular_cc_binary(
         "//Support:Context",
         "//Support:Globals",
         "//Support:Telemetry",
-        "//Support/MOTR",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
     ],
