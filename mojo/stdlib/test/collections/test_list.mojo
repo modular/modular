@@ -982,6 +982,11 @@ def test_list_repr_wrap():
         repr(List[UInt8](0, 1)),
         "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
     )
+    var l = List(DType.int8, DType.int16)
+    assert_equal(
+        repr(l),
+        "[DType.int8, DType.int16]",
+    )
 
 
 # ===-------------------------------------------------------------------===#
