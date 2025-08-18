@@ -246,9 +246,11 @@ modular_shared_library(
         # this plugin.
         "@platforms//os:linux": [
             "-Wl,-z,undefs",
+            "-Wl,-rpath,$ORIGIN/../../lib",
         ],
         "@platforms//os:macos": [
             "-Wl,-undefined,dynamic_lookup",
+            "-Wl,-rpath,@loader_path/../../lib",
         ],
     }),
     local_defines = ["PLUGIN_UCX_CUDA"],
@@ -292,9 +294,11 @@ modular_shared_library(
         "@platforms//os:linux": [
             "-l:libibverbs.so.1",
             "-Wl,-z,undefs",
+            "-Wl,-rpath,$ORIGIN/../../lib",
         ],
         "@platforms//os:macos": [
             "-Wl,-undefined,dynamic_lookup",
+            "-Wl,-rpath,@loader_path/../../lib",
         ],
     }),
     local_defines = ["PLUGIN_UCX_CUDA"],
