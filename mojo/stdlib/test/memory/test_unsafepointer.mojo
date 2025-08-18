@@ -54,9 +54,7 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(0, value.move_count)
     ptr.init_pointee_move(value^)
 
-    # -----
     # Test that `UnsafePointer.move_pointee` performs exactly one move.
-    # -----
 
     assert_equal(1, ptr[].move_count)
 
@@ -201,9 +199,7 @@ def test_unsafepointer_aligned_alloc():
 # Test that `UnsafePointer.alloc()` no longer artificially extends the lifetime
 # of every local variable in methods where its used.
 def test_unsafepointer_alloc_origin():
-    # -----------------------------------------
     # Test with MutableAnyOrigin alloc() origin
-    # -----------------------------------------
 
     var did_del_1 = False
 
@@ -330,11 +326,8 @@ def test_offset():
     ptr2.free()
 
 
-# Test UnsafePointer subtraction with standard integer offsets
 def test_pointer_subtraction():
-    # -----------------------------------------
     # Basic pointer subtraction
-    # -----------------------------------------
 
     var ptr = UnsafePointer[Int].alloc(8)
     for i in range(8):
@@ -351,11 +344,8 @@ def test_pointer_subtraction():
     ptr.free()
 
 
-# Test UnsafePointer subtraction using SIMD and multiple integer types
 def test_pointer_subtraction_simd():
-    # -----------------------------------------
     # Allocate pointer for SIMD/indexed subtraction test
-    # -----------------------------------------
 
     var ptr = UnsafePointer[Int].alloc(8)
     for i in range(8):
