@@ -21,7 +21,6 @@
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/MapVector.h"
 
-#include "motr/motr.h"
 /// Define ordering operators for SMLoc for use in IntervalMap.
 namespace llvm {
 inline bool operator<(const SMLoc &lhs, const SMLoc &rhs) {

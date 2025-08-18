@@ -37,7 +37,6 @@
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
-#include "motr/motr.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -786,9 +785,6 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
         KGEN::CompilerTimeTraceScope traceScope(
             "parseDocument", [&]() { return getURIs().front().uri().str(); });
 
-        MOTR_Trace(parseDoc);
-        MOTR_TagStrViews("uri", getURIs().front().file());
-
         // If we've already been invalidated, bail out early.
         if (isInvalidated)
           return markDocumentParsed();
@@ -1178,7 +1174,6 @@ MojoDocument::getCodeActionsSync(SMRange range,
 void MojoDocument::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
     LSPResponder<lsp::CompletionList> responder) {
-  MOTR_Trace(onCodeCompletion);
   startTaskAfterParsing([uri, completePos, responder = std::move(responder)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -1222,8 +1217,6 @@ static ItemAccessKind getItemAccessKind(const lsp::CompletionItem &item) {
 lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
   if (!context)
     return lsp::CompletionList();
-
-  MOTR_Trace(onCodeCompletionSync);
 
   // Map the Mojo results to LSP results.
   lsp::CompletionList completionList;
@@ -1285,9 +1278,6 @@ void MojoDocument::onDefinition(
   startTaskAfterParsing(
       [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         LSPRESPONDER_SPAN(responder, "onDefinition");
-        MOTR_TagStrViews("position",
-                         llvm::formatv("{}:{}", pos.line, pos.character).str());
-
         if (doc.isInvalidated)
           return responder.replyOutdatedRequest();
         SMLoc loc = doc.getLocFromPos(uri, pos);
@@ -1298,8 +1288,6 @@ void MojoDocument::onDefinition(
 }
 
 std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
-  MOTR_Trace(onDefinitionSync);
-
   SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(loc);
   if (!symbolRef)
     return {};
@@ -1399,11 +1387,9 @@ void MojoDocument::getDocumentSymbols(
 void MojoDocument::onDocumentSymbol(
     const lsp::URIForFile &uri,
     LSPResponder<std::vector<lsp::DocumentSymbol>> responder) {
-  MOTR_TagStrViews("uri", uri.uri());
   startTaskAfterParsing(
       [uri, responder = std::move(responder)](MojoDocument &doc) mutable {
         LSPRESPONDER_SPAN(responder, "onDocumentSymbol");
-        MOTR_TagStr(motr::Constants::TraceName::cstr, "onDocumentSymbol");
         if (doc.isInvalidated)
           return responder.replyOutdatedRequest();
         responder.reply(doc.onDocumentSymbolSync(uri));
@@ -2050,12 +2036,10 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 
 std::vector<lsp::DocumentSymbol>
 MojoTextDocument::onDocumentSymbolSync(const lsp::URIForFile &uri) {
-  MOTR_Trace(textOnDocumentSymbolSync);
   if (!parsedDecl)
     return {};
   std::vector<lsp::DocumentSymbol> symbols;
   getDocumentSymbols(parsedDecl, symbols);
-  MOTR_TagInt("symbolCount", symbols.size());
   return symbols;
 }
 
@@ -2246,17 +2230,13 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 
 std::vector<lsp::DocumentSymbol>
 MojoNotebookDocument::onDocumentSymbolSync(const lsp::URIForFile &uri) {
-  MOTR_Trace(notebookOnDocumentSymbolSync);
   auto cellIt = uriToCell.find(uri.file());
   if (cellIt == uriToCell.end() || !cellIt->second->decl ||
       cellIt->second->isPythonCell())
     return {};
 
-  MOTR_TagStrViews("cellUri", cellIt->second->uri.uri());
-
   std::vector<lsp::DocumentSymbol> symbols;
   getDocumentSymbols(cellIt->second->decl, symbols);
-  MOTR_TagInt("symbolCount", symbols.size());
   return symbols;
 }
 
