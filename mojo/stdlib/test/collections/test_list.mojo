@@ -976,6 +976,15 @@ def test_list_comprehension():
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
 
 
+def test_list_repr_wrap():
+    assert_equal(repr(List("Hello", "World")), "['Hello', 'World']")
+    assert_equal(
+        repr(List[UInt8](0, 1)),
+        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
+    )
+
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -1019,3 +1028,4 @@ def main():
     test_uninit_ctor()
     test_copyinit_trivial_types_dtypes()
     test_list_comprehension()
+    test_list_repr_wrap()
