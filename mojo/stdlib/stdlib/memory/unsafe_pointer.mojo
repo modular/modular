@@ -380,6 +380,7 @@ struct UnsafePointer[
         Returns:
             The number of elements (of type T) between self and other.
         """
+        var element_size = sizeof[T]()
         return (self - other) / element_size
 
     @always_inline
