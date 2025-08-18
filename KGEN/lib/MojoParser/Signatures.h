@@ -202,7 +202,7 @@ public:
 class ParsedCaptureList {
 public:
   /// Any arguments specified.
-  SmallVector<std::pair<StringRef, CaptureConvention>> parsedCaptures;
+  SmallVector<std::tuple<StringRef, CaptureConvention, SMLoc>> parsedCaptures;
 
   /// Parse a capture list
   ParseResult parseCaptureList(ParserBase &p);

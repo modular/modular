@@ -1811,3 +1811,141 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
                               implicitOrigins, operands);
   return MLValue(var);
 }
+
+static CValue ASTDeclToCValue(ASTDecl *decl, OpBuilder &builder, Location loc) {
+  if (!decl)
+    return {};
+  if (auto cv = decl->getIfIRValue()) {
+    return cv;
+  } else if (auto var = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation())) {
+    if (var.getKind() != VarDeclKind::Ref)
+      return MLValue(var);
+    auto ref = builder.create<RefLoadOp>(loc, var);
+    return CValue::getMValueForRef(ref);
+  }
+  return {};
+}
+
+ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
+                                         StringRef name,
+                                         CaptureConvention parsedConvention,
+                                         IREmitter &emitter,
+                                         ASTDecl *signatureDecl) {
+  SharedState &shared = emitter.shared;
+  FnOp funcOp = cast<FnOp>(closure.getIfOperation());
+  ArrayRef<ASTDecl *> results =
+      closure.getParentDecl()->lookupInCurrentScope(name);
+  if (results.size() != 1) {
+    shared.emitError(location, "reference to an unknown value: ") << name;
+    return nullptr;
+  }
+  ASTDecl *result = results.front();
+  if (auto pval = result->getIfIRValue().getIfPValue()) {
+    shared.emitError(location, "value ")
+        << name << " is a parameter and does not need a capture convention";
+    return nullptr;
+  }
+
+  CValue valueInParent =
+      ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
+  CaptureConvention convention;
+  /// The captureValue is a map of the valueInParent. For example, the
+  /// valueInParent may be an immutable borrowed value. If this value is
+  /// captured by copy the capturedValue in the body of the closure is a mutable
+  /// owned value. Since the captured value does not exist until later, we have
+  /// to create a temporary value to represent the change in the properties of
+  /// the value in the body of the closure.
+  CValue captureValue;
+  switch (parsedConvention) {
+  case CaptureConvention::kConventionMove: {
+    Type type = valueInParent.getType().mlirType;
+    if (auto ref = dyn_cast<RefType>(valueInParent.getType().mlirType))
+      type = ref.getElementType();
+    if (!ASTType(type).isMovable(closure.getLoc(), shared)) {
+      shared.emitError(location, "Cannot capture ")
+          << name << " by move because the type is not movable";
+      return nullptr;
+    }
+    if (valueInParent.getIfBValue()) {
+      shared.emitError(location, "Cannot capture")
+          << name << " by move because the value is read only";
+      return nullptr;
+    }
+    // If it was captured by move then there was a transfer operation.
+    convention = parsedConvention;
+    valueInParent = MRValue(valueInParent.getMlirValue());
+    captureValue = valueInParent;
+    [[fallthrough]];
+  }
+  case CaptureConvention::kConventionCopy: {
+    ASTType originalType = valueInParent.getRValueType();
+    if (originalType.isTrivial(closure.getLoc(), shared)) {
+      // Remap to trivial copy convention to avoid storing symbols.
+      convention = CaptureConvention::kConventionTrivialCopy;
+      captureValue = valueInParent;
+    } else {
+      convention = parsedConvention;
+      if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
+        OriginType originType = refType.getOriginType();
+        if (originType.isMutableKnown(false)) {
+          auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
+              funcOp.getLoc(), valueInParent.getMlirValue());
+          captureValue = MBValue(refImmutOp->getResult(0));
+        }
+      }
+      ValueDest dest(EC_Capture);
+      SyntheticNode node(result->getLoc());
+      ASTExprAnd<CValue> valueInParentExpr{valueInParent, node};
+      LValue copiedOrMovedValue =
+          dest.getLValueForResult(valueInParentExpr.expr->getLoc(),
+                                  valueInParentExpr.ir.getRValueType(),
+                                  /*allowIncompatibleTypes=*/false,
+                                  /*requireMLValue=*/false, emitter);
+      emitter.emitStoreToLValue(valueInParentExpr, copiedOrMovedValue,
+                                dest.getContext());
+      captureValue = copiedOrMovedValue;
+    }
+    break;
+  }
+  case CaptureConvention::kConventionMut: {
+    convention = parsedConvention;
+    captureValue = valueInParent;
+    // Ensure we are not capturing an immutable reference by mutable reference.
+    if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
+      OriginType originType = refType.getOriginType();
+      if (originType.isMutableKnown(false)) {
+        shared.emitError(location, "Cannot capture ")
+            << name << " by mut because the value is immutable";
+        return nullptr;
+      }
+    }
+    break;
+  }
+  case CaptureConvention::kConventionRead: {
+    convention = parsedConvention;
+    if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
+      OriginType originType = refType.getOriginType();
+      if (originType.isMutableKnown(true)) {
+        auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
+            funcOp.getLoc(), valueInParent.getMlirValue());
+        captureValue = MBValue(refImmutOp->getResult(0));
+      } else {
+        captureValue = valueInParent;
+      }
+    }
+    break;
+  }
+  default:
+    llvm_unreachable("All capture conventions should be handled above");
+    break;
+  }
+  assert(captureValue && "must set capture value");
+  // Ensure the capture value we created is used when parsing the body of the
+  // closure.
+  ASTDecl &captureValueDecl = shared.getDeclResolver().addFullyResolvedDecl(
+      captureValue, name, closure.getLoc(),
+      signatureDecl ? signatureDecl : &closure);
+  shared.addCaptureToScope(closure, result,
+                           Capture(captureValue, convention, name));
+  return &captureValueDecl;
+}

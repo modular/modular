@@ -15,9 +15,39 @@ fn make_closure(x: Int):
 
 # // -----
 
-fn illegal(byRefMut: String):
+# COM: Verify Capture Rules Are Enforced
+
+fn immByMut(byRefMut: String):
     # CHECK: error: Cannot capture byRefMut by mut because the value is immutable
     fn myclosure() unified {mut byRefMut}:
+        pass
+
+struct DoNotMoveMe:
+    pass
+
+fn notMovable(var byMove: DoNotMoveMe):
+    # CHECK: error: Cannot capture byMove by move because the type is not movable
+    fn myclosure() unified {var byMove^}:
+        pass
+
+struct MoveMe:
+    pass
+
+fn immByMov(var byMove: MoveMe):
+    # CHECK: error: Cannot capture byMove by move because the type is not movable
+    fn myclosure() unified {var byMove^}:
+        pass
+
+fn paramNotAllowed[X: Int, Y: Int]():
+    # CHECK: error: value X is a parameter and does not need a capture convention
+    # CHECK: error: value Y is a parameter and does not need a capture convention
+    fn myclosure() unified {var X, read Y}:
+        pass
+
+
+fn doesNotExist():
+    # CHECK: error: reference to an unknown value: What
+    fn myclosure() unified {var What}:
         pass
 
 # // -----
