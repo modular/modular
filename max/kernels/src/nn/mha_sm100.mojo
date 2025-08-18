@@ -73,6 +73,7 @@ from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
     _produce,
+    produce,
     q_out_tma,
     valid_length_managed_tensor_slice_to_ndbuffer,
 )
@@ -1451,7 +1452,7 @@ fn mha_sm100_dispatch[
     )
 )
 fn _mha_sm100[
-    KVType: MHAOperand,
+    KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
@@ -1467,7 +1468,7 @@ fn _mha_sm100[
 ](
     scheduler: SchedulerType,
     q_tma_op: TMANestedTensorTile[
-        KVType.dtype,
+        KVLUTType.dtype,
         max(group, 8) if _is_decoding[MaxSeqLenType]() else Int(
             config.block_m()
         ),
@@ -1476,21 +1477,21 @@ fn _mha_sm100[
         is_k_major=True,
     ],
     k_tma_op: TMANestedTensorTile[
-        KVType.dtype,
+        KVLUTType.dtype,
         config.block_n(),
         config.depth,
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
-        KVType.dtype,
+        KVLUTType.dtype,
         config.block_n(),
         config.depth,
         swizzle_mode,
         is_k_major=False,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type]],
-    k: KVType,
+    kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
@@ -1514,7 +1515,7 @@ fn _mha_sm100[
       TODO: use more optimized kernels for them
 
     """
-    alias kv_type = KVType.dtype
+    alias kv_type = KVLUTType.dtype
     constrained[kv_type == config.type]()
     alias decoding: Bool = _is_decoding[MaxSeqLenType]()
 
@@ -1621,39 +1622,14 @@ fn _mha_sm100[
     # var warp_x: UInt32 = warp_id % num_warps_n
 
     # first wgmma is BM x BK @ BK x BN
-    alias q_smem_layout_producer = q_tma_op.layout
-    alias q_smem_layout_consumer = tile_layout_k_major[
-        DType.bfloat16, BM, depth, swizzle_mode=swizzle_mode
-    ]()
-    alias k_smem_layout = k_tma_op.layout
-    alias v_smem_layout = v_tma_op.layout
-
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = q_smem_layout_consumer.size()
+    alias q_smem_size = BM * depth
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
-
-    @parameter
-    @always_inline("nodebug")
-    fn q_producer[
-        depth_idx: Int
-    ]() -> LayoutTensor[
-        kv_type,
-        q_smem_layout_producer,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]:
-        # alias stride = q_smem_layout_consumer.stride[1][1].value()
-        # alias depth_offset = depth_idx * stride
-        alias depth_offset = q_smem_layout_consumer(
-            IntTuple(0, 64 * depth_idx)
-        ) if decoding else 0
-        return {q_smem + depth_offset}
 
     # We have `num_pipeline_stages` instances of each
     alias kv_smem_size = config.kv_smem_size(True)
@@ -1677,21 +1653,15 @@ fn _mha_sm100[
     constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
     constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
     alias frag_simdwidth = 2
-    alias a_frag_size = BM * MMA_K // (
-        num_consumer_threads * num_m_blocks_per_warp
-    )
     constrained[
-        BN * num_k_mmas * a_frag_size == BK * num_n_mmas * p_frag_size
+        BN * num_k_mmas * BM * MMA_K
+        == BK
+        * num_n_mmas
+        * p_frag_size
+        * num_consumer_threads
+        * num_m_blocks_per_warp
     ]()
-    #
-    alias frag_ratio = p_frag_size // a_frag_size  # MMA_N // MMA_K
 
-    alias p_reg_tile_layout = Layout.row_major(
-        num_m_blocks_per_warp * num_n_mmas, p_frag_size
-    )
-    alias o_reg_tile_layout = Layout.row_major(
-        num_m_blocks_per_warp * num_n_mmas, o_frag_size
-    )
     alias num_row_blocks_per_mma = 2
     # a wgmma.m64n32k16 `D` fragment looks like
     #
@@ -1768,12 +1738,6 @@ fn _mha_sm100[
     # Account for group query.
     alias kv_num_heads = num_heads // group
 
-    alias q_num_vecs: Int = BM * BK // simd_size
-
-    alias async_copy_q_layout = Layout.row_major(
-        min(num_consumer_threads, q_num_vecs) * simd_size // BK, BK // simd_size
-    )
-
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
     alias mma_thread_layout = Layout.row_major(8, 4)
@@ -1812,17 +1776,6 @@ fn _mha_sm100[
         ptr_tmem_addr + 2, tile_summary
     )
 
-    # returns `true` if we are done
-    @parameter
-    @always_inline
-    fn advance[
-        producer: Bool,
-        sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
-    ](pipeline_idx: UInt32) -> OptionalReg[SeqInfo]:
-        return scheduler.advance[ragged, producer, sync](
-            tile_summary, state, pipeline_idx
-        )
-
     # The persistent kernels limit the grid size.
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
@@ -1847,9 +1800,11 @@ fn _mha_sm100[
     @parameter
     @always_inline
     fn get_position(seq_info: SeqInfo) -> PositionType:
-        return _get_position[config, group, ragged, _is_cache_length_accurate](
+        return _get_position[
+            BM, BN, depth, num_heads, group, ragged, _is_cache_length_accurate
+        ](
             seq_info,
-            k,
+            kv_lut,
             max_seq_len,
             num_keys_arg,
             kv_input_row_offsets,
@@ -1868,158 +1823,32 @@ fn _mha_sm100[
     if warp_group_idx == 0:
         # producer
         warpgroup_reg_dealloc[num_producer_regs]()
-        if thread_idx.x != 0:
-            return
-        write_pipeline_states = PipelineState[pipeline_stages]()
-
-        @parameter
-        if PartitionType.do_partition:
-            startend = position.get_start_and_end_for_partitions[BN=BN](
-                partition
+        if thread_idx.x == 0:
+            produce[
+                pipeline_stages=pipeline_stages,
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ](
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                q_smem,
+                kv_smem,
+                produced_mbar_kv,
+                consumed_mbar_kv,
+                __type_of(produced_mbar_kv)(),
+                __type_of(consumed_mbar_kv)(),
+                kv_lut,
+                position,
+                partition,
+                scheduler,
+                mask,
+                tile_summary,
+                state,
+                max_seq_len,
+                num_keys_arg,
+                kv_input_row_offsets,
             )
-            start = startend[0]
-            end = startend[1]
-            if start >= end:
-                return
-        else:
-            # delay partitioning until after we've begun copying `q`
-            start = 0
-            end = 0
-
-        @parameter
-        @always_inline("nodebug")
-        fn k_tile(
-            idx: UInt32,
-            out k_smem: LayoutTensor[
-                kv_type,
-                k_smem_layout,
-                MutableAnyOrigin,
-                address_space = AddressSpace.SHARED,
-                layout_int_type = DType.int32,
-                linear_idx_type = DType.int32,
-                alignment=128,
-            ],
-        ):
-            alias sz = BN * depth
-            k_smem = __type_of(k_smem)(kv_smem + sz * idx)
-
-        @parameter
-        @always_inline("nodebug")
-        fn v_tile(
-            idx: UInt32,
-            out v_smem: LayoutTensor[
-                kv_type,
-                v_smem_layout,
-                MutableAnyOrigin,
-                address_space = AddressSpace.SHARED,
-                layout_int_type = DType.int32,
-                linear_idx_type = DType.int32,
-                alignment=128,
-            ],
-        ):
-            alias sz = BN * depth
-            v_smem = __type_of(v_smem)(kv_smem + sz * idx)
-
-        @parameter
-        @always_inline("nodebug")
-        fn produce_k[
-            wait: Bool
-        ](mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32,):
-            var write_idx: UInt32 = state.index()
-            var write_phase: UInt32 = state.phase()
-
-            ref p_mbar = produced_mbar_kv[write_idx]
-            k_sub = k_tile(write_idx)
-
-            @parameter
-            if wait:
-                consumed_mbar_kv[write_idx].wait(write_phase)
-                alias bytes = BN * depth * sizeof[KVType.dtype]()
-                p_mbar.expect_bytes(bytes)
-            k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
-            state.step()
-
-        @parameter
-        @always_inline
-        fn produce_v(
-            mut state: PipelineState[pipeline_stages],
-            row: UInt32,
-            col: UInt32,
-        ):
-            var write_idx: UInt32 = state.index()
-            var write_phase: UInt32 = state.phase()
-
-            ref p_mbar = produced_mbar_kv[write_idx]
-            v_sub = v_tile(write_idx)
-            consumed_mbar_kv[write_idx].wait(write_phase)
-            alias bytes = BN * depth * sizeof[KVType.dtype]()
-            p_mbar.expect_bytes(bytes)
-            v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
-            state.step()
-
-        alias q_copy_rows = max(group, 8) if decoding else Int(BM)
-        alias qk_bytes = (q_copy_rows + BN) * depth * sizeof[kv_type]()
-        produced_mbar_kv[0].expect_bytes(qk_bytes)
-
-        @parameter
-        for d in range((depth // 64) if decoding else 1):
-            q_tma_op.async_copy(
-                q_producer[d](),
-                produced_mbar_kv[0],
-                (UInt(position.q_col + 64 * d), UInt(position.q_row)),
-            )
-
-        @parameter
-        if not PartitionType.do_partition:
-            startend = position.get_start_and_end_for_partitions[BN=BN](
-                partition
-            )
-            start = startend[0]
-            end = startend[1]
-        var kv_tile_start_row: UInt32 = start
-        var kv_col: UInt32 = k.col_idx(position.kv_head_idx())
-
-        while (
-            position.mask_status(mask, kv_tile_start_row)
-            == TileMaskStatus.FULL_MASK
-        ):
-            kv_tile_start_row += BN
-        var kv_row: UInt32 = k.row_idx(position.prompt_idx, kv_tile_start_row)
-
-        produce_k[False](write_pipeline_states, kv_row, kv_col)
-
-        var kv_row_prev: UInt32 = kv_row
-
-        # wait to flip phase, but only bother after producing
-        # there isn't any memory we can throttle
-        # the order of the consumer's arrivals determines the
-        # order of the producer's waits.
-        # few_keys = num_keys <= BN
-
-        # Process work with the tile size until there's not enough remaining work
-        # to fit in a tile.
-        # Production order:
-        # Preheader: Q0, K0
-        # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
-        # Exit: V{-1}
-        while True:
-            # this loops over num_keys
-            kv_tile_start_row += BN
-            if kv_tile_start_row >= end:
-                break
-
-            if (
-                position.mask_status(mask, kv_tile_start_row)
-                == TileMaskStatus.FULL_MASK
-            ):
-                continue
-            kv_row = k.row_idx(position.prompt_idx, kv_tile_start_row)
-            produce_k[True](write_pipeline_states, kv_row, kv_col)
-            produce_v(write_pipeline_states, kv_row_prev, kv_col)
-            # cache old
-            kv_row_prev = kv_row
-
-        produce_v(write_pipeline_states, kv_row_prev, kv_col)
 
     else:
         warpgroup_reg_alloc[num_consumer_regs]()
