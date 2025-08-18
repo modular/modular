@@ -380,13 +380,9 @@ struct UnsafePointer[
         Returns:
             The number of elements (of type T) between self and other.
         """
-        var self_addr: Int
-        var other_addr: Int
-        var element_size: Int
-
-        self_addr = self.address
-        other_addr = other.address
-        element_size = sizeof[T]()
+        var self_addr = Int(self.address)
+        var other_addr = Int(other.address)
+        var element_size = sizeof[T]()
         return (self_addr - other_addr) / element_size
 
     @always_inline
