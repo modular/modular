@@ -75,7 +75,8 @@ fn repr[T: Representable](value: T) -> String:
     """
     return value.__repr__()
 
-fn repr[T: Representable&Movable&Copyable](value: List[T]) -> String:
+
+fn repr[T: Representable & Movable & Copyable](value: List[T]) -> String:
     """Returns the string representation of a `List[T]`.
 
     Args:
@@ -89,6 +90,7 @@ fn repr[T: Representable&Movable&Copyable](value: List[T]) -> String:
     """
     # TODO: remove when `List` can conform conditionally to `Representable`.
     return value.__repr__()
+
 
 fn repr(value: None) -> String:
     """Returns the string representation of `None`.
