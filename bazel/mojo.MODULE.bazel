@@ -24,9 +24,9 @@ _PLATFORMS = [
 [
     rebuild_wheel(
         name = "module_platlib_" + platform,
-        version = PACKAGE_VERSION,
-        platform = platform,
         base_url = BASE_URL,
+        platform = platform,
+        version = PACKAGE_VERSION,
     )
     for platform in _PLATFORMS
 ]
