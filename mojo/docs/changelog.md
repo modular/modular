@@ -159,3 +159,5 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- Fixed <https://github.com/modular/modular/issues/5190>
