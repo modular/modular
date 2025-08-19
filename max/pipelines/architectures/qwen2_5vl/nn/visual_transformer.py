@@ -630,6 +630,11 @@ class VisionTransformer(Module):
             seq_len,
         )
 
+        # Cast input attention masks to bfloat16 because they are computed
+        # as float32 (due to numpy not supporting bfloat16).
+        attention_mask_full = attention_mask_full.cast(h.dtype)
+        attention_mask_window = attention_mask_window.cast(h.dtype)
+
         # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
         for layer_num, blk in enumerate(self.blocks):
             if layer_num in self.fullatt_block_indexes:
@@ -649,7 +654,4 @@ class VisionTransformer(Module):
         # TODO(GEX-1863): Implement ops.argsort
         reverse_indices = ops.argsort(window_index)
         h = ops.gather(h, reverse_indices, axis=0)
-
-        h = ops.cast(h, DType.bfloat16)
-
         return h
