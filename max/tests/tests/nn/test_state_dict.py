@@ -45,7 +45,7 @@ def test_load_state_dict_strict_true() -> None:
         "extra.key": extra_key_data,  # This key is not in SimpleTestModule
     }
 
-    with pytest.raises(ValueError, match="unexpected key"):
+    with pytest.raises(ValueError, match="Unexpected keys in state_dict"):
         module.load_state_dict(state_dict_with_extra, strict=True)
 
 
@@ -94,5 +94,5 @@ def test_load_state_dict_missing_key() -> None:
         "fc1.weight": fc1_weight_data,
     }
 
-    with pytest.raises(ValueError, match="Could not find"):
+    with pytest.raises(ValueError, match="Missing required weights"):
         module.load_state_dict(state_dict_missing_key)
