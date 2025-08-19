@@ -18,6 +18,7 @@ modular_cc_binary(
         "//KGEN:Support",
         "//KGEN:ToolCommon",
         "//KGEN/tools/common/lsp-protocol",
+        "//MOTR:API",
         "//Support:Base",
         "//Support:Context",
         "//Support:Globals",

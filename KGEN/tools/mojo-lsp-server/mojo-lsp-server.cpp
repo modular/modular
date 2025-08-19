@@ -8,6 +8,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Debugging.h"
 #include "LSPServer.h"
+#include "MOTR/API/MOTR.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
@@ -22,6 +23,8 @@ using namespace M::KGEN::LIT;
 using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
+  MOTR_TraceProgramArgs(programTrace, "mojo-lsp-server", argc, argv);
+
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::PrettyStackTraceProgram x(argc, argv);
   llvm::setBugReportMsg(

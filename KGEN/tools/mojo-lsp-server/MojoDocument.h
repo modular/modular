@@ -14,6 +14,7 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
+#include "MOTR/API/MOTR.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
