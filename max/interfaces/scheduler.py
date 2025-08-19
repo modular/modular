@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
 from typing import Generic, Optional
 
 import msgspec
@@ -31,7 +34,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     """The pipeline output data, if any. May be None for cancelled operations or during intermediate states of streaming operations."""
 
     @classmethod
-    def cancelled(cls) -> "SchedulerResult":
+    def cancelled(cls) -> SchedulerResult[PipelineOutputType]:
         """
         Create a SchedulerResult representing a cancelled pipeline operation.
 
@@ -41,7 +44,9 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
         return SchedulerResult(is_done=True, result=None)
 
     @classmethod
-    def create(cls, result: PipelineOutputType) -> "SchedulerResult":
+    def create(
+        cls, result: PipelineOutputType
+    ) -> SchedulerResult[PipelineOutputType]:
         """
         Create a SchedulerResult representing a pipeline operation with some result.
 

@@ -11,11 +11,11 @@ from __future__ import annotations
 import functools
 import inspect
 from types import TracebackType
-from typing import Callable, TypeVar, overload
+from typing import Any, Callable, TypeVar, overload
 
 from max._core.profiler import Trace, is_profiling_enabled
 
-_FuncType = TypeVar("_FuncType", bound=Callable)
+_FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
 
 # For the list of valid colors, take a look at the struct `Color` in:
 # `open-source/max/mojo/stdlib/stdlib/gpu/host/_tracing.mojo`
@@ -40,11 +40,11 @@ def traced(
 
 
 def traced(
-    func: Callable | None = None,
+    func: _FuncType | None = None,
     *,
     message: str | None = None,
     color: str = "modular_purple",
-) -> Callable:
+) -> _FuncType | Callable[[_FuncType], _FuncType]:
     """Decorator for creating a profiling span for `func`.
 
     Args:

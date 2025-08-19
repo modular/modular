@@ -290,7 +290,7 @@ class CustomOp:
 
 
 class MaxOp:
-    fn: Callable | CustomOp
+    fn: Callable[..., Iterable[Value] | Value | None] | CustomOp
     name: str
     library: CustomOpLibrary
     # Specify explicit input types to eg. compile with symbolic dims
@@ -300,14 +300,14 @@ class MaxOp:
 
     def __init__(
         self,
-        fn: Callable | CustomOp,
+        fn: Callable[..., Iterable[Value] | Value | None] | CustomOp,
         name: str,
         library: CustomOpLibrary,
         # Specify explicit input types to eg. compile with symbolic dims
         input_types: Sequence[TensorType] | None = None,
         output_types: Sequence[TensorType] | None = None,
         num_outputs: int | None = None,
-    ):
+    ) -> None:
         if num_outputs is None:
             self.num_outputs = 1 if output_types is None else len(output_types)
         elif output_types is not None and len(output_types) != num_outputs:
@@ -375,18 +375,21 @@ class MaxOp:
             kernel_library=self.library._kernel_library,
         ) as graph:
             # Awkward design, there's probably a better way here
-            fn: Callable = (
+            fn: Callable[..., Iterable[Value] | Value | None] = (
                 partial(self.fn.op, result_types=result_types)
                 if isinstance(self.fn, CustomOp)
                 else self.fn
             )
             args = (input.tensor for input in graph.inputs[self.num_outputs :])
             results = fn(*args)
+            iterable_results: Iterable[Value]
             if isinstance(results, Value):
-                results = [results]
+                iterable_results = [results]
             elif results is None:
-                results = []
-            for input, result in zip(graph.inputs, results):
+                iterable_results = []
+            else:
+                iterable_results = results
+            for input, result in zip(graph.inputs, iterable_results):
                 input.buffer[...] = result.tensor
 
             graph.output()
@@ -463,7 +466,7 @@ class MaxOp:
 
 @overload
 def graph_op(
-    fn: Callable,
+    fn: Callable[..., Value | None],
     name: str | None = None,
     kernel_library: Path | KernelLibrary | None = None,
     input_types: Sequence[TensorType] | None = None,
@@ -480,17 +483,20 @@ def graph_op(
     input_types: Sequence[TensorType] | None = None,
     output_types: Sequence[TensorType] | None = None,
     num_outputs: int | None = None,
-) -> Callable[[Callable], CustomOpDef]: ...
+) -> Callable[[Callable[..., Iterable[Value] | Value | None]], CustomOpDef]: ...
 
 
 def graph_op(
-    fn: Callable | None = None,
+    fn: Callable[..., Iterable[Value] | Value | None] | None = None,
     name: str | None = None,
     kernel_library: Path | KernelLibrary | None = None,
     input_types: Sequence[TensorType] | None = None,
     output_types: Sequence[TensorType] | None = None,
     num_outputs: int | None = None,
-) -> CustomOpDef | Callable[[Callable], CustomOpDef]:
+) -> (
+    CustomOpDef
+    | Callable[[Callable[..., Iterable[Value] | Value | None]], CustomOpDef]
+):
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
     This decorator allows you to define larger graphs using [MAX graph
@@ -563,7 +569,9 @@ def graph_op(
         A PyTorch custom operation that can be called with torch.Tensor arguments.
     """
 
-    def decorator(fn: Callable) -> CustomOpDef:
+    def decorator(
+        fn: Callable[..., Iterable[Value] | Value | None],
+    ) -> CustomOpDef:
         library = kernel_library or KernelLibrary(mlir.Context())
         op = MaxOp(
             fn,
