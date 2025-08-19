@@ -1314,7 +1314,9 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     ```
     """
     var current_idx = 1
-    var sorted = sorted(zip(flatten(layout.stride), flatten(layout.shape)))
+    var sorted = sorted(
+        IntTuple(zip(flatten(layout.stride), flatten(layout.shape)))
+    )
     var sorted_len = len(sorted)
 
     var result_shape = IntTuple(num_elems=sorted_len + 1)

@@ -127,7 +127,6 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    @implicit
     fn __init__(out self, array: Self.type):
         """Constructs from an array type.
 
@@ -137,7 +136,6 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         self.array = array
 
     @always_inline
-    @implicit
     fn __init__(out self, *elems: Self.element_type):
         """Constructs a static tuple given a set of arguments.
 
@@ -148,7 +146,6 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         self.array = _create_array[size](elems)
 
     @always_inline
-    @implicit
     fn __init__(out self, values: VariadicList[Self.element_type]):
         """Creates a tuple constant using the specified values.
 

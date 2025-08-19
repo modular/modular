@@ -19,7 +19,7 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from utils import IndexList
+from utils import IndexList, StaticTuple
 from builtin.variadics import Variadic
 
 # ===-----------------------------------------------------------------------===#
@@ -761,7 +761,7 @@ fn _make_tuple[
             index = idx.value,
         ](result._int_type(values.at[idx]().get()), array)
 
-    return __type_of(result)(array)
+    return __type_of(result)(StaticTuple(array))
 
 
 @always_inline
@@ -804,4 +804,4 @@ fn _make_partially_static_index_list[
                 index = idx.value,
             ](result._int_type(static_list.at[idx]().get()), array)
 
-    return __type_of(result)(array)
+    return __type_of(result)(StaticTuple(array))

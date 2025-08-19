@@ -445,13 +445,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, *elements: Int):
         """Initialize an `IntTuple` with a variadic list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: Variable number of integer values to store in the tuple.
@@ -463,7 +461,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: List of integer values to store in the tuple.
@@ -637,13 +634,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, zipper: _zip[_, 2]):
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
-        This constructor is implicit, allowing direct conversion from zip iterators.
 
         Args:
             zipper: A zip iterator containing pairs of elements to append.
