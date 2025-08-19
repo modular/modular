@@ -1839,35 +1839,21 @@ struct ConvertPOPCallLLVMIntrinsic
     SmallVector<Type> types;
     if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
       return failure();
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, types, cast<StringAttr>(op.getIntrin()),
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
-        convertFastmathFlags(op.getFastmathFlags(), rewriter));
-    return success();
-  }
-};
 
-//===----------------------------------------------------------------------===//
-// ConvertLLVMCallIntrinsicForMetal
-//===----------------------------------------------------------------------===//
-
-struct ConvertLLVMCallIntrinsicForMetal
-    : public ConvertPOPToLLVMPattern<LLVM::CallIntrinsicOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(LLVM::CallIntrinsicOp op,
-                  LLVM::CallIntrinsicOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Only handle this for Metal targets
     TargetInfoAttr target = getTypeConverter()->getTarget();
+    StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+
+    // For non-air intrinsic, just emit regular LLVM intrinsic call.
+    if (!intrinsicName.starts_with("llvm.air.")) {
+      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+          op, types, cast<StringAttr>(op.getIntrin()),
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
+          convertFastmathFlags(op.getFastmathFlags(), rewriter));
+      return success();
+    }
+
+    // AIR intrinsics are only supported for Metal
     if (!isMetalTriple(target.getTriple()))
-      return failure();
-
-    StringRef intrinsicName = op.getIntrinAttr();
-
-    // Only handle AIR intrinsics (Apple Intermediate Representation)
-    if (!intrinsicName.starts_with("llvm.air."))
       return failure();
 
     // Convert AIR intrinsic to regular function call
@@ -1885,7 +1871,7 @@ struct ConvertLLVMCallIntrinsicForMetal
       SmallVector<Type> argTypes(adaptor.getOperands().getTypes());
       Type returnType = op.getResultTypes().empty()
                             ? LLVM::LLVMVoidType::get(op.getContext())
-                            : op.getResultTypes()[0];
+                            : types[0];
       auto llvmFuncType = LLVM::LLVMFunctionType::get(returnType, argTypes);
 
       // Get or create the AIR function declaration
@@ -1894,10 +1880,8 @@ struct ConvertLLVMCallIntrinsicForMetal
       func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), airFunctionName,
                                                llvmFuncType);
     }
-
     // Replace the intrinsic call with a regular function call
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, adaptor.getOperands());
-
     return success();
   }
 };
@@ -2194,18 +2178,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
   }
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
-  // For Metal targets, allow transformation of LLVM CallIntrinsicOp with AIR
-  // intrinsics
-  if (isMetalTriple(targetInfo.getTriple())) {
-    target.addDynamicallyLegalOp<LLVM::CallIntrinsicOp>(
-        [](LLVM::CallIntrinsicOp op) {
-          StringRef intrinsicName = op.getIntrinAttr();
-          // AIR intrinsics need special handling for Metal
-          if (intrinsicName.starts_with("llvm.air."))
-            return false; // Mark as illegal so our pattern will transform it
-          return true;    // Regular LLVM intrinsics are legal
-        });
-  }
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
