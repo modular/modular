@@ -62,6 +62,8 @@ from .rotary_embedding import (
     LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
     RotaryEmbedding,
+    YarnRotaryEmbedding,
+    YarnScalingParams,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -131,6 +133,8 @@ __all__ = [
     "TransformerBlock",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
+    "YarnRotaryEmbedding",
+    "YarnScalingParams",
     "clamp",
     "parse_float8_config",
 ]
