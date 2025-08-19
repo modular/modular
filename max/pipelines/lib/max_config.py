@@ -18,11 +18,12 @@ import argparse
 import enum
 import logging
 import os
+import types
 from abc import abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, TypeVar, Union, get_args, get_origin
+from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import yaml
 from max.dtype import DType
@@ -57,6 +58,30 @@ MAX_CONFIG_METADATA_FIELDS: Mapping[str, type[Any]] = {
 
 # TODO: I believe we have some utils like this in our entrypoint code. We should
 # move and consolidate them.
+def _is_union_type(origin: Any) -> bool:
+    """Check if the given origin represents a union type (Union or Python 3.10+ UnionType).
+
+    Args:
+        origin: The result of get_origin(field_type)
+
+    Returns:
+        True if the origin represents a union type, False otherwise.
+    """
+    # Check for traditional Union syntax
+    is_union = origin is Union
+
+    if not is_union and origin is not None:
+        # Check for Python 3.10+ types.UnionType
+        if hasattr(types, "UnionType"):
+            is_union = origin is types.UnionType
+        if not is_union:
+            # Fallback: check by name
+            origin_name = getattr(origin, "__name__", str(origin))
+            is_union = "UnionType" in origin_name
+
+    return is_union
+
+
 def _get_argparse_type_and_action(
     field_type: Any, field_default: Any
 ) -> tuple[Any, str | type[argparse.Action] | None]:
@@ -79,8 +104,8 @@ def _get_argparse_type_and_action(
     origin = get_origin(field_type)
     args = get_args(field_type)
 
-    # Handle Optional types (which are Union[T1, T2, ...])
-    if origin is Union:
+    # Handle Optional types (which are Union[T1, T2, ...] or Python 3.10+ UnionType)
+    if _is_union_type(origin):
         # Check if this is Optional[T] (Union[T, None])
         if len(args) == 2 and type(None) in args:
             # This is Optional[T], get the non-None type
@@ -161,8 +186,8 @@ def convert_max_config_value(
     origin = get_origin(field_type)
     args = get_args(field_type)
 
-    # Handle Optional types (which are Union[T1, T2, ...])
-    if origin is Union:
+    # Handle Optional types (which are Union[T1, T2, ...] or Python 3.10+ UnionType)
+    if _is_union_type(origin):
         # Check if this is Optional[T] (Union[T, None])
         if len(args) == 2 and type(None) in args:
             # This is Optional[T], get the non-None type
@@ -625,6 +650,12 @@ class MAXConfig:
         # Get the dataclass fields for this MAXConfig class.
         class_fields = {field.name: field for field in fields(cls)}
 
+        # Resolve type hints in case of string annotations (from __future__ import annotations)
+        try:
+            type_hints = get_type_hints(cls)
+        except (NameError, AttributeError):
+            type_hints = {}
+
         # Filter config_data to only include valid fields for this MAXConfig class
         filtered_config = {}
         invalid_keys = []
@@ -632,11 +663,13 @@ class MAXConfig:
         for key, value in config_data.items():
             if key in class_fields:
                 field = class_fields[key]
+                # Use resolved type hint if available, otherwise fall back to field.type
+                field_type = type_hints.get(key, field.type)
                 try:
                     # Handle type conversion for specific types
                     converted_value = convert_max_config_value(
                         value=value,
-                        field_type=field.type,
+                        field_type=field_type,
                         field_name=key,
                     )
                     filtered_config[key] = converted_value
@@ -721,6 +754,12 @@ class MAXConfig:
         choices_provider = choices_provider or self.get_default_field_choices()
         required_params = required_params or self.get_default_required_fields()
 
+        # Resolve type hints in case of string annotations (from __future__ import annotations)
+        try:
+            type_hints = get_type_hints(self.__class__)
+        except (NameError, AttributeError):
+            type_hints = {}
+
         for field_obj in fields(self):
             # Skip internal fields
             if field_obj.name.startswith("_"):
@@ -728,7 +767,9 @@ class MAXConfig:
 
             field_name = field_obj.name.replace("_", "-")
             arg_name = f"--{field_name}"
-            field_type = field_obj.type
+
+            # Use resolved type hint if available, otherwise fall back to field.type
+            field_type = type_hints.get(field_obj.name, field_obj.type)
 
             # Use helper function to determine argparse parameters
             arg_type, action = _get_argparse_type_and_action(
