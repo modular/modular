@@ -866,8 +866,8 @@ class TestMAXConfigNamespaceConversion:
                     "other_field": "Another test field",
                 }
 
-            @staticmethod
-            def get_default_required_fields() -> set[str]:
+            @classmethod
+            def get_default_required_fields(cls) -> set[str]:
                 return {"test_field"}
 
         config = ConfigWithDefaultRequired()
