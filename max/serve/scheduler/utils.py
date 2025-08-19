@@ -25,6 +25,7 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationOutput,
 )
+from max.interfaces.pipeline import PipelineOutputType
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -238,7 +239,7 @@ def release_terminated_requests(
 
 def release_cancelled_requests(
     cancel_q: ZmqPullSocket[list[str]],
-    response_q: ZmqPushSocket[dict[str, SchedulerResult]],
+    response_q: ZmqPushSocket[dict[str, SchedulerResult[PipelineOutputType]]],
     tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
     pipeline: Pipeline | AudioGenerator[TTSContext],
 ) -> None:

@@ -304,7 +304,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Optional[Callable] = None,
+        forward: Callable[..., None | Value | Iterable[Value]] | None = None,
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
         *args,
@@ -424,7 +424,7 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Optional[Callable] = None,
+        forward: Callable[..., None | Value | Iterable[Value]] | None = None,
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
         custom_extensions: list[Path] = [],  # noqa: B006

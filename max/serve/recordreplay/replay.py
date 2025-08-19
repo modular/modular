@@ -404,7 +404,7 @@ class TerminalProgressNotifier(TrackingProgressNotifier):
 
     __stream: TextIO
     __tty: bool
-    __printer_task: asyncio.Task | None
+    __printer_task: asyncio.Task[object] | None
     __major_update_event: asyncio.Event
 
     def __init__(self, stream: TextIO | None = None) -> None:

@@ -80,7 +80,7 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         ](zmq_endpoint=send_endpoint, serialize=serialize)
 
         self._running = False
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: list[asyncio.Task[object]] = []
 
         logger.debug(
             f"DispatcherService initialized: send={send_endpoint}, recv={recv_endpoint}"
