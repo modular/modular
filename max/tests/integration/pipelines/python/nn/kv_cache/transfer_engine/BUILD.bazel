@@ -5,7 +5,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
         exec_properties = {
-            "test.resources:gpu-memory": "16",
+            "test.resources:gpu-memory": "20",
         },
         gpu_constraints = [
             "//:has_gpu",

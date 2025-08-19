@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import time
 from queue import Queue
 from threading import Thread
 
@@ -29,6 +30,10 @@ def test_send_recv_basic() -> None:
     total_num_pages = 3
     src_idxs = [2, 2]
     dst_idxs = [1, 0]
+    max_wait_time_s = 10
+
+    # Exit codes
+    exit_codes = [-1, -1]
 
     def transfer_routine_sender() -> None:
         device = Accelerator()
@@ -54,7 +59,19 @@ def test_send_recv_basic() -> None:
         # Perform transfer
         xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
         xfer_queue.put(xfer_req)
-        engine.sync_and_release(xfer_req)
+
+        # Wait for transfer to complete, with a timeout
+        start_time = time.time()
+        is_done = False
+        while not is_done and time.time() - start_time < max_wait_time_s:
+            is_done = engine.is_complete(xfer_req)
+            time.sleep(0.1)
+
+        if not is_done:
+            raise TimeoutError(
+                f"Transfer did not complete within {max_wait_time_s} seconds"
+            )
+        engine.cleanup_transfer(xfer_req)
 
         # Verify results
         expected_blocks = np.array(
@@ -67,6 +84,8 @@ def test_send_recv_basic() -> None:
 
         # TODO(E2EOPT-299) Reenable cleanup
         # engine.cleanup()
+
+        exit_codes[0] = 0
 
     def transfer_routine_receiver() -> None:
         device = Accelerator()
@@ -89,9 +108,19 @@ def test_send_recv_basic() -> None:
         remote_md = sender_md_queue.get()
         engine.connect(remote_md)
 
-        # Perform transfer
+        # Wait for transfer to complete, with a timeout
         xfer_req = xfer_queue.get()
-        engine.sync_and_release(xfer_req)
+        start_time = time.time()
+        is_done = False
+        while not is_done and time.time() - start_time < max_wait_time_s:
+            is_done = engine.is_complete(xfer_req)
+            time.sleep(0.1)
+
+        if not is_done:
+            raise TimeoutError(
+                f"Transfer did not complete within {max_wait_time_s} seconds"
+            )
+        engine.cleanup_transfer(xfer_req)
 
         # Verify results
         expected_blocks = np.array(
@@ -105,6 +134,8 @@ def test_send_recv_basic() -> None:
         # TODO(E2EOPT-299) Reenable cleanup
         # engine.cleanup()
 
+        exit_codes[1] = 0
+
     thread_1 = Thread(target=transfer_routine_sender)
     thread_2 = Thread(target=transfer_routine_receiver)
 
@@ -113,3 +144,6 @@ def test_send_recv_basic() -> None:
 
     thread_1.join()
     thread_2.join()
+
+    assert exit_codes[0] == 0, "Sender thread failed"
+    assert exit_codes[1] == 0, "Receiver thread failed"
