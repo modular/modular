@@ -54,7 +54,7 @@ def test_send_recv_basic() -> None:
         # Perform transfer
         xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
         xfer_queue.put(xfer_req)
-        engine.send_xfer_sync(xfer_req)
+        engine.sync_and_release(xfer_req)
 
         # Verify results
         expected_blocks = np.array(
@@ -91,7 +91,7 @@ def test_send_recv_basic() -> None:
 
         # Perform transfer
         xfer_req = xfer_queue.get()
-        engine.recv_xfer_sync(xfer_req)
+        engine.sync_and_release(xfer_req)
 
         # Verify results
         expected_blocks = np.array(

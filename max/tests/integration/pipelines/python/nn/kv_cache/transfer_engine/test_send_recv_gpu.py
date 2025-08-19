@@ -32,12 +32,12 @@ def transfer_routine_sender(
 ) -> None:
     xfer_req = engine.initiate_send_xfer(remote, src_idxs, dst_idxs)
     queue.put(xfer_req)
-    engine.send_xfer_sync(xfer_req)
+    engine.sync_and_release(xfer_req)
 
 
 def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue) -> None:
     xfer_req = queue.get()
-    engine.recv_xfer_sync(xfer_req)
+    engine.sync_and_release(xfer_req)
 
 
 @pytest.mark.parametrize("device", [CPU()])

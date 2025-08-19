@@ -52,7 +52,7 @@ def transfer_routine_sender(
     t0 = time.time()
     xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
     xfer_queue.put(xfer_req)
-    engine.send_xfer_sync(xfer_req)
+    engine.sync_and_release(xfer_req)
     t1 = time.time()
     bw = total_bytes / (t1 - t0) / GB
     ms = (t1 - t0) * 1000
@@ -105,7 +105,7 @@ def transfer_routine_receiver(
 
     # Perform transfer
     xfer_req = xfer_queue.get()
-    engine.recv_xfer_sync(xfer_req)
+    engine.sync_and_release(xfer_req)
 
     # Verify results
     expected_blocks = np.full(total_bytes, 42, dtype=np.int8)

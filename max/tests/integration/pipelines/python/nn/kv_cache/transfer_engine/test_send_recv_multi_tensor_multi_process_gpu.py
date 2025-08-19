@@ -54,7 +54,7 @@ def transfer_routine_sender(
     start_time = time.time()
     xfer_req = engine_1.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
     xfer_queue.put(xfer_req)
-    engine_1.send_xfer_sync(xfer_req)
+    engine_1.sync_and_release(xfer_req)
     end_time = time.time()
 
     transfer_time = end_time - start_time
@@ -110,7 +110,7 @@ def transfer_routine_receiver(
     engine_2.connect(remote_md)
 
     xfer_req = xfer_queue.get()
-    engine_2.recv_xfer_sync(xfer_req)
+    engine_2.sync_and_release(xfer_req)
 
     # Verify data received correctly - should now have sender values (42 and 84)
     expected_tensor_0 = np.full(total_bytes, 42, dtype=np.int8)

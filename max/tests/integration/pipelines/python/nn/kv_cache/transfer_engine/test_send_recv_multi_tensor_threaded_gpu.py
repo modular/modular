@@ -61,8 +61,8 @@ def transfer_routine_sender(
     )
     xfer_queue_1.put(xfer_1)
 
-    engine_1.send_xfer_sync(xfer_0)
-    engine_1.send_xfer_sync(xfer_1)
+    engine_1.sync_and_release(xfer_0)
+    engine_1.sync_and_release(xfer_1)
 
     assert np.array_equal(
         tensors_1[0].to_numpy(), np.arange(100, dtype=np.float32)
@@ -102,10 +102,10 @@ def transfer_routine_receiver(
     engine_2.connect(remote_md)
 
     xfer_0 = xfer_queue_0.get()
-    engine_2.recv_xfer_sync(xfer_0)
+    engine_2.sync_and_release(xfer_0)
 
     xfer_1 = xfer_queue_1.get()
-    engine_2.recv_xfer_sync(xfer_1)
+    engine_2.sync_and_release(xfer_1)
 
     assert np.array_equal(
         tensors_2[0].to_numpy()[:10], np.arange(10, dtype=np.float32)
