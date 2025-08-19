@@ -202,6 +202,40 @@ def test_context__seq_len() -> None:
     assert context.active_length == 1
 
 
+def test_context__needs_ce() -> None:
+    context = TextContext(
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+    )
+
+    # There are 4 unencoded prompt tokens
+    assert context.active_length == 4
+    assert context.needs_ce is True
+
+    # Encode 2/4 prompt tokens
+    context.bump_token_indices(active_idx=-2)
+    assert context.active_length == 2
+    context.update(98)  # token 98 is discarded
+    assert context.all_tokens.tolist() == [0, 1, 2, 3]
+
+    # There are 2 unencoded prompt tokens left
+    assert context.needs_ce is True
+    assert context.active_length == 2
+
+    # Create a bunch of draft tokens like in spec decoding
+    context.update(99)
+    context.update(100)
+    context.update(101)
+    context.update(102)
+    assert context.all_tokens.tolist() == [0, 1, 2, 3, 99, 100, 101, 102]
+    context.bump_token_indices(start_idx=-2)
+
+    # Even though the active length is 3, we are not in CE mode!
+    assert context.next_tokens.tolist() == [100, 101, 102]
+    assert context.active_length == 3
+    assert context.needs_ce is False
+
+
 def test_context__bump_token_indices() -> None:
     context = TextContext(
         max_length=10,
