@@ -35,6 +35,11 @@ def __absolutize_path(value: str) -> str:
         if os.path.exists(rebased):
             return os.path.abspath(rebased)
 
+    if "BAZEL_TEST" in os.environ and value.startswith("external/"):
+        rebased = "../" + value[len("external/") :]
+        if os.path.exists(rebased):
+            return os.path.abspath(rebased)
+
     return value
 
 
