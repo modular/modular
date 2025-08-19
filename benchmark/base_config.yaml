@@ -28,7 +28,7 @@ benchmark_config:
   trust_remote_code: false
 
   # Dataset configuration (common across all benchmark types)
-  dataset_name: "sharegpt"  # Name of the dataset to benchmark on
+  dataset_name: null  # Name of the dataset to benchmark on
   dataset_path: null  # Path to dataset file
 
   # Basic workload parameters
