@@ -72,6 +72,7 @@ class RequestFuncInput:
     lora: str
     session_id: Optional[str] = None
     temperature: float = 0.0
+    top_p: float = 1.0
 
 
 @dataclass
@@ -146,7 +147,7 @@ async def async_request_trt_llm(
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
             "temperature": request_func_input.temperature,
-            "top_p": 1.0,
+            "top_p": request_func_input.top_p,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
@@ -216,6 +217,7 @@ async def async_request_openai_completions(
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "temperature": request_func_input.temperature,
+            "top_p": request_func_input.top_p,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -321,6 +323,7 @@ async def async_request_openai_chat_completions(
             "model": request_func_input.model,
             "messages": messages_data,
             "temperature": request_func_input.temperature,
+            "top_p": request_func_input.top_p,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
@@ -975,6 +978,7 @@ async def benchmark(
     ttft_skip_requests: int,
     max_output_len: Optional[int],
     temperature: float,
+    top_p: float,
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
 ):
@@ -1106,6 +1110,7 @@ async def benchmark(
                 prompt_len=request.prompt_len,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                top_p=top_p,
                 ignore_eos=ignore_eos,
                 img=request.encoded_img,
             )
@@ -1563,6 +1568,7 @@ def main(args: argparse.Namespace) -> None:
             ttft_skip_requests=args.ttft_skip_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
+            top_p=args.top_p,
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
         )
@@ -1673,6 +1679,7 @@ def main(args: argparse.Namespace) -> None:
             "request_rate",
             "seed",
             "temperature",
+            "top_p",
         )
         output_lens_dict = {}
         output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
@@ -1803,6 +1810,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="Temperature used for token sampling. Default: 0.0",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="Top-p used for token sampling. Default: 1.0",
     )
     parser.add_argument(
         "--sonnet-input-len",
