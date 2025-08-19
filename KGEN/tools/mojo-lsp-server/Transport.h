@@ -9,6 +9,7 @@
 
 #include "../common/lsp-protocol/Protocol.h"
 #include "LSPTelemetryContext.h"
+#include "MOTR/API/MOTR.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"

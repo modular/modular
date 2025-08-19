@@ -8,6 +8,7 @@
 #include "../common/lsp-protocol/Protocol.h"
 #include "../common/lsp-protocol/SemanticTokens.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "MOTR/API/MOTR.h"
 #include "MojoServer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Transport.h"
@@ -42,6 +43,8 @@ public:
       void invoke(const Param &param, Callback<Result> reply) {
         KGEN::CompilerTimeTraceScope traceScope("handleRequest",
                                                 [&]() { return method.str(); });
+        MOTR_Trace(request);
+        MOTR_TagStr("method", method);
 
         size_t parentId =
 #if MOTR_ENABLED
