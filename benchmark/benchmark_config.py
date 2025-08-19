@@ -147,10 +147,10 @@ class BaseBenchmarkConfig(MAXConfig):
             "random_distribution_type": ["uniform", "normal"],
         }
 
-    @staticmethod
-    def get_default_required_fields() -> set[str]:
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the benchmark config."""
-        return {"model", "dataset_name"}
+        return super().get_default_required_fields().union({"model"})
 
 
 @dataclass
@@ -282,6 +282,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "server_args": "Server arguments string.",
         }
         return {**base_help, **serving_help}
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the benchmark config."""
+        return super().get_default_required_fields().union({"dataset_name"})
 
 
 # Convenience functions for loading specific configuration types

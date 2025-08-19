@@ -551,8 +551,8 @@ class MAXConfig:
         """
         return {}
 
-    @staticmethod
-    def get_default_required_fields() -> set[str]:
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
         """Get default required fields for the config."""
         return set()
 
