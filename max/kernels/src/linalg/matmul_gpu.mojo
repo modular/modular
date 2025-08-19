@@ -55,7 +55,7 @@ from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
 from .matmul_vendor import matmul as matmul_vendor
 from .matmul_dispatch_sm90 import matmul_dispatch_sm90
-from .matmul_sm100 import matmul_sm100_fallback
+from .matmul_sm100 import blackwell_matmul_tma_pair_mma
 from .utils import (
     GemmShape,
     elementwise_compute_lambda_type,
@@ -466,15 +466,15 @@ fn _matmul_gpu[
         var a_layout_tensor = from_ndbuffer_row_major(a)
         var b_layout_tensor = from_ndbuffer_row_major(b)
         var c_layout_tensor = from_ndbuffer_row_major(c)
-        alias umma_shape = Index(64, 128, 16)
-        alias BK = 64
-        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
-        return matmul_sm100_fallback[
+        alias block_tile_shape = Index(128, 128, 64)
+        alias umma_shape = Index(
+            block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
+        )
+        return blackwell_matmul_tma_pair_mma[
             transpose_b=transpose_b,
             umma_shape=umma_shape,
             block_tile_shape=block_tile_shape,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ](c_layout_tensor, a_layout_tensor, b_layout_tensor, ctx)
+        ](c, a, b, m, n, k, ctx)
 
     @parameter
     if ctx.default_device_info > H100:
