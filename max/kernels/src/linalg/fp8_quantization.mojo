@@ -234,6 +234,8 @@ fn matmul_dynamic_scaled_fp8[
     b_type: DType,
     a_scales_type: DType,
     b_scales_type: DType, //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
     transpose_b: Bool = False,
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
@@ -283,42 +285,57 @@ fn matmul_dynamic_scaled_fp8[
         ),
     ]()
 
-    # create a dummy buffer to instruct the matmul kernel to output values
-    # in the correct dtype
-    var c_dummy = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
-    ](
-        UnsafePointer[Scalar[DType.float32]](),
-        IndexList[2](M, N),
-    )
-
+    # Tensorwise and Channelwise scaling
     @parameter
-    @__copy_capture(c, a, b, a_scales, b_scales)
-    @always_inline
-    fn scaled_output_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
-        var b_scale: SIMD[dtype, width]
-
-        @parameter
-        if transpose_b:
-            b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
-        else:
-            b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
-
-        var scaled_val = val * a_scale * b_scale
-
-        c.store[width=width, alignment=alignment](
-            idx, scaled_val.cast[c_type]()
+    if (
+        input_scale_granularity == "colwise"
+        and weight_scale_granularity == "rowwise"
+    ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var c_dummy = NDBuffer[
+            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+        ](
+            UnsafePointer[Scalar[DType.float32]](),
+            IndexList[2](M, N),
         )
 
-    matmul[
-        target=target,
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=scaled_output_fn,
-        _trace_description=_trace_string,
-    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+        @parameter
+        @__copy_capture(c, a, b, a_scales, b_scales)
+        @always_inline
+        fn scaled_output_fn[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
+            var b_scale: SIMD[dtype, width]
+
+            @parameter
+            if transpose_b:
+                b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
+            else:
+                b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
+
+            var scaled_val = val * a_scale * b_scale
+
+            c.store[width=width, alignment=alignment](
+                idx, scaled_val.cast[c_type]()
+            )
+
+        matmul[
+            target=target,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=scaled_output_fn,
+            _trace_description=_trace_string,
+        ](c_dummy, a, b, Optional[DeviceContext](ctx))
+
+    else:
+        constrained[
+            False,
+            "Unsupported scaling mode: input_scale_granularity="
+            + input_scale_granularity
+            + ", weight_scale_granularity="
+            + weight_scale_granularity,
+        ]()
 
 
 fn naive_blockwise_scaled_fp8_matmul[

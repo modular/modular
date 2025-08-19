@@ -31,6 +31,10 @@ from max.graph import (
 )
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.nn.float8_config import (
+    Float8InputScaleSpec,
+    Float8WeightScaleSpec,
+)
 
 from .attention.mask_config import (
     AttentionMaskVariant,
@@ -1765,6 +1769,8 @@ def quantize_static_scaled_float8(
 
 def quantize_dynamic_scaled_float8(
     input: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
     scale_ub: float = 1200.0,
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
@@ -1799,12 +1805,6 @@ def quantize_dynamic_scaled_float8(
         else input.shape[1]
     )
 
-    # pad the a_scales to 16B. This is required by NVIDIA SM90+ TMA instructions
-    padding_size = 16 // scales_type.size_in_bytes
-    scales_dim1_padded = (
-        (input.shape[0] + padding_size - 1) // padding_size
-    ) * padding_size
-
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
         device=input.device,
@@ -1820,7 +1820,7 @@ def quantize_dynamic_scaled_float8(
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[input.shape[1] // group_size, Dim(scales_dim1_padded)],
+                shape=[input.shape[1] // group_size, input.shape[0]],
                 device=input.device,
             ),
         ],
@@ -1837,6 +1837,8 @@ def dynamic_scaled_matmul(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
     """
@@ -1861,12 +1863,28 @@ def dynamic_scaled_matmul(
         msg = "The second dimension of b must match the second dimension of a"
         raise ValueError(msg)
 
-    if a_scales.shape[0] != 1:
-        msg = "only per-token scaling is supported for a"
-        raise ValueError(msg)
+    if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
+        if not (
+            a_scales.shape[0]
+            == a_scales.shape[1]
+            == b_scales.shape[0]
+            == b_scales.shape[1]
+            == 1
+        ):
+            msg = "scaler tensors must be of shape [1, 1] for tensor scaling"
+            raise ValueError(msg)
 
-    if b_scales.shape[1] != 1:
-        msg = "only channel-wise scaling is supported for b"
+    elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
+        if a_scales.shape[0] != 1:
+            msg = "only per-token scaling is supported for a"
+            raise ValueError(msg)
+
+        if b_scales.shape[1] != 1:
+            msg = "only channel-wise scaling is supported for b"
+            raise ValueError(msg)
+
+    else:
+        msg = "unsupported FP8 scaling granularity"
         raise ValueError(msg)
 
     if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
@@ -1885,6 +1903,10 @@ def dynamic_scaled_matmul(
                 dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
             )
         ],
+        parameters={
+            "input_scale_granularity": str(input_scale_spec.granularity),
+            "weight_scale_granularity": str(weight_scale_spec.granularity),
+        },
     )[0].tensor
 
     return result

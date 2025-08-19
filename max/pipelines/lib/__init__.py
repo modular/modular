@@ -16,7 +16,6 @@
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .float8_config import parse_float8_config
 from .hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -106,7 +105,6 @@ __all__ = [
     "get_default_max_config_file_section_name",
     "get_paged_manager",
     "max_tokens_to_generate",
-    "parse_float8_config",
     "ragged_token_merger",
     "rejection_sampler",
     "rejection_sampler_with_residuals",

@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from functools import partial
 from typing import Callable
 
@@ -36,6 +35,10 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
+from max.nn.float8_config import (
+    Float8Config,
+    Float8ScaleGranularity,
+)
 
 from .clamp import clamp
 from .kernels import (
@@ -46,127 +49,6 @@ from .kernels import (
     swish_glu,
 )
 from .layer import Layer, Module, Shardable
-
-
-class Float8ScaleGranularity(Enum):
-    """Specifies the granularity of the quantization scale factor.
-
-    Determines whether a scale factor applies per-tensor, per-row (often for
-    weights), per-column, or per-block within a tensor.
-    """
-
-    TENSOR = "tensor"
-    """Per-tensor scaling."""
-
-    ROWWISE = "rowwise"
-    """Per-row scaling."""
-
-    COLWISE = "colwise"
-    """Per-column scaling."""
-
-    BLOCK = "block"
-    """Per-block scaling."""
-
-
-class Float8ScaleOrigin(Enum):
-    """Specifies whether the quantization scale is determined statically or dynamically."""
-
-    STATIC = "static"
-    """Scales are pre-computed and loaded with the model weights."""
-
-    DYNAMIC = "dynamic"
-    """Scales are computed at runtime based on the input data."""
-
-
-@dataclass
-class Float8WeightScaleSpec:
-    """Specifies how weights are scaled for float8 quantization."""
-
-    granularity: Float8ScaleGranularity
-    """The :obj:`Float8ScaleGranularity` of the weight scale factor application."""
-
-    dtype: DType
-    """The :obj:`DType` of the weight scale factor(s)."""
-
-    @property
-    def is_tensor(self) -> bool:
-        """Whether the weight scale granularity is per-tensor."""
-        return self.granularity == Float8ScaleGranularity.TENSOR
-
-    @property
-    def is_rowwise(self) -> bool:
-        """Whether the weight scale granularity is row-wise."""
-        return self.granularity == Float8ScaleGranularity.ROWWISE
-
-    @property
-    def is_colwise(self) -> bool:
-        """Whether the weight scale granularity is column-wise."""
-        return self.granularity == Float8ScaleGranularity.COLWISE
-
-    @property
-    def is_block(self) -> bool:
-        """Whether the weight scale granularity is block-wise."""
-        return self.granularity == Float8ScaleGranularity.BLOCK
-
-
-@dataclass
-class Float8InputScaleSpec:
-    """Specifies how input activations are scaled for float8 quantization."""
-
-    granularity: Float8ScaleGranularity
-    """The :obj:`Float8ScaleGranularity` of the input scale factor application."""
-
-    origin: Float8ScaleOrigin
-    """The :obj:`Float8ScaleOrigin` (static or dynamic) of the input scale factor."""
-
-    dtype: DType
-    """The :obj:`DType` of the input scale factor(s)."""
-
-    activation_scale_ub: float | None = None
-    """An optional upper bound for dynamic activation scaling."""
-
-
-@dataclass
-class Float8Config:
-    """Configures float8 quantization settings for a layer or model section."""
-
-    input_scale: Float8InputScaleSpec
-    """:obj:`Float8InputScaleSpec` for input activation scaling."""
-
-    weight_scale: Float8WeightScaleSpec
-    """:obj:`Float8WeightScaleSpec` for weight scaling."""
-
-    mlp_in_float8: set[int]
-    """Set of layer indices with MLPs in float8.
-
-    MLPs are considered to be either "all quantized" or all not quantized per
-    layer.
-    So either all of gate proj, down proj, and up proj are float8, or all bfloat16.
-    """
-
-    attn_qkv_in_float8: set[int]
-    """Set of layer indices with attention QKV projections in float8.
-
-    QKV projections are considered to be either "all quantized" or all not
-    quantized per layer.
-    So either all of {q,k,v,o}_proj are float8, or all bfloat16.
-    """
-
-    embedding_output_dtype: DType | None = None
-    """The :obj:`DType` of the output from the embedding layer."""
-
-    quant_method: str | None = None
-    """The quantization method used (e.g., "fbgemm_fp8")."""
-
-    @property
-    def is_static(self) -> bool:
-        """Returns ``True`` if this input scale is static."""
-        return self.input_scale.origin == Float8ScaleOrigin.STATIC
-
-    @property
-    def is_dynamic(self) -> bool:
-        """Returns ``True`` if this input scale is dynamic."""
-        return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
 
 class Linear(Module, Shardable):
@@ -481,14 +363,23 @@ class Linear(Module, Shardable):
                 )
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
-                    x, scales_type=weight_scale.dtype
+                    x,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    scales_type=weight_scale.dtype,
                 )
 
                 if self.device:
                     weight_scale = weight_scale.to(self.device)
 
                 res = dynamic_scaled_matmul(
-                    x, weight, x_scales, weight_scale, out_type=DType.bfloat16
+                    x,
+                    weight,
+                    x_scales,
+                    weight_scale,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    out_type=DType.bfloat16,
                 )
         else:
             res = x @ weight.T

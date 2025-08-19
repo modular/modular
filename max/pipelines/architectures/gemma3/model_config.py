@@ -19,7 +19,8 @@ from typing import Callable, Literal
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import Float8Config, LinearScalingParams, ReturnLogits
+from max.nn import LinearScalingParams, ReturnLogits
+from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -27,7 +28,6 @@ from max.pipelines.lib import (
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
-    parse_float8_config,
 )
 from transformers import AutoConfig
 

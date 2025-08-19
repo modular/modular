@@ -8756,6 +8756,8 @@ struct MatmulDynamicScaledFloat8:
         input_type: DType,
         scales_type: DType,
         output_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -8767,7 +8769,12 @@ struct MatmulDynamicScaledFloat8:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        matmul_dynamic_scaled_fp8[transpose_b=True, target=target,](
+        matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
