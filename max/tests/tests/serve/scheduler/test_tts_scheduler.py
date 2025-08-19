@@ -208,9 +208,9 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
     def next_chunk(
         self, batch: dict[str, TTSContext]
     ) -> dict[str, AudioGeneratorOutput]:
-        is_ce = next(iter(batch.values())).is_ce
+        needs_ce = next(iter(batch.values())).needs_ce
 
-        if is_ce:
+        if needs_ce:
             num_tokens = 1
         else:
             num_tokens = self.max_num_steps
