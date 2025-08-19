@@ -109,7 +109,8 @@ fn launch_dependent_grids():
 
     @parameter
     if _SUPPORT_PDL_LAUNCH:
-        __mlir_op.`nvvm.griddepcontrol.launch.dependents`[_type=None]()
+        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
+        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
 @always_inline("nodebug")
@@ -129,7 +130,8 @@ fn wait_on_dependent_grids():
 
     @parameter
     if _SUPPORT_PDL_LAUNCH:
-        __mlir_op.`nvvm.griddepcontrol.wait`[_type=None]()
+        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
+        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
 @register_passable("trivial")
