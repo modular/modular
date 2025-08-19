@@ -583,11 +583,12 @@ FuncTypeGeneratorType FuncTypeGeneratorType::remapToFuncTypeGenerator(
   for (ParamDeclAttr param : inputParams)
     inputParamTypes.push_back(remapper.replace(param.getType()));
 
-  if (!emitError) {
-    emitError = []() -> InFlightDiagnostic {
-      llvm_unreachable("invalid func type generator");
-    };
-  }
+  auto emitter = []() -> InFlightDiagnostic {
+    llvm_unreachable("invalid func type generator");
+  };
+
+  if (!emitError)
+    emitError = emitter;
 
   auto newSig = FuncType::getChecked(
       emitError, remapper.replace(functionType), argConventions, effects,

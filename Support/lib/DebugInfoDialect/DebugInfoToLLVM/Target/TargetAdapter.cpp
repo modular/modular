@@ -497,6 +497,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           // Use dbg.declare.
           ArrayRef<LLVM::DIExpressionElemAttr> locationOps =
               valueOp.getLocationExpr().getOperations();
+          SmallVector<LLVM::DIExpressionElemAttr> emptyVector;
           Value declareOpArg = valueOp.getValue();
           if (useDerefMode) {
             if (isa<BlockArgument>(valueOp.getValue())) {
@@ -513,7 +514,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
             declareOpArg = getAllocaOp(valueOp);
             // The declareDirectMode case has an empty expression path, it is
             // simply the whole variable.
-            locationOps = SmallVector<LLVM::DIExpressionElemAttr>();
+            locationOps = emptyVector;
           }
           OpBuilder(valueOp->getNextNode())
               .create<LLVM::DbgDeclareOp>(
