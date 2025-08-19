@@ -79,6 +79,9 @@ class BaseBenchmarkConfig(MAXConfig):
     temperature: float = 0.0
     """Temperature for sampling."""
 
+    top_p: float = 1.0
+    """Top-p for sampling."""
+
     # Control flags
     disable_tqdm: bool = False
     """Specify to disable tqdm progress bar."""
@@ -121,6 +124,7 @@ class BaseBenchmarkConfig(MAXConfig):
             "seed": "Random seed for reproducibility.",
             "max_output_len": "Maximum output length per request.",
             "temperature": "Temperature for sampling.",
+            "top_p": "Top-p for sampling.",
             "disable_tqdm": "Specify to disable tqdm progress bar.",
             "print_inputs_and_outputs": "Print all input and outputs to console.",
             "save_result": "Specify to save benchmark results to a json file.",
