@@ -607,15 +607,13 @@ class InputContext(Protocol):
         ...
 
     @property
-    def is_ce(self) -> bool:
-        """Whether this context is in context encoding (CE) mode.
+    def needs_ce(self) -> bool:
+        """Returns whether this context needs context encoding (CE).
 
-        Context encoding mode indicates that the context is processing input
-        tokens (prompt) rather than generating new tokens.
+        CE mode indicates that the context has additional prompt tokens to encode.
 
         Returns:
-            ``True`` if this is a context encoding context, ``False`` if it's
-            in token generation mode.
+            bool: True if the context needs CE, False otherwise.
         """
         ...
 
