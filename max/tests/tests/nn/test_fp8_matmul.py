@@ -13,6 +13,12 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn import (
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+)
 from max.nn.kernels import (
     dynamic_scaled_matmul,
     fused_qkv_ragged_matmul_scaled_float8,
@@ -27,10 +33,19 @@ from max.nn.kv_cache.paged_cache.paged_cache import PagedKVCacheCollectionType
 
 class DynamicScaledMatmul:
     return_type: DType
+    input_scale_spec: Float8InputScaleSpec
+    weight_scale_spec: Float8WeightScaleSpec
     """Return type of the `dynamic_scaled_matmul` custom op."""
 
-    def __init__(self, return_type: DType) -> None:
+    def __init__(
+        self,
+        return_type: DType,
+        input_scale_spec: Float8InputScaleSpec,
+        weight_scale_spec: Float8WeightScaleSpec,
+    ) -> None:
         self.return_type = return_type
+        self.input_scale_spec = input_scale_spec
+        self.weight_scale_spec = weight_scale_spec
 
     def __call__(
         self,
@@ -40,7 +55,13 @@ class DynamicScaledMatmul:
         b_scales: TensorValue,
     ) -> TensorValue:
         return dynamic_scaled_matmul(
-            a, b, a_scales, b_scales, out_type=self.return_type
+            a,
+            b,
+            a_scales,
+            b_scales,
+            input_scale_spec=self.input_scale_spec,
+            weight_scale_spec=self.weight_scale_spec,
+            out_type=self.return_type,
         )
 
 
@@ -55,7 +76,7 @@ def test_dynamic_scaled_matmul_rowwise() -> None:
             # b
             TensorType(DType.float8_e4m3fn, shape=(3, 4), device=device),
             # a_scales
-            TensorType(DType.bfloat16, shape=(1, 8), device=device),
+            TensorType(DType.bfloat16, shape=(1, 2), device=device),
             # b_scales
             TensorType(DType.bfloat16, shape=(3, 1), device=device),
         ],
@@ -64,7 +85,19 @@ def test_dynamic_scaled_matmul_rowwise() -> None:
 
         # Test with row-wise weight scales.
         output_rowwise = dynamic_scaled_matmul(
-            a, b, a_scales, b_scales, out_type=DType.bfloat16
+            a,
+            b,
+            a_scales,
+            b_scales,
+            input_scale_spec=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.COLWISE,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.bfloat16,
+            ),
+            weight_scale_spec=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.ROWWISE,
+                dtype=DType.bfloat16,
+            ),
         )
         assert output_rowwise.shape == [2, 3]
         assert output_rowwise.dtype == DType.bfloat16
@@ -119,14 +152,25 @@ def test_dynamic_scaled_matmul_dtype_mismatch(
     with pytest.raises(TypeError, match=err_msg_part):
         Graph(
             "dynamic_scaled_matmul",
-            forward=DynamicScaledMatmul(return_type=DType.bfloat16),
+            forward=DynamicScaledMatmul(
+                return_type=DType.bfloat16,
+                input_scale_spec=Float8InputScaleSpec(
+                    granularity=Float8ScaleGranularity.COLWISE,
+                    origin=Float8ScaleOrigin.DYNAMIC,
+                    dtype=a_scales_dtype,
+                ),
+                weight_scale_spec=Float8WeightScaleSpec(
+                    granularity=Float8ScaleGranularity.ROWWISE,
+                    dtype=b_scales_dtype,
+                ),
+            ),
             input_types=[
                 # a
                 TensorType(a_dtype, shape=(2, 4), device=device),
                 # b
                 TensorType(b_dtype, shape=(3, 4), device=device),
                 # a_scales
-                TensorType(a_scales_dtype, shape=(1, 8), device=device),
+                TensorType(a_scales_dtype, shape=(1, 2), device=device),
                 # b_scales
                 TensorType(b_scales_dtype, shape=(3, 1), device=device),
             ],
