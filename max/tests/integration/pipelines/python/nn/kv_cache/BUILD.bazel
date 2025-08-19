@@ -24,6 +24,9 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = ["*_distributed_gpu.py"],
     ) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.2",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [

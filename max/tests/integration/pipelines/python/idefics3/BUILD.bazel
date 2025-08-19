@@ -34,6 +34,9 @@ modular_py_test(
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
@@ -56,6 +59,9 @@ modular_py_test(
     srcs = ["test_vision_encoder_layer.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
