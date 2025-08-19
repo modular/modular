@@ -346,9 +346,9 @@ def test_pointer_subtraction():
     var ptr_offset_u16 = ptr + UInt16(5)
 
     # Test subtraction with different integer types
-    assert_equal(ptr_offset_u8.__sub__(ptr_start), 3)
-    assert_equal(ptr_offset_u16.__sub__(ptr_start), 5)
-    assert_equal(ptr_start.__sub__(ptr_offset_u8), -3)
+    assert_equal(ptr_offset_u8.__sub__(start_ptr), 3)
+    assert_equal(ptr_offset_u16.__sub__(start_ptr), 5)
+    assert_equal(start_ptr.__sub__(ptr_offset_u8), -3)
     assert_equal(ptr_offset_u8.__sub__(ptr_offset_u16), -2)
 
     ptr.free()
