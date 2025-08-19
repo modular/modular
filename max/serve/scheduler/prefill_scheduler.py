@@ -17,7 +17,6 @@ import time
 import uuid
 from typing import Union
 
-from max._core import nixl
 from max.interfaces import (
     Pipeline,
     RequestID,
@@ -144,9 +143,8 @@ class PrefillScheduler(Scheduler):
         """
         to_be_deleted = []
         for req_id, (context, transfer) in self.active_transfers.items():
-            statuses = self.transfer_engine.get_transfer_status(transfer)
-
-            if all(status != nixl.Status.IN_PROG for status in statuses):
+            if self.transfer_engine.is_complete(transfer):
+                self.transfer_engine.cleanup_transfer(transfer)
                 self.pipeline.release(context.request_id)
                 to_be_deleted.append(req_id)
 
