@@ -17,7 +17,7 @@ import functools
 import inspect
 from contextvars import ContextVar, Token
 from types import TracebackType
-from typing import Callable, Optional, TypeVar, overload
+from typing import Any, Callable, Optional, TypeVar, overload
 
 from max._core.profiler import (
     MotrTrace,
@@ -25,7 +25,7 @@ from max._core.profiler import (
     set_motr_thread_local_stack,
 )
 
-_FuncType = TypeVar("_FuncType", bound=Callable)
+_FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
 
 # Context variable to store only the user portion of async trace stack
 _async_user_stack: ContextVar[list[int]] = ContextVar(
@@ -118,11 +118,11 @@ def traced(
 
 
 def traced(
-    func: Callable | None = None,
+    func: _FuncType | None = None,
     *,
     message: str | None = None,
     color: str = "modular_purple",
-) -> Callable:
+) -> _FuncType | Callable[[_FuncType], _FuncType]:
     """Decorator that creates a profiling span around function execution.
 
     Supports both synchronous and asynchronous functions with automatic
