@@ -3712,17 +3712,21 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor distributed across 4 threads in a 2×2 grid:
+        For a 4×4 row-major tensor distributed across 4 threads in a 2×2 row-major grid:
 
-        - Thread 0 might get the top-left quadrant
-        - Thread 1 might get the top-right quadrant
-        - Thread 2 might get the bottom-left quadrant
-        - Thread 3 might get the bottom-right quadrant
+        - Thread 0 will receive a LayoutTensor with a view into
+            (0,0), (0,2), (2,0), (2,2) of the original tensor.
+        - Thread 1 will receive a LayoutTensor with a view into
+            (0,1), (0,3), (2,1), (2,3) of the original tensor.
+        - Thread 2 will receive a LayoutTensor with a view into
+            (1,0), (1,2), (3,0), (3,2) of the original tensor.
+        - Thread 3 will receive a LayoutTensor with a view into
+            (1,1), (1,3), (3,1), (3,3) of the original tensor.
 
         If axis=0 is specified with the same setup:
 
-        - Thread 0 and Thread 2 would get the same data (left half)
-        - Thread 1 and Thread 3 would get the same data (right half)
+        - Thread (0, 0) and Thread (0, 1) would get the same data (top half)
+        - Thread (1, 0) and Thread (1, 1) would get the same data (bottom half)
 
         Performance:
 
