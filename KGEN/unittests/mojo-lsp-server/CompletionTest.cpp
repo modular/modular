@@ -135,8 +135,10 @@ fn function(arg: Foo):
                          "__moveinit__");
             EXPECT_STREQ(completionList.items[12].label.c_str(), "__dunder__");
             EXPECT_STREQ(completionList.items[13].label.c_str(),
+                         "__del__is_trivial");
+            EXPECT_STREQ(completionList.items[14].label.c_str(),
                          "___another__");
-            EXPECT_STREQ(completionList.items[14].label.c_str(), "__other");
+            EXPECT_STREQ(completionList.items[15].label.c_str(), "__other");
           })
       .execute();
 }

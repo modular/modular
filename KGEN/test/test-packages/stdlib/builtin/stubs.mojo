@@ -612,6 +612,8 @@ trait AnyType:
     fn __del__(deinit self, /):
         ...
 
+    alias __del__is_trivial: __mlir_type.i1
+
 
 alias ImplicitlyDestructible = AnyType
 

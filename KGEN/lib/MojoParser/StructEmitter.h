@@ -117,6 +117,10 @@ public:
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
+
+  /// Synthesize an unresolved alias into the struct with the specified name .
+  ASTDecl *synthesizeUnresolvedAlias(StringRef name);
+  TypedAttr populateSpecialFnIsTrivial(SpecialFunctionKind kind);
 };
 
 } // namespace M::KGEN::LIT

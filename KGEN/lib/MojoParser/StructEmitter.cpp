@@ -21,6 +21,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -453,6 +454,10 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
   IREmitter::emitNormalReturn(builder);
 
+  llvm::StringLiteral trivialDelTag = "__del__is_trivial";
+  if (!shared.typeHasMember(structDecl, trivialDelTag, structDecl.getLoc()))
+    StructEmitter(structDecl).synthesizeUnresolvedAlias(trivialDelTag);
+
   // Remember this as the destructor for the struct.
   structDeclOp.setDestructorAttr(
       funcOp.getBoundSymbolRef(shared.getEvaluationContext()));
@@ -761,4 +766,85 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
   }
 
   return valueInfo;
+}
+
+/// Synthesize an unresolved alias into the struct with the specified name .
+ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
+
+  auto paramDecl =
+      ParamDeclAttr::get(name, LIT::UnresolvedType::get(getContext()));
+
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(
+      structDeclOp.getLoc(), &structDeclOp.getFields().front());
+  auto declOp = builder.create<AliasDeclOp>(paramDecl);
+
+  // Create an ASTDecl so it can be resolved with name lookup.
+  ASTDecl &aliasDecl = getDeclResolver().addDecl(
+      declOp, structDecl.getLoc(), StringAttr::get(getContext(), name),
+      &structDecl, LexerCursor(), LexerCursor(), /*indentation=*/0);
+  aliasDecl.resolvedness = DeclResolvedness::unparsed;
+  return &aliasDecl;
+}
+
+TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
+  assert(kind == SpecialFunctionKind::kDel && "unknown synthesized alias");
+  IREmitter emitter(structDecl, EC_AliasValue);
+
+  auto emitI1Attr = [this, &emitter](bool v) {
+    SyntheticNode synthNode(structDecl.getLoc());
+    return emitter
+        .emitI1({BoolAttr::get(getContext(), v), &synthNode}, EC_AliasValue)
+        .getIfPValue();
+  };
+
+  auto emitAnd = [this, &emitter](PValue lhs, PValue rhs) {
+    SyntheticNode synthNode(structDecl.getLoc());
+    PValue lhsI1Val =
+        emitter.emitI1({lhs, synthNode}, EC_OperatorOperandValue).getIfPValue();
+    return ParamOperatorAttr::get(POC::Cond, {lhsI1Val, rhs, lhs});
+  };
+
+  auto spFnInfo = SpecialFunctionInfo::get(kind);
+  LookupResult spDecls = shared.lookupAndResolveDecl(
+      spFnInfo.name, structDecl.getLoc(), structDecl,
+      /*searchParentScope=*/false);
+  if (spDecls.isErroneous())
+    return nullptr;
+
+  assert(spDecls.getIfSuccess().size() == 1 &&
+         "special fn decls cannot be overloaded");
+  TypedAttr falseAttr = emitI1Attr(false);
+  // If has a user provided implementation, consider them as non-trivial.
+  if (!spDecls.getIfSuccess().front()->getCursor().isInvalid())
+    return falseAttr;
+
+  TypedAttr ret = emitI1Attr(true);
+  for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
+    // TODO: Add a nicer accessor.
+    auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
+    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntries[0];
+    if (failed(getDeclResolver().resolveSignature(fieldASTDecl,
+                                                  fieldASTDecl.getLoc())))
+      return nullptr;
+
+    TypedAttr fieldType = PValue(fieldOp.getType());
+    if (!ASTType(fieldType.getType()).getMetaType())
+      continue; // skip simple mlir type
+
+    ASTDecl *traitDecl =
+        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc());
+
+    TypedAttr fieldIsTrivial = shared.getEvaluationContext().getGetWitnessAttr(
+        fieldType,
+        StringAttr::get(getContext(),
+                        getFlattenedSymbolName(traitDecl->getSymbolRef())),
+        StringAttr::get(getContext(), "__del__is_trivial"), ret.getType());
+
+    ret = emitAnd(ret, fieldIsTrivial);
+    if (ret == falseAttr)
+      return falseAttr;
+  }
+
+  return ret;
 }
