@@ -333,7 +333,14 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
 
     /// Returns whether the triple is a GPU target.
     bool isGPU() const {
-      return getTriple().isNVPTX() || getTriple().isAMDGPU();
+      return getTriple().isNVPTX() || getTriple().isAMDGPU() || isMetal();
+    }
+
+    /// Returns whether this is a Metal target (macOS with actual GPU, not embedded devices).
+    bool isMetal() const {
+      // Use the same logic as isMetalTriple() for consistency
+      // Accept both air64 and arm64 triples for Metal GPU targets
+      return getTripleStr().starts_with("air64");
     }
 
     /// Check if the target supports a specific hardware feature.
