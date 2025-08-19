@@ -1000,6 +1000,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "gpt-oss": GenericOracle(
+        model_path="unsloth/gpt-oss-20b-BF16",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "qwen2.5-vl-3b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-3B-Instruct"),
     "qwen3": GenericOracle(
         model_path="Qwen/Qwen3-8B",

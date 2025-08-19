@@ -624,6 +624,21 @@ PIPELINES = {
             kl_div_threshold=1.0e-10,
         ),
     ),
+    "unsloth/gpt-oss-20b-BF16": PipelineDef(
+        compatible_with=[
+            DeviceKind.GPU,
+        ],
+        run=_make_pipeline_runner(
+            pipeline="gpt-oss",
+            encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
+                json_file="torch_gpt-oss_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=2.2e01,
+            kl_div_threshold=2.2e01,
+        ),
+    ),
     "allenai/OLMo-1B-hf-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=_make_pipeline_runner(
