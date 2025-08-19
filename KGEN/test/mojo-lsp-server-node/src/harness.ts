@@ -6,6 +6,10 @@ import { readFile } from "fs/promises";
 import { setTimeout } from "timers/promises";
 import {
   ClientCapabilities,
+  CompletionItem,
+  CompletionList,
+  CompletionParams,
+  CompletionRequest,
   DidOpenTextDocumentNotification,
   DocumentSymbol,
   DocumentSymbolRequest,
@@ -219,5 +223,34 @@ export class Document {
         uri: this.uri,
       },
     });
+  }
+
+  public async complete(position: Position): Promise<CompletionItem[] | null> {
+    const response = await this.server.connection.sendRequest(
+      CompletionRequest.type,
+      {
+        textDocument: {
+          uri: this.uri,
+        },
+        position,
+      }
+    );
+
+    if (Array.isArray(response) || response === null) {
+      // tsc doesn't quite understand that we've narrowed the type of `response`
+      // here so we have to help ita long.
+      return response as CompletionItem[] | null;
+    } else {
+      // The protocol allows returning a CompletionList struct with a few fields
+      // that we currently don't return. For convenience, we try to unwrap this
+      // struct into its items array, but if/when the server starts returning
+      // this information we want a signal to update the tests relying on it.
+      assert.ok(
+        !response.isIncomplete && response.itemDefaults === undefined,
+        "CompletionList response contained unhandled fields"
+      );
+
+      return response.items;
+    }
   }
 }

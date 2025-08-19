@@ -43,7 +43,6 @@ modular_cc_library(
     for src in [
         "CodeActionTest",
         "CodeBlockTest",
-        "CompletionTest",
         "DiagnosticsTest",
         "FoldingRangeTest",
         "InitFileTest",
