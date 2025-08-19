@@ -382,7 +382,7 @@ struct UnsafePointer[
         """
         alias element_size = sizeof[T]()
         var byte_diff = self - other
-        return byte_diff // element_size
+        return Int(byte_diff / element_size)
 
     @always_inline
     fn __iadd__[I: Indexer, //](mut self, offset: I):
