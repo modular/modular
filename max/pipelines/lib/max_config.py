@@ -542,6 +542,20 @@ class MAXConfig:
         options and their descriptions."""
         ...
 
+    @staticmethod
+    def get_default_field_choices() -> dict[str, list[str]]:
+        """Get default valid choices for fields that have constrained values.
+
+        Returns:
+            Dictionary mapping field names to their valid choices.
+        """
+        return {}
+
+    @staticmethod
+    def get_default_required_fields() -> set[str]:
+        """Get default required fields for the config."""
+        return set()
+
     @classmethod
     def from_config_file(
         cls: type[T],
@@ -650,6 +664,7 @@ class MAXConfig:
         self,
         choices_provider: dict[str, list[str]] | None = None,
         description: str | None = None,
+        required_params: set[str] | None = None,
     ) -> argparse.ArgumentParser:
         """Create an ArgumentParser populated with all MAXConfig fields as arguments.
 
@@ -663,6 +678,8 @@ class MAXConfig:
             choices_provider: Optional dictionary mapping field names to their valid choices.
                              This allows external code to specify choices for specific fields.
             description: Optional description for the argument parser.
+            required_params: Optional set of field names that should be marked as required
+                           in the argument parser, regardless of their default values.
 
         Usage:
             ```python
@@ -677,6 +694,11 @@ class MAXConfig:
             parser = config.cli_arg_parsers(choices_provider=choices)
             parser.add_argument("--custom-arg", help="Custom argument")
             args = parser.parse_args(["--backend", "vllm"])  # Validates against choices
+
+            # With required parameters
+            required = {"model", "dataset_name"}
+            parser = config.cli_arg_parsers(required_params=required)
+            args = parser.parse_args()  # Will fail if model or dataset_name not provided
 
             # Empty args uses config file defaults
             args = parser.parse_args([])  # All values from config file
@@ -696,7 +718,8 @@ class MAXConfig:
 
         # Create parser
         parser = argparse.ArgumentParser(description=description)
-        choices_provider = choices_provider or {}
+        choices_provider = choices_provider or self.get_default_field_choices()
+        required_params = required_params or self.get_default_required_fields()
 
         for field_obj in fields(self):
             # Skip internal fields
@@ -740,6 +763,10 @@ class MAXConfig:
                 help_dict = self.help()
                 if field_obj.name in help_dict:
                     arg_kwargs["help"] = help_dict[field_obj.name]
+
+            # Mark as required if specified in required_params
+            if field_obj.name in required_params:
+                arg_kwargs["required"] = True
 
             # Add argument with appropriate type and action
             if action:
