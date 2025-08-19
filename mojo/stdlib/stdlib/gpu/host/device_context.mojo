@@ -30,7 +30,6 @@ from sys import (
     external_call,
     is_defined,
     is_gpu,
-    is_apple_gpu,
     sizeof,
 )
 from sys.compile import DebugLevel, OptimizationLevel
@@ -2231,22 +2230,14 @@ struct DeviceFunction[
         var dense_args_sizes = UnsafePointer[UInt]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes = dense_args_sizes.alloc(
-                    num_captures + num_args
-                )
+            dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer
             ]()
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes = stack_allocation[
-                    num_captures_static + num_args, UInt
-                ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt
+            ]()
 
         @parameter
         for i in range(num_args):
@@ -2257,11 +2248,8 @@ struct DeviceFunction[
             dense_args_sizes[i] = sizeof[Ts[i]]()
 
         @parameter
-        if is_apple_gpu():
-
-            @parameter
-            for i in range(num_args):
-                _populate_arg_sizes[i]()
+        for i in range(num_args):
+            _populate_arg_sizes[i]()
 
         if cluster_dim:
             attributes.append(
@@ -2360,10 +2348,7 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes.free()
+            dense_args_sizes.free()
 
     # Enqueue function on a stream
     @always_inline
@@ -2596,22 +2581,16 @@ struct DeviceFunction[
             dense_args_addrs = dense_args_addrs.alloc(
                 num_captures + num_passed_args
             )
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes = dense_args_sizes.alloc(
-                    num_captures + num_passed_args
-                )
+            dense_args_sizes = dense_args_sizes.alloc(
+                num_captures + num_passed_args
+            )
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes = stack_allocation[
-                    num_captures_static + num_passed_args, UInt
-                ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_passed_args, UInt
+            ]()
         # Since we skip over zero sized declared dtypes when passing arguments
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
@@ -2729,10 +2708,7 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
-
-            @parameter
-            if is_apple_gpu():
-                dense_args_sizes.free()
+            dense_args_sizes.free()
 
     @always_inline
     fn get_attribute(self, attr: Attribute) raises -> Int:
