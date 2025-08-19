@@ -121,17 +121,6 @@ def configure_telemetry(color: str | None = None) -> None:
     configure_metrics(settings)
 
 
-def _configure_env_vars(device_context_buffer_cache_size: float | None) -> None:
-    if device_context_buffer_cache_size is not None:
-        env_var_name = "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"
-        if env_var_name in os.environ:
-            logger.warning(
-                f"Both {env_var_name} env var and pipeline config are set. Ignoring env var."
-            )
-
-        os.environ[env_var_name] = str(device_context_buffer_cache_size)
-
-
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @click.option(
         "--profile-serve",
@@ -213,10 +202,6 @@ def cli_serve(
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
 
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
@@ -282,10 +267,6 @@ def cli_pipeline(
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     generate_text_for_pipeline(
         pipeline_config,
         prompt=prompt,
@@ -319,10 +300,6 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
@@ -332,10 +309,6 @@ def cli_warm_cache(**config_kwargs) -> None:
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
 
