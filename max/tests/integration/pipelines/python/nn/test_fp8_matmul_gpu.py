@@ -330,34 +330,33 @@ def create_max_fp8_result(
         ),
         # per-token quantization scaling for the input tensor, and 2D quantization
         # scaling for the weight tensor
-        # TODO: (KERN-1947) enable these tests when we have blockwise scaling support
-        # (
-        #     1,
-        #     1024,
-        #     2048,
-        #     (1, 128),
-        #     (128, 128),
-        #     Float8ScaleGranularity.BLOCK,
-        #     Float8ScaleGranularity.BLOCK,
-        # ),
-        # (
-        #     32,
-        #     1024,
-        #     2048,
-        #     (1, 128),
-        #     (128, 128),
-        #     Float8ScaleGranularity.BLOCK,
-        #     Float8ScaleGranularity.BLOCK,
-        # ),
-        # (
-        #     81,
-        #     1024,
-        #     2048,
-        #     (1, 128),
-        #     (128, 128),
-        #     Float8ScaleGranularity.BLOCK,
-        #     Float8ScaleGranularity.BLOCK,
-        # ),
+        (
+            1,
+            1024,
+            2048,
+            (1, 128),
+            (128, 128),
+            Float8ScaleGranularity.BLOCK,
+            Float8ScaleGranularity.BLOCK,
+        ),
+        (
+            32,
+            1024,
+            2048,
+            (1, 128),
+            (128, 128),
+            Float8ScaleGranularity.BLOCK,
+            Float8ScaleGranularity.BLOCK,
+        ),
+        (
+            81,
+            1024,
+            2048,
+            (1, 128),
+            (128, 128),
+            Float8ScaleGranularity.BLOCK,
+            Float8ScaleGranularity.BLOCK,
+        ),
     ],
 )
 def test_linear_gpu(
