@@ -69,6 +69,9 @@ modular_cc_test(
         # to use for the tests.
         "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_SIZE": "8589934592",
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     target_compatible_with = select({
