@@ -52,6 +52,7 @@ struct S1[X: Int](R1, R1Child, R2, Movable):
 
     # CHECK: kgen.conformance @{{.*}}AnyType
     # CHECK-NEXT: kgen.witness "__del__" : {{.*}} = {{.*}}@S1::@"__del__[[DEL_NAME]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__del__is_trivial" : i1 = 1
     # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@AnyType]]
 
     # CHECK: kgen.conformance @{{.*}}Movable

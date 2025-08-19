@@ -1577,7 +1577,7 @@ trait DeprecatedTrait:
     pass
 
 
-# CHECK-LABEL: lit.alias.decl
+# CHECK-LABEL: lit.alias.decl *"deprecated_alias
 # CHECK-SAME: deprecationWarning = "alias"
 @deprecated("alias")
 alias deprecated_alias = 1

@@ -2684,6 +2684,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (auto dtorAttr = lookupDestructor(structDecl, shared).first) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
+    // If the type lacks a __del__is_trivial member, synthesize a unresolved
+    // alias decl.
+    if (!shared.typeHasMember(structDecl, "__del__is_trivial",
+                              structDecl.getLoc()))
+      StructEmitter(structDecl).synthesizeUnresolvedAlias("__del__is_trivial");
   } else if (implicitlyDestructible) {
     synthesizedDtor = true;
     (void)StructEmitter(structDecl).synthesizeEmptyDtor();
@@ -3355,6 +3360,24 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 LogicalResult
 DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
                                         ASTDecl &childTraitAliasDecl) {
+
+  if (inheritedAliasOp.getDeclName().strref() == "__del__is_trivial") {
+    StructEmitter gen(*childTraitAliasDecl.getParentDecl());
+    TypedAttr isTrivial =
+        gen.populateSpecialFnIsTrivial(SpecialFunctionKind::kDel);
+
+    if (isTrivial) {
+      inheritedAliasOp.setParamDeclAttr(ParamDeclAttr::get(
+          inheritedAliasOp.getParamDecl().getName(), isTrivial.getType()));
+      inheritedAliasOp.setValueAttr(isTrivial);
+    } else {
+      // Something went wrong while resolving fields.
+      childTraitAliasDecl.setErroneous();
+    }
+    childTraitAliasDecl.resolvedness = DeclResolvedness::body;
+    return success();
+  }
+
   assert(isa<TraitDeclOp>(inheritedAliasOp->getParentOp()) &&
          "Expected synthetic alias decl's parent to be a trait");
 
@@ -3533,5 +3556,6 @@ ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
       ImplicitLocOpBuilder::atBlockEnd(op.getLoc(), &op.getBody().front());
   for (auto &[name, value] : witnesses)
     b.create<WitnessOp>(name, value);
+
   return success();
 }

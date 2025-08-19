@@ -112,7 +112,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
 
   bool hadErrors = false;
-  SyntheticNode node(structDecl.getLoc());
   IREmitter emitter(structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
 
@@ -215,7 +214,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
-    OverloadSet ov(name, decls, std::move(bindings), node,
+    OverloadSet ov(name, decls, std::move(bindings), syntheticNode,
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(),
