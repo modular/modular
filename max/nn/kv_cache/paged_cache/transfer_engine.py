@@ -19,6 +19,7 @@ import logging
 import os
 import random
 import socket
+import time
 from collections import defaultdict
 from uuid import uuid4
 
@@ -256,9 +257,6 @@ class KVTransferEngine:
             nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
         )
 
-        # in the multi tensor case, we need to use a progress thread to achieve overlapping transfers
-        use_prog_thread = self.num_tensors > 1
-
         # Create agents and process each tensor
         for i, tensor in enumerate(tensors):
             # Create agent name
@@ -268,7 +266,10 @@ class KVTransferEngine:
             agent = nixl.Agent(
                 agent_name,
                 nixl.AgentConfig(
-                    use_prog_thread=use_prog_thread,
+                    # Always use progress thread.
+                    # - It helps with async notification delivery.
+                    # - It enables overlapping transfers from multiple agents.
+                    use_prog_thread=True,
                     use_listen_thread=True,
                     listen_port=listen_port + i,
                 ),
@@ -662,7 +663,7 @@ class KVTransferEngine:
     def sync_and_release(self, xfer_req: XferReqData) -> None:
         """Wait for a transfer to complete and release the transfer after it completes."""
         while not self.is_complete(xfer_req):
-            pass
+            time.sleep(0.001)
         self.cleanup_transfer(xfer_req)
 
     def cleanup(self) -> None:
