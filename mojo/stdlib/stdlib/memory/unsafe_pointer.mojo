@@ -367,7 +367,7 @@ struct UnsafePointer[
         return self + (-1 * index(offset))
 
     @always_inline("nodebug")
-    fn __sub__[T](self: UnsafePointer[T], other: UnsafePointer[T]) -> Int:
+    fn __sub__[T: AnyType](self: UnsafePointer[T], other: UnsafePointer[T]) -> Int:
         """
         Return the distance in elements between two pointers.
 

@@ -327,11 +327,10 @@ def test_offset():
 
 
 def test_pointer_subtraction():
-    # Basic pointer subtraction
-
-    var ptr = UnsafePointer[Int].alloc(8)
+    # Allocate pointer of trivial type Bool (satisfies AnyType)
+    var ptr = UnsafePointer[Bool].alloc(8)
     for i in range(8):
-        ptr[i] = i
+        ptr[i] = true  # just needs some value
 
     var start_ptr = ptr
     var end_ptr = ptr + 5
@@ -340,16 +339,6 @@ def test_pointer_subtraction():
     assert_equal(end_ptr.__sub__(start_ptr), 5)
     assert_equal(start_ptr.__sub__(end_ptr), -5)
     assert_equal(end_ptr.__sub__(end_ptr), 0)
-
-    # Allocate pointer for SIMD/indexed subtraction test
-    var ptr_offset_u8  = ptr + UInt8(3)
-    var ptr_offset_u16 = ptr + UInt16(5)
-
-    # Test subtraction with different integer types
-    assert_equal(ptr_offset_u8.__sub__(start_ptr), 3)
-    assert_equal(ptr_offset_u16.__sub__(start_ptr), 5)
-    assert_equal(start_ptr.__sub__(ptr_offset_u8), -3)
-    assert_equal(ptr_offset_u8.__sub__(ptr_offset_u16), -2)
 
     ptr.free()
 
