@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof
+from sys import sizeof, argv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout.layout_tensor import LayoutTensorIter
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, barrier, block_idx
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -88,6 +88,20 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark":
+            return True
+    return False
+
+
+fn simple_init() -> Bool:
+    for arg in argv():
+        if arg == "--simple-init":
+            return True
+    return False
 
 
 @fieldwise_init
@@ -299,6 +313,8 @@ fn consumer_main_loop[
     ],
     elect_one_warp: Bool,
     iter_idx: UInt,
+    accum_index: UInt,
+    stage_stride_cols: UInt,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -307,12 +323,13 @@ fn consumer_main_loop[
 
     var a_smem_tile = a_smem_iter.next(stage)[]
     var b_smem_tile = b_smem_iter.next(stage)[]
-
+    # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
+        var tmem_offset = accum_index * stage_stride_cols
         mma_op.mma(
             a_smem_tile,
             b_smem_tile,
-            tmem_addr,
+            tmem_addr | tmem_offset,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
@@ -354,6 +371,7 @@ fn store_C[
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
+    stage_stride_cols: UInt,
 ):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -422,6 +440,7 @@ fn store_C[
     var c_upper_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
     var c_lower_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
 
+    var tmem_offset = index * stage_stride_cols
     # Primary Load
     c_upper_pow_2_main = tcgen05_ld[
         datapaths=data_paths,
@@ -430,7 +449,7 @@ fn store_C[
         dtype=accum_type,
         pack=False,
         width = c_upper_pow_2_main.size,
-    ](tmem_addr | ((warp_id * 32) << 16))
+    ](tmem_addr | tmem_offset | ((warp_id * 32) << 16))
 
     # Load c_frag_lower
     # Primary load
@@ -441,7 +460,7 @@ fn store_C[
         dtype=accum_type,
         pack=False,
         width = c_lower_pow_2_main.size,
-    ](tmem_addr | ((warp_id * 32 + 16) << 16))
+    ](tmem_addr | tmem_offset | ((warp_id * 32 + 16) << 16))
 
     @parameter
     if not MMA_N.is_power_of_two():
@@ -455,7 +474,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_upper_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE) << 16))
+        ](tmem_addr + 128 | tmem_offset | ((warp_id * WARP_SIZE) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
             datapaths=data_paths,
@@ -464,7 +483,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_lower_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * WARP_SIZE + 16) << 16))
+        ](tmem_addr + 128 | tmem_offset | ((warp_id * WARP_SIZE + 16) << 16))
 
     # Remainder load happens later, only if needed
     tcgen05_load_wait()
@@ -623,6 +642,10 @@ fn blackwell_tma_pair_umma_kernel[
     alias clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
         TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
     )
+
+    # For ld from TMEM, use same per-stage stride in column field.
+    alias TMEM_N = 512
+    var stage_stride_cols = TMEM_N // num_accum_pipeline_stages
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -982,6 +1005,8 @@ fn blackwell_tma_pair_umma_kernel[
                         mma_op,
                         elect_one_warp,
                         i,
+                        accum_index,
+                        stage_stride_cols,
                     )
                     consumer_phase.step()
 
@@ -1025,6 +1050,7 @@ fn blackwell_tma_pair_umma_kernel[
                 tmem_addr,
                 (UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp,
+                stage_stride_cols,
             )
 
             accum_pipeline_consumer_state.step()
@@ -1054,8 +1080,7 @@ fn blackwell_matmul_tma_pair_mma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 1,
-    num_accum_pipeline_stages: UInt = 1,
+    num_clc_pipeline_stages: UInt = 2,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1116,12 +1141,15 @@ fn blackwell_matmul_tma_pair_mma[
     alias MBAR_BYTES = sizeof[Int64]()
     alias CLC_RESPONSE_BYTES = sizeof[Int128]()
     alias TMEM_ADDR_BYTES = sizeof[Int32]()
-
+    # the 'N' dimension of tensor memory is 512
+    alias TMEM_N = 512
+    # the maximum different number of mma's that can be run in parallel is TMEM_N/MMA_N
+    alias max_accum_pipeline_stages = TMEM_N // MMA_N
     # Mainloop barrier
-    alias accum_full_mbar_bytes = MBAR_BYTES * num_accum_pipeline_stages
-    alias accum_empty_mbar_bytes = MBAR_BYTES * num_accum_pipeline_stages
+    alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
+    alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    alias clc_response_bytes = CLC_RESPONSE_BYTES
+    alias clc_response_bytes = CLC_RESPONSE_BYTES * num_clc_pipeline_stages
     alias clc_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
     alias clc_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
     alias clc_throttle_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
@@ -1167,12 +1195,12 @@ fn blackwell_matmul_tma_pair_mma[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(c_tma_op).desc_layout,
+        a_tma_op.layout,
+        b_tma_op.layout,
+        c_tma_op.layout,
+        a_tma_op.desc_layout,
+        b_tma_op.desc_layout,
+        c_tma_op.desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=transpose_b,
@@ -1183,7 +1211,7 @@ fn blackwell_matmul_tma_pair_mma[
         cta_group=cta_group,
         num_pipeline_stages=max_pipeline_stages,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        num_accum_pipeline_stages=num_accum_pipeline_stages,
+        num_accum_pipeline_stages=max_accum_pipeline_stages,
     ]
 
     var grid_dim = (
@@ -1286,10 +1314,18 @@ def test_blackwell_matmul_tma_pair_mma[
     )
 
     # Initialize matmul operands
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    if simple_init():
+        var at = a_host.tensor
+        var bt = b_host.tensor
+        for m in range(M):
+            for k in range(K):
+                at[m, k] = k
+        for n in range(N):
+            for k in range(K):
+                bt[n, k] = 1 if n == k else 0
+    else:
+        random(a_host.tensor)
+        random(b_host.tensor)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
@@ -1415,18 +1451,19 @@ fn make_dic_of_shapes() -> (
     Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
 ):
     var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
-    dic[0] = (512, 2560, 8192)
-    dic[1] = (512, 8192, 2048)
-    dic[2] = (512, 14336, 8192)
-    dic[3] = (512, 8192, 7168)
-    dic[4] = (4096, 2560, 8192)
-    dic[5] = (4096, 8192, 2048)
-    dic[6] = (4096, 14336, 8192)
-    dic[7] = (4096, 8192, 7168)
-    dic[8] = (8192, 2560, 8192)
-    dic[9] = (8192, 8192, 2048)
-    dic[10] = (8192, 14336, 8192)
-    dic[11] = (8192, 8192, 7168)
+    dic[0] = (4096, 4096, 4096)
+    dic[1] = (512, 2560, 8192)
+    dic[2] = (512, 8192, 2048)
+    dic[3] = (512, 14336, 8192)
+    dic[4] = (512, 8192, 7168)
+    dic[5] = (4096, 2560, 8192)
+    dic[6] = (4096, 8192, 2048)
+    dic[7] = (4096, 14336, 8192)
+    dic[8] = (4096, 8192, 7168)
+    dic[9] = (8192, 2560, 8192)
+    dic[10] = (8192, 8192, 2048)
+    dic[11] = (8192, 14336, 8192)
+    dic[12] = (8192, 8192, 7168)
     return dic
 
 
@@ -1480,6 +1517,28 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
+        if is_benchmark():
+            benchmark_blackwell_matmul(ctx)
+            return
+
+        # Testing Nvidia specific, non power of 2, MMA_N parameter
+        print("Testing Nvidia specific, non power of 2, MMA_N parameter")
+        alias block_tile_shape = Index(128, 80, 64)
+        alias umma_shape = Index(
+            block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
+        )
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            block_tile_shape,
+            umma_shape,
+            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(512), static[2560](), static[8192]())
+
+        print("Testing remaining cases")
 
         @parameter
         for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
