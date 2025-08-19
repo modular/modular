@@ -46,6 +46,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
+    warpgroup_fence,
 )
 from layout.tma_async import (
     PipelineState,
@@ -1131,6 +1132,7 @@ fn _mha_sm90[
             k_smem_sub = k_tile(read_idx)
             var q_smem_sub = q_consumer(q_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
+            warpgroup_fence(p_reg_tile)
             wgmma_0.arrive()
             wgmma_0.wgmma[num_consumer, scale_c=0](
                 q_smem_sub,
@@ -1139,12 +1141,14 @@ fn _mha_sm90[
                 Int(local_warp_group_idx),
             )
             wgmma_0.commit_group()
+            warpgroup_fence(p_reg_tile)
 
         @parameter
         @always_inline
         fn p_mul_v(read_idx: UInt32, read_phase: UInt32):
             v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
+            warpgroup_fence(output_reg_tile)
             wgmma_1.arrive()
             wgmma_1.wgmma(
                 p_frag,
@@ -1152,6 +1156,7 @@ fn _mha_sm90[
                 output_reg_tile,
             )
             wgmma_1.commit_group()
+            warpgroup_fence(output_reg_tile)
 
         @parameter
         @always_inline

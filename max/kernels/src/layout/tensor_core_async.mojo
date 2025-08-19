@@ -59,6 +59,7 @@ from layout.layout import (
 )
 
 from utils import IndexList, StaticTuple
+from sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -201,6 +202,45 @@ alias WGMMA_K_BYTES = 32
 
 alias _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
 alias _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
+
+
+@always_inline
+fn warpgroup_fence[
+    accum_type: DType,
+    accum_layout: Layout, //,
+](
+    accum: LayoutTensor[
+        accum_type, accum_layout, address_space = AddressSpace.LOCAL, **_
+    ]
+):
+    """Code motion fence to ensure the registers of the WGMMA instruction do not get touched by anything.
+
+    This has no impact on kernel correctness. It serves purely as an NVVM code motion barrier,
+    preventing other operations from modifying the WGMMA instruction's
+    registers during execution of the WGMMA instruction batch.
+
+    Parameters:
+        accum_type: Element data type of the tensor.
+        accum_layout: Register layout of the accumulator.
+
+    Args:
+        accum: A LayoutTensor with the accum_type and accum_layout.
+
+    """
+    constrained[
+        accum_type == DType.float32,
+        "Only float32 is supported for warpgroup fence",
+    ]()
+
+    @always_inline
+    fn _warpgroup_fence_operand(reg: Scalar[accum_type]):
+        inlined_assembly["", NoneType, constraints="+f", has_side_effect=True](
+            reg
+        )
+
+    @parameter
+    for i in range(accum_layout.size()):
+        _warpgroup_fence_operand(accum.ptr[i])
 
 
 # constructs core matrix or "minimal dense" layout in bytes as described in file

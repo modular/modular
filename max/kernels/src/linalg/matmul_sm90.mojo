@@ -63,6 +63,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     st_matrix_n_layout,
     tile_layout_k_major,
+    warpgroup_fence,
 )
 from layout.tma_async import (
     PipelineState,
@@ -239,6 +240,7 @@ fn consumer_main_loop[
             var a_smem_tile = a_smem_iter.next(read_idx)[]
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
+            warpgroup_fence(c_reg_tile)
             wgmma_op.arrive()
             alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
             wgmma_op.wgmma[num_consumer, scale_c=scale_c](
@@ -248,6 +250,7 @@ fn consumer_main_loop[
                 Int(local_warp_group_idx),
             )
             wgmma_op.commit_group()
+            warpgroup_fence(c_reg_tile)
             wgmma_op.wait_group()
 
             @parameter
@@ -1624,14 +1627,15 @@ fn hopper_matmul_tma_wgmma_kernel[
         mbar[0].wait(phase.phase())
         phase.step()
 
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
 
         alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
         wgmma_op.wgmma[scale_c=scale_c](a_smem_tile, b_smem_tile, c_reg_tile)
 
         wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
-
         barrier()
 
         @parameter
