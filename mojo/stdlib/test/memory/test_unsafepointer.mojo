@@ -327,10 +327,10 @@ def test_offset():
 
 
 def test_pointer_subtraction():
-    # Allocate pointer of trivial type Bool (satisfies AnyType)
+    # Allocate pointer of trivial type Bool
     var ptr = UnsafePointer[Bool].alloc(8)
     for i in range(8):
-        ptr[i] = true  # just needs some value
+        ptr[i] = true 
 
     var start_ptr = ptr
     var end_ptr = ptr + 5
