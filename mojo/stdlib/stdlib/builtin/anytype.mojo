@@ -109,6 +109,16 @@ trait AnyType:
         """
         ...
 
+    alias __del__is_trivial: __mlir_type.i1
+    """A flag (often compiler generated) to indicate whether the implementation of `__del__` is trivial.
+
+    The implementation of `__del__` is considered to be trivial if:
+    - The struct has a compiler-generated trivial destructor and all its fields
+      have a trivial `__del__` method.
+
+    In practice, it means that the `__del__` can be considered as no-op.
+    """
+
 
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
