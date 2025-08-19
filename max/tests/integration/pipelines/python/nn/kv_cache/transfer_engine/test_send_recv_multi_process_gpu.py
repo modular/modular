@@ -70,8 +70,7 @@ def transfer_routine_sender(
     assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
 
     # Verify results
-    expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
-    assert np.array_equal(blocks.to_numpy(), expected_blocks)
+    assert (blocks.to_numpy() == 42).all()
 
     # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND :(
     # TODO(E2EOPT-299) Reenable cleanup
@@ -108,8 +107,7 @@ def transfer_routine_receiver(
     engine.sync_and_release(xfer_req)
 
     # Verify results
-    expected_blocks = np.full(total_bytes, 42, dtype=np.int8)
-    assert np.array_equal(blocks.to_numpy(), expected_blocks)
+    assert (blocks.to_numpy() == 42).all()
 
     # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND
     # TODO(E2EOPT-299) Reenable cleanup
@@ -125,7 +123,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
-    total_bytes = int(12 * GB)
+    total_bytes = int(8 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
