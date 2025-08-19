@@ -214,8 +214,10 @@ def maybe_restore_chunked_request(
 ) -> None:
     # Only the last request in a batch could be chunked. We discard its response
     # and put it back into the request queue if it is chunked.
+    # We know if a request is chunked because it still needs CE even after one
+    # round of execution.
     last_req = list(batch.values())[-1]
-    if last_req.active_idx - last_req.start_idx > 1:
+    if last_req.needs_ce:
         req_id, data = batch.popitem()
         ce_reqs[req_id] = data
         ce_reqs.move_to_end(req_id, last=False)

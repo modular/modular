@@ -475,16 +475,15 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return max_seq_len - (self.current_length - self.active_length)
 
     @property
-    def is_ce(self) -> bool:
-        """Returns whether this context is in context encoding (CE) mode.
+    def needs_ce(self) -> bool:
+        """Returns whether this context needs context encoding (CE).
 
-        CE mode indicates that the context has more than one active token to process,
-        typically during the initial encoding of a prompt or after a rollback.
+        CE mode indicates that the context has additional prompt tokens to encode.
 
         Returns:
-            bool: True if in CE mode (active_length > 1), False otherwise.
+            bool: True if the context needs CE, False otherwise.
         """
-        return self.active_length > 1
+        return self._start_idx < self._prompt_len
 
     @property
     def is_initial_prompt(self) -> bool:
