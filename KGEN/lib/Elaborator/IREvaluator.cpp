@@ -413,9 +413,15 @@ IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
 FailureOr<TypedAttr>
 IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
   // Find the node for the instantiated type ref.
-  SymbolRefAttr instanceRef =
-      cast<TypeInstanceRefAttr>(getWitnessEntry.getTypeRefIfResolved())
-          .getSymbol();
+  TypedAttr resolved = getWitnessEntry.getTypeRefIfResolved();
+  if (!resolved) {
+    emitError({*errorLoc, "no instantiation for trait " +
+                              getWitnessEntry.getTraitName().getValue() +
+                              ", get witness table failed"});
+    return failure();
+  }
+
+  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(resolved).getSymbol();
   ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
   // Always look up witness tables from the StructGeneratorOp, since the
   // StructInstanceOp is undergoing elaboration, and we should not block on
