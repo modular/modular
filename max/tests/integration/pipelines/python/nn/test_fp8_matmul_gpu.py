@@ -12,15 +12,21 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn import (
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+)
 from max.nn.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from test_common.graph_utils import is_h100_h200
+from test_common.graph_utils import is_b100_b200, is_h100_h200
 
 # TODO: confirm this is a reasonable rtol for fp8
-ACCURACY_RTOL = 1e-1
-ACCURACY_ATOL = 3e-2
+ACCURACY_RTOL = 1e-2
+ACCURACY_ATOL = 1e-2
 
 
 # The following triton kernels are adapted from https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/kernel.py
@@ -29,6 +35,7 @@ def act_quant_kernel(
     x_ptr: torch.Tensor,
     y_ptr: torch.Tensor,
     s_ptr: torch.Tensor,
+    scale_ub: float,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
@@ -46,7 +53,8 @@ def act_quant_kernel(
     pid = tl.program_id(axis=0)
     offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     x = tl.load(x_ptr + offs).to(tl.float32)
-    s = tl.max(tl.abs(x)) / 448.0
+    max_val = tl.max(tl.abs(x), axis=0)
+    s = tl.minimum(max_val, scale_ub) / 448.0
     y = x / s
     y = y.to(y_ptr.dtype.element_ty)
     tl.store(y_ptr + offs, y)
@@ -54,7 +62,7 @@ def act_quant_kernel(
 
 
 def act_quant(
-    x: torch.Tensor, block_size: int = 128
+    x: torch.Tensor, block_size: int = 128, scale_ub: float = 1200.0
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Quantizes the input tensor `x` using block-wise quantization.
@@ -77,7 +85,9 @@ def act_quant(
         *x.size()[:-1], x.size(-1) // block_size, dtype=torch.float32
     )
     grid = lambda meta: (triton.cdiv(x.numel(), meta["BLOCK_SIZE"]),)
-    act_quant_kernel[grid](x, y, s, BLOCK_SIZE=tl.constexpr(block_size))
+    act_quant_kernel[grid](
+        x, y, s, scale_ub, BLOCK_SIZE=tl.constexpr(block_size)
+    )
     return y, s
 
 
@@ -193,8 +203,8 @@ def fp8_gemm(
         tl.constexpr(N),
         tl.constexpr(K),
         BLOCK_SIZE_M=tl.constexpr(64),
-        BLOCK_SIZE_N=tl.constexpr(64),
-        BLOCK_SIZE_K=tl.constexpr(64),
+        BLOCK_SIZE_N=tl.constexpr(128),
+        BLOCK_SIZE_K=tl.constexpr(128),
         TILE_SIZE_K=tl.constexpr(tile_k),
         TILE_SIZE_N=tl.constexpr(tile_n),
     )
@@ -224,6 +234,8 @@ def create_max_fp8_result(
     weight_scales: torch.Tensor,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
 ) -> torch.Tensor:
     K = input_tensor.shape[-1]
     N = weight_tensor.shape[0]
@@ -245,6 +257,8 @@ def create_max_fp8_result(
 
             quantized_input, input_scales = quantize_dynamic_scaled_float8(
                 input,
+                input_scale_spec,
+                weight_scale_spec,
                 group_size_or_per_token=a_tile_size[1]
                 if a_tile_size[1] != K
                 else -1,
@@ -252,7 +266,12 @@ def create_max_fp8_result(
             )
 
             result = dynamic_scaled_matmul(
-                quantized_input, weight, input_scales, weight_scales
+                quantized_input,
+                weight,
+                input_scales,
+                weight_scales,
+                input_scale_spec,
+                weight_scale_spec,
             )
             graph.output(result)
         return graph
@@ -273,19 +292,72 @@ def create_max_fp8_result(
     return torch.from_dlpack(max_result)
 
 
-@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
+@pytest.mark.skipif(
+    not (is_h100_h200() or is_b100_b200()),
+    reason="float8 requires H100 or H200",
+)
 @pytest.mark.parametrize(
-    "M, N, K, a_tile_size, b_tile_size",
+    "M, N, K, a_tile_size, b_tile_size, input_scale_granularity, weight_scale_granularity",
     [
         # per-token quantization for the input tensor, and per-column quantization
         # for the weight tensor
-        (1, 1024, 2048, (1, 2048), (1, 2048)),
-        (32, 1024, 2048, (1, 2048), (1, 2048)),
-        # (81, 1024, 2048, (1, 2048), (1, 2048)),
-        # TODO: enable the block-wise quantization tests once we have the kernel
-        # ( 1, 1024, 2048, (1, 128), (128, 128)),
-        # (32, 1024, 2048, (1, 128), (128, 128)),
-        # (81, 1024, 2048, (1, 128), (128, 128)),
+        (
+            1,
+            1024,
+            2048,
+            (1, 2048),
+            (1, 2048),
+            Float8ScaleGranularity.COLWISE,
+            Float8ScaleGranularity.ROWWISE,
+        ),
+        (
+            32,
+            1024,
+            2048,
+            (1, 2048),
+            (1, 2048),
+            Float8ScaleGranularity.COLWISE,
+            Float8ScaleGranularity.ROWWISE,
+        ),
+        (
+            81,
+            1024,
+            2048,
+            (1, 2048),
+            (1, 2048),
+            Float8ScaleGranularity.COLWISE,
+            Float8ScaleGranularity.ROWWISE,
+        ),
+        # per-token quantization scaling for the input tensor, and 2D quantization
+        # scaling for the weight tensor
+        # TODO: (KERN-1947) enable these tests when we have blockwise scaling support
+        # (
+        #     1,
+        #     1024,
+        #     2048,
+        #     (1, 128),
+        #     (128, 128),
+        #     Float8ScaleGranularity.BLOCK,
+        #     Float8ScaleGranularity.BLOCK,
+        # ),
+        # (
+        #     32,
+        #     1024,
+        #     2048,
+        #     (1, 128),
+        #     (128, 128),
+        #     Float8ScaleGranularity.BLOCK,
+        #     Float8ScaleGranularity.BLOCK,
+        # ),
+        # (
+        #     81,
+        #     1024,
+        #     2048,
+        #     (1, 128),
+        #     (128, 128),
+        #     Float8ScaleGranularity.BLOCK,
+        #     Float8ScaleGranularity.BLOCK,
+        # ),
     ],
 )
 def test_linear_gpu(
@@ -295,6 +367,8 @@ def test_linear_gpu(
     K: int,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
+    input_scale_granularity: Float8ScaleGranularity,
+    weight_scale_granularity: Float8ScaleGranularity,
 ) -> None:
     assert a_tile_size[0] == 1, "a_tile_size[0] must be 1"
     assert a_tile_size[1] == b_tile_size[1], (
@@ -310,14 +384,11 @@ def test_linear_gpu(
 
     # This creates FP8_E4M3FN values between -448 and 448
     weight_tensor = (
-        (
-            torch.randn(
-                size=(N, K),
-                dtype=torch.bfloat16,
-                device=torch.device("cuda"),
-            ).clamp(-1, 1)
-        )
-        * 448.0
+        torch.randn(
+            size=(N, K),
+            dtype=torch.bfloat16,
+            device=torch.device("cuda"),
+        ).clamp(-448.0, 448.0)
     ).to(torch.float8_e4m3fn)
 
     weight_scales = (
@@ -344,6 +415,15 @@ def test_linear_gpu(
         weight_scales,
         a_tile_size,
         b_tile_size,
+        input_scale_spec=Float8InputScaleSpec(
+            granularity=input_scale_granularity,
+            origin=Float8ScaleOrigin.DYNAMIC,
+            dtype=DType.float8_e4m3fn,
+        ),
+        weight_scale_spec=Float8WeightScaleSpec(
+            granularity=weight_scale_granularity,
+            dtype=DType.float8_e4m3fn,
+        ),
     )
 
     torch.testing.assert_close(
