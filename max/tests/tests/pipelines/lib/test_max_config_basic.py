@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for MAXConfig interface."""
 
+from __future__ import annotations
+
 import argparse
 import tempfile
 from dataclasses import dataclass, fields
@@ -836,6 +838,70 @@ class TestMAXConfigNamespaceConversion:
         # Should fail when boolean field not provided
         with pytest.raises(SystemExit):
             parser.parse_args([])
+
+    def test_cli_arg_parsers_union_syntax_support(self) -> None:
+        """Test that cli_arg_parsers handles both Optional[T] and T | None syntaxes."""
+
+        @dataclass
+        class UnionTestConfig(MAXConfig):
+            _config_file_section_name: str = "union_test_config"
+
+            # Test both union syntaxes
+            optional_int_old: Optional[int] = None
+            optional_int_new: int | None = None
+            optional_str_old: Optional[str] = None
+            optional_str_new: str | None = None
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "optional_int_old": "Optional int using Optional[int] syntax",
+                    "optional_int_new": "Optional int using int | None syntax",
+                    "optional_str_old": "Optional str using Optional[str] syntax",
+                    "optional_str_new": "Optional str using str | None syntax",
+                }
+
+        config = UnionTestConfig()
+        parser = config.cli_arg_parsers()
+
+        # Test that both syntaxes produce integer types for integer fields
+        args = parser.parse_args(
+            [
+                "--optional-int-old",
+                "42",
+                "--optional-int-new",
+                "84",
+                "--optional-str-old",
+                "hello",
+                "--optional-str-new",
+                "world",
+            ]
+        )
+
+        # Both integer fields should be parsed as integers, not strings
+        assert isinstance(args.optional_int_old, int)
+        assert args.optional_int_old == 42
+        assert isinstance(args.optional_int_new, int)
+        assert args.optional_int_new == 84
+
+        # String fields should remain as strings
+        assert isinstance(args.optional_str_old, str)
+        assert args.optional_str_old == "hello"
+        assert isinstance(args.optional_str_new, str)
+        assert args.optional_str_new == "world"
+
+        # Test arithmetic operations work (this was the original bug)
+        result_old = args.optional_int_old - 1
+        result_new = args.optional_int_new - 1
+        assert result_old == 41
+        assert result_new == 83
+
+        # Test with no arguments (should use defaults)
+        args_default = parser.parse_args([])
+        assert args_default.optional_int_old is None
+        assert args_default.optional_int_new is None
+        assert args_default.optional_str_old is None
+        assert args_default.optional_str_new is None
 
     def test_get_default_required_fields(self) -> None:
         """Test get_default_required_fields static method."""

@@ -5,8 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for MAXConfig inheritance functionality."""
 
+from __future__ import annotations
+
 import tempfile
 from dataclasses import dataclass
+from typing import Optional
 
 import pytest
 import yaml
@@ -360,3 +363,88 @@ class TestMAXConfigInheritance:
 
         # Check new section
         assert result["new_section"]["new_setting"] == "new_value"  # Added
+
+    def test_inheritance_with_union_syntax_fields(self) -> None:
+        """Test that inheritance works correctly with both Optional[T] and T | None field types."""
+
+        @dataclass
+        class UnionInheritanceTestConfig(MAXConfig):
+            _config_file_section_name: str = "union_inheritance_test_config"
+
+            # Test both union syntaxes
+            optional_int_old: Optional[int] = None
+            optional_int_new: int | None = None
+            required_str: str = "default"
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "optional_int_old": "Optional int using Optional[int] syntax",
+                    "optional_int_new": "Optional int using int | None syntax",
+                    "required_str": "Required string field",
+                }
+
+        # Create base config file with union syntax fields
+        base_config_data = {
+            "name": "base_config",
+            "version": "1.0",
+            "union_inheritance_test_config": {
+                "optional_int_old": 100,
+                "optional_int_new": 200,
+                "required_str": "base_value",
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as base_f:
+            yaml.dump(base_config_data, base_f)
+            base_f.flush()
+            base_config_path = base_f.name
+
+            # Create child config that inherits and overrides some values
+            child_config_data = {
+                "name": "child_config",
+                "version": "1.0",
+                "depends_on": base_config_path,
+                "union_inheritance_test_config": {
+                    "optional_int_old": 150,  # Override base value
+                    # optional_int_new and required_str should be inherited from base
+                },
+            }
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml"
+            ) as child_f:
+                yaml.dump(child_config_data, child_f)
+                child_f.flush()
+                child_config_path = child_f.name
+
+                # Load the config and verify inheritance worked
+                config = UnionInheritanceTestConfig.from_config_file(
+                    child_config_path
+                )
+
+                assert config.optional_int_old == 150  # Overridden value
+                assert config.optional_int_new == 200  # Inherited from base
+                assert (
+                    config.required_str == "base_value"
+                )  # Inherited from base
+
+                # Test CLI argument parsing with inherited config
+                parser = config.cli_arg_parsers()
+
+                # Test that both union syntaxes work correctly after inheritance
+                args = parser.parse_args(
+                    ["--optional-int-old", "300", "--optional-int-new", "400"]
+                )
+
+                # Both should be parsed as integers, not strings
+                assert isinstance(args.optional_int_old, int)
+                assert args.optional_int_old == 300
+                assert isinstance(args.optional_int_new, int)
+                assert args.optional_int_new == 400
+
+                # Test arithmetic operations (the original bug scenario)
+                result_old = args.optional_int_old - 1
+                result_new = args.optional_int_new - 1
+                assert result_old == 299
+                assert result_new == 399
