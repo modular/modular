@@ -146,15 +146,6 @@ single_version_override(
     version = "1.67.1",
 )
 
-single_version_override(
-    module_name = "rules_python",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/bazel/issues/26561
-        "//bazel/public-patches:rules_python_warning.patch",
-    ],
-)
-
 DEFAULT_PYTHON_VERSION = "3.12"
 
 PYTHON_VERSIONS = [
