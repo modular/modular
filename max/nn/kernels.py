@@ -1805,6 +1805,18 @@ def quantize_dynamic_scaled_float8(
         else input.shape[1]
     )
 
+    a_scales_dim1 = input.shape[0]
+    if input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            msg = "both input and weight must be blockwise scaled for blockwise scaling"
+            raise ValueError(msg)
+
+        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[0] + padding_size - 1) // padding_size
+        ) * padding_size
+
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
         device=input.device,
@@ -1820,7 +1832,7 @@ def quantize_dynamic_scaled_float8(
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[input.shape[1] // group_size, input.shape[0]],
+                shape=[input.shape[1] // group_size, a_scales_dim1],
                 device=input.device,
             ),
         ],
@@ -1881,6 +1893,17 @@ def dynamic_scaled_matmul(
 
         if b_scales.shape[1] != 1:
             msg = "only channel-wise scaling is supported for b"
+            raise ValueError(msg)
+
+    elif input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            msg = "both input and weight must be blockwise scaled for blockwise scaling"
+            raise ValueError(msg)
+
+        # a_scale is of shape [ceildiv(K // BLOCK_SIZE), M-padded]
+        # b_scale is of shape [ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        if a_scales.shape[0] != b_scales.shape[1]:
+            msg = "both a_scales and b_scales must have the same shape on the K dimension"
             raise ValueError(msg)
 
     else:

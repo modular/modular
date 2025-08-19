@@ -45,6 +45,8 @@ fn test_naive_blockwise_fp8_matmul[
     alias BLOCK_SCALE_N = block_scales_sizes[1]
     alias BLOCK_SCALE_K = block_scales_sizes[2]
 
+    constrained[BLOCK_SCALE_M == 1, "BLOCK_SCALE_M must be 1"]()
+
     var M = m.value
     var N = n.value
     var K = k.value
@@ -232,6 +234,6 @@ fn main() raises:
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
-                Index(32, 64, 16),
+                Index(1, 64, 16),
                 transpose_b=transpose_b,
             ](ctx, handle, dynamic(128), static[128](), static[128]())
