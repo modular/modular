@@ -505,13 +505,16 @@ public:
 
       // Exported functions to the GPU target get a special metadata
       // attribute to tell LLVM that these are kernel functions.
-      if (target.isGPU()) {
-        if (target.getTriple().isNVPTX()) {
-          funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
-                          b.getUnitAttr());
-        } else {
-          funcOp.setCConv(mlir::LLVM::cconv::CConv::AMDGPU_KERNEL);
-        }
+      if (target.getTriple().isNVPTX()) {
+        funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
+                        b.getUnitAttr());
+      } else if (target.getTriple().isAMDGPU()) {
+        funcOp.setCConv(mlir::LLVM::cconv::CConv::AMDGPU_KERNEL);
+      } else if (isMetalTriple(target.getTriple())) {
+        // Nothing to do
+      } else if (target.isGPU()) {
+        llvm::report_fatal_error(
+            "Unknown GPU target. Which Calling Convention to use ?");
       }
     }
     if (failed(convertLLVMMetadata(
