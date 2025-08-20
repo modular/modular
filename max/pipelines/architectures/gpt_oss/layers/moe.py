@@ -239,7 +239,7 @@ class GptOssMoE(MoE):
         up = gate_up_output[:, self.moe_dim :]
 
         # Apply clamping (NOTE: This is specific to GptOss)
-        gate = clamp(gate, min=-self.limit, max=self.limit)
+        gate = ops.min(gate, self.limit)
         up = clamp(up, min=-self.limit, max=self.limit)
 
         # GptOss-style activation: gate * sigmoid(gate * alpha) * (up + 1)
