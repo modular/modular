@@ -77,7 +77,6 @@ class DecodeScheduler(Scheduler):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.paged_manager = paged_manager
-        self.dispatcher_client = dispatcher_client
 
         # Initialize Queues
         self.request_pull_socket = ZmqPullSocket[
