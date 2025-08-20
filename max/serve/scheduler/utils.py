@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING
@@ -48,15 +49,23 @@ logger = logging.getLogger("max.serve")
 class SchedulerLogger:
     """Class to periodically log batch-level metrics to console."""
 
-    def __init__(self, log_interval_s: float = 1):
+    def __init__(self, log_interval_s: float | None = None):
         """Initializes the SchedulerLogger.
 
         Args:
             log_interval_s: How frequently to log CE and TG batches, in seconds.
         """
 
+        if log_interval_s is None:
+            log_interval_s = float(
+                os.getenv("MAX_SERVE_SCHEDULER_STATS_LOG_INTERVAL_S", "3")
+            )
+        logger.debug(
+            f"Enabled scheduler batch statistic logging at interval of {log_interval_s:.2f}s"
+        )
+
         # How frequently to log CE and TG batches.
-        # We restrict logs to at most once every 3 seconds to avoid spam.
+        # We restrict logs to at most once every few seconds to avoid spam.
         self.ce_log_interval_s = log_interval_s
         self.tg_log_interval_s = log_interval_s
 
