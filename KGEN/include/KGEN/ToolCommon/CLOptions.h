@@ -208,32 +208,32 @@ private:
     DEFINE_CL_OPTION(uint64_t, automaticInlineThreshold,
                      "kgen-automatic-inline-threshold",
                      "The threshold to automatically inline functions. "
-                     "It has higher priority over pass's heuristic.");
+                     "It has higher priority over pass's heuristic.")
 
     DEFINE_CL_OPTION(uint64_t, parametricInlineThreshold,
                      "kgen-parametric-inline-threshold",
                      "The threshold to inline parametric functions. "
-                     "It has higher priority over pass's heuristic.");
+                     "It has higher priority over pass's heuristic.")
 
     DEFINE_CL_OPTION_WITH_DEFAULT(uint64_t,
                                   parametricInlineEstimatedLoopTripCount,
                                   "kgen-parametric-inline-avg-loop-trip-count",
                                   "Estimated loop trip count that will be used "
                                   "in InlineParametric pass's heuristic.",
-                                  4);
+                                  4)
 
     DEFINE_CL_OPTION_WITH_DEFAULT(
         size_t, stackReusePromoteToGlobalThreshold,
         "kgen-stack-reuse-promote-to-global-threshold",
         "Threshold in byte above which a read-only stack "
         "allocations are promoted to global.",
-        1024);
+        1024)
 
     DEFINE_CL_OPTION_WITH_DEFAULT(size_t, kgenVerifierMaxErrors,
                                   "kgen-verifier-max-errors",
                                   "Specify maximum number of errors "
                                   "KGENVerifier pass can emit at once.",
-                                  10);
+                                  10)
   };
 
   static llvm::ManagedStatic<PassOptions> passOptions;
