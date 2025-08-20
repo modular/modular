@@ -26,6 +26,7 @@ from typing import (
 )
 
 import numpy as np
+import numpy.typing as npt
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core.dialects import mo
@@ -1041,8 +1042,10 @@ class HasTensorValue(Protocol):
     def __tensorvalue__(self) -> Value: ...
 
 
-Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-Scalar = Union[int, float, np.integer, np.floating, Dim]
+Numeric = Union[
+    int, float, np.integer[Any], np.floating[Any], npt.NDArray[np.number[Any]]
+]
+Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
 StrongTensorValueLike = Union[
     _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
 ]

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from max.dtype import DType
@@ -1527,11 +1527,11 @@ def rms_norm_key_cache(
     kv_params: KVCacheParams,
     kv_collection: PagedKVCacheCollection,
     gamma: TensorValue,
-    epsilon: float | np.floating,
+    epsilon: float | np.floating[Any],
     layer_idx: TensorValue,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
-    weight_offset: float | np.floating,
+    weight_offset: float | np.floating[Any],
     rms_norm_cols: Optional[int] = None,
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,

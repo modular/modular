@@ -17,7 +17,7 @@ import dataclasses
 from collections.abc import Iterator
 from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
 
-import numpy as np
+import numpy.typing as npt
 from max.driver import CPU, DLPackArray, Tensor
 from max.dtype import DType
 
@@ -245,7 +245,7 @@ class WeightData:
         return self.data.__dlpack_device__()
 
     @classmethod
-    def from_numpy(cls, arr: np.ndarray, name: str) -> WeightData:
+    def from_numpy(cls, arr: npt.NDArray[Any], name: str) -> WeightData:
         """Create WeightData from a numpy array.
 
         Args:

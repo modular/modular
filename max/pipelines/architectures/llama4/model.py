@@ -16,9 +16,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -59,14 +60,14 @@ class Llama4Inputs(ModelInputs):
     execution.
     """
 
-    tokens: np.ndarray | Tensor
+    tokens: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: np.ndarray | Tensor
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
-    cache_positions: np.ndarray | Tensor
+    cache_positions: npt.NDArray[np.integer[Any]] | Tensor
     """Positions in the cache of each input token."""
 
     signal_buffers: list[Tensor]
@@ -74,9 +75,9 @@ class Llama4Inputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: np.ndarray | Tensor,
-        input_row_offsets: np.ndarray | Tensor,
-        cache_positions: np.ndarray | Tensor,
+        tokens: npt.NDArray[np.integer[Any]] | Tensor,
+        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor,
+        cache_positions: npt.NDArray[np.integer[Any]] | Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:

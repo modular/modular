@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, cast, final
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -929,8 +930,8 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Batches up pixel_values, aspect_ratio_ids, and aspect_ratio_masks."""
         images = []
-        aspect_ratio_ids_list: list[np.ndarray] = []
-        aspect_ratio_mask_list: list[np.ndarray] = []
+        aspect_ratio_ids_list: list[npt.NDArray[np.integer[Any]]] = []
+        aspect_ratio_mask_list: list[npt.NDArray[np.integer[Any]]] = []
         for context in context_batch:
             # Get first image in first batch and permute the order to (HWC).
             image = np.transpose(context.pixel_values[0], (0, 1, 3, 4, 2))

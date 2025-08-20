@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
@@ -27,7 +28,11 @@ from ..value import TensorValue
 
 
 def constant(
-    value: Union[np.ndarray, int, float, np.integer, np.floating],
+    value: npt.NDArray[np.number[Any]]
+    | int
+    | float
+    | np.integer[Any]
+    | np.floating[Any],
     dtype: DType,
     device: DeviceRef,
 ) -> TensorValue:

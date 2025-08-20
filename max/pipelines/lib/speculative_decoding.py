@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Tensor, load_devices, scan_available_devices
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -723,10 +724,10 @@ class SpeculativeDecodingTextGenerationPipeline(
     def update_contexts(
         self,
         context_batch: list[Union[TextContext, TextAndVisionContext]],
-        first_rejected_tokens: np.ndarray,
-        recovered_tokens: np.ndarray,
-        bonus_tokens: np.ndarray,
-        draft_tokens: np.ndarray,
+        first_rejected_tokens: npt.NDArray[np.integer[Any]],
+        recovered_tokens: npt.NDArray[np.integer[Any]],
+        bonus_tokens: npt.NDArray[np.integer[Any]],
+        draft_tokens: npt.NDArray[np.integer[Any]],
         num_draft_tokens_generated: int,
     ) -> None:
         """Update contexts with the results of token generation.

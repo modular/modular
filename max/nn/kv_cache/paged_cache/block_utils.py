@@ -16,9 +16,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
+import numpy.typing as npt
 from max._core_mojo import block_hasher
 from max.profiler import traced
 
@@ -65,7 +66,7 @@ ENABLE_MOJO_BLOCK_HASHER = True
 
 @traced
 def _hash_block_tokens_mojo(
-    block_token_ids: np.ndarray,
+    block_token_ids: npt.NDArray[np.integer[Any]],
     parent_hash: int | None = None,
 ) -> BlockHashType:
     """Hash the tokens of a block using the Mojo implementation."""
@@ -79,7 +80,7 @@ def _hash_block_tokens_mojo(
 
 @traced
 def _hash_request_tokens_mojo(
-    token_ids: np.ndarray,
+    token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
 ) -> list[BlockHashType]:
@@ -104,7 +105,7 @@ def _hash_request_tokens_mojo(
 
 @traced
 def hash_block_tokens(
-    token_ids: np.ndarray,
+    token_ids: npt.NDArray[np.integer[Any]],
     parent_hash: int | None = None,
 ) -> BlockHashType:
     """Compute the hash value of a block."""
@@ -123,7 +124,7 @@ def hash_block_tokens(
 
 @traced
 def hash_request_tokens(
-    token_ids: np.ndarray,
+    token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
 ) -> list[BlockHashType]:

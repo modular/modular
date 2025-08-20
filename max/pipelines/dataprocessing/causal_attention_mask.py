@@ -14,12 +14,13 @@
 from __future__ import annotations
 
 import numpy as np
+import numpy.typing as npt
 
 
 def causal_attention_mask(
     original_start_pos: list[int],
     original_seq_len: list[int],
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     # Each example in the batch has a "start position", which is the length
     # of the previously encoded tokens ("context"), and a "sequence length",
     # which is the number of additional tokens to be encoded in this pass.
@@ -34,8 +35,10 @@ def causal_attention_mask(
     #
     # We call the total length "post_seq_len", referring to the total context
     # length after this pass concludes.
-    start_pos: np.ndarray = np.array(original_start_pos, dtype=np.int64)
-    seq_len: np.ndarray = np.array(original_seq_len, dtype=np.int64)
+    start_pos: npt.NDArray[np.int64] = np.array(
+        original_start_pos, dtype=np.int64
+    )
+    seq_len: npt.NDArray[np.int64] = np.array(original_seq_len, dtype=np.int64)
 
     # Use the maximum sequence length as the padded length
     padded_length = seq_len.max()

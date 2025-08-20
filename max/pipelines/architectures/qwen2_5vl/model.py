@@ -17,9 +17,10 @@ import logging
 import time
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import numpy as np
+import numpy.typing as npt
 from max._core.engine import Model
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
@@ -521,8 +522,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> dict[str, Tensor] | None:
         """Prepares vision inputs for vision processing including pixel values, window index, and position IDs."""
-        pixel_values_list: list[np.ndarray] = []
-        image_grid_thw: list[np.ndarray] = []
+        pixel_values_list: list[npt.NDArray[np.floating[Any]]] = []
+        image_grid_thw: list[npt.NDArray[np.integer[Any]]] = []
 
         for context in context_batch:
             if context.pixel_values and context.needs_vision_encoding:
@@ -804,14 +805,14 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
                 # Store rope delta in extra_model_args, this is used later to
                 # compute the position ids for the next token.
-                ctx.extra_model_args["rope_delta"] = rope_delta.item()
+                ctx.extra_model_args["rope_delta"] = rope_delta
                 # the temp_position_ids is a 3D tensor, we need to flatten it to 2D
 
                 temp_position_ids = temp_position_ids.squeeze(1)
             else:
                 temp_position_ids = np.full(
                     shape=(3, 1),  # hardcode to 3 for temporal, height, width
-                    fill_value=ctx.extra_model_args["rope_delta"]
+                    fill_value=ctx.extra_model_args["rope_delta"].item()
                     + ctx.current_length,
                 )
             decoder_position_ids.append(temp_position_ids)

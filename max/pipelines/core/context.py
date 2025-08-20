@@ -76,7 +76,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
     max_length: int
-    tokens: np.ndarray
+    tokens: npt.NDArray[np.integer[Any]]
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
     eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
     log_probabilities: int = msgspec.field(default=0)
@@ -154,7 +154,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             self.tokens = np.resize(self.tokens, self._size)
 
     @property
-    def all_tokens(self) -> np.ndarray:
+    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
         return self.tokens[: self.end_idx]
 
     @property
@@ -301,7 +301,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._end_idx = new_end_idx
 
     @property
-    def next_tokens(self) -> np.ndarray:
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns the tokens between start_idx and active_idx.
 
         Returns:
@@ -318,7 +318,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._draft_offset = idx
 
     @property
-    def prompt_tokens(self) -> np.ndarray:
+    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns the original prompt tokens.
 
         Returns:
@@ -327,7 +327,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.tokens[: self._prompt_len]
 
     @property
-    def generated_tokens(self) -> np.ndarray:
+    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns all tokens that have been generated after the prompt.
 
         Returns:
@@ -496,8 +496,10 @@ class TextAndVisionContext(
 ):
     """A base class for model context, specifically for Vision model variants."""
 
-    pixel_values: tuple[np.ndarray, ...] = msgspec.field(default_factory=tuple)
-    extra_model_args: dict[str, np.ndarray] = msgspec.field(
+    pixel_values: tuple[npt.NDArray[np.floating[Any]], ...] = msgspec.field(
+        default_factory=tuple
+    )
+    extra_model_args: dict[str, npt.NDArray[Any]] = msgspec.field(
         default_factory=dict
     )
 
@@ -562,14 +564,18 @@ class TTSContext(TextContext):
         _block_counter: Counter tracking number of speech token blocks generated
     """
 
-    audio_prompt_tokens: np.ndarray = msgspec.field(
+    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.int32)
     )
 
-    buffer_speech_tokens: np.ndarray | None = msgspec.field(default=None)
+    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = msgspec.field(
+        default=None
+    )
 
     # For silence detection.
-    audio_buffer: np.ndarray | None = msgspec.field(default=None)
+    audio_buffer: npt.NDArray[np.floating[Any]] | None = msgspec.field(
+        default=None
+    )
     prev_samples_beyond_offset: int = msgspec.field(default=0)
 
     streaming: bool = msgspec.field(default=False)
@@ -579,7 +585,7 @@ class TTSContext(TextContext):
         default=SPEECH_TOKEN_audio_chunk_size
     )
     _speech_token_end_idx: int = msgspec.field(default=0)
-    _speech_tokens: np.ndarray = msgspec.field(
+    _speech_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
         default_factory=lambda: np.zeros(
             SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
         )
@@ -597,14 +603,16 @@ class TTSContext(TextContext):
         return self.audio_generation_status.is_done
 
     @property
-    def speech_tokens(self) -> np.ndarray:
+    def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
         return self._speech_tokens[: self._speech_token_end_idx]
 
     @property
     def block_counter(self) -> int:
         return self._block_counter
 
-    def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
+    def update_speech_tokens(
+        self, new_tokens: npt.NDArray[np.integer[Any]]
+    ) -> None:
         """Updates the next_tokens"""
         self._upsize_speech_tokens(len(new_tokens))
         self._speech_tokens[
@@ -625,7 +633,7 @@ class TTSContext(TextContext):
 
     def next_speech_tokens(
         self, audio_chunk_size: int | None = None, buffer: int | None = None
-    ) -> tuple[np.ndarray, int]:
+    ) -> tuple[npt.NDArray[np.integer[Any]], int]:
         """Returns a chunk of the next unseen speech tokens.
 
         Calling this function will *not* update the index of the last seen

@@ -13,9 +13,10 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import GenerationStatus, RequestID
 
 
@@ -67,7 +68,7 @@ class KVCacheAwareContext(Protocol):
         ...
 
     @property
-    def next_tokens(self) -> np.ndarray:
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """The next prompt tokens to be input during this iteration.
 
         This should be a 1D array of tokens of length active_length.
@@ -75,7 +76,7 @@ class KVCacheAwareContext(Protocol):
         ...
 
     @property
-    def tokens(self) -> np.ndarray:
+    def tokens(self) -> npt.NDArray[np.integer[Any]]:
         """All tokens in the context."""
         ...
 
