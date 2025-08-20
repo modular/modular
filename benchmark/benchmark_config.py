@@ -154,7 +154,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
     # Request configuration (serving-specific)
-    max_concurrency: Optional[int] = 32
+    max_concurrency: Optional[int] = None
     """Maximum concurrent requests (optimized for serving benchmarks)."""
 
     lora: Optional[str] = None
@@ -174,7 +174,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     output_lengths: Optional[str] = None
     """Path to YAML file with output lengths or int."""
 
-    max_output_len: int = 512
+    max_output_len: Optional[int] = None
     """Maximum output length per request."""
 
     temperature: float = 0.0
@@ -184,7 +184,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-p for sampling."""
 
     # Traffic control (serving-specific)
-    request_rate: float = 16.0
+    request_rate: float = float("inf")
     """Requests per second (finite rate for realistic benchmarking)."""
 
     burstiness: float = 1.0
@@ -193,7 +193,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     ttft_skip_requests: int = 0
     """Skip first N requests for TTFT measurements."""
 
-    chat_warmup_delay_ms: float = 100.0
+    chat_warmup_delay_ms: float = 0.0
     """Delay between starting chat sessions."""
 
     # Dataset-specific parameters (serving workloads)
