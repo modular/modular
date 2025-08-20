@@ -164,7 +164,9 @@ class TokenGenerationScheduler(Scheduler):
 
         # execute the batch
         responses = self.pipeline.execute(
-            TextGenerationInputs(batch_to_execute, sch_output.num_steps)
+            TextGenerationInputs(
+                batches=[batch_to_execute], num_steps=sch_output.num_steps
+            )
         )
 
         # If there is a chunked request, we put it back into the request queue

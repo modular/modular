@@ -293,7 +293,7 @@ class DecodeScheduler(Scheduler):
         assert sch_output.batch_size > 0
         batch = sch_output.batch_inputs
         responses = self.pipeline.execute(
-            TextGenerationInputs(batch, num_steps=sch_output.num_steps)
+            TextGenerationInputs([batch], num_steps=sch_output.num_steps)
         )
 
         # Even though this is CE specific, it is possible for decode_scheduler

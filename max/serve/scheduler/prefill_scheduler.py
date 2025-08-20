@@ -161,7 +161,7 @@ class PrefillScheduler(Scheduler):
         # Execute the Batch
         assert sch_output.batch_size > 0
         batch = sch_output.batch_inputs
-        inputs = TextGenerationInputs(batch=batch, num_steps=1)
+        inputs = TextGenerationInputs(batches=[batch], num_steps=1)
         responses = self.pipeline.execute(inputs)
 
         maybe_restore_chunked_request(
