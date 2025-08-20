@@ -1249,13 +1249,7 @@ def test_blackwell_matmul_tma_pair_mma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](
-    ctx: DeviceContext,
-    handle: vendor_blas.Handle,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -1319,10 +1313,10 @@ def test_blackwell_matmul_tma_pair_mma[
         var bt = b_host.tensor
         for m in range(M):
             for k in range(K):
-                at[m, k] = k
+                at[m, k] = Float32(k).cast[a_type]()
         for n in range(N):
             for k in range(K):
-                bt[n, k] = 1 if n == k else 0
+                bt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
         random(a_host.tensor)
         random(b_host.tensor)
@@ -1506,7 +1500,6 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                             benchmark=True,
                         ](
                             ctx,
-                            cublas_handle,
                             dynamic(shape[0]),
                             static[shape[1]](),
                             static[shape[2]](),
@@ -1521,7 +1514,6 @@ def main():
             benchmark_blackwell_matmul(ctx)
             return
 
-        # Testing Nvidia specific, non power of 2, MMA_N parameter
         print("Testing Nvidia specific, non power of 2, MMA_N parameter")
         alias block_tile_shape = Index(128, 80, 64)
         alias umma_shape = Index(
@@ -1538,7 +1530,7 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
         ](ctx, dynamic(512), static[2560](), static[8192]())
 
-        print("Testing remaining cases")
+        print("Testing Normal Power of 2 Cases")
 
         @parameter
         for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
@@ -1557,141 +1549,128 @@ def main():
                     block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
                 )
 
-                alias handle_type = vendor_blas.Backend.CUBLASLT if dtype == DType.float8_e4m3fn else vendor_blas.Backend.CUBLAS
-                with vendor_blas.Handle[handle_type]() as cublas_handle:
-                    test_blackwell_matmul_tma_pair_mma[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                    ](
-                        ctx,
-                        cublas_handle,
-                        dynamic(512),
-                        static[2560](),
-                        static[8192](),
-                    )
+                test_blackwell_matmul_tma_pair_mma[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                ](
+                    ctx,
+                    dynamic(512),
+                    static[2560](),
+                    static[8192](),
+                )
 
-                    print("Testing remaining cases")
+                print("Testing remaining cases")
+
+                @parameter
+                for mma_m_scale in range(2, 3):
 
                     @parameter
-                    for mma_m_scale in range(1, 3):
+                    for mma_n_scale in range(1, 3):
+                        alias block_tile_shape = Index(
+                            64 * mma_m_scale, 64 * mma_n_scale, BK
+                        )
+                        alias umma_shape = Index(
+                            128 * mma_m_scale, 128 * mma_n_scale, MMA_K
+                        )
 
-                        @parameter
-                        for mma_n_scale in range(1, 3):
-                            alias block_tile_shape = Index(
-                                64 * mma_m_scale, 64 * mma_n_scale, BK
-                            )
-                            alias umma_shape = Index(
-                                128 * mma_m_scale, 128 * mma_n_scale, MMA_K
-                            )
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            dynamic(1000),
+                            static[1024](),
+                            static[1024](),
+                        )
 
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                dynamic(1000),
-                                static[1024](),
-                                static[1024](),
-                            )
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            dynamic(512),
+                            static[4096](),
+                            static[1024](),
+                        )
 
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                dynamic(512),
-                                static[4096](),
-                                static[1024](),
-                            )
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            dynamic(500),
+                            static[2048](),
+                            static[4096](),
+                        )
 
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                dynamic(500),
-                                static[2048](),
-                                static[4096](),
-                            )
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            dynamic(1024),
+                            static[256](),
+                            static[128](),
+                        )
 
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                dynamic(1024),
-                                static[256](),
-                                static[128](),
-                            )
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            static[1024](),
+                            static[1024](),
+                            static[2048](),
+                        )
 
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                static[1024](),
-                                static[1024](),
-                                static[2048](),
-                            )
-
-                            test_blackwell_matmul_tma_pair_mma[
-                                dtype,
-                                dtype,
-                                DType.bfloat16,
-                                block_tile_shape,
-                                umma_shape,
-                                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                            ](
-                                ctx,
-                                cublas_handle,
-                                dynamic(8192),
-                                static[2560](),
-                                static[8192](),
-                            )
-
-        # Run the benchmark
-        print("\n\n========== Running Benchmarks ==========\n")
-        benchmark_blackwell_matmul(ctx)
+                        test_blackwell_matmul_tma_pair_mma[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                        ](
+                            ctx,
+                            dynamic(8192),
+                            static[2560](),
+                            static[8192](),
+                        )
