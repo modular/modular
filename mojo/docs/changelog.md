@@ -151,6 +151,11 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - Add `repr` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`, `Set`.
   [PR #5189](https://github.com/modular/modular/pull/5189) by rd4com.
 
+- `InlineArray` now automatically detects whether its element types are
+  trivially destructible to not invoke the destructors in its `__del__`
+  function.  This improves performance for trivially destructible types
+  (such as `Int` and friends).
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
