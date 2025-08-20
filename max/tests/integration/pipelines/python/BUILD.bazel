@@ -150,6 +150,9 @@ modular_py_test(
     name = "test_pipelines_multi_gpu_smoke",
     size = "enormous",
     srcs = ["test_pipelines_multi_gpu_smoke.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
         # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
