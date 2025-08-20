@@ -190,7 +190,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     burstiness: float = 1.0
     """Burstiness factor (1.0 = Poisson process)."""
 
-    ttft_skip_requests: int = 10
+    ttft_skip_requests: int = 0
     """Skip first N requests for TTFT measurements."""
 
     chat_warmup_delay_ms: float = 100.0
