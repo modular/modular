@@ -428,6 +428,7 @@ class TextTokenizer(
             json_schema=json_schema,
             sampling_params=request.sampling_params,
             model_name=request.model_name,
+            target_endpoint=request.target_endpoint,
         )
         return context
 

@@ -61,6 +61,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         json_schema: Optional JSON schema for structured output
         sampling_params: Parameters controlling the token sampling strategy
         min_tokens: Minimum number of new tokens to generate.
+        target_endpoint: Optional target endpoint identifier for routing requests
         _status: Current generation status (active, finished, etc)
         _size: Current allocated size of token array
         _start_idx: Start index of current generation window
@@ -101,6 +102,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     )
     _is_initial_prompt: bool = msgspec.field(default=True)
     _draft_offset: int = msgspec.field(default=0)
+    target_endpoint: str | None = msgspec.field(default=None)
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
