@@ -55,6 +55,18 @@ trait Movable:
         """
         ...
 
+    alias __moveinit__is_trivial: __mlir_type.i1
+    """A flag (often compiler generated) to indicate whether the implementation
+    of `__moveinit__` is trivial.
+
+    The implementation of `__moveinit__` is considered to be trivial if:
+    - The struct has a compiler-generated `__moveinit__` and all its fields
+      have a trivial `__moveinit__` method.
+
+    In practice, it means the value can be moved by moving the bits from
+    one location to another without side effects.
+    """
+
 
 trait Copyable(ExplicitlyCopyable):
     """The Copyable trait denotes a type whose value can be copied.
@@ -97,6 +109,18 @@ trait Copyable(ExplicitlyCopyable):
             existing: The value to copy.
         """
         ...
+
+    alias __copyinit__is_trivial: __mlir_type.i1
+    """A flag (often compiler generated) to indicate whether the implementation
+    of `__copyinit__` is trivial.
+
+    The implementation of `__copyinit__` is considered to be trivial if:
+    - The struct has a compiler-generated trivial `__copyinit__` and all its fields
+      have a trivial `__copyinit__` method.
+
+    In practice, it means the value can be copied by copying the bits from
+    one location to another without side effects.
+    """
 
 
 trait ExplicitlyCopyable:
