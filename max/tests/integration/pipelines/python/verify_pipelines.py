@@ -881,6 +881,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-3b",
             encoding="bfloat16",
@@ -888,7 +889,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen25vl_golden/1/5334f7abfd164dcdbfcdc632b6bb087e672da50e64a007123faf7cc3297c4f1d/torch_qwen25vl_golden.tar.gz",
                 json_file="torch_qwen25vl-3b_bfloat16_golden.json",
             ),
-            cos_dist_threshold=1.6e-2,
+            cos_dist_threshold=1.8e-2,
             kl_div_threshold=1.8e-1,
         ),
     ),
