@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
+#include "ClosureEmitter.h"
 #include "DLValues.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -843,47 +844,96 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
-  ASTDecl &decl = *decls[0];
+  ASTDecl *decl = decls[0];
 
   // If the referenced decl is deprecated, emit a deprecation warning.
   // Overloaded declarations like functions can't be handled here. They are
   // handled when overload sets are resolved to a deprecated entry.
   if (auto declItf =
-          dyn_cast_or_null<ASTDeclInterface>(decl.getIfOperation())) {
+          dyn_cast_or_null<ASTDeclInterface>(decl->getIfOperation())) {
     if (StringAttr warning = declItf.getDeprecationWarningAttr()) {
       auto diag = emitter.emitWarning(loc, warning.getValue())
                   << expr->getRange();
-      diag.attachNote(decl.getLoc())
+      diag.attachNote(decl->getLoc())
           << "'" << declItf.getDeclName().getValue() << "' declared here";
     }
   }
 
   // Aliases form a PValue.
-  if (auto param = dyn_cast_or_null<AliasDeclOp>(decl.getIfOperation())) {
+  if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
     PValue result =
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
     return emitter.emitCResult(result.get(), expr, dest);
   }
 
   // If this is a type declaration, return it as a type.
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(decl.getIfOperation()))
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
     return emitter.emitCResult(structOp.bindReference(), expr, dest);
-  if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(decl.getIfOperation()))
+  if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation()))
     return emitter.emitCResult(traitOp.bindReference(), expr, dest);
 
   // If this is a module or package declaration, form a module reference.
-  if (isa_and_nonnull<FileModuleOp, PackageOp>(decl.getIfOperation())) {
+  if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation())) {
     PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
-        decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
+        decl->getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
     return emitter.emitCResult(result, expr, dest);
   }
 
-  if (auto pvalue = decl.getIfIRValue().getIfPValue())
+  if (auto pvalue = decl->getIfIRValue().getIfPValue())
     return emitter.emitCResult(pvalue, expr, dest);
+
+  // If this is a capture we need to emit a capture value.
+  ASTDecl *declRef = nullptr;
+  if (decls.size() == 1 && !isa_and_nonnull<FnOp>(decls[0]->getIfOperation())) {
+    assert(decls.size() == 1 && "Only functions may be overloaded");
+    declRef = decls[0];
+  }
+
+  // Find the nearest escaping closure, if there is one.
+  ASTDecl *nearestEscapingFnOrNone =
+      declRef ? lookupScope.getNearestDeclOfType<FnOp>() : nullptr;
+  bool needsCapture = false;
+  if (nearestEscapingFnOrNone) {
+    needsCapture = true;
+    for (ASTDecl *parentOfDeclOfRef = declRef->getParentDecl();
+         parentOfDeclOfRef;
+         parentOfDeclOfRef = parentOfDeclOfRef->getParentDecl()) {
+      if (parentOfDeclOfRef == nearestEscapingFnOrNone)
+        needsCapture = false;
+    };
+  }
+  if (needsCapture) {
+    FnOp parent = cast<FnOp>(nearestEscapingFnOrNone->getIfOperation());
+    if (parent.getFuncTypeGenerator().isUnified()) {
+      CaptureConvention defaultConvention =
+          emitter.shared.defaultCaptureConventionInScope(
+              *nearestEscapingFnOrNone);
+      if (defaultConvention != CaptureConvention::kConventionUnspecified) {
+        ;
+        decl = ClosureEmitter::addCaptureValue(
+            emitter.shared, *nearestEscapingFnOrNone, spelling, expr->getLoc());
+        if (!decl)
+          return {};
+      } else {
+        // there is no default set which means this capture should be registered
+        // already. Verify that it is and if it isn't emit an error.
+        if (!emitter.shared.captureInstanceExistsInScope(
+                *nearestEscapingFnOrNone, spelling)) {
+          emitter.shared.emitError(
+              expr->getLoc(),
+              "Could not infer capture convention of the captured value ")
+              << spelling;
+          return {};
+        }
+      }
+      // do not attempt to re-register the capture under other closure types.
+      needsCapture = false;
+    }
+  }
 
   // Narrow the decl to a CValue.
   CValue value;
-  if (auto var = dyn_cast_or_null<VarDeclOp>(decl.getIfOperation())) {
+  if (auto var = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation())) {
     // Normal 'var' declarations are MLValues, but 'ref' declarations hold the
     // reference as its value and need to be loaded.
     if (var.getKind() != VarDeclKind::Ref) {
@@ -897,7 +947,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           emitter.builder->create<RefLoadOp>(expr->getLocation(emitter), var);
       value = CValue::getMValueForRef(ref);
     }
-  } else if (auto cv = decl.getIfIRValue()) {
+  } else if (auto cv = decl->getIfIRValue()) {
     value = cv;
   } else {
     emitter.emitError(loc, "use of declaration '")
@@ -910,35 +960,12 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (isa<TypeCheckErrorType>(value.getRValueType()))
     return {};
 
-  // Now that we're referencing a potentially dynamic value, see if it is from
-  // an outer function.  If so, record it as a capture in this nested function.
-  ASTDecl *declRef = nullptr;
-  if (!isa_and_nonnull<FnOp>(decls[0]->getIfOperation())) {
-    assert(decls.size() == 1 && "Only functions may be overloaded");
-    declRef = decls[0];
-  }
-
-  // Find the nearest escaping closure, if there is one.
-  ASTDecl *nearestEscapingFnOrNone =
-      declRef ? lookupScope.getNearestDeclOfType<FnOp>() : nullptr;
-  if (nearestEscapingFnOrNone) {
-    assert(declRef && "can only reach here if single decl known");
-    auto needsCapture = [&]() -> bool {
-      for (ASTDecl *decl = declRef->getParentDecl(); decl;
-           decl = decl->getParentDecl()) {
-        if (decl == nearestEscapingFnOrNone)
-          return false;
-      }
-      return true;
-    };
-
-    // If this is a reference to a value from an outer function scope, record
-    // the capture.
-    if (needsCapture()) {
-      emitter.shared.addCaptureToScope(
-          *nearestEscapingFnOrNone, declRef,
-          Capture(value, CaptureConvention::kConventionRead, spelling));
-    }
+  // If this is a reference to a value from an outer function scope, record
+  // the capture.
+  if (needsCapture) {
+    emitter.shared.addCaptureToScope(
+        *nearestEscapingFnOrNone, declRef,
+        Capture(value, CaptureConvention::kConventionRead, spelling));
   }
 
   return emitter.emitCResult(value, expr, dest);

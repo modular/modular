@@ -927,37 +927,65 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     p.emitError(p.getToken().getLoc(), "expected a capture convention list");
     return failure();
   }
+  auto parseConvention =
+      [&](std::optional<StringAttr *> name) -> CaptureConvention {
+    if (p.consumeIf(Token::kw_var)) {
+      if (!name.has_value()) {
+        if (p.consumeIf(Token::caret))
+          return CaptureConvention::kConventionMove;
+        else
+          return CaptureConvention::kConventionCopy;
+      }
+      if (p.parseIdentifier(**name,
+                            "Expected captures to be identified by name"))
+        return CaptureConvention::kConventionUnspecified;
+      if (p.consumeIf(Token::caret))
+        return CaptureConvention::kConventionMove;
+      else
+        return CaptureConvention::kConventionCopy;
+    } else if (p.consumeIfSoftIdentifier("mut"))
+      return CaptureConvention::kConventionMut;
+    else if (p.consumeIfSoftIdentifier("read"))
+      return CaptureConvention::kConventionRead;
+
+    return CaptureConvention::kConventionUnspecified;
+  };
+
+  // is this capture all by?
+  LexerCursor afterLBrace;
+  if (p.getCursor(afterLBrace))
+    return failure();
+  std::optional<StringAttr *> name;
+  captureAllByConvention = parseConvention(name);
+  if (captureAllByConvention != CaptureConvention::kConventionUnspecified) {
+    if (p.consumeIf(Token::r_brace))
+      return success();
+  }
+  // Nope, check individual capture conventions.
+  captureAllByConvention.reset();
+  afterLBrace.restore(p.getLexer());
 
   auto parseArgument = [&]() -> ParseResult {
     SMLoc captureLocation = p.getToken().getLoc();
-    CaptureConvention convention;
-    StringAttr name;
-    if (p.consumeIf(Token::kw_var)) {
-      if (p.parseIdentifier(name, "Expected captures to be identified by name"))
-        return failure();
-      if (p.consumeIf(Token::caret))
-        convention = CaptureConvention::kConventionMove;
-      else
-        convention = CaptureConvention::kConventionCopy;
-    } else if (p.consumeIfSoftIdentifier("mut"))
-      convention = CaptureConvention::kConventionMut;
-    else if (p.consumeIfSoftIdentifier("read"))
-      convention = CaptureConvention::kConventionRead;
-    else
+    StringAttr nameValue;
+    std::optional<StringAttr *> nameRef = &nameValue;
+    CaptureConvention convention = parseConvention(nameRef);
+    if (convention == CaptureConvention::kConventionUnspecified)
       return failure();
-
-    if (!name) {
-      if (p.parseIdentifier(name, "Expected captures to be identified by name"))
+    if (!nameValue)
+      if (p.parseIdentifier(nameValue,
+                            "Expected captures to be identified by name"))
         return failure();
-    }
-
-    parsedCaptures.push_back({name.getValue(), convention, captureLocation});
+    parsedCaptures.push_back(
+        {nameValue.getValue(), convention, captureLocation});
     return success();
   };
 
   if (!p.consumeIf(Token::r_brace)) {
-    if (p.parseCommaSeparatedList(parseArgument, {Token::l_brace}))
-      return failure();
+    do {
+      if (parseArgument())
+        return failure();
+    } while (p.consumeIf(Token::comma));
     if (p.parseToken(Token::r_brace, "expected '}' in capture list"))
       return failure();
   }

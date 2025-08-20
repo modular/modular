@@ -324,8 +324,10 @@ struct SharedState::Impl {
       parametricClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
-  /// function.
-  DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
+  /// function. This data structure is populated during the parsing of the FnOp
+  /// the key ASTDecl wraps.
+  DenseMap<ASTDecl *, llvm::MapVector<StringRef, Capture>> capturesInScope;
+  DenseMap<ASTDecl *, CaptureConvention> captureConventionForScope;
 
   /// Function type conversion thunks in each module.
   // The key is an ArrayAttr containing two elements:
@@ -1834,18 +1836,39 @@ FnOp SharedState::getOrCreateFunctionThunk(Attribute key,
   return thunk;
 }
 
-const llvm::MapVector<ASTDecl *, Capture> &
+const llvm::MapVector<StringRef, Capture> &
 SharedState::getCaptureRangeInScope(ASTDecl &scope) {
   return getImpl().capturesInScope[&scope];
 }
 
 void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
-  getImpl().capturesInScope[&scope].insert({captureDecl, capture});
+  getImpl().capturesInScope[&scope].insert({capture.getSpelling(), capture});
   if (captureDecl->getParentDecl() != scope.parentDecl) {
     if (scope.getNearestDeclOfType<FnOp>())
       addCaptureToScope(*scope.parentDecl, captureDecl, capture);
   }
+}
+
+void SharedState::setDefaultCaptureForScope(ASTDecl &scope,
+                                            CaptureConvention convention) {
+  getImpl().captureConventionForScope[&scope] = convention;
+}
+
+CaptureConvention SharedState::defaultCaptureConventionInScope(ASTDecl &decl) {
+  auto ptr = getImpl().captureConventionForScope.find(&decl);
+  if (ptr != getImpl().captureConventionForScope.end())
+    return ptr->second;
+  return CaptureConvention::kConventionUnspecified;
+}
+
+bool SharedState::captureInstanceExistsInScope(ASTDecl &scope,
+                                               StringRef spelling) {
+  auto ptr = getImpl().capturesInScope.find(&scope);
+  if (ptr == getImpl().capturesInScope.end())
+    return false;
+  auto capturePtr = ptr->second.find(spelling);
+  return capturePtr != ptr->second.end();
 }
 
 //===----------------------------------------------------------------------===//

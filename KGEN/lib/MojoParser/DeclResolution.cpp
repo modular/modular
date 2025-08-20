@@ -1230,7 +1230,10 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                   "unified effect is only applicable on nested functions");
       return failure();
     }
-    if (failed(createCaptureValues(p, sigDecl, captureSignature, decl)))
+    if (captureSignature.captureAllByConvention.has_value()) {
+      shared.setDefaultCaptureForScope(
+          decl, *captureSignature.captureAllByConvention);
+    } else if (failed(createCaptureValues(p, sigDecl, captureSignature, decl)))
       return failure();
   }
 
