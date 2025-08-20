@@ -444,7 +444,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             draft_inputs.update(
                 tokens=merged_draft_tokens,
                 input_row_offsets=merged_draft_offsets,
-                signal_buffers=[],
+                signal_buffers=getattr(
+                    self._target_model, "signal_buffers", []
+                ),
                 kv_cache_inputs=kv_cache_updated_inputs,
                 return_n_logits=Tensor.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)

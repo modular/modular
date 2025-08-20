@@ -263,7 +263,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model_config.device_specs[:n_devices]
         ]
 
         # Parse the float8 config from compressed-tensors or FBGEMM.
