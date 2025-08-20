@@ -591,6 +591,8 @@ trait Copyable:
     fn __copyinit__(out self, existing: Self, /):
         pass
 
+    alias __copyinit__is_trivial: __mlir_type.i1
+
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
@@ -601,6 +603,8 @@ trait ExplicitlyDestroyedMovable:
 trait Movable:
     fn __moveinit__(out self, deinit existing: Self, /):
         pass
+
+    alias __moveinit__is_trivial: __mlir_type.i1
 
 
 trait ExplicitlyCopyable:

@@ -124,7 +124,9 @@ fn function(arg: Foo):
         "__init__",
         "__moveinit__",
         "__dunder__",
+        "__copyinit__is_trivial",
         "__del__is_trivial",
+        "__moveinit__is_trivial",
         "___another__",
         "__other",
       ]
