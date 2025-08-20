@@ -29,7 +29,7 @@ class TimingScope;
 namespace M {
 namespace AsyncRT {
 class Runtime;
-class RuntimeOptions;
+struct RuntimeOptions;
 } // namespace AsyncRT
 
 namespace KGEN::LIT {
