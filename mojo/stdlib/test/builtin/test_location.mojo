@@ -234,7 +234,7 @@ fn source_loc_with_debug() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, file_name)
+    return _SourceLocation(line, col, StaticString(file_name))
 
 
 fn test_source_location_struct() raises:

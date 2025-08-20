@@ -110,7 +110,7 @@ fn _tile_storeconfig(mem_addr: OpaquePointer):
 fn init_intel_amx() -> Bool:
     return __mlir_op.`pop.external_call`[
         func = "KGEN_CompilerRT_Init_Intel_AMX".value,
-        _type = __mlir_type[`!pop.scalar<bool>`],
+        _type=Bool,
     ]()
 
 

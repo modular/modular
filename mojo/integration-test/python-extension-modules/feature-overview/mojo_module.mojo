@@ -206,7 +206,7 @@ fn add_to_int(mut arg: Int, var value: Int):
 fn incr_int__wrapper(
     py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
-    check_arguments_arity(1, py_args, "incr_int".value)
+    check_arguments_arity(1, py_args, "incr_int")
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "incr_int", py_args, 0
@@ -221,7 +221,7 @@ fn incr_int__wrapper(
 fn add_to_int__wrapper(
     py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
-    check_arguments_arity(2, py_args, "add_to_int".value)
+    check_arguments_arity(2, py_args, "add_to_int")
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "add_to_int", py_args, 0

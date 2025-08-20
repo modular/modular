@@ -122,9 +122,10 @@ fn bitcast[
     @parameter
     if dtype == src_dtype:
         return val._refine[dtype, width]()
-    return __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
+    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )
+    return SIMD(res)
 
 
 @always_inline("builtin")
@@ -205,6 +206,7 @@ fn pack_bits[
         ),
     ]()
 
-    return __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
+    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )
+    return SIMD(res)

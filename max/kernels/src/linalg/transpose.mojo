@@ -581,7 +581,7 @@ fn _convert_transpose_perms_to_static_int_tuple[
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
-        simplified_perms[j] = perms.load(j)[0].value
+        simplified_perms[j] = Int(perms.load(j)[0].value)
     return simplified_perms
 
 
@@ -1011,8 +1011,8 @@ fn _copy_with_strides[
         raise Error("out of range")
 
     var axis_dim = output.dim(axis)
-    var input_axis_stride: Int = input_strides.load(axis)[0].value
-    var output_axis_stride: Int = output_strides.load(axis)[0].value
+    var input_axis_stride: Int = Int(input_strides.load(axis)[0].value)
+    var output_axis_stride: Int = Int(output_strides.load(axis)[0].value)
 
     if axis + 1 == rank:
         var src_ptr = input.offset(input_offset)

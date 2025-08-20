@@ -184,7 +184,7 @@ fn gather[
         passthrough,
     )
     _ = base
-    return result
+    return SIMD(result)
 
 
 # ===-----------------------------------------------------------------------===#

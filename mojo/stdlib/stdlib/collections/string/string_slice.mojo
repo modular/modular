@@ -518,7 +518,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @doc_private
     @always_inline
-    @implicit
     fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
@@ -2333,7 +2332,7 @@ fn get_static_string[
     Returns:
         The string value as a StaticString.
     """
-    return _get_kgen_string[string, extra]()
+    return StaticString(_get_kgen_string[string, extra]())
 
 
 fn _to_string_list[

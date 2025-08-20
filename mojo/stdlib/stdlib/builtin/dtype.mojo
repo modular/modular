@@ -417,10 +417,11 @@ struct DType(
     @doc_private
     @always_inline("nodebug")
     fn _match(self, mask: UInt8) -> Bool:
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
             __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
@@ -456,9 +457,10 @@ struct DType(
         Returns:
             True if the DTypes are the same and False otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: DType) -> Bool:
@@ -470,9 +472,10 @@ struct DType(
         Returns:
             False if the DTypes are the same and True otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.

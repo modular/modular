@@ -109,7 +109,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn _arch() -> StaticString:
-        return Self.__arch()
+        return StaticString(Self.__arch())
 
     @always_inline("nodebug")
     @staticmethod
@@ -148,12 +148,13 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn _os() -> StaticString:
-        return __mlir_attr[
+        var res = __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
             `, "os" : !kgen.string`,
             `> : !kgen.string`,
         ]
+        return StaticString(res)
 
     @always_inline("nodebug")
     @staticmethod
@@ -424,7 +425,9 @@ fn _accelerator_arch() -> StaticString:
     Returns:
         The accelerator architecture string for the current target accelerator.
     """
-    return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+    return StaticString(
+        __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+    )
 
 
 @always_inline("nodebug")

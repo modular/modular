@@ -29,13 +29,14 @@ fn get_linkage_name[
     Returns:
         Symbol name.
     """
-    return __mlir_attr[
+    var res = __mlir_attr[
         `#kgen.get_linkage_name<`,
         target,
         `,`,
         func,
         `> : !kgen.string`,
     ]
+    return StaticString(res)
 
 
 fn get_linkage_name[
@@ -71,10 +72,11 @@ fn get_type_name[
     Returns:
         Type name.
     """
-    return __mlir_attr[
+    var res = __mlir_attr[
         `#kgen.get_type_name<`,
         type,
         `, `,
         qualified_builtins.value,
         `> : !kgen.string`,
     ]
+    return StaticString(res)
