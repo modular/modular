@@ -125,9 +125,9 @@ trait AnyType:
 alias ImplicitlyDestructible = AnyType
 
 
-alias __InstanceOfImpl[Trait: AnyTrivialRegType, T: Trait] = T
+alias __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
 
-alias InstanceOf[Trait: AnyTrivialRegType] = __InstanceOfImpl[Trait]
+alias Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 
@@ -141,7 +141,7 @@ fn foo[T: Intable, //](x: T) -> Int:
 one can write:
 
 ```mojo
-fn foo(x: InstanceOf[Intable]) -> Int:
+fn foo(x: Some[Intable]) -> Int:
     return x.__int__()
 ```
 """

@@ -79,8 +79,8 @@ what we publish.
     of implicit `Copyable`:
     `KeyElement`
 
-- A new `InstanceOf` utility is introduced to reduce the syntactic load of
-  declaring function arguments of a type that implements a given trait or trait
+- A new `Some` utility is introduced to reduce the syntactic load of declaring
+  function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing
 
   ```mojo
@@ -91,7 +91,7 @@ what we publish.
   one can now write:
 
   ```mojo
-  fn foo(x: InstanceOf[Intable]) -> Int:
+  fn foo(x: Some[Intable]) -> Int:
       return x.__int__()
   ```
 

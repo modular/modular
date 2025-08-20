@@ -34,7 +34,7 @@ from collections.string import (
 )
 from hashlib.hash import Hashable, hash
 
-from builtin.anytype import AnyType, UnknownDestructibility, InstanceOf
+from builtin.anytype import AnyType, UnknownDestructibility, Some
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
