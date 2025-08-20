@@ -177,6 +177,14 @@ class TextGenerationRequest(Request):
     sampling_params: SamplingParams = SamplingParams()
     """Token sampling configuration parameters for the request."""
 
+    target_endpoint: Optional[str] = None
+    """
+    Optional target endpoint identifier for routing the request to a specific
+    service or model instance. This can be used for load balancing, A/B testing,
+    or directing requests to specialized model variants. If not specified, the
+    request will be routed to the default endpoint.
+    """
+
 
 class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     """
