@@ -329,8 +329,6 @@ struct MojoKernelFunctionAdaptor {
     res.mojoCode = op;
     auto argumentTypesNames = mojoCode->template getAttrOfType<ArrayAttr>(
         KGEN::MOGGPreElab::MOGG_ARG_TYPE_NAMES);
-    auto resultTypeNameAttr =
-        mojoCode->getAttr(KGEN::MOGGPreElab::MOGG_RESULT_TYPE_NAME);
     auto numberOfOutputArgumentsAttr =
         mojoCode->template getAttrOfType<IntegerAttr>(
             KGEN::MOGGPreElab::kMOGGNumDPSOutputs);
