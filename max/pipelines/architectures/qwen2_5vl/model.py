@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -171,7 +171,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
@@ -674,10 +674,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Create tensor and distribute to device
         return Tensor.from_numpy(np_indices).to(self.devices[0])
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen2.5VL model with the prepared inputs."""
         assert isinstance(model_inputs, Qwen2_5VLInputs)
         assert model_inputs.kv_cache_inputs is not None, (

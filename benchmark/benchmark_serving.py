@@ -13,6 +13,8 @@
 
 """Benchmark online serving throughput."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import itertools
@@ -82,9 +84,8 @@ class RequestFuncOutput:
     success: bool = False
     latency: float = 0.0
     ttft: float = 0.0  # Time to first token
-    itl: list[float] = field(
-        default_factory=list
-    )  # List of inter-token latencies
+    # List of inter-token latencies
+    itl: list[float] = field(default_factory=list)
     prompt_len: int = 0
     error: str = ""
 
@@ -772,8 +773,7 @@ def calculate_metrics(
 
     if len(outputs) == 0:
         warnings.warn(
-            ("No responses were received from the server."),
-            stacklevel=2,
+            "No responses were received from the server.", stacklevel=2
         )
 
     if failures != 0:
