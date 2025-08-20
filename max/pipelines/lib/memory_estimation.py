@@ -43,6 +43,10 @@ class MemoryEstimator:
         devices: list[Device],
     ) -> None:
         huggingface_config = model_config.huggingface_config
+        is_draft_model = (
+            pipeline_config.draft_model_config is not None
+            and model_config is pipeline_config.draft_model_config
+        )
 
         try:
             free_memory = int(sum(d.stats["free_memory"] for d in devices))
@@ -51,6 +55,9 @@ class MemoryEstimator:
                 "Unable to estimate memory footprint of model, can't query device stats: "
                 + str(e)
             )
+            if is_draft_model:
+                # Early return for draft model - we don't modify the original config
+                return
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
@@ -61,9 +68,12 @@ class MemoryEstimator:
                 )
             return
 
-        model_weights_size = pipeline_model.estimate_weights_size(
-            pipeline_config
-        )
+        if is_draft_model:
+            model_weights_size = model_config.weights_size()
+        else:
+            model_weights_size = pipeline_model.estimate_weights_size(
+                pipeline_config
+            )
 
         # Get activation memory estimate from the model
         activation_memory_size = pipeline_model.estimate_activation_memory(
@@ -94,6 +104,26 @@ class MemoryEstimator:
         user_provided_max_batch_size = (
             pipeline_config.max_batch_size is not None
         )
+
+        if is_draft_model:
+            if not model_config.quantization_encoding:
+                msg = "quantization_encoding must be provided for draft model"
+                raise ValueError(msg)
+
+            kv_cache_size = self._calculate_kv_cache_size(
+                pipeline_model,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
+            )
+
+            model_config.kv_cache_config._available_cache_memory = kv_cache_size
+
+            return  # Don't modify pipeline config values
+
         if not user_provided_max_length:
             pipeline_config.max_length = pipeline_model.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
