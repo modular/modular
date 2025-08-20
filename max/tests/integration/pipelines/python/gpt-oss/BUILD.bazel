@@ -1,0 +1,39 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_test(
+    name = "yarn-rotary-embeddings",
+    srcs = glob(["**/test_yarn_rotary_embeddings.py"]) + ["conftest.py"],
+    data = [
+        "//SDK:max",
+        "//SDK/integration-test/pipelines/python/gpt-oss/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/gpt-oss/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
