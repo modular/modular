@@ -91,7 +91,6 @@ __all__ = [
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
-    "TextGenerationResponse",
     "TextGenerationResponseFormat",
     "msgpack_eq",
     "msgpack_numpy_decoder",

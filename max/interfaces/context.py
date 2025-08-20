@@ -573,21 +573,6 @@ class InputContext(Protocol):
         """
         ...
 
-    def outstanding_completion_tokens(
-        self,
-    ) -> list[tuple[int, Optional[LogProbabilities]]]:
-        """Get completion tokens that are ready to be returned to the user.
-
-        This method retrieves tokens that have been generated but not yet
-        delivered to the user, along with their associated log probability data.
-
-        Returns:
-            A list of tuples, where each tuple contains a token ID and its
-            associated log probabilities (or ``None`` if log probabilities
-            are not enabled).
-        """
-        ...
-
     def compute_num_available_steps(
         self,
         max_seq_len: int,
