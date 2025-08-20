@@ -550,10 +550,6 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
   IREmitter::emitNormalReturn(builder);
 
-  llvm::StringLiteral trivialDelTag = "__del__is_trivial";
-  if (!shared.typeHasMember(structDecl, trivialDelTag, structDecl.getLoc()))
-    StructEmitter(structDecl).synthesizeUnresolvedAlias(trivialDelTag);
-
   // Remember this as the destructor for the struct.
   structDeclOp.setDestructorAttr(
       funcOp.getBoundSymbolRef(shared.getEvaluationContext()));
@@ -866,7 +862,6 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
 
 /// Synthesize an unresolved alias into the struct with the specified name .
 ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
-
   auto paramDecl =
       ParamDeclAttr::get(name, LIT::UnresolvedType::get(getContext()));
 
@@ -883,9 +878,12 @@ ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
 }
 
 TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
-  assert(kind == SpecialFunctionKind::kDel && "unknown synthesized alias");
-  IREmitter emitter(structDecl, EC_AliasValue);
+  assert((kind == SpecialFunctionKind::kDel ||
+          kind == SpecialFunctionKind::kCopyInit ||
+          kind == SpecialFunctionKind::kMoveInit) &&
+         "unknown synthesized alias");
 
+  IREmitter emitter(structDecl, EC_AliasValue);
   auto emitI1Attr = [this, &emitter](bool v) {
     SyntheticNode synthNode(structDecl.getLoc());
     return emitter
@@ -915,6 +913,21 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return falseAttr;
 
   TypedAttr ret = emitI1Attr(true);
+  // We have a synthesize __del__/__moveinit__/__copyinit__ function, in this
+  // case all the fields have to conform to AnyType/Movable/Copyable or it will
+  // fail to synthesize the special function during `populateMoveCopy`.
+  StringRef traitName = [kind] {
+    if (kind == SpecialFunctionKind::kDel)
+      return "AnyType";
+    else if (kind == SpecialFunctionKind::kCopyInit)
+      return "Copyable";
+    return "Movable";
+  }();
+
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+  auto witnessName =
+      StringAttr::get(getContext(), Twine(spFnInfo.name) + "is_trivial");
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
@@ -928,18 +941,13 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     if (!ASTType(fieldType.getType()).getMetaType())
       continue; // skip simple mlir type
 
-    ASTDecl *traitDecl =
-        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc());
-
     TypedAttr fieldIsTrivial = shared.getEvaluationContext().getGetWitnessAttr(
         fieldType,
         StringAttr::get(getContext(),
                         getFlattenedSymbolName(traitDecl->getSymbolRef())),
-        StringAttr::get(getContext(), "__del__is_trivial"), ret.getType());
+        witnessName, ret.getType());
 
     ret = emitAnd(ret, fieldIsTrivial);
-    if (ret == falseAttr)
-      return falseAttr;
   }
 
   return ret;

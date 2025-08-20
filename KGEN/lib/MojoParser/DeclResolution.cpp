@@ -2672,6 +2672,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     return structDecl.doesNominalTypeConformTo(trait.bindReference());
   };
 
+  // If the type lacks a __sp_fn__is_trivial member, synthesize it to
+  // unresolved.
+  auto synthesizeTrivialFlagIfNeeded = [&](StringRef spFnName) {
+    std::string trivialDelTag = (spFnName + "is_trivial").str();
+    if (!shared.typeHasMember(structDecl, trivialDelTag, structDecl.getLoc()))
+      StructEmitter(structDecl).synthesizeUnresolvedAlias(trivialDelTag);
+  };
+
   // Push the debug scope for this struct if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2692,25 +2700,27 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (auto dtorAttr = lookupDestructor(structDecl, shared).first) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
-    // If the type lacks a __del__is_trivial member, synthesize a unresolved
-    // alias decl.
-    if (!shared.typeHasMember(structDecl, "__del__is_trivial",
-                              structDecl.getLoc()))
-      StructEmitter(structDecl).synthesizeUnresolvedAlias("__del__is_trivial");
   } else if (implicitlyDestructible) {
     synthesizedDtor = true;
     (void)StructEmitter(structDecl).synthesizeEmptyDtor();
   }
+  // If the structure conforms to "AnyType", we populate the trivial flag.
+  if (implicitlyDestructible)
+    synthesizeTrivialFlagIfNeeded("__del__");
 
   // If the struct conforms to well-known traits but doesn't have explicit
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
-  if (conformsToTrait("Movable") &&
-      !shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
-    StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
-  if (conformsToTrait("Copyable") &&
-      !shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
-    StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+  if (conformsToTrait("Movable")) {
+    if (!shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
+      StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
+    synthesizeTrivialFlagIfNeeded("__moveinit__");
+  }
+  if (conformsToTrait("Copyable")) {
+    if (!shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
+      StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+    synthesizeTrivialFlagIfNeeded("__copyinit__");
+  }
   if (conformsToTrait("ExplicitlyCopyable") &&
       !shared.typeHasMember(structDecl, "copy", structDecl.getLoc()))
     StructEmitter(structDecl).synthesizeEmptyExplicitCopy(structDecl);
@@ -3439,11 +3449,24 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 LogicalResult
 DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
                                         ASTDecl &childTraitAliasDecl) {
+  auto getFnIsTrivialKind = [](StringRef trivialTagName) {
+    // Matching by name is a bit gross, but we don't have general synthesized
+    // decls so it should be robust.
+    if (trivialTagName == "__del__is_trivial")
+      return SpecialFunctionKind::kDel;
+    if (trivialTagName == "__moveinit__is_trivial")
+      return SpecialFunctionKind::kMoveInit;
+    if (trivialTagName == "__copyinit__is_trivial")
+      return SpecialFunctionKind::kCopyInit;
 
-  if (inheritedAliasOp.getDeclName().strref() == "__del__is_trivial") {
+    return SpecialFunctionKind::kNormal;
+  };
+
+  SpecialFunctionKind spFn = getFnIsTrivialKind(inheritedAliasOp.getDeclName());
+  if (spFn != SpecialFunctionKind::kNormal) {
     StructEmitter gen(*childTraitAliasDecl.getParentDecl());
-    TypedAttr isTrivial =
-        gen.populateSpecialFnIsTrivial(SpecialFunctionKind::kDel);
+    TypedAttr isTrivial = gen.populateSpecialFnIsTrivial(
+        getFnIsTrivialKind(inheritedAliasOp.getDeclName().strref()));
 
     if (isTrivial) {
       inheritedAliasOp.setParamDeclAttr(ParamDeclAttr::get(
