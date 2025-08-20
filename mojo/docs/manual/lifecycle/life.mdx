@@ -120,7 +120,7 @@ takes no arguments, and then additional constructors that accept more arguments.
 
 Just be aware that, in order to modify any fields, each constructor must
 declare the `self` argument with the [`out`
-convention](/mojo/manual/values/ownership#mutable-arguments-mut). If you
+convention](/mojo/manual/values/ownership#argument-conventions). If you
 want to call one constructor from another, you simply call upon that
 constructor as you would externally (you don't need to pass `self`).
 
@@ -598,11 +598,18 @@ fn __moveinit__(out self, deinit existing: Self):
     self.age = existing.age
 ```
 
+The move constructor takes its `existing` argument using the `deinit`
+[argument convention](/mojo/manual/values/ownership#argument-conventions), which
+grants exclusive ownership of the value and marks it as destroyed at the end of
+the function. (For more information on the `deinit` convention, see
+[Field lifetimes during destruct and move](/mojo/manual/lifecycle/death#field-lifetimes-during-destruct-and-move)).
+
 The move constructor uses the transfer sigil (`^`) to indicate that ownership of
-the value is being transferred from `existing` to `self`. For register-passable
-types like `Int`, the transfer sigil is omitted: register-passable types are
-always treated as movable, but they can't define custom move constructors or
-destructors, so there's no special logic to run for a move.
+the `name` value is being transferred from `existing` to `self`. For
+register-passable types like `Int`, the transfer sigil is omitted:
+register-passable types are always treated as movable, but they can't define
+custom move constructors or destructors, so there's no special logic to run for
+a move.
 
 At the end of the `__moveinit__()` method, Mojo immediately invalidates the
 original variable, preventing any access to it. It does **not** call the
