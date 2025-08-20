@@ -1,0 +1,63 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated --verify-diagnostics %s
+
+# Basic tests for when multiple parent traits define a function with
+# conflicting signature and no override in the child struct.
+
+
+trait Foo1:
+    # expected-note @+1 {{original default implementation from trait 'Foo1' here}}
+    fn foo(self) -> Int:
+        return 1
+
+
+trait Foo2(Foo1):
+    # expected-note @+1 {{conflicting implementation from trait 'Foo2' here}}
+    fn foo(self) -> Int:
+        return 2
+
+
+trait Foo3(Foo1):
+    # expected-note @+1 {{conflicting implementation from trait 'Foo3' here}}
+    fn foo(self) -> Int:
+        return 3
+
+
+@fieldwise_init
+# expected-error @+2 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo2' you must implement it manually}}
+# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo3' you must implement it manually}}
+struct Foo(Foo2, Foo3):
+    pass
+
+
+trait AA1:
+    alias X: Copyable
+
+    # expected-note @+1 {{original default implementation from trait 'AA1' here}}
+    fn zork(self, x: X) -> X:
+        return x
+
+
+trait AA2:
+    alias X: Copyable & Movable
+
+    # expected-note @+1 {{conflicting implementation from trait 'AA2' here}}
+    fn zork(self, x: X) -> X:
+        return x
+
+
+@fieldwise_init
+# expected-error @+1 {{trait method requirement 'zork' has conflicting default implementations in 'AA1' and 'AA2' you must implement it manually}}
+struct Bar(AA1, AA2):
+    alias X: Copyable & Movable = Int
+
+
+trait WithAsyncMethod:
+    # expected-error @+1 {{async defaulted trait methods are not supported yet}}
+    async fn async_default_method(self) -> Int:
+        return 42

@@ -1,0 +1,79 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s | FileCheck %s
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct RP:
+    pass
+
+
+@fieldwise_init
+struct NonRP:
+    pass
+
+
+trait Foo:
+    fn rp(self) -> RP:
+        return RP()
+
+    fn non_rp(self) -> NonRP:
+        return NonRP()
+
+    @no_inline
+    fn no_inline(self, x: RP) -> RP:
+        return RP()
+
+    @always_inline
+    @staticmethod
+    fn always_inline(x: RP) -> RP:
+        return RP()
+
+
+# CHECK-LABEL: lit.struct.decl @Bar
+struct Bar(Foo):
+    # CHECK: lit.fn @"rp(default_trait_methods::Bar)Foo"{{.*}}([[SELF:%[^:]+]]: {{.*}}) -> !RP
+
+    # CHECK: lit.fn @"non_rp(default_trait_methods::Bar)Foo"{{.*}}([[SELF:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
+
+    # Make sure we preserve inline annotations on the wrapper methods
+    # CHECK: lit.fn @"no_inline
+    # CHECK-SAME: no_inline
+    # CHECK: lit.fn @"always_inline
+    # CHECK-SAME: always_inline
+
+    # CHECK: kgen.conformance{{.*}}:Foo
+    # CHECK-DAG: kgen.witness "rp"
+    # CHECK-DAG: kgen.witness "non_rp"
+    # CHECK-DAG: kgen.witness "no_inline"
+    # CHECK-DAG: kgen.witness "always_inline"
+    pass
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct Zork(Copyable, Movable):
+    pass
+
+
+trait AA1:
+    alias X: Copyable
+
+    fn zork(self, x: X) -> X:
+        return x
+
+
+# Check that we handle traits with associated aliases properly
+# CHECK-LABEL: lit.struct.decl @TAA
+struct TAA(AA1):
+    alias X = Zork
+
+    # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
+
+    # CHECK: kgen.conformance{{.*}}:AA1
+    # CHECK-DAG: kgen.witness "zork"

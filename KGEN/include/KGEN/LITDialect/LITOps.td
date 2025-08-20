@@ -72,7 +72,16 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<StrAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$sourceName,
-    // The trait symbol this function is inherited from. None if self-declared.
+    // For trait->trait inheritance the trait.decl this was inherited from.
+    //  -OR-
+    // For trait->struct inheritance the ~lit.fn~ this was inherited from.
+    //
+    // None if self declared in either case.
+    //
+    // TODO: Just use the lit.fn op symbol in either case for consistency.
+    // Most of the time mere presence of the attribute rather than its actual
+    // value is used, and the parent trait.decl symbol ref can always derived
+    // from having the lit.fn symbol ref.
     OptionalAttr<SymbolRefAttr>:$inheritedFrom,
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,

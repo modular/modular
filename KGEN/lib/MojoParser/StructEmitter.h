@@ -121,6 +121,17 @@ public:
   /// Synthesize an unresolved alias into the struct with the specified name .
   ASTDecl *synthesizeUnresolvedAlias(StringRef name);
   TypedAttr populateSpecialFnIsTrivial(SpecialFunctionKind kind);
+
+  /// Like synthesizeMethodInStruct but accepts higher-level signature
+  /// information and extracts the necessary components internally. Also handles
+  /// all the post-creation setup specific to default trait method wrappers.
+  FnOp synthesizeDefaultTraitMethodWrapper(ASTDecl &existingDecl,
+                                           StringRef name,
+                                           FnTypeGeneratorType wrapperSignature,
+                                           FnOp traitFn, ASTDecl *traitFnDecl,
+                                           bool structDefinesMethod,
+                                           ImplicitLocOpBuilder &builder,
+                                           StringRef suffix = "");
 };
 
 } // namespace M::KGEN::LIT

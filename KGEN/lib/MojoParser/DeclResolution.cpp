@@ -1195,8 +1195,16 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   ParsedArgumentList fnSignature;
   // Set up the known effects.
-  if (isAsync)
+  if (isAsync) {
     fnSignature.effects.setAsync(true);
+
+    if (funcOp.isDefaultedTraitFn()) {
+      // TODO(MOCO-2287): Support async defaulted trait methods
+      shared.emitError(funcOp.getLoc())
+          << "async defaulted trait methods are not supported yet";
+      return failure();
+    }
+  }
   if (isDef)
     fnSignature.effects.setThrows();
 
@@ -2784,6 +2792,62 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     decl.resolvedness = DeclResolvedness::signature;
     // Conformances are always created as signature-resolved because there's no
     // less-resolved state for it (see CALROC for more).
+
+    // Make sure the trait decl has been body resolved so we can check if
+    // any methods provide implementations.
+    if (failed(resolveBody(parentDecl, parentDecl.getLoc()))) {
+      structDecl.setErroneous();
+      return failure();
+    }
+
+    auto isInherited = [&](auto nestedOp, ASTDecl &parentDecl) {
+      if (nestedOp.getInheritedFrom())
+        return true;
+
+      // inheritedFrom is set by signature resolution -- for inherited trait
+      // methods the decl itself might contain a reference to the lit.fn op from
+      // the parent this checks for that.
+      auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
+      return getFullyResolvedSymbolRef(parentTraitOp) !=
+             parentDecl.getSymbolRef();
+    };
+
+    StructEmitter emitter(structDecl);
+    SmallVector<std::pair<FnOp, ASTDecl *>> nonEmptyTraitFns;
+    for (auto &[childName, childDecls] : parentDecl.getDeclsInScope()) {
+      for (ASTDecl *childDecl : childDecls) {
+        auto fnOp = dyn_cast_if_present<FnOp>(childDecl->getIfOperation());
+
+        if (!fnOp)
+          continue;
+
+        if (!fnOp.isDefaultedTraitFn())
+          continue;
+
+        if (isInherited(fnOp, parentDecl))
+          continue;
+
+        // Create a decl corresponding to the trait method we're inheriting.
+        //
+        // NOTE: this decl points to the lit.fn op in the actual trait so we now
+        // have two decls pointing to the same lit.fn op.
+        //
+        // Ideally we'd create a stub lit.fn op in the struct with it's
+        // inheritedFrom attribute pointing to the symbol ref attr of the trait
+        // method, but since symbols are only created at signature resolution
+        // time for lit.fn ops that's not an option (and attempting to signature
+        // resolve trait methods at this point tends to cause cycles so is not
+        // an option).
+        //
+        // Stashing the trait's lit.fn op here gives us an easy way to refer
+        // back to it, signature resolving this struct's decl will actually
+        // create the lit.fn op in the struct.decl op's body.
+        auto &decl = shared.getDeclResolver().addDecl(
+            fnOp, childDecl->getLoc(), childName, &structDecl, LexerCursor(),
+            LexerCursor(), -1);
+        decl.resolvedness = DeclResolvedness::unparsed;
+      }
+    }
   }
   return success();
 }
@@ -3196,6 +3260,21 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
          "Expected synthetic function decl's parent to be a trait");
 
   auto childTraitDecl = childTraitFnDecl.getParentDecl();
+
+  // This covers the case of trait -> struct default method inheritance.
+  if (inheritedFnOp.isDefaultedTraitFn() &&
+      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation())) {
+    auto traitFnDecl = inheritedFnOp->getParentOfType<TraitDeclOp>();
+
+    auto traitSymbolRef = getFullyResolvedSymbolRef(traitFnDecl);
+    auto conformanceSymName = getFlattenedSymbolName(traitSymbolRef);
+    auto conformanceDecl =
+        childTraitDecl->lookupInCurrentScope(conformanceSymName);
+
+    return resolveBody(*conformanceDecl.front(),
+                       conformanceDecl.front()->getLoc());
+  }
+
   // This is the actual child trait of the decl.
   TraitDeclOp childTraitDeclOp =
       cast<TraitDeclOp>(childTraitDecl->getIfOperation());
@@ -3314,9 +3393,9 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   // had created earlier we do this by creating an empty body for the function
   // and marking it so that overload resolution will never pick it.
   if (markDisabled) {
-    // We set this attribute and use it during overload resolution to skip
+    // We set this property and use it during overload resolution to skip
     // declarations like this.
-    clonedFunc->setAttr("disabled", UnitAttr::get(clonedFunc->getContext()));
+    childTraitFnDecl.setDisabled();
 
     // Append parent trait name to the function name
     auto parentTraitName = parentTraitDeclOp.getSymNameAttr();
