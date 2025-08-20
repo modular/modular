@@ -6,8 +6,7 @@
 
 """Test to ensure transfer completion notifications are delivered promptly.
 
-This test verifies that the UCX backend fix for immediate notification delivery
-works correctly and prevents regressions of the 3+ second notification delay.
+Now the progress thread is responsible for sending out completion notifications.
 """
 
 import time
@@ -16,14 +15,18 @@ from threading import Thread
 from typing import Any
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Accelerator, Tensor
 from max.nn.kv_cache import KVTransferEngine, available_port
 
 
 def test_notification_delivery_is_prompt():
-    MAX_ACCEPTABLE_LATENCY_S = 8.0
+    TIMEOUT_SEND_S = 10
+    TIMEOUT_RECV_S = 12
+    MAX_ACCEPTABLE_LATENCY_S = 8
+    GB = 1024 * 1024 * 1024
+
     num_blocks = 3
-    bytes_per_block = 3
+    bytes_per_block = int(0.25 * GB)
 
     # Create transfer engines
     sender_md_queue: Queue[Any] = Queue()
@@ -35,9 +38,10 @@ def test_notification_delivery_is_prompt():
     exit_codes = [-1, -1]
 
     def sender():
+        acc = Accelerator(0)
         blocks = Tensor.from_numpy(
-            np.ones((num_blocks, bytes_per_block), dtype=np.int32)
-        )
+            np.ones((num_blocks, bytes_per_block), dtype=np.int8)
+        ).to(acc)
 
         engine = KVTransferEngine(
             name="latency_sender",
@@ -58,7 +62,7 @@ def test_notification_delivery_is_prompt():
         xfer_queue.put(xfer_req)
 
         # Notification should be delivered even though sender is asleep at the wheel.
-        for i in range(10):
+        for i in range(TIMEOUT_SEND_S):
             print(f"Sender is sleeping... {i}s")
             time.sleep(1)
             if not done_queue.empty():
@@ -72,9 +76,10 @@ def test_notification_delivery_is_prompt():
         exit_codes[0] = 0
 
     def receiver():
+        acc = Accelerator(1)
         blocks = Tensor.from_numpy(
-            np.ones((num_blocks, bytes_per_block), dtype=np.int32)
-        )
+            np.ones((num_blocks, bytes_per_block), dtype=np.int8)
+        ).to(acc)
 
         engine = KVTransferEngine(
             name="latency_receiver",
@@ -92,15 +97,27 @@ def test_notification_delivery_is_prompt():
         xfer_req = xfer_queue.get()
         start_time = time.time()
         is_done = False
-        while not is_done:
+        while not is_done and time.time() - start_time < TIMEOUT_RECV_S:
             is_done = engine.is_complete(xfer_req)
             print(f"Recv transfer status: {is_done}")
-            time.sleep(0.1)
+            time.sleep(0.25)
+
+        if not is_done:
+            raise TimeoutError(
+                f"Transfer completion notification was not received after {TIMEOUT_RECV_S}s"
+            )
 
         latency = time.time() - start_time
 
-        print(f"Transfer completion notification latency: {latency:.3f}s")
         done_queue.put("I am done!")
+        transfer_bytes = bytes_per_block * num_blocks
+        transfer_gb = transfer_bytes / GB
+        bw = transfer_gb / latency
+        # Note that because this test uses multi-thread instead of multi-process,
+        # we use CUDA_COPY instead of CUDA_IPC. This has lower transfer bandwidth.
+        print(
+            f"Transfer of {transfer_gb:.2f} GB took {latency:.2f}s ({bw:.2f} GB/s)"
+        )
 
         # Assert that latency is within acceptable bounds
         assert latency < MAX_ACCEPTABLE_LATENCY_S, (
