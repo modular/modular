@@ -357,6 +357,42 @@ class CompileOffloadClosureAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class ConstraintAttr(max._core.Attribute):
+    """
+    The `#kgen.constraint` attribute represents a proposition that should hold,
+    an error message when it doesn't hold, and a location for where this
+    constraint was declared, which is useful for error reporting.
+
+    The proposition is an i1-typed parameter expression.
+
+    Example:
+
+    ```mlir
+    #kgen.constraint<1, "Constraint must hold", loc("file.mojo":10:5)>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        proposition: max._core.dialects.builtin.TypedAttr,
+        loc: max._core.LocationAttr,
+        error_msg: max._core.dialects.builtin.StringAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        proposition: max._core.dialects.builtin.TypedAttr,
+        loc: max._core.LocationAttr,
+        error_msg: max._core.dialects.builtin.StringAttr,
+    ) -> None: ...
+    @property
+    def proposition(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def loc(self) -> max._core.LocationAttr: ...
+    @property
+    def error_msg(self) -> max._core.dialects.builtin.StringAttr: ...
+
 class DTypeConstantAttr(max._core.Attribute):
     """
     This is constant value for a dtype, whose elements correspond to DType.

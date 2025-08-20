@@ -158,6 +158,9 @@ class Region:
     @property
     def back(self) -> Block: ...
 
+class LocationAttr:
+    pass
+
 class _BitVector:
     pass
 
