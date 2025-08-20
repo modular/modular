@@ -15,6 +15,7 @@ from multiprocessing import shared_memory
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +48,13 @@ class SharedMemoryArray:
     array.
     """
 
-    def __init__(self, name: str, shape: tuple[int, ...], dtype: str):
+    def __init__(self, name: str, shape: tuple[int, ...], dtype: str) -> None:
         self.name = name
         self.shape = shape
         self.dtype = dtype
 
 
-def ndarray_to_shared_memory(arr: np.ndarray) -> SharedMemoryArray | None:
+def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
     """Convert a NumPy array to shared memory and return a reference descriptor.
 
     Includes capacity checking to prevent exhausting /dev/shm.
@@ -78,7 +79,9 @@ def ndarray_to_shared_memory(arr: np.ndarray) -> SharedMemoryArray | None:
         )
 
         # Copy array data into shared memory.
-        shm_arr: np.ndarray = np.ndarray(arr.shape, arr.dtype, buffer=shm.buf)
+        shm_arr: npt.NDArray[Any] = np.ndarray(
+            arr.shape, arr.dtype, buffer=shm.buf
+        )
         shm_arr[:] = arr
 
         # Close our handle but don't unlink - let the consumer handle cleanup.
@@ -93,7 +96,7 @@ def ndarray_to_shared_memory(arr: np.ndarray) -> SharedMemoryArray | None:
         return None
 
 
-def open_shm_array(meta: dict[str, Any]) -> np.ndarray:
+def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
     """Open a shared memory array.
 
     Args:
@@ -105,7 +108,7 @@ def open_shm_array(meta: dict[str, Any]) -> np.ndarray:
     shm = shared_memory.SharedMemory(name=meta["name"])
 
     # Create numpy array view into shared memory
-    arr: np.ndarray = np.ndarray(
+    arr: npt.NDArray[Any] = np.ndarray(
         shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
     )
 

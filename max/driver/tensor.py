@@ -12,6 +12,7 @@ from os import PathLike
 from typing import Any, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from max._core.driver import Tensor as Tensor
 from max.dtype import DType
 
@@ -82,7 +83,7 @@ def inplace_copy_from(self: Tensor, src: Tensor) -> None:
     self._inplace_copy_from(src)
 
 
-def _from_numpy(arr: np.ndarray) -> Tensor:
+def _from_numpy(arr: npt.NDArray[Any]) -> Tensor:
     """Creates a tensor from a provided numpy array on the host device.
 
     The underlying data is not copied unless the array is noncontiguous. If
@@ -93,7 +94,7 @@ def _from_numpy(arr: np.ndarray) -> Tensor:
     return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
 
 
-def _to_numpy(self: Tensor) -> np.ndarray:
+def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
     """Converts the tensor to a numpy array.
 
     If the tensor is not on the host, an exception is raised.

@@ -9,6 +9,7 @@ from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 import msgspec
 import numpy as np
+import numpy.typing as npt
 
 
 class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
@@ -19,7 +20,7 @@ class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
         embeddings: The generated embeddings as a NumPy array.
     """
 
-    embeddings: np.ndarray
+    embeddings: npt.NDArray[np.floating[Any]]
     """The generated embeddings as a NumPy array."""
 
     @property
