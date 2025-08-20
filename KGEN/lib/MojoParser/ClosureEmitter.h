@@ -139,8 +139,10 @@ private:
     /// all closure parents have a single defining function.
     FnOp definingFn;
   };
-  /// Cached commonly used traits.
-  SmallVector<ClosureParent> closureParents;
+  /// Movable trait is a parent of all closures. Cache its defining op.
+  ClosureParent moveParent;
+  /// Anytype trait is a parent of all closures. Cache its defining op.
+  ClosureParent anyParent;
 };
 
 } // namespace M::KGEN::LIT
