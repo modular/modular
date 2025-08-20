@@ -6,8 +6,10 @@
 
 import os
 import sys
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 # get directory of current file
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +24,7 @@ from mojo_module import mojo_block_hasher  # type: ignore
 
 
 def block_hasher(
-    tokens: np.ndarray, block_size: int, parent_hash: int
+    tokens: npt.NDArray[np.integer[Any]], block_size: int, parent_hash: int
 ) -> list[int]:
     """Hash tokens into blocks for prefix caching.
 
