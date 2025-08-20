@@ -229,27 +229,16 @@ class FakeTokenGeneratorPipeline(
         # Generate the responses
         responses = {}
         for req_id, context in inputs.batch.items():
-            tokens = []
-            final_status = GenerationStatus.ACTIVE
-
             for _ in range(num_steps):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
-                    final_status = GenerationStatus.MAXIMUM_LENGTH
+                    context.status = GenerationStatus.MAXIMUM_LENGTH
 
-                if final_status != GenerationStatus.ACTIVE:
+                if context.is_done:
                     break
 
-            for token, _ in context.outstanding_completion_tokens():
-                tokens.append(token)
-
-            responses[req_id] = TextGenerationOutput(
-                request_id=req_id,
-                tokens=tokens,
-                final_status=final_status,
-                log_probabilities=None,
-            )
+            responses[req_id] = context.to_generation_output()
 
         # Step the kv cache manager
         self.kv_manager.step(ctxs)
