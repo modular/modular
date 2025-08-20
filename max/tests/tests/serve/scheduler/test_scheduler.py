@@ -279,7 +279,7 @@ def test_schedule_ce() -> None:
     assert mock_request.request_id in scheduler.batch_constructor.tg_reqs
     assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.execute.assert_called_once_with(
-        TextGenerationInputs(batch_to_execute, num_steps=1)
+        TextGenerationInputs([batch_to_execute], num_steps=1)
     )
 
 
@@ -383,7 +383,7 @@ def test_schedule_tg() -> None:
     assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.execute.assert_called_once_with(
         TextGenerationInputs(
-            batch_to_execute,
+            [batch_to_execute],
             num_steps=scheduler.scheduler_config.max_forward_steps_tg,
         )
     )
