@@ -481,15 +481,19 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[1]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[0]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(

@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -725,15 +725,19 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Return model outputs based on what the language model returns
         if len(language_outputs) == 3:
+            assert isinstance(language_outputs[0], Tensor)
+            assert isinstance(language_outputs[1], Tensor)
+            assert isinstance(language_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, language_outputs[0]),
-                logits=cast(Tensor, language_outputs[1]),
-                logit_offsets=cast(Tensor, language_outputs[2]),
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[1],
+                logit_offsets=language_outputs[2],
             )
         else:
+            assert isinstance(language_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, language_outputs[0]),
-                logits=cast(Tensor, language_outputs[0]),
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[0],
             )
 
     def prepare_initial_token_inputs(
