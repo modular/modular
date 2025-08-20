@@ -7,15 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Generic,
-    Literal,
-    Optional,
-    TypedDict,
-    TypeVar,
-    Union,
-)
+from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar, Union
 
 import msgspec
 from max.interfaces.context import BaseContext, SamplingParams
