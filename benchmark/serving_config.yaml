@@ -76,3 +76,9 @@ benchmark_config:
 
   # Result saving (serving-specific extensions)
   server_args: ""  # Server arguments string
+
+  # Result saving (serving-specific extensions)
+  result_dir: null # Directory to save results
+  result_filename: null  # Custom filename (auto-generated if null)
+  metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
+  

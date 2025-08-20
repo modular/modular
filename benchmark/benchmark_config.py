@@ -79,19 +79,6 @@ class BaseBenchmarkConfig(MAXConfig):
     print_inputs_and_outputs: bool = False
     """Print all input and outputs to console."""
 
-    # Result saving (common to all benchmarks)
-    save_result: bool = True
-    """Specify to save benchmark results to a json file."""
-
-    result_dir: str = "./benchmark_results"
-    """Directory to save results."""
-
-    result_filename: Optional[str] = None
-    """Custom filename (auto-generated if null)."""
-
-    metadata: list[str] = field(default_factory=list)
-    """Key-value pairs for metadata (format: ["key=value", ...])."""
-
     # Unknown fields storage (not a dataclass field)
     _unknown_fields: dict[str, Any] = field(
         default_factory=dict, init=False, repr=False
@@ -114,10 +101,6 @@ class BaseBenchmarkConfig(MAXConfig):
             "seed": "Random seed for reproducibility.",
             "disable_tqdm": "Specify to disable tqdm progress bar.",
             "print_inputs_and_outputs": "Print all input and outputs to console.",
-            "save_result": "Specify to save benchmark results to a json file.",
-            "result_dir": "Directory to save results.",
-            "result_filename": "Custom filename (auto-generated if null).",
-            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
 
     @staticmethod
@@ -236,6 +219,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     server_args: str = ""
     """Server arguments string."""
 
+    # Result saving (serving-specific extensions)
+    save_result: bool = False
+    """Specify to save benchmark results to a json file."""
+
+    result_dir: Optional[str] = None
+    """Directory to save results."""
+
+    result_filename: Optional[str] = None
+    """Custom filename (auto-generated if null)."""
+
+    metadata: list[str] = field(default_factory=list)
+    """Key-value pairs for metadata (format: ["key=value", ...])."""
+
     @staticmethod
     def help() -> dict[str, str]:
         """Documentation for serving benchmark config parameters.
@@ -279,6 +275,10 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "server_args": "Server arguments string.",
+            "save_result": "Specify to save benchmark results to a json file.",
+            "result_dir": "Directory to save results.",
+            "result_filename": "Custom filename (auto-generated if null).",
+            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
         return {**base_help, **serving_help}
 

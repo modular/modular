@@ -39,8 +39,3 @@ benchmark_config:
   disable_tqdm: false
   print_inputs_and_outputs: false
 
-  # Result saving (common to all benchmarks)
-  save_result: true  # Save benchmark results to JSON
-  result_dir: "./benchmark_results"  # Directory to save results
-  result_filename: null  # Custom filename (auto-generated if null)
-  metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
