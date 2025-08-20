@@ -38,6 +38,7 @@ class TestConfig(MAXConfig):
     test_field: str = "default_value"
     test_int: int = 42
     test_bool: bool = True
+    test_inf: float = float("inf")
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -121,6 +122,7 @@ class TestMAXConfigFileLoading:
             "test_config": {
                 "test_field": "full_value",
                 "test_int": 200,
+                "test_inf": "inf",
             },
             "other_section": {
                 "other_field": "other_value",
@@ -136,6 +138,7 @@ class TestMAXConfigFileLoading:
             assert config.test_field == "full_value"
             assert config.test_int == 200
             assert config.test_bool is True  # Default value.
+            assert config.test_inf == float("inf")
 
     def test_file_not_found_error(self) -> None:
         """Test FileNotFoundError when MAXConfig file doesn't exist."""
