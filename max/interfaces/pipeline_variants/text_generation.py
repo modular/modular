@@ -234,7 +234,18 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     pattern of passing batch and num_steps as separate parameters.
     """
 
-    batch: dict[RequestID, TextGenerationContextType]
-    """Dictionary mapping request IDs to context objects."""
+    batches: list[dict[RequestID, TextGenerationContextType]]
+    """Variable list of batches, with each batch being a dictionary mapping
+    request IDs to context objects.
+
+    There can be multiple batches when using data parallelism, in which each
+    batch is mapped to a different device.
+    """
+
     num_steps: int
     """Number of tokens to generate."""
+
+    @property
+    def batch(self) -> dict[RequestID, TextGenerationContextType]:
+        """Returns merged batches."""
+        return {k: v for batch in self.batches for k, v in batch.items()}
