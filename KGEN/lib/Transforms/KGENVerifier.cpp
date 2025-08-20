@@ -92,6 +92,8 @@ struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
           }).wasInterrupted()) {
       signalPassFailure();
     }
+    if (numErrors > 0)
+      signalPassFailure();
   }
 };
 } // namespace
