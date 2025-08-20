@@ -470,7 +470,7 @@ def test_speculative_decoding_context_update(
     )
 
     response = pipeline.build_response(
-        pipeline_request, list(pipeline_request.values())
+        context_batch=list(pipeline_request.values())
     )
     assert len(response) == 2
 
