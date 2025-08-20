@@ -1716,4 +1716,46 @@ def KGEN_ToStringDeferredAttr : KGENAttr<"ToStringDeferred",
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
+//===----------------------------------------------------------------------===//
+// ConstraintAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
+  let summary = "A constraint with proposition, error message, and location";
+  let description = [{
+    The `#kgen.constraint` attribute represents a proposition that should hold,
+    an error message when it doesn't hold, and a location for where this
+    constraint was declared, which is useful for error reporting.
+
+    The proposition is an i1-typed parameter expression.
+
+    Example:
+
+    ```mlir
+    #kgen.constraint<1, "Constraint must hold", loc("file.mojo":10:5)>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$proposition,
+    "LocationAttr":$loc,
+    OptionalParameter<"StringAttr">:$errorMsg
+  );
+
+  let assemblyFormat = [{
+    `<` custom<I1ParamValue>($proposition) `,` $loc (`,` $errorMsg^)? `>`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "TypedAttr":$proposition,
+        "LocationAttr":$loc,
+        CArg<"StringAttr", "{}">:$errorMsg), [{
+      return $_get(proposition.getContext(), proposition, loc, errorMsg);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

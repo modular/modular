@@ -268,6 +268,12 @@ def TailKindAttr : DialectAttribute<(attr
   EnumAttr<"TailKind">:$value
 )>;
 
+def ConstraintAttr : DialectAttribute<(attr
+  TypedAttr:$prop,
+  ConcreteAttribute<"LocationAttr">:$loc,
+  ConcreteOptionalAttribute<"StringAttr">:$errorMsg
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
