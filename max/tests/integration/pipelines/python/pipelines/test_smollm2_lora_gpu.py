@@ -39,7 +39,7 @@ def generate_tokens_from_contexts(
 
     while active_contexts:
         response = pipeline.execute(
-            TextGenerationInputs(active_contexts, num_steps=1)
+            TextGenerationInputs(batches=[active_contexts], num_steps=1)
         )
         for req_id, resp in response.items():
             all_tokens[req_id].extend(resp.tokens)

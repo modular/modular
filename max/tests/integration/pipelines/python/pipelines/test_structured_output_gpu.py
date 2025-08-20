@@ -90,7 +90,9 @@ def test_smollm_with_structured_output_gpu(
 
     tokens = []
     while True:
-        inputs = TextGenerationInputs(batch={request_id: context}, num_steps=1)
+        inputs = TextGenerationInputs(
+            batches=[{request_id: context}], num_steps=1
+        )
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:
