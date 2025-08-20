@@ -1,6 +1,9 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect --kgen-print-inline-type-values | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect --kgen-print-inline-type-values | FileCheck %s
 
+// CHECK-DAG: #[[LOC_C1:.+]] = loc("test.mojo":10:5)
+// CHECK-DAG: #[[LOC_C2:.+]] = loc("test.mojo":15:10)
+
 // CHECK: *"mangled_fn{{.*}}int
 "some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!lit.struct<_\22int\22::_Int>])" : index>} : () -> ()
 
@@ -196,4 +199,12 @@ kgen.generator @closureSymbol(){
   gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index> index>,
   // CHECK-SAME: gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index>index>
   gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index> index>
+} : () -> ()
+
+"some.op"() {
+  a = 5 : index,
+  // CHECK: constraint1 = #kgen.constraint<1, #[[LOC_C1]], "Basic constraint must hold">
+  constraint1 = #kgen.constraint<1, loc("test.mojo":10:5), "Basic constraint must hold">,
+  // CHECK-SAME: constraint2 = #kgen.constraint<ge(a, 4), #[[LOC_C2]]>
+  constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>
 } : () -> ()
