@@ -147,6 +147,11 @@ public:
   /// Whether this decl was loaded from bytecode.
   bool isLoadedFromBytecode() const { return loadedFromBytecode; }
 
+  /// Whether this decl is disabled for overload resolution.
+  bool isDisabled() const { return disabled; }
+  /// Mark this decl as disabled for overload resolution.
+  void setDisabled() { disabled = true; }
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//
@@ -290,6 +295,11 @@ private:
   /// than source decls, and e.g., do not resolve in the same way as source
   /// decls.
   bool loadedFromBytecode : 1;
+
+  /// This is set to true when the declaration is disabled for overload
+  /// resolution, typically used for trait default methods that have been
+  /// overridden by struct implementations.
+  bool disabled : 1;
 
   /// The counter to allow the generation of unique IDs for this ASTDecl.
   unsigned counter = 0;

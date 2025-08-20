@@ -9,7 +9,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "StructEmitter.h"
-#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
@@ -17,6 +16,7 @@
 #include "ParserEvaluationContext.h"
 #include "Traits.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -223,6 +223,102 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
   assert(!existing && "unexpected redefinition of synthesized method");
 
   return {funcOp, &funcDecl};
+}
+
+FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
+    ASTDecl &existingDecl, StringRef name, FnTypeGeneratorType wrapperSignature,
+    FnOp traitFn, ASTDecl *traitFnDecl, bool structDefinesMethod,
+    ImplicitLocOpBuilder &builder, StringRef suffix) {
+
+  assert(existingDecl.resolvedness < DeclResolvedness::signature &&
+         "synthesizeMethodInStruct is only valid on non-signature resolved Fn "
+         "ASTDecls");
+
+  // Extract signature components from the high-level types
+  FnType fnType = wrapperSignature.getBody();
+  ArrayRef<Type> inputTypes = fnType.getArguments();
+
+  PogListAttr traitArgListAttrs =
+      traitFn.getFuncTypeGenerator().getArgListAttrs();
+
+  SmallVector<Type> argTypes;
+  SmallVector<ArgConvention> argConventions;
+  for (auto [idx, argType] : llvm::enumerate(inputTypes)) {
+    argTypes.push_back(argType);
+    argConventions.push_back(fnType.getArgConvention(idx));
+  }
+
+  Type resultType = wrapperSignature.getResultType();
+
+  // TODO: Is this really the canonical way to handle origin decls?
+  auto params = traitFn.getParams().drop_back(
+      wrapperSignature.getNumImplicitOriginDecls());
+
+  InlineLevel inlineLevel = InlineLevel::Automatic;
+  if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
+    inlineLevel = InlineLevel::AlwaysNoDebug;
+
+  FnOp funcOp = createFunction(
+      structDecl, name, params, wrapperSignature.getParamListAttrs(), argTypes,
+      argConventions, traitArgListAttrs, resultType,
+      SpecialFunctionKind::kNormal, structDecl.getLoc(), builder,
+      traitFn.getFuncTypeGenerator().getFnEffects(), suffix, /*synthetic=*/true,
+      inlineLevel);
+
+  if (!funcOp)
+    return nullptr;
+
+  // Attach the new operation to the provided declaration.
+  existingDecl.setIRValue(funcOp.getOperation());
+  existingDecl.resolvedness = DeclResolvedness::signature;
+
+  [[maybe_unused]] Operation *existing =
+      shared.declResolver->finalizeFuncSignature(funcOp, existingDecl);
+  assert(!existing &&
+         "unexpected redefinition when synthesizing method into existing decl");
+
+  assert(funcOp && "Couldn't synthesize default trait wrapper in body");
+
+  // Annotate with metadata linking back to trait default implementation.
+  funcOp.setInheritedFromAttr(traitFnDecl->getSymbolRef());
+
+  // Right now there's not really a great way to re-apply the decorators that
+  // were on the defaulted trait method to the struct's wrapper lit.fn op, but
+  // fortunately all the behavior for our current set of decorators is limited
+  // changing the fn op's signature or attribute values.
+  if (traitFn.getIsStatic())
+    funcOp.setIsStatic(true);
+
+  if (traitFn.isDef())
+    funcOp.setDef(true);
+
+  if (traitFn.getImplicitConversion())
+    funcOp.setImplicitConversion(true);
+
+  if (traitFn.isExternal())
+    funcOp.setExternal(true);
+
+  funcOp.setExportKind(traitFn.getExportKind());
+
+  if (!traitFn.getLLVMMetadataArray().empty())
+    funcOp.setLLVMMetadataArrayAttr(traitFn.getLLVMMetadataArrayAttr());
+
+  if (!traitFn.getLLVMArgMetadataArray().empty())
+    funcOp.setLLVMArgMetadataArrayAttr(traitFn.getLLVMArgMetadataArrayAttr());
+
+  funcOp.setInlineLevel(KGEN::InlineLevel::AlwaysNoDebug);
+
+  // FIXME(Kenan): This is done just so I can break up the larger default trait
+  // method work In the future this should be at the signature resolution level
+  // and create a standard lit.endfn op here.
+  existingDecl.resolvedness = DeclResolvedness::body;
+  OpBuilder::atBlockEnd(funcOp.getBody())
+      .create<KGEN::UnreachableOp>(funcOp.getLoc());
+
+  if (structDefinesMethod)
+    existingDecl.setDisabled();
+
+  return funcOp;
 }
 
 //===----------------------------------------------------------------------===//

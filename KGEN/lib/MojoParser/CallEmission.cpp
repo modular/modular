@@ -37,13 +37,19 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Helper function to check if a function declaration has the "disabled"
-/// attribute
-static bool isDisabledFunction(ASTDecl *decl) {
-  if (auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation()))
-    return fnOp->hasAttr("disabled");
-  return false;
-}
+/// Checks if a decl is 'disabled' for the purposes of overload resolution.
+///
+/// There really isn't a clean way to delete decls in the parser. For things
+/// like trait -> struct default method inheritance we have to create decls
+/// early on since we haven't resolved other declarations in the struct fully
+/// enough to determine whether a default trait method has an override in the
+/// struct or not.
+///
+/// This function checks whether a decl was marked as disabled (say in a case
+/// where a struct provides an implementation for a default trait method) so we
+/// can easily filter these decls out of overload resolution. Symbol DCE later
+/// in the compiler handles actualy deleting these extra methods.
+static bool isDisabledFunction(ASTDecl *decl) { return decl->isDisabled(); }
 
 //===----------------------------------------------------------------------===//
 // CallSyntax
@@ -678,6 +684,10 @@ PValue OverloadSet::filterOverloadSetForValueType(
   SmallVector<ASTDecl *> validCandidates;
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
+    // Skip functions explicitly marked as 'disabled'.
+    if (isDisabledFunction(candidate))
+      continue;
+
     FnTypeGeneratorType candidateType =
         cast<FnOp>(candidate->getIfOperation()).getFullSignature();
     if (ParameterExprArrayAttr bindings =

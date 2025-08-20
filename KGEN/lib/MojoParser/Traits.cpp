@@ -105,6 +105,227 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
   return {newSignature, bindings};
 }
 
+/// Used to determine if this particular child fn op of a struct.decl op is one
+/// corresponding to an inherited trait method. Checking just the inheritedFrom
+/// attribute is insufficient as fnOp may actually be the fnOp in the parent
+/// trait.
+static bool isInheritedFnOp(FnOp fnOp) {
+  return fnOp.getInheritedFrom().has_value() || fnOp.isDefaultedTraitFn();
+}
+
+// Signature resolves any methods in 'structDecl' with 'name' that were
+// inherited from 'traitDecl'. This will also catch any errors where multiple
+// parent traits define a function of the same signature/name with no override
+// was provided in the child struct.
+//
+// At the start of this function ASTDecls corresponding to inherited trait
+// methods still point to the fn ops in the actual trait. This function takes
+// care of actually creating the fn op in the struct.decl with appropriate
+// signature.
+static LogicalResult signatureResolveDefaultTraitFnStubs(
+    ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
+    ArrayRef<ASTDecl *> candidates, DenseMap<StringRef, TypedAttr> &aliasValues,
+    ParserParameterEvaluator &traitAliasReplacer) {
+
+  auto &shared = structDecl.getShared();
+
+  SyntheticNode node(structDecl.getLoc());
+  IREmitter emitter(structDecl, EC_Trait);
+  auto structSelfType = structDecl.getTypeDeclSelf();
+
+  /// Will attempt to create a wrapper fn op in structFnDecl that will call into
+  /// the fn op in traitFnDecl (taking things like aliases that show up in
+  /// signature into account). This will also report if another trait has
+  /// already provided a default implementation and the struct itself does not
+  /// provide an override.
+  auto signatureResolveStub = [&](ASTDecl *traitFnDecl,
+                                  ASTDecl *structFnDecl) -> LogicalResult {
+    FnOp traitFn = cast<FnOp>(traitFnDecl->getIfOperation());
+
+    SyntheticNode syntheticNode(structDecl.getLoc());
+    auto [wrapperSignature, bindings] = getTraitFunctionSignature(
+        emitter, traitFn, structSelfType, traitDecl.getSymbolRef(),
+        syntheticNode, aliasValues, traitAliasReplacer);
+
+    // If a function with matching signature is defined in the same trait we're
+    // golden since existing machinery takes care of reporting there is a
+    // conflict. However in the case of conflicts from two different traits the
+    // earliest we can catch them is right here (and incidentally also the
+    // latest as things get wonky with overload resolution if two decls with
+    // matching signatures exist in a struct).
+    auto possibleOverloads = structDecl.lookupInCurrentScope(name);
+
+    bool structDefinesMethod = false;
+    for (ASTDecl *decl : possibleOverloads) {
+      FnOp possibleImpl =
+          llvm::dyn_cast_if_present<FnOp>(decl->getIfOperation());
+      if (!possibleImpl)
+        continue;
+
+      if (isInheritedFnOp(possibleImpl))
+        continue;
+
+      OverloadSet ov(name, possibleOverloads, std::move(bindings), node,
+                     CallSyntax::kMethodCallSynthetic);
+
+      // We can't just directly compare signatures because we may be in a
+      // scenario like: trait Foo:
+      //   alias X: AnyType
+      //   fn foo(self) -> Self.x
+      //  ...
+      //
+      // struct Bar(Foo):
+      //   alias X: AnyType = Int
+      //   fn foo(self) -> Self.X:
+      //     ...
+      //
+      // Foo::foo's signature will be something like:
+      // (self: !lit.ref<Foo>, __result__: !lit.ref<AnyType>)
+      //
+      // while Bar::foo's will be something like:
+      //
+      // (self: !lit.ref<Bar> ) -> !lit.struct<Int>
+      //
+      // Defer to using filterOverloadSetForValueType since it already handles
+      // such differences.
+      PValue result = ov.filterOverloadSetForValueType(
+          wrapperSignature, emitter.getDeclScope(), nullptr);
+
+      if (!result.isNull()) {
+        structDefinesMethod = true;
+        break;
+      }
+    }
+
+    // The struct doesn't provide an override, see if the wrapper fn we're about
+    // to create has a matching signature to an existing wrapper function in the
+    // struct.
+    if (!structDefinesMethod) {
+      for (ASTDecl *decl : possibleOverloads) {
+        auto fnOp = cast<FnOp>(decl->getIfOperation());
+
+        // Skip any decls currently pointing to the parent trait method
+        if (decl->isDisabled())
+          continue;
+
+        auto existingSignature = fnOp.getFullSignature();
+        // now we need to compare the full signature to the trait signature
+        if (existingSignature == wrapperSignature) {
+          // Produce an informative diagnostic citing the conflicting traits
+          // **and the struct name**.
+          StringAttr currentTraitName =
+              traitDecl.getSymbolRef().getLeafReference();
+
+          auto otherTraitFn = shared.getDeclResolver().getDeclForFuncSymbol(
+              fnOp.getInheritedFromAttr());
+
+          auto otherTraitName =
+              otherTraitFn->getParentDecl()->getSymbolRef().getLeafReference();
+
+          auto diag = shared.emitError(structDecl.getLoc())
+                      << "trait method requirement " << traitFn.getDeclName()
+                      << " has conflicting default implementations in "
+                      << otherTraitName << " and " << currentTraitName
+                      << " you must implement it manually";
+
+          diag.attachNote(decl->getLoc())
+              << "original default implementation from trait " << otherTraitName
+              << " here";
+
+          diag.attachNote(traitFn.getLoc())
+              << "conflicting implementation from trait " << currentTraitName
+              << " here";
+
+          // Set decl as erroneous here. To answer why consider a case like:
+          //
+          // trait Foo1:
+          //     fn foo(self) -> Int:
+          //         return 1
+          //
+          // trait Foo2(Foo1):
+          //     fn foo(self) -> Int:
+          //         return 2
+          //
+          // @fieldwise_init
+          // struct Foo(Foo2):#), Foo3):
+          //     pass
+          //
+          // In such a case if we're on this codepath decl would correspond to
+          // Foo1.foo -- we set it erroneous here to prevent further processing
+          // (namely body resolution) and additional spurious errors that would
+          // cause.
+          decl->setErroneous();
+
+          return failure();
+        }
+      }
+    }
+
+    StructEmitter structEmitter(structDecl);
+
+    // Create builder positioned before the first ConformanceOp.
+    auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+    Block &fieldsBlock = structDeclOp.getFields().front();
+
+    // Position builder before the first ConformanceOp (there will always be
+    // one).
+    ConformanceOp firstConformanceOp =
+        *fieldsBlock.getOps<ConformanceOp>().begin();
+    ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
+                                 firstConformanceOp.getOperation());
+
+    FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(
+        *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
+        structDefinesMethod, builder,
+        traitDecl.getSymbolRef().getLeafReference().strref());
+
+    // If newFn is null something went very wrong -- assert
+    assert(newFn && "Couldn't synthesize default trait wrapper in body");
+
+    return success();
+  };
+
+  for (ASTDecl *decl : candidates) {
+    FnOp fnOp = dyn_cast_if_present<LIT::FnOp>(decl->getIfOperation());
+    if (!fnOp)
+      continue;
+
+    // Indicates we've already signature resolved this decl, should actually
+    // be able to assume this given the decl is signature resovled, but
+    // double check this.
+    if (!fnOp.isDefaultedTraitFn())
+      continue;
+
+    assert(fnOp->getParentOfType<TraitDeclOp>() &&
+           "Expected to have a parent trait decl");
+
+    // It's theoretically possible to have gotten to this point and have
+    // fnOp's decl not be signature resolved yet, guard against that.
+    if (fnOp->getAttr("sym_namex"))
+      continue;
+
+    auto traitFnSymbolRef = getFullyResolvedSymbolRef(fnOp);
+
+    auto traitFnDecl =
+        shared.declResolver->getDeclForFuncSymbol(traitFnSymbolRef);
+
+    auto parentTraitRef = traitFnDecl->getParentDecl()->getSymbolRef();
+
+    // resolve corresponds to the trait we're currently working on in
+    // verifyConformance.
+    if (parentTraitRef != traitDecl.getSymbolRef())
+      continue;
+
+    // Grab the actual decl corresponding to the trait function we'll be
+    // wrapping.
+    assert(traitFnDecl && "Couldn't find trait fn decl");
+
+    if (failed(signatureResolveStub(traitFnDecl, decl)))
+      return failure();
+  }
+  return success();
+}
+
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                      std::optional<InflightDiag> &diag,
                                      WitnessTable &witnessTable) {
@@ -196,6 +417,34 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       diag->attachNote(traitFnDecl->getLoc())
           << "required function '" + name.str() + "' is not implemented";
       return failure(); // Stop the outer loop.
+    }
+
+    // Signature resolve any decls that don't correspond to inherited trait
+    // methods first. This helps us avoid any infinite loops as signature
+    // resolution for inherited methods also calls verifyConformance.
+    for (ASTDecl *decl : decls) {
+      if (Operation *op = decl->getIfOperation()) {
+        if (auto fnOp = dyn_cast<FnOp>(op)) {
+          if (isInheritedFnOp(fnOp))
+            continue;
+        }
+      }
+      if (failed(shared.declResolver->resolveSignature(*decl,
+                                                       structDecl.getLoc()))) {
+        hadErrors = true;
+        return success();
+      }
+    }
+
+    // Signature resolve any stubs corresponding to defaulted methods for
+    // the current trait here. We have to do this before the upcoming signature
+    // resolution of all decls with a matching name to avoid cycles between
+    // verifyConformance and signature resolution for FnOps.
+    if (failed(signatureResolveDefaultTraitFnStubs(structDecl, traitDecl, name,
+                                                   decls, aliasValues,
+                                                   traitAliasReplacer))) {
+      diag->abandon();
+      return failure();
     }
 
     // Signature resolve the found decls first, so they can be checked.
