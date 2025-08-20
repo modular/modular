@@ -31,10 +31,7 @@ def test_serialization_and_deserialization_through_queue_with_pickle() -> None:
         zmq_endpoint=test_address, deserialize=pickle.loads
     )
 
-    context = (
-        1,
-        TextContext(max_length=15, tokens=np.ones(5)),
-    )
+    context = (1, TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)))
 
     push_socket.put(context)
     received_context = pull_socket.get()
@@ -56,7 +53,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
 
     context = (
         str(uuid.uuid4()),
-        TextContext(max_length=15, tokens=np.ones(5)),
+        TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)),
     )
 
     push_socket.put(context)
