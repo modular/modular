@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import LinearScalingParams, ReturnLogits, YarnScalingParams
+from max.nn import ReturnLogits, YarnScalingParams
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -104,7 +104,7 @@ class GptOssConfigBase(MAXModelConfigBase):
     attention_dropout: float
     """Dropout probability for attention weights."""
 
-    rope_scaling: LinearScalingParams | YarnScalingParams | None
+    rope_scaling: YarnScalingParams
     """Scaling configuration for the RoPE embeddings used in global attention."""
 
     query_pre_attn_scalar: float | None
@@ -261,9 +261,7 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
             or "language_model.lm_head.weight" not in state_dict
         )
 
-        rope_scaling_params: LinearScalingParams | YarnScalingParams | None = (
-            None
-        )
+        rope_scaling_params: YarnScalingParams
         rope_scaling = huggingface_config.rope_scaling
 
         if rope_scaling is not None:
@@ -291,6 +289,12 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
                     ),
                     truncate=rope_scaling.get("truncate", False),
                 )
+            else:
+                raise ValueError(
+                    f"Unknown rope scaling type: {rope_type} or {rope_type_alt}"
+                )
+        else:
+            raise ValueError("RoPE scaling is required for GPT-OSS models")
 
         hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
             huggingface_config.hidden_act,

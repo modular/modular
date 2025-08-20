@@ -865,11 +865,8 @@ class YarnRotaryEmbedding(RotaryEmbedding):
 
             freqs = ops.outer(t, inv_freqs)
 
-            # Apply mscale if needed
-            mscale = self._yarn_get_mscale(
-                self.scaling_params.factor,
-                1.0,  # Default mscale
-            )
+            # Unused in this type of RoPE
+            mscale = self._yarn_get_mscale(self.scaling_params.factor, 1.0)
 
             cos = ops.cos(freqs) * mscale
             sin = ops.sin(freqs) * mscale
@@ -889,23 +886,21 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         dim_2 = Dim(rope_dim // 2)
 
         # Base frequencies
-        start = ops.constant(0, dtype=DType.float32, device=DeviceRef.CPU())
-        end = ops.constant(
-            rope_dim, dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        step = ops.constant(2, dtype=DType.float32, device=DeviceRef.CPU())
+        # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         range_output = ops.range(
-            start,
-            end,
-            step,
+            start=0,
+            stop=rope_dim,
+            step=2,
             out_dim=dim_2,
             device=self.device,
-            dtype=DType.float32,
+            dtype=DType.float64,
         )
 
         freq_base = self.theta ** (range_output / float(rope_dim))
-        freq_extra = 1.0 / freq_base
-        freq_inter = 1.0 / (self.scaling_params.factor * freq_base)
+        freq_extra = ops.cast(1.0 / freq_base, DType.float32)
+        freq_inter = ops.cast(
+            1.0 / (self.scaling_params.factor * freq_base), DType.float32
+        )
 
         # Find correction range
         low, high = self._yarn_find_correction_range(
