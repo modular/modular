@@ -48,7 +48,9 @@ fn _compile_info[
     ]()
 
     return Info(
-        kernel=info.kernel, name=info.name, num_captures=info.num_captures
+        kernel=StaticString(info.kernel),
+        name=StaticString(info.name),
+        num_captures=info.num_captures,
     )
 
 
