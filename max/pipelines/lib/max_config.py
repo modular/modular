@@ -28,6 +28,7 @@ from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 import yaml
 from max.dtype import DType
 from max.engine import GPUProfilingMode
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -35,10 +36,13 @@ logger = logging.getLogger("max.pipelines")
 
 T = TypeVar("T", bound="MAXConfig")
 
+# These are global to all MAXConfig classes for now, so they need to be updated
+# if we add new enums.
 STRINGLY_TYPED_ENUM_MAPPING: Mapping[str, type[enum.Enum]] = {
     "DType": DType,
     "GPUProfilingMode": GPUProfilingMode,
     "KVCacheStrategy": KVCacheStrategy,
+    "PipelineTask": PipelineTask,
 }
 
 STRINGLY_TYPED_BASIC_MAPPING: Mapping[str, type] = {

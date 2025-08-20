@@ -72,16 +72,6 @@ class BaseBenchmarkConfig(MAXConfig):
     seed: int = 42
     """Random seed for reproducibility."""
 
-    # Output control (basic parameters)
-    max_output_len: int = 512
-    """Maximum output length per request."""
-
-    temperature: float = 0.0
-    """Temperature for sampling."""
-
-    top_p: float = 1.0
-    """Top-p for sampling."""
-
     # Control flags
     disable_tqdm: bool = False
     """Specify to disable tqdm progress bar."""
@@ -122,9 +112,6 @@ class BaseBenchmarkConfig(MAXConfig):
             "dataset_path": "Path to the dataset.",
             "num_prompts": "Number of prompts to process.",
             "seed": "Random seed for reproducibility.",
-            "max_output_len": "Maximum output length per request.",
-            "temperature": "Temperature for sampling.",
-            "top_p": "Top-p for sampling.",
             "disable_tqdm": "Specify to disable tqdm progress bar.",
             "print_inputs_and_outputs": "Print all input and outputs to console.",
             "save_result": "Specify to save benchmark results to a json file.",
@@ -204,6 +191,15 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     output_lengths: Optional[str] = None
     """Path to YAML file with output lengths or int."""
 
+    max_output_len: int = 512
+    """Maximum output length per request."""
+
+    temperature: float = 0.0
+    """Temperature for sampling."""
+
+    top_p: float = 1.0
+    """Top-p for sampling."""
+
     # Traffic control (serving-specific)
     request_rate: float = 16.0
     """Requests per second (finite rate for realistic benchmarking)."""
@@ -261,6 +257,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "num_chat_sessions": "Number of multiturn chat sessions.",
             "delay_between_chat_turns": "Delay between chat turns in ms.",
             "output_lengths": "Path to YAML file with output lengths or int.",
+            "max_output_len": "Maximum output length per request.",
+            "temperature": "Temperature for sampling.",
+            "top_p": "Top-p for sampling.",
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "ttft_skip_requests": "Skip first N requests for TTFT measurements.",

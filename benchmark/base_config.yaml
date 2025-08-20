@@ -35,11 +35,6 @@ benchmark_config:
   num_prompts: 1000  # Number of prompts to process
   seed: 42  # Random seed for reproducibility
 
-  # Output control (basic parameters)
-  max_output_len: 512  # Maximum output length per request
-  temperature: 0.0  # Temperature for sampling
-  top_p: 1.0  # Top-p for sampling
-
   # Control flags
   disable_tqdm: false
   print_inputs_and_outputs: false
