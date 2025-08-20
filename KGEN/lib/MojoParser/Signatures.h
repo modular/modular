@@ -62,7 +62,8 @@ enum class CaptureConvention : uint8_t {
   kConventionMut = 1,
   kConventionCopy = 2,
   kConventionRead = 3,
-  kConventionTrivialCopy = 4
+  kConventionTrivialCopy = 4,
+  kConventionUnspecified = 5
 };
 
 /// Parsing support for a function argument and parameter:
@@ -203,6 +204,9 @@ class ParsedCaptureList {
 public:
   /// Any arguments specified.
   SmallVector<std::tuple<StringRef, CaptureConvention, SMLoc>> parsedCaptures;
+
+  /// default capture convention, if exists.
+  std::optional<CaptureConvention> captureAllByConvention;
 
   /// Parse a capture list
   ParseResult parseCaptureList(ParserBase &p);

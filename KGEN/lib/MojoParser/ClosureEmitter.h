@@ -71,6 +71,8 @@ public:
   Value emitClosureOp(ASTDecl &nestedFnDecl, ArrayRef<Capture> captures,
                       StructDeclOp wrapper, TraitDeclOp trait,
                       Location location);
+  static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
+                                  StringRef name, SMLoc location);
 
   static ASTDecl *addCaptureValue(ASTDecl &closure, SMLoc location,
                                   StringRef name, CaptureConvention capture,

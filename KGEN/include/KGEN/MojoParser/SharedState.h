@@ -66,6 +66,9 @@ public:
   /// The name of the capture
   StringRef getSpelling() const { return spelling; }
   CaptureConvention getCaptureConvention() const { return kind; }
+  void setCaptureConvention(CaptureConvention convention) {
+    kind = convention;
+  };
 
 private:
   CValue value;
@@ -481,14 +484,20 @@ public:
   FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create);
 
   /// Given a scope that refers to a nested function, return the set of captured
-  /// values in the form of a range: the begin and end iterators of the capture
-  /// list.
-  const llvm::MapVector<ASTDecl *, Capture> &
+  /// values. The name of the capture is paired with the metadata.
+  const llvm::MapVector<StringRef, Capture> &
   getCaptureRangeInScope(ASTDecl &scope);
 
   /// Given a nested function, a capture value, and the corresponding capture
   /// ASTDecl, store the capture associated with the nested function.
   void addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl, Capture capture);
+  CaptureConvention defaultCaptureConventionInScope(ASTDecl &scope);
+  /// If a capture has already been registered in this scope it means the
+  /// capture instance in the parent has already been generated.
+  bool captureInstanceExistsInScope(ASTDecl &scope, StringRef spelling);
+  /// Override the default capture convention for captures in this scope.
+  void setDefaultCaptureForScope(ASTDecl &scope,
+                                 CaptureConvention defaultConvention);
 
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.

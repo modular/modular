@@ -22,6 +22,7 @@ fn immByMut(byRefMut: String):
     fn myclosure() unified {mut byRefMut}:
         pass
 
+
 struct DoNotMoveMe:
     pass
 
@@ -50,9 +51,11 @@ fn doesNotExist():
     fn myclosure() unified {var What}:
         pass
 
+
 # // -----
 
-fn mutateMe(mut str:String):
+
+fn mutateMe(mut str: String):
     pass
 
 
@@ -60,3 +63,12 @@ fn illegal(mut byRefMut: String):
     fn myclosure() unified {read byRefMut}:
         # CHECK: error: invalid call to 'mutateMe': argument #0 must be mutable in order to pass to a mutating argument
         mutateMe(byRefMut)
+
+
+# // -----
+
+
+fn toy(rogue: String):
+    # CHECK: error: Could not infer capture convention of the captured value rogue
+    fn myclosure() unified {} -> String:
+        return rogue

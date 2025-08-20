@@ -18,8 +18,8 @@ struct MoveMe(Movable):
 fn use(a:String, d:MoveMe):
     pass
 
-# CHECK:  lit.fn @"toy
-fn toy(byCopy:String, prefix:String, var byMove: MoveMe):
+# CHECK:  lit.fn @"moveMeUser
+fn moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.call @{{.*}}::@String::@"__copyinit__(::String)"[{{.*}}](%byCopy, [[V0]])
     # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
@@ -97,3 +97,56 @@ fn casts(mut byRefMut: String):
         takesImmut(byRefMut)
 
     takeIt(myclosure)
+
+# // -----
+
+# COM: Ensure "capture all by" emits the correct IR.
+
+fn takeIt[T: fn () unified -> String, //](state: T):
+    _ = state()
+
+
+fn use(a: String, d: String):
+    pass
+
+
+# CHECK-LABEL:  lit.fn @"toy
+fn toy(A: String, B: String, mut C: String, mut D: String):
+    # CHECK: (%A[ref: imm *"A`"], %B[ref: imm *"B`1"])
+    fn readAll() unified {read} -> String:
+        use(A, B)
+        return A
+    takeIt(readAll)
+
+    # CHECK: @String::@"__copyinit__
+    # CHECK: @String::@"__copyinit__
+    # CHECK: lit.closure.init
+    fn copyAll() unified {var} -> String:
+        use(A, B)
+        return C
+
+    takeIt(copyAll)
+
+    # CHECK: @String::@"__moveinit__
+    # CHECK: @String::@"__moveinit__
+    # CHECK: lit.closure.init
+    fn moveAll() unified {var^} -> String:
+        use(C, D)
+        return D
+    takeIt(moveAll)
+
+
+# COM: Ensure multiple references to the same capture result in a single copy
+
+struct MyCopyableType(Copyable):
+    fn __copyinit__(out self, other: Self):
+        pass
+
+fn use(y: MyCopyableType, wy:MyCopyableType):
+    pass
+
+# CHECK: lit.fn @"testOnce
+fn testOnce(x: MyCopyableType):
+    # CHECK-COUNT: 1 @MyCopyableType::@"__copyinit__
+    fn myclosure() unified {var}:
+        use(x, x)

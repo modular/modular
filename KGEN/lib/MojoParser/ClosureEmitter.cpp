@@ -1671,6 +1671,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
 
     auto captureConvention = capture.getCaptureConvention();
     switch (captureConvention) {
+    case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionMut:
     case CaptureConvention::kConventionRead: {
       // Mutability casts should have been emitted during parse time.
@@ -1826,6 +1827,15 @@ static CValue ASTDeclToCValue(ASTDecl *decl, OpBuilder &builder, Location loc) {
   return {};
 }
 
+ASTDecl *ClosureEmitter::addCaptureValue(SharedState &shared, ASTDecl &closure,
+                                         StringRef name, SMLoc location) {
+  CaptureConvention capture = shared.defaultCaptureConventionInScope(closure);
+  FnOp funcOp = cast<FnOp>(closure.getIfOperation());
+  IREmitter emitter(*closure.getParentDecl(), OpBuilder(funcOp));
+  return ClosureEmitter::addCaptureValue(closure, location, name, capture,
+                                         emitter);
+}
+
 ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                                          StringRef name,
                                          CaptureConvention parsedConvention,
@@ -1845,7 +1855,6 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
         << name << " is a parameter and does not need a capture convention";
     return nullptr;
   }
-
   CValue valueInParent =
       ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
   CaptureConvention convention;
@@ -1923,6 +1932,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   }
   case CaptureConvention::kConventionRead: {
     convention = parsedConvention;
+    captureValue = valueInParent;
     if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
       OriginType originType = refType.getOriginType();
       if (originType.isMutableKnown(true)) {
