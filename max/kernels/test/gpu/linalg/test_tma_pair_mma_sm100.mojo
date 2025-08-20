@@ -358,7 +358,7 @@ def test_tma_umma_pair_cta[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
-](ctx: DeviceContext, handle: vendor_blas.Handle):
+](ctx: DeviceContext):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -486,7 +486,6 @@ def test_tma_umma_pair_cta[
 
         vendor_blas.matmul(
             ctx,
-            handle,
             c_ref.device_buffer(),
             a.device_buffer[update=False](),
             b_col_major.device_buffer[update=True](),
@@ -496,7 +495,6 @@ def test_tma_umma_pair_cta[
     else:
         vendor_blas.matmul(
             ctx,
-            handle,
             c_ref.device_buffer(),
             a.device_buffer[update=False](),
             b.device_buffer[update=False](),
@@ -530,7 +528,6 @@ def main():
 
         @parameter
         for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
-            alias handle_type = vendor_blas.Backend.CUBLASLT if dtype == DType.float8_e4m3fn else vendor_blas.Backend.CUBLAS
             alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
             @parameter
@@ -541,94 +538,93 @@ def main():
             ]:
                 alias BK = (swizzle.bytes() // sizeof[dtype]())
 
-                with vendor_blas.Handle[handle_type]() as cublas_handle:
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(256, 512, 2 * BK),
-                        Index(64, 64, BK),
-                        Index(128, 128, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(256, 512, 2 * BK),
+                    Index(64, 64, BK),
+                    Index(128, 128, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(256, 1024, 2 * BK),
-                        Index(64, 128, BK),
-                        Index(128, 256, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(256, 1024, 2 * BK),
+                    Index(64, 128, BK),
+                    Index(128, 256, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(128, 512, 2 * BK),
-                        Index(64, 128, BK),
-                        Index(128, 256, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(128, 512, 2 * BK),
+                    Index(64, 128, BK),
+                    Index(128, 256, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(128, 256, 2 * BK),
-                        Index(64, 128, BK),
-                        Index(128, 256, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(128, 256, 2 * BK),
+                    Index(64, 128, BK),
+                    Index(128, 256, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(256, 128, 2 * BK),
-                        Index(128, 64, BK),
-                        Index(256, 128, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(256, 128, 2 * BK),
+                    Index(128, 64, BK),
+                    Index(256, 128, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(256, 256, 2 * BK),
-                        Index(128, 64, BK),
-                        Index(256, 128, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(256, 256, 2 * BK),
+                    Index(128, 64, BK),
+                    Index(256, 128, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)
 
-                    test_tma_umma_pair_cta[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        Index(512, 512, 2 * BK),
-                        Index(128, 64, BK),
-                        Index(256, 128, MMA_K),
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        cta_group=2,
-                    ](ctx, cublas_handle)
+                test_tma_umma_pair_cta[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    Index(512, 512, 2 * BK),
+                    Index(128, 64, BK),
+                    Index(256, 128, MMA_K),
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    cta_group=2,
+                ](ctx)

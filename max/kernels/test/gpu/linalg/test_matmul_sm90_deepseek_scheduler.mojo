@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-import linalg.vendor_blas
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
 from linalg.matmul_sm90_testbed import test_matmul_sm90
@@ -34,109 +33,101 @@ fn main() raises:
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests
         # otherwise we will get unhandled exception error.
         print("FP8-E4M3FN GEMM TESTS")
-        with vendor_blas.Handle[
-            vendor_blas.Backend.CUBLASLT
-        ]() as cublaslt_handle:
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                Index(128, 80, 128),
-                wgmma_shape[80, DType.float8_e4m3fn],
-                num_consumer = get_num_consumer[128],
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[2560](),
-                static[8192](),
-                handle=cublaslt_handle,
-            )
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                Index(64, 128, 128),
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer = get_num_consumer[64],
-                num_pipeline_stages=8,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[16384](),
-                static[2048](),
-                handle=cublaslt_handle,
-            )
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                Index(64, 48, 128),
-                wgmma_shape[48, DType.float8_e4m3fn],
-                num_consumer = get_num_consumer[64],
-                num_pipeline_stages=8,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[2304](),
-                static[16384](),
-                handle=cublaslt_handle,
-            )
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                Index(128, 128, 128),
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer = get_num_consumer[128],
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[13312](),
-                static[16384](),
-                handle=cublaslt_handle,
-            )
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                Index(128, 128, 128),
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer = get_num_consumer[128],
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[16384](),
-                static[6656](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            Index(128, 80, 128),
+            wgmma_shape[80, DType.float8_e4m3fn],
+            num_consumer = get_num_consumer[128],
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape = Index(128, 1),
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[2560](),
+            static[8192](),
+        )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            Index(64, 128, 128),
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer = get_num_consumer[64],
+            num_pipeline_stages=8,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape = Index(128, 1),
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[16384](),
+            static[2048](),
+        )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            Index(64, 48, 128),
+            wgmma_shape[48, DType.float8_e4m3fn],
+            num_consumer = get_num_consumer[64],
+            num_pipeline_stages=8,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape = Index(128, 1),
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[2304](),
+            static[16384](),
+        )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            Index(128, 128, 128),
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer = get_num_consumer[128],
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape = Index(128, 1),
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[13312](),
+            static[16384](),
+        )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            Index(128, 128, 128),
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer = get_num_consumer[128],
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape = Index(128, 1),
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[16384](),
+            static[6656](),
+        )
 
         print("BFLOAT16 GEMM TESTS")
         test_matmul_sm90[

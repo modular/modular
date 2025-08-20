@@ -35,199 +35,186 @@ fn main() raises:
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests
         # otherwise we will get unhandled exception error.
         print("FP8-E4M3FN GEMM TESTS")
-        with vendor_blas.Handle[
-            vendor_blas.Backend.CUBLASLT
-        ]() as cublaslt_handle:
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[80, DType.float8_e4m3fn],
-                wgmma_shape[80, DType.float8_e4m3fn],
-                num_consumer=2,
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                grid_shape = Index(32, 4),
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[2560](),
-                static[8192](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[80, DType.float8_e4m3fn],
+            wgmma_shape[80, DType.float8_e4m3fn],
+            num_consumer=2,
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            grid_shape = Index(32, 4),
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                partitioned_multicast=False,
-                num_pipeline_stages=6,
-                grid_shape = Index(10, 13),
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[8192](),
-                static[2560](),
-                static[8192](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            partitioned_multicast=False,
+            num_pipeline_stages=6,
+            grid_shape = Index(10, 13),
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[8192](),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                partitioned_multicast=False,
-                num_pipeline_stages=6,
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[4096](),
-                static[2560](),
-                static[8192](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            partitioned_multicast=False,
+            num_pipeline_stages=6,
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[4096](),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                partitioned_multicast=False,
-                num_pipeline_stages=6,
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[8192](),
-                static[2048](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            partitioned_multicast=False,
+            num_pipeline_stages=6,
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[8192](),
+            static[2048](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[14336](),
-                static[8192](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[14336](),
+            static[8192](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[4096](),
-                static[8192](),
-                static[7168](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[4096](),
+            static[8192](),
+            static[7168](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                schedule = MatmulSchedule.TILE2D,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                static[512](),
-                static[8192](),
-                static[7168](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.TILE2D,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            static[512](),
+            static[8192](),
+            static[7168](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                partitioned_multicast=True,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                dynamic(199),
-                static[512](),
-                static[1024](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            partitioned_multicast=True,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            dynamic(199),
+            static[512](),
+            static[1024](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                partitioned_multicast=False,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                dynamic(200),
-                static[256](),
-                static[256](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            partitioned_multicast=False,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            dynamic(200),
+            static[256](),
+            static[256](),
+        )
 
-            test_matmul_sm90[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                block_tile_shape[128, DType.float8_e4m3fn],
-                wgmma_shape[128, DType.float8_e4m3fn],
-                num_consumer=2,
-                partitioned_multicast=True,
-                measure_threshold=0.001,
-            ](
-                ctx,
-                dynamic(201),
-                static[384](),
-                static[256](),
-                handle=cublaslt_handle,
-            )
+        test_matmul_sm90[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            block_tile_shape[128, DType.float8_e4m3fn],
+            wgmma_shape[128, DType.float8_e4m3fn],
+            num_consumer=2,
+            partitioned_multicast=True,
+            measure_threshold=0.001,
+        ](
+            ctx,
+            dynamic(201),
+            static[384](),
+            static[256](),
+        )

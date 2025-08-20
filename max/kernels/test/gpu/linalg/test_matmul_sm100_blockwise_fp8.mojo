@@ -18,7 +18,6 @@ from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
 from sys import sizeof
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from utils.index import Index, IndexList
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -46,13 +45,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     use_epilogue: Bool = False,
-](
-    ctx: DeviceContext,
-    cublas_handle: vendor_blas.Handle,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     alias BLOCK_SCALE_K = 128
     alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
@@ -243,139 +236,127 @@ def test_matmul_sm100_blockwise_scaled_fp8[
 
 def main():
     with DeviceContext() as ctx:
-        with vendor_blas.Handle[
-            vendor_blas.Backend.CUBLASLT
-        ]() as cublas_handle:
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 64, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(120),
-                static[1280](),
-                static[512](),
-            )
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 256, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(120),
-                static[1280](),
-                static[512](),
-            )
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 128, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-                use_epilogue=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(128),
-                static[128](),
-                static[128](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 64, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(120),
+            static[1280](),
+            static[512](),
+        )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 256, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(120),
+            static[1280](),
+            static[512](),
+        )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 128, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+            use_epilogue=True,
+        ](
+            ctx,
+            dynamic(128),
+            static[128](),
+            static[128](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 32, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(400),
-                static[128](),
-                static[128](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 32, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(400),
+            static[128](),
+            static[128](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 128, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(1024),
-                static[2048](),
-                static[2048](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 128, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(1024),
+            static[2048](),
+            static[2048](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 64, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(1024),
-                static[2048](),
-                static[2048](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 64, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(1024),
+            static[2048](),
+            static[2048](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 16, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(100),
-                static[512](),
-                static[256](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 16, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(100),
+            static[512](),
+            static[256](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 8, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(96),
-                static[1024](),
-                static[1024](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 8, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(96),
+            static[1024](),
+            static[1024](),
+        )
 
-            test_matmul_sm100_blockwise_scaled_fp8[
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                umma_shape = Index(64, 256, 32),
-                swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                transpose_b=True,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(208),
-                static[2048](),
-                static[256](),
-            )
+        test_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape = Index(64, 256, 32),
+            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            dynamic(208),
+            static[2048](),
+            static[256](),
+        )

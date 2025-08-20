@@ -606,7 +606,7 @@ def test_tma_umma[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
     cta_group: Int = 1,
-](ctx: DeviceContext, handle: vendor_blas.Handle):
+](ctx: DeviceContext):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -762,7 +762,6 @@ def test_tma_umma[
 
         vendor_blas.matmul(
             ctx,
-            handle,
             c_ref.device_buffer(),
             a.device_buffer[update=False](),
             b_col_major.device_buffer[update=True](),
@@ -773,7 +772,6 @@ def test_tma_umma[
     else:
         vendor_blas.matmul(
             ctx,
-            handle,
             c_ref.device_buffer(),
             a.device_buffer[update=False](),
             b.device_buffer[update=False](),
@@ -829,10 +827,24 @@ def main():
 
                             @parameter
                             for transpose_b in range(0, 2):
-                                alias handle_type = vendor_blas.Backend.CUBLASLT if dtype == DType.float8_e4m3fn else vendor_blas.Backend.CUBLAS
-                                with vendor_blas.Handle[
-                                    handle_type
-                                ]() as cublas_handle:
+                                test_tma_umma[
+                                    dtype,
+                                    dtype,
+                                    DType.bfloat16,
+                                    Index(
+                                        MMA_M * size_scale,
+                                        128 * size_scale,
+                                        BK * size_scale,
+                                    ),
+                                    Index(MMA_M, 128, BK),
+                                    Index(MMA_M, 128, MMA_K),
+                                    a_swizzle=swizzle,
+                                    b_swizzle=swizzle,
+                                    transpose_b=transpose_b,
+                                ](ctx)
+
+                                @parameter
+                                if dtype == DType.bfloat16:
                                     test_tma_umma[
                                         dtype,
                                         dtype,
@@ -844,25 +856,7 @@ def main():
                                         ),
                                         Index(MMA_M, 128, BK),
                                         Index(MMA_M, 128, MMA_K),
-                                        a_swizzle=swizzle,
                                         b_swizzle=swizzle,
                                         transpose_b=transpose_b,
-                                    ](ctx, cublas_handle)
-
-                                    @parameter
-                                    if dtype == DType.bfloat16:
-                                        test_tma_umma[
-                                            dtype,
-                                            dtype,
-                                            DType.bfloat16,
-                                            Index(
-                                                MMA_M * size_scale,
-                                                128 * size_scale,
-                                                BK * size_scale,
-                                            ),
-                                            Index(MMA_M, 128, BK),
-                                            Index(MMA_M, 128, MMA_K),
-                                            b_swizzle=swizzle,
-                                            transpose_b=transpose_b,
-                                            a_smem=False,
-                                        ](ctx, cublas_handle)
+                                        a_smem=False,
+                                    ](ctx)

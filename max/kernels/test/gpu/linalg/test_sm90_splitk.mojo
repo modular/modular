@@ -46,13 +46,7 @@ fn test_warp_specialize_gemm_with_multicasting_splitk[
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
     splits: Int = 2,
-](
-    ctx: DeviceContext,
-    handle: linalg.vendor_blas.Handle,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-) raises:
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -175,26 +169,22 @@ fn test_warp_specialize_gemm_with_multicasting_splitk[
 
     ctx.synchronize()
 
-    @parameter
-    if a_type is DType.float8_e4m3fn:
-        vendor_blas.matmul(
-            ctx,
-            handle,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
-    else:
-        vendor_blas.matmul(
-            ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    constrained[
+        a_type != DType.float8_e4m3fn or transpose_b,
+        (
+            "Testing is only supported for transposed_b==True when"
+            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+        ),
+    ]()
+
+    vendor_blas.matmul(
+        ctx,
+        c_device_ref.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     ctx.synchronize()
 
@@ -231,489 +221,473 @@ fn main() raises:
         # otherwise we will get unhandled exception error.
 
         print("FLOAT8 GEMM TESTS")
-        with vendor_blas.Handle[
-            vendor_blas.Backend.CUBLASLT
-        ]() as cublas_handle:
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(33), static[2304](), static[2048]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            splits=2,
+        ](ctx, dynamic(33), static[2304](), static[2048]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=False,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(64), static[384](), static[512]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=False,
+            splits=2,
+        ](ctx, dynamic(64), static[384](), static[512]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=False,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(64), static[384](), static[512]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=False,
+            splits=2,
+        ](ctx, dynamic(64), static[384](), static[512]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 80, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=False,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(64), static[2560](), static[8192]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 80, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=False,
+            splits=4,
+        ](ctx, dynamic(64), static[2560](), static[8192]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                num_pipeline_stages=4,
-                splits=4,
-            ](
-                ctx,
-                cublas_handle,
-                static[4096](),
-                static[2560](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            num_pipeline_stages=4,
+            splits=4,
+        ](
+            ctx,
+            static[4096](),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                num_pipeline_stages=4,
-            ](
-                ctx,
-                cublas_handle,
-                static[512](),
-                static[8192](),
-                static[2048](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            num_pipeline_stages=4,
+        ](
+            ctx,
+            static[512](),
+            static[8192](),
+            static[2048](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 112, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-            ](
-                ctx,
-                cublas_handle,
-                static[512](),
-                static[14336](),
-                static[4096](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 112, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+        ](
+            ctx,
+            static[512](),
+            static[14336](),
+            static[4096](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=4,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(199), static[512](), static[1024]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=4,
+            splits=2,
+        ](ctx, dynamic(199), static[512](), static[1024]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=False,
-                num_pipeline_stages=1,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(200), static[256](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=False,
+            num_pipeline_stages=1,
+            splits=2,
+        ](ctx, dynamic(200), static[256](), static[256]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(257), static[384](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(257), static[384](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(257), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(257), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(257), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(257), static[384](), static[256]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(255), static[384](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(255), static[384](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(255), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(255), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(255), static[384](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(255), static[384](), static[256]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(129), static[512](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(129), static[512](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(129), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(129), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(129), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(129), static[512](), static[256]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(127), static[512](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 2, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(127), static[512](), static[256]())
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 128),
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fn,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=True,
-                num_pipeline_stages=2,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(127), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(127), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 2, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(127), static[512](), static[256]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 128),
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=True,
+            num_pipeline_stages=2,
+            splits=2,
+        ](ctx, dynamic(127), static[512](), static[256]())
 
         print("BFLOAT16 GEMM TESTS")
-        with vendor_blas.Handle[vendor_blas.Backend.CUBLAS]() as cublas_handle:
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=False,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(64), static[384](), static[512]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=False,
+            splits=2,
+        ](ctx, dynamic(64), static[384](), static[512]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 80, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=8,
-                partitioned_multicast=False,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(64), static[2560](), static[8192]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 80, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=8,
+            partitioned_multicast=False,
+            splits=4,
+        ](ctx, dynamic(64), static[2560](), static[8192]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 128, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(2048),
-                static[8192](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 128, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+        ](
+            ctx,
+            dynamic(2048),
+            static[8192](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 80, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(2048),
-                static[2560](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 80, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+        ](
+            ctx,
+            dynamic(2048),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-                splits=2,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(64),
-                static[2560](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+            splits=2,
+        ](
+            ctx,
+            dynamic(64),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 80, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                num_pipeline_stages=6,
-                partitioned_multicast=False,
-                splits=4,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(64),
-                static[2560](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 80, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            num_pipeline_stages=6,
+            partitioned_multicast=False,
+            splits=4,
+        ](
+            ctx,
+            dynamic(64),
+            static[2560](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 1, 1),
-                num_pipeline_stages=4,
-                partitioned_multicast=False,
-                splits=2,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(64),
-                static[8192](),
-                static[2048](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_pipeline_stages=4,
+            partitioned_multicast=False,
+            splits=2,
+        ](
+            ctx,
+            dynamic(64),
+            static[8192](),
+            static[2048](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=False,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(64), static[384](), static[512]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=False,
+            splits=2,
+        ](ctx, dynamic(64), static[384](), static[512]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 128, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=True,
-                splits=2,
-            ](ctx, cublas_handle, dynamic(64), static[384](), static[512]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 128, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=True,
+            splits=2,
+        ](ctx, dynamic(64), static[384](), static[512]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 80, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=True,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(64), static[2560](), static[8192]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 80, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=True,
+            splits=4,
+        ](ctx, dynamic(64), static[2560](), static[8192]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(64, 80, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                num_pipeline_stages=2,
-                partitioned_multicast=True,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(64), static[2560](), static[8192]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(64, 80, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_pipeline_stages=2,
+            partitioned_multicast=True,
+            splits=4,
+        ](ctx, dynamic(64), static[2560](), static[8192]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(8192), static[8192](), static[2048]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            splits=4,
+        ](ctx, dynamic(8192), static[8192](), static[2048]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(4096), static[8192](), static[2048]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            splits=4,
+        ](ctx, dynamic(4096), static[8192](), static[2048]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                use_tma_store=True,
-                splits=4,
-            ](ctx, cublas_handle, dynamic(4096), static[8192](), static[2048]())
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            use_tma_store=True,
+            splits=4,
+        ](ctx, dynamic(4096), static[8192](), static[2048]())
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-                splits=4,
-            ](
-                ctx,
-                cublas_handle,
-                dynamic(128),
-                static[14336](),
-                static[8192](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+            splits=4,
+        ](
+            ctx,
+            dynamic(128),
+            static[14336](),
+            static[8192](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 1, 1),
-                partitioned_multicast=False,
-            ](
-                ctx,
-                cublas_handle,
-                static[8192](),
-                static[8192](),
-                static[7168](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            partitioned_multicast=False,
+        ](
+            ctx,
+            static[8192](),
+            static[8192](),
+            static[7168](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(1, 2, 1),
-                partitioned_multicast=False,
-                splits=2,
-            ](
-                ctx,
-                cublas_handle,
-                static[8192](),
-                static[8192](),
-                static[7168](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 2, 1),
+            partitioned_multicast=False,
+            splits=2,
+        ](
+            ctx,
+            static[8192](),
+            static[8192](),
+            static[7168](),
+        )
 
-            test_warp_specialize_gemm_with_multicasting_splitk[
-                Index(128, 256, 64),
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                Index(2, 2, 1),
-                partitioned_multicast=False,
-                splits=4,
-            ](
-                ctx,
-                cublas_handle,
-                static[8192](),
-                static[8192](),
-                static[7168](),
-            )
+        test_warp_specialize_gemm_with_multicasting_splitk[
+            Index(128, 256, 64),
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 2, 1),
+            partitioned_multicast=False,
+            splits=4,
+        ](
+            ctx,
+            static[8192](),
+            static[8192](),
+            static[7168](),
+        )
