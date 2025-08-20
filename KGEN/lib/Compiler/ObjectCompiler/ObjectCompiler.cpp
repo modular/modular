@@ -347,6 +347,15 @@ writeBytesToTempWithHash(const std::string &saveTempsPrefix,
   return success();
 }
 
+// Write the given `buf` to a file with the given prefix and postfix.
+// Appends a hash based on `buf` contents to emitted file name.
+static LogicalResult
+writeBytesToTempWithHash(const std::string &saveTempsPrefix,
+                         const std::string &postfix,
+                         llvm::MemoryBufferRef buf) {
+  return writeBytesToTempWithHash(saveTempsPrefix, postfix, buf.getBuffer());
+}
+
 template <typename ModuleT>
 static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
                                      const std::string &phase, ModuleT &module,
@@ -1622,7 +1631,14 @@ static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
 
 static LogicalResult
 compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
-                   AsyncRT::AsyncValueRef<BufferRef> output) {
+                   AsyncRT::AsyncValueRef<BufferRef> output,
+                   CompilationOptions options) {
+  // Helper function to remove created temporary files if compilation failed.
+  auto cleanupFiles = [](ArrayRef<llvm::SmallString<256>> filesToRemove) {
+    for (const auto &file : filesToRemove)
+      llvm::sys::fs::remove(file);
+  };
+
   // Step 1: Write AIR bitcode using Metal bitcode writer
   llvm::SmallString<256> airTempFile;
   if (auto err =
@@ -1635,9 +1651,9 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   std::error_code airEc;
   llvm::raw_fd_ostream airOS(airTempFile, airEc, llvm::sys::fs::OF_None);
   if (airEc) {
-    llvm::sys::fs::remove(airTempFile);
     std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
         Error("Failed to open AIR file for writing: " + airEc.message()), loc));
+    cleanupFiles({airTempFile});
     return failure();
   }
 
@@ -1651,24 +1667,35 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   airOS.flush();
   airOS.close();
 
+  if (!options.saveTempsPrefix.empty()) {
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> airBuffer =
+        llvm::MemoryBuffer::getFile(airTempFile);
+    if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".air",
+                                        *airBuffer.get()))) {
+      std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+          "failed to save air to saveTempsPrefix", loc));
+      cleanupFiles({airTempFile});
+      return failure();
+    }
+  }
+
   // Step 2: Convert AIR to metallib using xcrun metallib
   llvm::SmallString<256> metallibTempFile;
   if (auto err = llvm::sys::fs::createTemporaryFile("kernel", ".metallib",
                                                     metallibTempFile)) {
-    llvm::sys::fs::remove(airTempFile);
     std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
         Error("Failed to create temporary metallib file: " + err.message()),
         loc));
+    cleanupFiles({airTempFile});
     return failure();
   }
 
   // Find xcrun path
   auto xcrunPath = llvm::sys::findProgramByName("xcrun");
   if (!xcrunPath) {
-    llvm::sys::fs::remove(airTempFile);
-    llvm::sys::fs::remove(metallibTempFile);
     std::move(output).setToError(
         AsyncRT::getMLIRDiagnostic(Error("xcrun not found in PATH"), loc));
+    cleanupFiles({airTempFile, metallibTempFile});
     return failure();
   }
 
@@ -1687,33 +1714,38 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
     // Try to continue execution despite metallib failure - use the AIR
     // file directly. This is a temporary workaround for LLVM version
     // compatibility issues
-    auto airBuffer = llvm::MemoryBuffer::getFile(airTempFile);
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> airBuffer =
+        llvm::MemoryBuffer::getFile(airTempFile);
     if (airBuffer) {
       (*buf) << (*airBuffer)->getBuffer();
-      llvm::sys::fs::remove(airTempFile);
-      llvm::sys::fs::remove(metallibTempFile);
+      cleanupFiles({airTempFile, metallibTempFile});
       return success();
     }
 
-    llvm::sys::fs::remove(airTempFile);
-    llvm::sys::fs::remove(metallibTempFile);
     std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
         Error("xcrun metallib compilation failed with code " +
               llvm::Twine(result).str() + ": " + errorMsg +
               " and AIR fallback also failed"),
         loc));
+    cleanupFiles({airTempFile, metallibTempFile});
     return failure();
   }
 
   // Read the compiled metallib back
   auto metallibBuffer = llvm::MemoryBuffer::getFile(metallibTempFile);
   if (!metallibBuffer) {
-    llvm::sys::fs::remove(airTempFile);
-    llvm::sys::fs::remove(metallibTempFile);
     std::move(output).setToError(
         AsyncRT::getMLIRDiagnostic(Error("Failed to read metallib file: " +
                                          metallibBuffer.getError().message()),
                                    loc));
+    cleanupFiles({airTempFile, metallibTempFile});
+    return failure();
+  }
+  if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".metallib",
+                                      *metallibBuffer.get()))) {
+    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        "failed to save metallib to saveTempsPrefix", loc));
+    cleanupFiles({airTempFile, metallibTempFile});
     return failure();
   }
 
@@ -1721,8 +1753,7 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   (*buf) << (*metallibBuffer)->getBuffer();
 
   // Clean up temporary files
-  llvm::sys::fs::remove(airTempFile);
-  llvm::sys::fs::remove(metallibTempFile);
+  cleanupFiles({airTempFile, metallibTempFile});
 
   return success();
 }
@@ -1937,7 +1968,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           }
           (*buf) << (*cubinOr)->getBuffer();
         } else if (isMetalBackend(options)) {
-          if (failed(compileMetalTarget(module, buf, loc, output.copy())))
+          if (failed(
+                  compileMetalTarget(module, buf, loc, output.copy(), options)))
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "failed to generate .air and .metallib", loc));
         } else {
