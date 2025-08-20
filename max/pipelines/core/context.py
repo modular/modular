@@ -29,6 +29,7 @@ from max.interfaces import (
     InputContext,
     LogProbabilities,
     SamplingParams,
+    TextGenerationOutput,
 )
 
 CHUNK_SIZE = 128
@@ -444,29 +445,39 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         self._is_initial_prompt = True
 
-    def outstanding_completion_tokens(
-        self,
-    ) -> list[tuple[int, Optional[LogProbabilities]]]:
-        """Return the list of outstanding completion tokens and log probabilities
-        that must be returned to the user."""
-        res = []
+    def to_generation_output(self) -> TextGenerationOutput:
+        """Get completion tokens that are ready to be returned to the user.
+
+        This method retrieves tokens that have been generated but not yet
+        delivered to the user, along with their associated log probability data.
+
+        Returns:
+            TextGenerationOutput: The completion tokens and their associated
+            log probabilities, if available.
+        """
+        tokens: list[int] = []
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in range(
             self._completion_start_idx, self._completion_end_idx
         ):
-            # We are using a pop here instead of a get, as we should not have
-            # to maintain this data once it is returned. The expectation is that
-            # this method never returns the same tokens more than once.
-            res.append(
-                (
-                    int(self.tokens[token_idx]),
-                    self._log_probabilities_data.pop(token_idx, None),
-                )
-            )
+            tokens.append(int(self.tokens[token_idx]))
+            if token_idx in self._log_probabilities_data:
+                if log_probabilities is None:
+                    log_probabilities = []
+                # We are using a pop here instead of a get, as we should not have
+                # to maintain this data once it is returned. The expectation is that
+                # this method never returns the same tokens more than once.
+                log_probability = self._log_probabilities_data.pop(token_idx)
+                log_probabilities.append(log_probability)
 
         self._completion_start_idx = self._completion_end_idx
-        self.status = GenerationStatus.ACTIVE
 
-        return res
+        return TextGenerationOutput(
+            request_id=self.request_id,
+            tokens=tokens,
+            log_probabilities=log_probabilities,
+            final_status=self.status,
+        )
 
     def compute_num_available_steps(
         self,
