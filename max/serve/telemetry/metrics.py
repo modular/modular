@@ -225,6 +225,7 @@ class MetricClient(abc.ABC):
     @abc.abstractmethod
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         """Get a copier for use of this client in another process.
 
@@ -252,6 +253,7 @@ class NoopClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
@@ -267,6 +269,7 @@ class SyncClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 

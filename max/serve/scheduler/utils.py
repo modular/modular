@@ -101,16 +101,19 @@ class SchedulerLogger:
         batch_type = sch_output.batch_type
 
         now = time.monotonic()
+        log_batch_info = True
         if batch_type == BatchType.CE:
             time_since_last_ce_log = now - self.time_of_last_ce_log
             if time_since_last_ce_log < self.ce_log_interval_s:
-                return
-            self.time_of_last_ce_log = now
+                log_batch_info = False
+            else:
+                self.time_of_last_ce_log = now
         elif batch_type == BatchType.TG:
             time_since_last_tg_log = now - self.time_of_last_tg_log
             if time_since_last_tg_log < self.tg_log_interval_s:
-                return
-            self.time_of_last_tg_log = now
+                log_batch_info = False
+            else:
+                self.time_of_last_tg_log = now
         else:
             raise ValueError(f"Invalid batch type: {batch_type}")
 
@@ -156,16 +159,17 @@ class SchedulerLogger:
 
         if paged_cache is None:
             assert cache_hits == 0
-            logger.info(
-                f"Executed {batch_type.value} batch with {batch_size} reqs | "
-                f"Terminated: {terminated_reqs} reqs, "
-                f"Pending: {num_pending_reqs} reqs | "
-                f"Target: {input_tokens}/{target_tokens_str} toks | "
-                f"Prompt Tput: {prompt_throughput_str}, "
-                f"Generation Tput: {generation_throughput_str} | "
-                f"Batch creation: {batch_creation_latency_str}, "
-                f"Execution: {batch_execution_latency_str}",
-            )
+            if log_batch_info:
+                logger.info(
+                    f"Executed {batch_type.value} batch with {batch_size} reqs | "
+                    f"Terminated: {terminated_reqs} reqs, "
+                    f"Pending: {num_pending_reqs} reqs | "
+                    f"Target: {input_tokens}/{target_tokens_str} toks | "
+                    f"Prompt Tput: {prompt_throughput_str}, "
+                    f"Generation Tput: {generation_throughput_str} | "
+                    f"Batch creation: {batch_creation_latency_str}, "
+                    f"Execution: {batch_execution_latency_str}",
+                )
             return
 
         # KVCache specific metrics
@@ -199,21 +203,22 @@ class SchedulerLogger:
         METRICS.cache_hits(cache_hits)
         METRICS.cache_misses(input_tokens)
 
-        logger.info(
-            f"Executed {batch_type.value} batch with {batch_size} reqs | "
-            f"Terminated: {terminated_reqs} reqs, "
-            f"Pending: {num_pending_reqs} reqs | "
-            f"Target: {input_tokens}/{target_tokens_str} toks | "
-            f"Prompt Tput: {prompt_throughput_str}, "
-            f"Generation Tput: {generation_throughput_str} | "
-            f"Batch creation: {batch_creation_latency_str}, "
-            f"Execution: {batch_execution_latency_str} | "
-            f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks | "
-            f"{host_kvcache_str}"
-            f"{cache_hit_rate_str}"
-            f"{blocks_copied_str}"
-            f"All Preemptions: {total_preemption_count} reqs",
-        )
+        if log_batch_info:
+            logger.info(
+                f"Executed {batch_type.value} batch with {batch_size} reqs | "
+                f"Terminated: {terminated_reqs} reqs, "
+                f"Pending: {num_pending_reqs} reqs | "
+                f"Target: {input_tokens}/{target_tokens_str} toks | "
+                f"Prompt Tput: {prompt_throughput_str}, "
+                f"Generation Tput: {generation_throughput_str} | "
+                f"Batch creation: {batch_creation_latency_str}, "
+                f"Execution: {batch_execution_latency_str} | "
+                f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks | "
+                f"{host_kvcache_str}"
+                f"{cache_hit_rate_str}"
+                f"{blocks_copied_str}"
+                f"All Preemptions: {total_preemption_count} reqs",
+            )
 
 
 def maybe_restore_chunked_request(

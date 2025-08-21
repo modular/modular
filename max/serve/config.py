@@ -209,6 +209,12 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRIC_LEVEL",
     )
 
+    detailed_metric_buffer_factor: int = Field(
+        default=20,
+        description="How many detailed metrics to buffer before sending them to the telemetry worker",
+        alias="MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR",
+    )
+
     @field_validator("metric_level", mode="before")
     def validate_metric_level(
         cls, value: Union[str, MetricLevel]

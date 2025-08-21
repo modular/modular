@@ -23,7 +23,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
 from typing import Callable, NoReturn
 
-from max.serve.config import MetricLevel
+from max.serve.config import MetricLevel, Settings
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
 
 logger = logging.getLogger("max.serve")
@@ -66,6 +66,7 @@ class AsyncioMetricClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(start_asyncio_consumer, self.level)
 

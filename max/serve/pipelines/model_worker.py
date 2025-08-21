@@ -266,7 +266,7 @@ async def start_model_worker(
             model_factory,
             pipeline_config,
             settings,
-            metric_client.cross_process_factory(),
+            metric_client.cross_process_factory(settings),
             dispatcher_factory,
         ),
     )
