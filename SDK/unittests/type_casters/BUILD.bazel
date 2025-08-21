@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_nanobind_extension", "modular_py_test")
+
+modular_nanobind_extension(
+    name = "bindings",
+    testonly = True,
+    srcs = ["test_bindings.cpp"],
+    new_link_root = "lib",  # Not needed here
+    deps = [
+        "//SDK:GraphPython",
+    ],
+)
+
+modular_py_test(
+    name = "test_casters",
+    srcs = ["test_bindings.py"],
+    data = [":bindings"],
+)
