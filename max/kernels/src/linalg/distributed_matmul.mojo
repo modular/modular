@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-    allreduce,
-    elementwise_epilogue_type,
-)
+from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
@@ -24,6 +19,10 @@ from linalg.matmul_gpu import _matmul_gpu
 from utils import IndexList
 from gpu.grid_controls import PDLLevel, _SUPPORT_PDL_LAUNCH
 from internal_utils._utils import ValOrDim, dynamic, static
+
+alias elementwise_epilogue_type = fn[
+    input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
+] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @parameter
@@ -63,16 +62,17 @@ fn _matmul_allreduce[
             c_temp_buffers[i], a_buffers[i], b_buffers[i], ctxs[i]
         )
 
-    allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-        rebind[InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]](
-            c_temp_buffers
-        ),
-        rebind[InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]](
-            output_buffers
-        ),
-        rank_sigs,
-        ctxs,
-    )
+    # Call allreduce for each GPU
+    @parameter
+    for i in range(ngpus):
+        allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
+            rebind[
+                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
+            ](c_temp_buffers),
+            output_buffers[i],
+            rank_sigs,
+            ctxs[i],
+        )
 
 
 @parameter
@@ -186,20 +186,21 @@ fn _matmul_allreduce_split_m[
                 global_coords, val
             )
 
-        allreduce[
-            ngpus=ngpus,
-            outputs_lambda=outputs_lambda_wrapper,
-            pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
-        ](
-            rebind[
-                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
-            ](C_parts),
-            rebind[
-                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
-            ](Out_parts),
-            rank_sigs,
-            ctxs,
-        )
+        # Call allreduce for each GPU
+        @parameter
+        for i in range(ngpus):
+            allreduce[
+                ngpus=ngpus,
+                output_lambda = outputs_lambda_wrapper[input_index=i],
+                pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+            ](
+                rebind[
+                    InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
+                ](C_parts),
+                Out_parts[i],
+                rank_sigs,
+                ctxs[i],
+            )
 
 
 @parameter
@@ -314,20 +315,21 @@ fn _matmul_allreduce_split_n[
                 global_coords, val
             )
 
-        allreduce[
-            ngpus=ngpus,
-            outputs_lambda=outputs_lambda_wrapper,
-            pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
-        ](
-            rebind[
-                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
-            ](C_parts),
-            rebind[
-                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
-            ](Out_parts),
-            rank_sigs,
-            ctxs,
-        )
+        # Call allreduce for each GPU
+        @parameter
+        for i in range(ngpus):
+            allreduce[
+                ngpus=ngpus,
+                output_lambda = outputs_lambda_wrapper[input_index=i],
+                pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+            ](
+                rebind[
+                    InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
+                ](C_parts),
+                Out_parts[i],
+                rank_sigs,
+                ctxs[i],
+            )
 
 
 @parameter

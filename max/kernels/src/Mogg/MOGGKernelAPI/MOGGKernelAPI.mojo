@@ -8139,26 +8139,29 @@ struct DistributedAllReduceSum:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: FusedOutputVariadicTensors[dtype, rank, *_],
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
         inputs: InputVariadicTensors[dtype, rank, *_],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, *_
         ],
-        dev_ctxs_input: DeviceContextPtrList,
+        device_ctx: DeviceContextPtr,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
+        This executes on a single device specified by device_ctx.
+        The Python API creates multiple instances of this op (one per device) to
+        enable multi-threaded execution.
+
         Args:
-            outputs: Output tensors (one per GPU) to store reduced results.
+            output: Output tensor for this device to store reduced result.
             inputs: Input tensors (one per GPU) containing values to reduce.
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-            dev_ctxs_input: Device contexts for participating GPUs.
+            device_ctx: The device context for this specific op instance.
 
         Implementation Notes:
-            1. Uses naive reduction implementation when P2P access unavailable.
-            2. Requires input/output buffers to be device-allocated and aligned.
-            3. Signal buffers must be device-allocated and large enough to fit
-               the buffer + signals metadata.
+            1. Each op instance only launches kernels on its assigned device.
+            2. Still requires all inputs/signal_buffers for coordination.
+            3. The output is only for the assigned device.
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
@@ -8167,21 +8170,17 @@ struct DistributedAllReduceSum:
         """
         alias num_devices = inputs.size
         constrained[
-            signal_buffers.size == num_devices and outputs.size == num_devices,
+            signal_buffers.size == num_devices,
             (
-                "expected allreduce inputs, outputs, and signal buffers to all"
-                " have the same number of elements"
+                "expected allreduce inputs and signal buffers to have"
+                " the same number of elements"
             ),
         ]()
 
         var input_size_bytes = inputs[0].size() * sizeof[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
-
-        # Marshal input and output variadic tensors into the expected format.
+        # Marshal input tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
         ](fill={})
@@ -8190,14 +8189,10 @@ struct DistributedAllReduceSum:
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var out_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
-        ](fill={})
+        # Marshal output tensor
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        @parameter
-        for i in range(num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
+        # Marshal signal buffers.
         var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
@@ -8206,24 +8201,21 @@ struct DistributedAllReduceSum:
 
         @always_inline
         @parameter
-        fn outputs_lambda[
-            input_index: Int,
+        fn output_lambda[
             _dtype: DType,
             _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-            constrained[
-                input_index < num_devices, "tensor index out of bounds"
-            ]()
-            return outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val))
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                rebind[IndexList[rank]](coords),
+                rebind[SIMD[dtype, _width]](val),
+            )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
-                in_bufs, out_bufs, rank_sigs, dev_ctxs
+            allreduce[ngpus=num_devices, output_lambda=output_lambda](
+                in_bufs, out_buf, rank_sigs, device_ctx[]
             )
 
 
