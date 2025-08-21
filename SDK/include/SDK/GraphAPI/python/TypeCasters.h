@@ -165,15 +165,13 @@ struct delegate_caster : type_caster_base<T> {
   Caster caster;
 
   static T convert_to(Delegate &d) {
-    if constexpr (std::is_convertible_v<Delegate, T>) {
-      return d;
-    }
+    static_assert(std::is_convertible_v<Delegate, T>);
+    return d;
   }
 
   static Delegate convert_from(T &t) noexcept {
-    if constexpr (std::is_convertible_v<T, Delegate>) {
-      return t;
-    }
+    static_assert(std::is_convertible_v<T, Delegate>);
+    return t;
   }
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
@@ -732,29 +730,35 @@ struct type_caster<::llvm::function_ref<Return(Args...)>>
                       std::function<Return(Args...)>> {};
 
 template <>
-struct type_caster<::llvm::LogicalResult>
-    : delegate_caster<::llvm::LogicalResult, bool> {
-  static bool convert_from(llvm::LogicalResult &result) {
-    return result.succeeded();
+struct type_caster<::llvm::LogicalResult> {
+  using Caster = make_caster<bool>;
+  NB_TYPE_CASTER(::llvm::LogicalResult, Caster::Name)
+  static handle from_cpp(::llvm::LogicalResult t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(t.succeeded(), policy, cleanup);
   }
 };
 
 template <>
-struct type_caster<::M::ErrorOrSuccess>
-    : delegate_caster<::M::ErrorOrSuccess, bool> {
-  static bool convert_from(M::ErrorOrSuccess &result) {
-    return !result.isError();
+struct type_caster<::M::ErrorOrSuccess> {
+  using Caster = make_caster<bool>;
+  NB_TYPE_CASTER(::M::ErrorOrSuccess, Caster::Name)
+  static handle from_cpp(::M::ErrorOrSuccess &&t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(!t.isError(), policy, cleanup);
   }
 };
 
 template <typename T>
-struct type_caster<::M::ErrorOr<T>>
-    : delegate_caster<::M::ErrorOr<T>, std::optional<T>> {
-  static std::optional<T> convert_from(::M::ErrorOr<T> &result) {
+struct type_caster<::M::ErrorOr<T>> {
+  using Caster = make_caster<std::optional<T>>;
+  NB_TYPE_CASTER(std::optional<T>, Caster::Name)
+  static handle from_cpp(::M::ErrorOr<T> &&result, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
     // TODO: raise instead
     if (result.isError())
-      return std::nullopt;
-    return result.takeValue();
+      return make_caster<void>::from_cpp(nullptr, policy, cleanup);
+    return make_caster<T>::from_cpp(result.takeValue(), policy, cleanup);
   }
 };
 
