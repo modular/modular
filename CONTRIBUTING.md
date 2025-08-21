@@ -200,6 +200,7 @@ This process is transparent to you as a contributor. You'll see a bot
   repository
 - `Merged externally` - when your change has gone out with the latest nightly and
   is now available upstream in the `main` branch.
+- `Closed internally`
 
 These messages help track the lifecycle of your contribution across our systems.
 
