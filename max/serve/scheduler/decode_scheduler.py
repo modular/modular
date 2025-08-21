@@ -141,6 +141,14 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
+        # Send singular token to the API process
+        context = message.context
+        output = context.to_generation_output()
+        self.response_push_socket.put_nowait(
+            {message.id: SchedulerResult.create(output)}
+        )
+
+        # Add to prefill responses afterwards to avoid race condition
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     @traced
