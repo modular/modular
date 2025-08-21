@@ -87,7 +87,6 @@ class PrefillScheduler(Scheduler):
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            listen_port=8047,
             tensors=paged_cache.device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )

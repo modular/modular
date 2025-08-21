@@ -21,6 +21,7 @@ import random
 import socket
 import time
 from collections import defaultdict
+from typing import Optional
 from uuid import uuid4
 
 import msgspec
@@ -188,7 +189,7 @@ class KVTransferEngine:
         tensors: Tensor | list[Tensor],
         *,
         total_num_pages: int,
-        listen_port: int,
+        listen_port: Optional[int] = None,
     ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
@@ -271,7 +272,9 @@ class KVTransferEngine:
                     # - It enables overlapping transfers from multiple agents.
                     use_prog_thread=True,
                     use_listen_thread=True,
-                    listen_port=listen_port + i,
+                    listen_port=listen_port + i
+                    if listen_port
+                    else available_port(),
                 ),
             )
 

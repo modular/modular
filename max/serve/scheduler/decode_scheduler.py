@@ -120,7 +120,6 @@ class DecodeScheduler(Scheduler):
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            listen_port=8057,
             tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
