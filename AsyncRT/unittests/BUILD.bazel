@@ -40,6 +40,23 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "BufferCacheTest",
+    size = "small",
+    srcs = ["BufferCacheTest.cpp"],
+    env = {
+        # Set up consistent buffer cache environment for testing
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "25",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "25",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SELF_CHECK": "True",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG": "False",
+    },
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
     name = "DebuggingAllocatorsTest",
     size = "small",
     srcs = ["DebuggingAllocatorsTest.cpp"],
