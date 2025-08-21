@@ -60,8 +60,7 @@ public:
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
-      std::string targetAccelerator =
-          M::AsyncRT::Device::getAcceleratorArchOrEmpty(),
+      std::string targetAccelerator = "",
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "");
 
@@ -105,8 +104,7 @@ public:
   std::optional<uint64_t> largeDataThreshold = {};
   int64_t loopUnrollingWarnThreshold = 65536;
 
-  std::string targetAccelerator =
-      M::AsyncRT::Device::getAcceleratorArchOrEmpty();
+  std::string targetAccelerator = "";
   bool isCrossCompilation = false;
 
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
