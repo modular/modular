@@ -92,6 +92,11 @@ class Settings(BaseSettings):
         default=False,
         alias="MAX_SERVE_OFFLINE_INFERENCE",
     )
+    headless: bool = Field(
+        default=False,
+        description="If True, runs a model worker and dispatch worker without starting an API server.",
+        alias="MAX_SERVE_HEADLESS",
+    )
     host: str = Field(
         description="Hostname to use", default="0.0.0.0", alias="MAX_SERVE_HOST"
     )
@@ -103,7 +108,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_port(cls, port: int, info: ValidationInfo):
         # In offline inference mode, port is not used and always valid.
-        if info.data["offline_inference"]:
+        if info.data["offline_inference"] or info.data["headless"]:
             return port
 
         # check if port is already in use
@@ -265,6 +270,12 @@ class Settings(BaseSettings):
         default_factory=DispatcherConfig,
         description="Expose Dispatcher Config for use in inter-node communication.",
         alias="MAX_SERVE_DISPATCHER_CONFIG",
+    )
+
+    log_prefix: Optional[str] = Field(
+        default=None,
+        description="Prefix to prepend to all log messages for this service instance.",
+        alias="MAX_SERVE_LOG_PREFIX",
     )
 
 

@@ -26,25 +26,16 @@ benchmark_config:
   model: null  # Required - must be set when using config
   tokenizer: null  # Optional tokenizer (defaults to model if not specified)
   trust_remote_code: false
-  
+
   # Dataset configuration (common across all benchmark types)
-  dataset_name: "sharegpt"  # Name of the dataset to benchmark on
+  dataset_name: null  # Name of the dataset to benchmark on
   dataset_path: null  # Path to dataset file
-  
+
   # Basic workload parameters
   num_prompts: 1000  # Number of prompts to process
   seed: 42  # Random seed for reproducibility
-  
-  # Output control (basic parameters)
-  max_output_len: 512  # Maximum output length per request
-  temperature: 0.0  # Temperature for sampling
-  
+
   # Control flags
   disable_tqdm: false
   print_inputs_and_outputs: false
-  
-  # Result saving (common to all benchmarks)
-  save_result: true  # Save benchmark results to JSON
-  result_dir: "./benchmark_results"  # Directory to save results
-  result_filename: null  # Custom filename (auto-generated if null)
-  metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
+

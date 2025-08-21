@@ -49,8 +49,8 @@ from .text_batch_constructor import (
 )
 from .utils import (
     OrderedDict,
+    SchedulerLogger,
     SchedulerOutput,
-    log_metrics,
     maybe_restore_chunked_request,
     release_terminated_requests,
 )
@@ -77,7 +77,6 @@ class DecodeScheduler(Scheduler):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.paged_manager = paged_manager
-        self.dispatcher_client = dispatcher_client
 
         # Initialize Queues
         self.request_pull_socket = ZmqPullSocket[
@@ -111,7 +110,6 @@ class DecodeScheduler(Scheduler):
         )
 
         self.prefill_responses: dict[str, PrefillResponse] = {}
-        self.completed_transfers: set[str] = set()
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[
@@ -122,7 +120,6 @@ class DecodeScheduler(Scheduler):
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            listen_port=8057,
             tensors=self.paged_manager.device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
@@ -132,12 +129,13 @@ class DecodeScheduler(Scheduler):
             pipeline=pipeline,
             paged_cache=paged_manager,
         )
+        self.scheduler_logger = SchedulerLogger()
 
     @traced
     def handle_transfer_engine_response(
         self, message: KVTransferEngineMetadata
     ) -> None:
-        logger.info(f"connecting to remote transfer engine: {message.name}")
+        logger.debug(f"connecting to remote transfer engine: {message.name}")
         self.transfer_engine.connect(message)
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
@@ -257,60 +255,32 @@ class DecodeScheduler(Scheduler):
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
 
-        # Walk all outstanding prefill responses
-        # Notifications provides a list of completed XferReqData.xfer_name
-        # keyed on remote named (XferReqData.src_name)
-        notifications = [
-            ta.agent.get_notifs() for ta in self.transfer_engine.tensor_agents
-        ]
-        new_completed = set()
-        for notification in notifications:
-            for remote in notification:
-                for completed_transfer_name in notification[remote]:
-                    new_completed.add(completed_transfer_name.decode())
-        self.completed_transfers.update(new_completed)
+        transfer_names = list(self.prefill_responses.keys())
+        for transfer_name in transfer_names:
+            prefill_response = self.prefill_responses[transfer_name]
+            transfer_metadata = prefill_response.transfer_metadata
 
-        # Process ready transfers: intersection of completed transfers
-        # and prefill responses received.
-        for transfer_id in (
-            self.completed_transfers & self.prefill_responses.keys()
-        ):
-            # Retrieve Prefill Response
-            prefill_response = self.prefill_responses.pop(transfer_id)
+            # Transfer is not complete, skip.
+            if not self.transfer_engine.is_complete(transfer_metadata):
+                continue
+
+            # Cleanup the transfer.
+            del self.prefill_responses[transfer_name]
+            self.transfer_engine.cleanup_transfer(transfer_metadata)
 
             # When cancelled, the request is removed from prefill_requests
             # therefore the request should only be added to the active_batch
             # if it is still in prefill_requests.
-            if prefill_response.id in self.pending_prefill_requests:
-                self.batch_constructor.tg_reqs[prefill_response.id] = (
-                    prefill_response.context
-                )
+            if prefill_response.id not in self.pending_prefill_requests:
+                continue
 
-                self.pending_prefill_requests.remove(prefill_response.id)
-
-            # Remove from completed transfers.
-            self.completed_transfers.remove(transfer_id)
+            # Remove from pending prefill requests and add to TG requests.
+            self.pending_prefill_requests.remove(prefill_response.id)
+            context = prefill_response.context
+            self.batch_constructor.tg_reqs[prefill_response.id] = context
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
-
-    @traced
-    def stream_responses_to_frontend(
-        self, responses: dict[str, TextGenerationOutput]
-    ) -> None:
-        """Streams text generation responses to the frontend by converting them into a format suitable for streaming.
-
-        Args:
-            responses: Dictionary mapping request IDs to their text generation responses.
-        """
-        if not responses:
-            return
-
-        stream_responses: dict[str, SchedulerResult[TextGenerationOutput]] = {}
-        for request_id, response in responses.items():
-            stream_responses[request_id] = SchedulerResult.create(response)
-
-        self.response_push_socket.put_nowait(stream_responses)
 
     @traced
     def schedule(self, sch_output: SchedulerOutput) -> None:
@@ -322,7 +292,7 @@ class DecodeScheduler(Scheduler):
         assert sch_output.batch_size > 0
         batch = sch_output.batch_inputs
         responses = self.pipeline.execute(
-            TextGenerationInputs(batch, num_steps=sch_output.num_steps)
+            TextGenerationInputs([batch], num_steps=sch_output.num_steps)
         )
 
         # Even though this is CE specific, it is possible for decode_scheduler
@@ -383,7 +353,7 @@ class DecodeScheduler(Scheduler):
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
-        log_metrics(
+        self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             sch_output=batch_to_execute,
             paged_cache=self.paged_manager,
@@ -392,7 +362,6 @@ class DecodeScheduler(Scheduler):
             num_pending_reqs=len(self.pending_reqs)
             + len(self.pending_prefill_requests),
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            log_level=logging.INFO,
         )
 
 

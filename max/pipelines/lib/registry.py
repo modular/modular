@@ -427,10 +427,7 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[
-        PipelineTokenizer,
-        Callable[[], PipelineTypes],
-    ]:
+    ) -> tuple[PipelineTokenizer, Callable[[], PipelineTypes]]:
         tokenizer: PipelineTokenizer
         pipeline_factory: Callable[[], PipelineTypes]
 

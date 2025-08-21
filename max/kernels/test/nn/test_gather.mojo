@@ -45,7 +45,7 @@ fn test_gather() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i).value
+                input[IndexList[2](i, j)] = Float32(i)
 
         # Setup indices.
         alias num_indices = 16
@@ -116,7 +116,7 @@ fn test_gather_3d() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[3](i, j, 0)] = Float32(i).value
+                input[IndexList[3](i, j, 0)] = Float32(i)
 
         # Setup indices.
         alias num_indices = 16
@@ -191,7 +191,7 @@ fn test_gather_empty_indices() raises:
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i).value
+                input[IndexList[2](i, j)] = Float32(i)
 
         # Setup indices.
         # There isn't a way to represent a stack size of 0 with InlineArray

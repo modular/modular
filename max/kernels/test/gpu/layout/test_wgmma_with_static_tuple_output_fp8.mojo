@@ -137,7 +137,7 @@ fn wgmma_e4m3_e4m3_f32[
     c_type: DType,
     transpose_b: Bool = False,
     a_reg: Bool = False,
-](ctx: DeviceContext, handle: vendor_blas.Handle) raises:
+](ctx: DeviceContext) raises:
     print(
         "== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => ",
         N,
@@ -214,7 +214,6 @@ fn wgmma_e4m3_e4m3_f32[
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device.tensor,
@@ -241,7 +240,6 @@ fn wgmma_e4m3_e4m3_f32[
 
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device_col_major.tensor,
@@ -271,14 +269,13 @@ fn wgmma_e4m3_e4m3_f32[
 
 fn main() raises:
     with DeviceContext() as ctx:
-        with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
 
-            @parameter
-            for n in range(8, 32, 8):
-                wgmma_e4m3_e4m3_f32[
-                    64,
-                    n,
-                    32,
-                    DType.bfloat16,
-                    True,
-                ](ctx, handle)
+        @parameter
+        for n in range(8, 32, 8):
+            wgmma_e4m3_e4m3_f32[
+                64,
+                n,
+                32,
+                DType.bfloat16,
+                True,
+            ](ctx)

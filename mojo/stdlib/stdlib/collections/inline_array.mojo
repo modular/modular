@@ -30,13 +30,6 @@ print(arr[0])  # Prints 1
 # Fill with a value
 var filled = InlineArray[Int, 5](fill=42)
 ```
-
-Notes:
-
-- For historical reasons, destructors are not run by default on the elements of
-an `InlineArray`. This can be controlled with the `run_destructors` parameter.
-In the future, this will default to `True` and the `run_destructors` parameter
-will be removed.
 """
 
 import math
@@ -63,8 +56,6 @@ fn _inline_array_construction_checks[size: Int]():
 struct InlineArray[
     ElementType: ExplicitlyCopyable & Movable,
     size: Int,
-    *,
-    run_destructors: Bool = False,
 ](Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
@@ -77,9 +68,6 @@ struct InlineArray[
         ElementType: The type of the elements in the array. Must implement
             `Copyable` and `Movable`.
         size: The size of the array. Must be a positive integer constant.
-        run_destructors: Whether to run destructors on the elements. Defaults to
-            `False` for backwards compatibility. Will default to `True` in the
-            future.
 
     Examples:
 
@@ -348,16 +336,10 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)
         # arr's destructor is called automatically when it goes out of scope
         ```
-
-        Notes:
-            This destructor is called automatically when the array goes out of
-            scope. If the array's `run_destructors` parameter is `True`, it will
-            call the destructor on each element in the array before deallocating
-            the array's memory.
         """
 
         @parameter
-        if Self.run_destructors:
+        if not Bool(ElementType.__del__is_trivial):
 
             @parameter
             for idx in range(size):

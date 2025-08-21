@@ -13,16 +13,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 from max.graph import TensorValue, ops
 
 
 def causal_attention_mask_2d_from_imgs(
-    imgs: list[np.ndarray],
+    imgs: list[npt.NDArray[Any]],
     patch_size: int,
     batch_size: int,
     fill_val: float = -10000.0,
-):
+) -> npt.NDArray[np.float32]:
     """Generates a 2D mask to ensure different blocks of patches (images) can only attend
     to patches within their respective block (image).
 
@@ -72,7 +75,7 @@ def causal_attention_mask_2d_from_imgs(
 
 def causal_attention_mask_2d(
     num_patches_list: list[int], patch_embeds: TensorValue
-):
+) -> npt.NDArray[np.float32]:
     """Generates a 2D mask to ensure different blocks of patches (images) can only attend
     to patches within their respective block (image).
 
@@ -116,7 +119,7 @@ def causal_attention_mask_2d(
     return fill_matrix
 
 
-def rotate_half(x: TensorValue):
+def rotate_half(x: TensorValue) -> TensorValue:
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]

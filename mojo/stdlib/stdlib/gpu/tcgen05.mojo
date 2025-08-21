@@ -198,7 +198,7 @@ fn tcgen05_ld[
     alias addr_str = "[$" + String(width) + "]"
 
     @parameter
-    @always_inline
+    @always_inline("nodebug")
     fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."

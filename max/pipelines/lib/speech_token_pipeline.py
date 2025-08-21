@@ -260,12 +260,6 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             if context.log_probabilities:
                 start_log_probs = []
 
-            res[request_id] = TextGenerationOutput(
-                request_id=request_id,
-                tokens=[],
-                final_status=status,
-                log_probabilities=start_log_probs,
-            )
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
             for step in range(num_valid_tokens):
                 # Convert to a Python scalar to improve serialization performance.
@@ -277,11 +271,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 if context.status.is_done:
                     break
 
-            # Walk outstanding completion tokens, and return to user.
-            for token, log_probs in context.outstanding_completion_tokens():
-                res[request_id].tokens.append(token)
-                if log_probs and res[request_id].log_probabilities is not None:
-                    res[request_id].log_probabilities.append(log_probs)  # type: ignore
+            res[request_id] = context.to_generation_output()
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

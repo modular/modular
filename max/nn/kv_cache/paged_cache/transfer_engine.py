@@ -21,6 +21,7 @@ import random
 import socket
 import time
 from collections import defaultdict
+from typing import Optional
 from uuid import uuid4
 
 import msgspec
@@ -173,11 +174,14 @@ class KVTransferEngine:
     remote_connections: dict[str, KVTransferEngineMetadata]
     """Map of remote engine names to their metadata."""
 
-    completed_xfers: dict[str, set[str]]
-    """Map of agent names to completed transfers."""
-
     remote_agent_to_engine: dict[str, str]
     """Map of remote agent names to their engine names."""
+
+    completed_recv_xfers: dict[str, dict[str, int]]
+    """Map of agent names to completed recv transfers."""
+
+    inflight_send_xfers: dict[str, XferReqData]
+    """Map of transfer names to send transfer request data."""
 
     def __init__(
         self,
@@ -185,7 +189,7 @@ class KVTransferEngine:
         tensors: Tensor | list[Tensor],
         *,
         total_num_pages: int,
-        listen_port: int,
+        listen_port: Optional[int] = None,
     ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
@@ -255,10 +259,6 @@ class KVTransferEngine:
         )
 
         # Create agents and process each tensor
-        use_prog_thread = (
-            self.num_tensors > 1
-        )  # in the multi tensor case, we need to use a progress thread to achieve overlapping transfers
-
         for i, tensor in enumerate(tensors):
             # Create agent name
             agent_name = f"{name}_{i}" if self.num_tensors > 1 else name
@@ -267,9 +267,14 @@ class KVTransferEngine:
             agent = nixl.Agent(
                 agent_name,
                 nixl.AgentConfig(
-                    use_prog_thread=use_prog_thread,
+                    # Always use progress thread.
+                    # - It helps with async notification delivery.
+                    # - It enables overlapping transfers from multiple agents.
+                    use_prog_thread=True,
                     use_listen_thread=True,
-                    listen_port=listen_port + i,
+                    listen_port=listen_port + i
+                    if listen_port
+                    else available_port(),
                 ),
             )
 
@@ -362,16 +367,16 @@ class KVTransferEngine:
             self.tensor_agents.append(tensor_agent)
 
         # Remote connections
-        self.remote_connections: dict[str, KVTransferEngineMetadata] = {}
+        self.remote_connections = {}
 
         # Map of agents to completed transfers
-        self.completed_xfers: dict[str, set[str]] = defaultdict(set)
+        self.completed_recv_xfers = defaultdict(lambda: defaultdict(int))
 
         # Map of remote agent names to their engine names
-        self.remote_agent_to_engine: dict[str, str] = {}
+        self.remote_agent_to_engine = {}
 
-        # All xfers - maps xfer_name to list of (tensor_idx, xfer_id) tuples
-        self.inflight_xfers: dict[str, list[tuple[int, int]]] = {}
+        # All send xfers - maps xfer_name to list of (tensor_idx, xfer_id) tuples
+        self.inflight_send_xfers = {}
 
     @property
     def metadata(self) -> KVTransferEngineMetadata:
@@ -477,7 +482,6 @@ class KVTransferEngine:
 
         # Create transfers for all tensors
         xfer_name = str(uuid4())
-        self.inflight_xfers[xfer_name] = list()
         xfer_ids = []
 
         for tensor_idx, ta in enumerate(self.tensor_agents):
@@ -522,7 +526,6 @@ class KVTransferEngine:
                 )
 
             xfer_ids.append(xfer_id)
-            self.inflight_xfers[xfer_name].append((tensor_idx, xfer_id))
 
         xfer_req = XferReqData(
             dst_name=remote_metadata.name,
@@ -534,10 +537,64 @@ class KVTransferEngine:
             src_idxs=src_idxs,
             dst_idxs=dst_idxs,
         )
+        self.inflight_send_xfers[xfer_name] = xfer_req
         return xfer_req
 
-    def send_xfer_sync(self, xfer_req_id: XferReqData) -> None:
-        """Wait for transfers initiated by current engine to complete for all tensors.
+    def _is_sender_of(self, xfer_req: XferReqData) -> bool:
+        """Check if the current engine is the sender of a transfer."""
+        return xfer_req.src_name == self.name
+
+    def _is_send_complete(self, xfer_req: XferReqData) -> bool:
+        """Check if a send transfer is complete.
+
+        Args:
+            xfer_req: The transfer request data containing transfer metadata.
+
+        Returns:
+            True if the send transfer is complete, False otherwise.
+        """
+        assert self._is_sender_of(xfer_req)
+
+        is_complete = True
+        for tensor_idx, xfer_id in enumerate(xfer_req.xfer_ids):
+            agent = self.tensor_agents[tensor_idx].agent
+            status = agent.get_transfer_status(xfer_id)
+
+            if status == nixl.Status.SUCCESS:
+                continue
+            elif status == nixl.Status.IN_PROG:
+                is_complete = False
+                break
+            else:
+                raise ValueError(
+                    f"Transfer request failed with status {status} for tensor {tensor_idx}"
+                )
+
+        return is_complete
+
+    def _is_recv_complete(self, xfer_req: XferReqData) -> bool:
+        """Check if a recv transfer is complete."""
+        assert not self._is_sender_of(xfer_req)
+
+        # Check what recv completion notifications have been received
+        for ta in self.tensor_agents:
+            notifs = ta.agent.get_notifs()
+            for remote_agent_name, notifications in notifs.items():
+                engine_name = self.remote_agent_to_engine[remote_agent_name]
+                for notif in notifications:
+                    notif_decoded = notif.decode()
+                    self.completed_recv_xfers[engine_name][notif_decoded] += 1
+
+        # A recv is complete when we get num_agents notifications about it
+        num_agents = len(self.tensor_agents)
+        xfer_name = xfer_req.xfer_name
+        return (
+            self.completed_recv_xfers[xfer_req.src_name][xfer_name]
+            == num_agents
+        )
+
+    def is_complete(self, xfer_req: XferReqData) -> bool:
+        """Check if a given send or recv transfer is completed.
 
         WARNING, this method is prone to infinite loops. For the transfer to
         progress, the remote engine MUST call wait_recv_complete. As such, the
@@ -545,90 +602,72 @@ class KVTransferEngine:
 
         ```
         xfer_req = engine_1.write_to(...)
-        engine_1.wait_send_complete(xfer_req) # hangs!
-        engine_2.wait_recv_complete(xfer_req) # never called
+        while not engine_1.is_complete(xfer_req):
+            pass
+        while not engine_2.is_complete(xfer_req):
+            pass
         ```
-        """
-        xfer_name = xfer_req_id.xfer_name
-        completed_tensors: set[int] = set()
 
-        while len(completed_tensors) < len(xfer_req_id.xfer_ids):
-            for tensor_idx, xfer_id in enumerate(xfer_req_id.xfer_ids):
-                if tensor_idx in completed_tensors:
-                    continue
-
-                agent = self.tensor_agents[tensor_idx].agent
-                status = agent.get_transfer_status(xfer_id)
-
-                if status == nixl.Status.SUCCESS:
-                    agent.release_transfer_request(xfer_id)
-                    completed_tensors.add(tensor_idx)
-                elif status == nixl.Status.IN_PROG:
-                    continue
-                else:
-                    raise ValueError(
-                        f"Transfer request failed with status {status} for tensor {tensor_idx}"
-                    )
-
-            if len(completed_tensors) < len(xfer_req_id.xfer_ids):
-                us = 1 / 1000 / 1000
-                time.sleep(us)
-
-        self.completed_xfers[xfer_req_id.dst_name].add(xfer_name)
-        del self.inflight_xfers[xfer_name]
-
-    def get_transfer_status(
-        self, xfer_req_data: XferReqData
-    ) -> list[nixl.Status]:
-        """Get the current status of transfer requests for all tensors.
-
-        This API can only be used by the initiating transfer engine.
-
-        Returns:
-            List of status values, one per tensor.
-        """
-        statuses = []
-        for tensor_idx, xfer_id in enumerate(xfer_req_data.xfer_ids):
-            agent = self.tensor_agents[tensor_idx].agent
-            statuses.append(agent.get_transfer_status(xfer_id))
-        return statuses
-
-    def update_completed_xfers(self) -> None:
-        """Process agent notifications and mark completed transfers."""
-        # Collect and process all agent notifications
-        for ta in self.tensor_agents:
-            notifs = ta.agent.get_notifs()
-            for remote_agent_name, notifications in notifs.items():
-                engine_name = self.remote_agent_to_engine.get(remote_agent_name)
-                if engine_name:
-                    self.completed_xfers[engine_name].update(
-                        notif.decode() for notif in notifications
-                    )
-
-    def is_complete(self, xfer_req_id: XferReqData) -> bool:
-        """Check if all transfer requests have completed.
-
-        This method is primarily expected to be used by the receiver of a transfer
-        to check if data has been successfully transferred from the source.
+        Instead do:
+        ```
+        xfer_req = engine_1.write_to(...)
+        while not engine_1.is_complete(xfer_req) or not engine_2.is_complete(xfer_req):
+            pass
+        ```
 
         Args:
-            xfer_req_id: The transfer request data containing transfer metadata.
+            xfer_req: The transfer request.
 
         Returns:
             True if all transfers have completed, False otherwise.
         """
-        return (
-            xfer_req_id.xfer_name in self.completed_xfers[xfer_req_id.src_name]
-        )
+        if self._is_sender_of(xfer_req):
+            return self._is_send_complete(xfer_req)
+        else:
+            return self._is_recv_complete(xfer_req)
 
-    def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
-        """Wait for transfers initiated by remote engine to complete for all tensors."""
-        while not self.is_complete(xfer_req_id):
-            self.update_completed_xfers()
+    def _cleanup_recv_transfer(self, xfer_req: XferReqData) -> None:
+        """Cleanup a transfer."""
+        assert not self._is_sender_of(xfer_req)
+        assert xfer_req.xfer_name not in self.inflight_send_xfers
 
-        self.completed_xfers[xfer_req_id.src_name].discard(
-            xfer_req_id.xfer_name
-        )
+        del self.completed_recv_xfers[xfer_req.src_name][xfer_req.xfer_name]
+
+    def _cleanup_send_transfer(self, xfer_req: XferReqData) -> None:
+        """Cleanup a send transfer."""
+        assert self._is_sender_of(xfer_req)
+        xfer_name = xfer_req.xfer_name
+        assert xfer_name in self.inflight_send_xfers
+
+        del self.inflight_send_xfers[xfer_name]
+
+        for tensor_idx, xfer_id in enumerate(xfer_req.xfer_ids):
+            agent = self.tensor_agents[tensor_idx].agent
+            status = agent.release_transfer_request(xfer_id)
+            if status != nixl.Status.SUCCESS:
+                raise ValueError(
+                    f"Failed to release transfer request: {status}"
+                )
+
+    def cleanup_transfer(self, xfer_req: XferReqData) -> None:
+        """Cleanup a transfer. This should be called after a transfer is complete.
+
+        Args:
+            xfer_req: The transfer request to cleanup.
+        """
+        if not self.is_complete(xfer_req):
+            raise ValueError(f"Transfer {xfer_req.xfer_name} is not complete")
+
+        if self._is_sender_of(xfer_req):
+            self._cleanup_send_transfer(xfer_req)
+        else:
+            self._cleanup_recv_transfer(xfer_req)
+
+    def sync_and_release(self, xfer_req: XferReqData) -> None:
+        """Wait for a transfer to complete and release the transfer after it completes."""
+        while not self.is_complete(xfer_req):
+            time.sleep(0.001)
+        self.cleanup_transfer(xfer_req)
 
     def cleanup(self) -> None:
         """Release all resources associated with the transfer engine.
@@ -638,15 +677,9 @@ class KVTransferEngine:
         unknown reasons.
         """
 
-        # Release all xfers (using the appropriate agent for each)
-        for xfer_list in self.inflight_xfers.values():
-            for tensor_idx, xfer_id in xfer_list:
-                agent = self.tensor_agents[tensor_idx].agent
-                status = agent.release_transfer_request(xfer_id)
-                if status != nixl.Status.SUCCESS:
-                    raise ValueError(
-                        f"Failed to release transfer request: {status}"
-                    )
+        # Release all xfers
+        for send_xfer_req in list(self.inflight_send_xfers.values()):
+            self._cleanup_send_transfer(send_xfer_req)
 
         # Deregister NIXL memory for all tensors
         for i, ta in enumerate(self.tensor_agents):

@@ -1313,7 +1313,7 @@ def test_blackwell_matmul_tma_pair_mma[
         # Round TFLOPS to two decimal places for cleaner output
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)
-        print(String(M, "x", N, "x", K), sectime * 1000, tflops_rounded)
+        print(String(M, "x", N, "x", K), tflops_rounded)
     else:
         vendor_blas.matmul(
             ctx,
@@ -1362,19 +1362,21 @@ fn get_dic_of_shapes(
 fn make_dic_of_shapes() -> (
     Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
 ):
-    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
-    dic[0] = (512, 2560, 8192)
-    dic[1] = (512, 8192, 2048)
-    dic[2] = (512, 14336, 8192)
-    dic[3] = (512, 8192, 7168)
-    dic[4] = (4096, 2560, 8192)
-    dic[5] = (4096, 8192, 2048)
-    dic[6] = (4096, 14336, 8192)
-    dic[7] = (4096, 8192, 7168)
-    dic[8] = (8192, 2560, 8192)
-    dic[9] = (8192, 8192, 2048)
-    dic[10] = (8192, 14336, 8192)
-    dic[11] = (8192, 8192, 7168)
+    var dic: Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher] = {
+        0: (4096, 4096, 4096),
+        1: (512, 2560, 8192),
+        2: (512, 8192, 2048),
+        3: (512, 14336, 8192),
+        4: (512, 8192, 7168),
+        5: (4096, 2560, 8192),
+        6: (4096, 8192, 2048),
+        7: (4096, 14336, 8192),
+        8: (4096, 8192, 7168),
+        9: (8192, 2560, 8192),
+        10: (8192, 8192, 2048),
+        11: (8192, 14336, 8192),
+        12: (8192, 8192, 7168),
+    }
     return dic
 
 
@@ -1417,6 +1419,23 @@ def main():
         if is_benchmark():
             benchmark_blackwell_matmul(ctx)
             return
+        print("Testing Nvidia specific, non power of 2, MMA_N parameter")
+        alias block_tile_shape = Index(128, 80, 64)
+        alias umma_shape = Index(
+            block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
+        )
+        test_blackwell_matmul_tma_pair_mma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            block_tile_shape,
+            umma_shape,
+            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx, dynamic(512), static[2560](), static[8192]())
+
+        print("Testing remaining cases")
 
         @parameter
         for mma_m_scale in range(2, 3):
@@ -1495,19 +1514,3 @@ def main():
                     a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
                     b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
                 ](ctx, dynamic(8192), static[2560](), static[8192]())
-
-        print("Testing Nvidia specific, non power of 2, MMA_N parameter")
-        alias block_tile_shape = Index(128, 80, 64)
-        alias umma_shape = Index(
-            block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
-        )
-        test_blackwell_matmul_tma_pair_mma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            block_tile_shape,
-            umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, dynamic(512), static[2560](), static[8192]())

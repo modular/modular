@@ -46,7 +46,6 @@ from io.write import _WriteBufferHeap, _WriteBufferStack
 struct _fdopen[mode: StaticString = "a"]:
     var handle: OpaquePointer
 
-    @implicit
     fn __init__(out self, stream_id: FileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
 

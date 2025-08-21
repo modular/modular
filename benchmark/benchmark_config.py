@@ -13,10 +13,22 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
+import enum
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from benchmark_datasets import DATASET_REGISTRY
 from max.pipelines.lib import MAXConfig
+
+
+class Backend(str, enum.Enum):
+    vllm = "vllm"
+    vllm_chat = "vllm-chat"
+    trt_llm = "trt-llm"
+    modular = "modular"
+    modular_chat = "modular-chat"
+    sglang = "sglang"
+    sglang_chat = "sglang-chat"
 
 
 @dataclass
@@ -60,32 +72,12 @@ class BaseBenchmarkConfig(MAXConfig):
     seed: int = 42
     """Random seed for reproducibility."""
 
-    # Output control (basic parameters)
-    max_output_len: int = 512
-    """Maximum output length per request."""
-
-    temperature: float = 0.0
-    """Temperature for sampling."""
-
     # Control flags
     disable_tqdm: bool = False
     """Specify to disable tqdm progress bar."""
 
     print_inputs_and_outputs: bool = False
     """Print all input and outputs to console."""
-
-    # Result saving (common to all benchmarks)
-    save_result: bool = True
-    """Specify to save benchmark results to a json file."""
-
-    result_dir: str = "./benchmark_results"
-    """Directory to save results."""
-
-    result_filename: Optional[str] = None
-    """Custom filename (auto-generated if null)."""
-
-    metadata: list[str] = field(default_factory=list)
-    """Key-value pairs for metadata (format: ["key=value", ...])."""
 
     # Unknown fields storage (not a dataclass field)
     _unknown_fields: dict[str, Any] = field(
@@ -107,15 +99,28 @@ class BaseBenchmarkConfig(MAXConfig):
             "dataset_path": "Path to the dataset.",
             "num_prompts": "Number of prompts to process.",
             "seed": "Random seed for reproducibility.",
-            "max_output_len": "Maximum output length per request.",
-            "temperature": "Temperature for sampling.",
             "disable_tqdm": "Specify to disable tqdm progress bar.",
             "print_inputs_and_outputs": "Print all input and outputs to console.",
-            "save_result": "Specify to save benchmark results to a json file.",
-            "result_dir": "Directory to save results.",
-            "result_filename": "Custom filename (auto-generated if null).",
-            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
+
+    @staticmethod
+    def get_default_field_choices() -> dict[str, list[str]]:
+        """Get valid choices for fields that have constrained values.
+
+        Returns:
+            Dictionary mapping field names to their valid choices.
+        """
+        return {
+            # TODO: Propagate proper enum choices here than just the string values
+            "backend": [backend.value for backend in Backend],
+            "dataset_name": list(DATASET_REGISTRY.keys()),
+            "random_distribution_type": ["uniform", "normal"],
+        }
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the benchmark config."""
+        return super().get_default_required_fields().union({"model"})
 
 
 @dataclass
@@ -132,7 +137,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """
 
     # Backend and API configuration (serving-specific)
-    backend: str = "modular"
+    # TODO: Propagate proper enum choices here than just the string values
+    backend: str = Backend.modular.value
     """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
 
     base_url: Optional[str] = None
@@ -148,7 +154,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
     # Request configuration (serving-specific)
-    max_concurrency: Optional[int] = 32
+    max_concurrency: Optional[int] = None
     """Maximum concurrent requests (optimized for serving benchmarks)."""
 
     lora: Optional[str] = None
@@ -168,17 +174,26 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     output_lengths: Optional[str] = None
     """Path to YAML file with output lengths or int."""
 
+    max_output_len: Optional[int] = None
+    """Maximum output length per request."""
+
+    temperature: float = 0.0
+    """Temperature for sampling."""
+
+    top_p: float = 1.0
+    """Top-p for sampling."""
+
     # Traffic control (serving-specific)
-    request_rate: float = 16.0
+    request_rate: float = float("inf")
     """Requests per second (finite rate for realistic benchmarking)."""
 
     burstiness: float = 1.0
     """Burstiness factor (1.0 = Poisson process)."""
 
-    ttft_skip_requests: int = 10
+    ttft_skip_requests: int = 0
     """Skip first N requests for TTFT measurements."""
 
-    chat_warmup_delay_ms: float = 100.0
+    chat_warmup_delay_ms: float = 0.0
     """Delay between starting chat sessions."""
 
     # Dataset-specific parameters (serving workloads)
@@ -204,6 +219,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     server_args: str = ""
     """Server arguments string."""
 
+    # Result saving (serving-specific extensions)
+    save_result: bool = False
+    """Specify to save benchmark results to a json file."""
+
+    result_dir: Optional[str] = None
+    """Directory to save results."""
+
+    result_filename: Optional[str] = None
+    """Custom filename (auto-generated if null)."""
+
+    metadata: list[str] = field(default_factory=list)
+    """Key-value pairs for metadata (format: ["key=value", ...])."""
+
     @staticmethod
     def help() -> dict[str, str]:
         """Documentation for serving benchmark config parameters.
@@ -225,6 +253,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "num_chat_sessions": "Number of multiturn chat sessions.",
             "delay_between_chat_turns": "Delay between chat turns in ms.",
             "output_lengths": "Path to YAML file with output lengths or int.",
+            "max_output_len": "Maximum output length per request.",
+            "temperature": "Temperature for sampling.",
+            "top_p": "Top-p for sampling.",
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "ttft_skip_requests": "Skip first N requests for TTFT measurements.",
@@ -244,8 +275,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "server_args": "Server arguments string.",
+            "save_result": "Specify to save benchmark results to a json file.",
+            "result_dir": "Directory to save results.",
+            "result_filename": "Custom filename (auto-generated if null).",
+            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
         return {**base_help, **serving_help}
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the benchmark config."""
+        return super().get_default_required_fields().union({"dataset_name"})
 
 
 # Convenience functions for loading specific configuration types

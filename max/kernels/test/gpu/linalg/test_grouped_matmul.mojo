@@ -401,6 +401,16 @@ fn main() raises:
             expert_shape = Index(1280, 1024),
         ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
 
+        # Multiple matmuls selecting part of experts
+        # num_tokesn not multiple of tile size
+        # expert N dimension not multiple of 256
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape = Index(192, 1024),
+        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+
         # Multiple matmuls selecting part of experts with epilogue
         test[
             DType.bfloat16,

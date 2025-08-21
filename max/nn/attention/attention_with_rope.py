@@ -33,6 +33,7 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
+from max.nn.float8_config import Float8Config
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -51,7 +52,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import Float8Config, Linear
+from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
 from .interfaces import (
     AttentionImpl,
@@ -418,7 +419,10 @@ class AttentionWithRope(Module):
                 x_scales = self.qkv_input_scale
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
-                    x, scales_type=weight_scale.dtype
+                    x,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    scales_type=weight_scale.dtype,
                 )
 
             xq = fused_qkv_ragged_matmul_scaled_float8(

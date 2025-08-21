@@ -13,6 +13,7 @@
 from collections import OptionalReg
 from sys.intrinsics import _type_is_eq
 
+from algorithm.functional import unswitch
 from buffer import Dim, DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
@@ -385,6 +386,7 @@ fn generic_flash_attention_kv_cache_padded[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     @always_inline
     @parameter
@@ -424,6 +426,7 @@ fn generic_flash_attention_kv_cache_padded[
             scale,
             output,
             context,
+            sink_weights,
         )
 
 
@@ -445,6 +448,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     @always_inline
     @parameter
@@ -481,6 +485,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
             scale,
             output,
             context,
+            sink_weights,
         )
 
 
@@ -500,6 +505,7 @@ fn _flash_attention_dispatch[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -511,7 +517,9 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         if is_cpu[target]():
-            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
+            return flash_attention_kv_cache_cpu(
+                q, k, v, mask, scale, output, sink_weights
+            )
         else:
             alias use_score_mod = not _type_is_eq[
                 score_mod_t, IdentityScoreMod
@@ -549,6 +557,7 @@ fn _flash_attention_dispatch_materialized_mask[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -557,24 +566,32 @@ fn _flash_attention_dispatch_materialized_mask[
     fn _dispatch_flash_attention[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
+        @always_inline
         @parameter
-        if is_cpu[target]():
-            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
-        else:
-            alias use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[use_score_mod=use_score_mod](
-                output,
-                q,
-                k,
-                v,
-                mask,
-                score_mod,
-                valid_lengths,
-                scale,
-                context.get_device_context(),
-            )
+        fn call_flash_attention[sink: Bool]() raises:
+            @parameter
+            if is_cpu[target]():
+                return flash_attention_kv_cache_cpu(
+                    q, k, v, mask, scale, output, sink_weights
+                )
+            else:
+                alias use_score_mod = not _type_is_eq[
+                    score_mod_t, IdentityScoreMod
+                ]()
+                gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
+                    output,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    score_mod,
+                    valid_lengths,
+                    scale,
+                    context.get_device_context(),
+                    sink_weights=sink_weights,
+                )
+
+        unswitch[call_flash_attention](Bool(sink_weights))
 
     return dispatch_materialized_mask_and_score_mod[
         score_mod_str,

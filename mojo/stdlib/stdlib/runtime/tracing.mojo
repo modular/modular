@@ -137,7 +137,6 @@ struct TraceLevel(Copyable, EqualityComparable, Movable):
     """
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Int):
         """Initializes a TraceLevel with the given integer value.
 
@@ -243,7 +242,7 @@ fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     if not max_profiling_level:
         return False
 
-    return level <= (
+    return level <= TraceLevel(
         (max_profiling_level.value() >> (type.value * kProfilingTypeWidthBits))
         & ((1 << kProfilingTypeWidthBits) - 1)
     )

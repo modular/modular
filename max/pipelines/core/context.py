@@ -29,6 +29,7 @@ from max.interfaces import (
     InputContext,
     LogProbabilities,
     SamplingParams,
+    TextGenerationOutput,
 )
 
 CHUNK_SIZE = 128
@@ -61,6 +62,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         json_schema: Optional JSON schema for structured output
         sampling_params: Parameters controlling the token sampling strategy
         min_tokens: Minimum number of new tokens to generate.
+        target_endpoint: Optional target endpoint identifier for routing requests
         _status: Current generation status (active, finished, etc)
         _size: Current allocated size of token array
         _start_idx: Start index of current generation window
@@ -76,7 +78,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
     max_length: int
-    tokens: np.ndarray
+    tokens: npt.NDArray[np.integer[Any]]
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
     eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
     log_probabilities: int = msgspec.field(default=0)
@@ -101,6 +103,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     )
     _is_initial_prompt: bool = msgspec.field(default=True)
     _draft_offset: int = msgspec.field(default=0)
+    target_endpoint: str | None = msgspec.field(default=None)
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
@@ -154,7 +157,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             self.tokens = np.resize(self.tokens, self._size)
 
     @property
-    def all_tokens(self) -> np.ndarray:
+    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
         return self.tokens[: self.end_idx]
 
     @property
@@ -301,7 +304,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._end_idx = new_end_idx
 
     @property
-    def next_tokens(self) -> np.ndarray:
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns the tokens between start_idx and active_idx.
 
         Returns:
@@ -318,7 +321,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._draft_offset = idx
 
     @property
-    def prompt_tokens(self) -> np.ndarray:
+    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns the original prompt tokens.
 
         Returns:
@@ -327,7 +330,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self.tokens[: self._prompt_len]
 
     @property
-    def generated_tokens(self) -> np.ndarray:
+    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns all tokens that have been generated after the prompt.
 
         Returns:
@@ -442,29 +445,39 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         self._is_initial_prompt = True
 
-    def outstanding_completion_tokens(
-        self,
-    ) -> list[tuple[int, Optional[LogProbabilities]]]:
-        """Return the list of outstanding completion tokens and log probabilities
-        that must be returned to the user."""
-        res = []
+    def to_generation_output(self) -> TextGenerationOutput:
+        """Get completion tokens that are ready to be returned to the user.
+
+        This method retrieves tokens that have been generated but not yet
+        delivered to the user, along with their associated log probability data.
+
+        Returns:
+            TextGenerationOutput: The completion tokens and their associated
+            log probabilities, if available.
+        """
+        tokens: list[int] = []
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in range(
             self._completion_start_idx, self._completion_end_idx
         ):
-            # We are using a pop here instead of a get, as we should not have
-            # to maintain this data once it is returned. The expectation is that
-            # this method never returns the same tokens more than once.
-            res.append(
-                (
-                    int(self.tokens[token_idx]),
-                    self._log_probabilities_data.pop(token_idx, None),
-                )
-            )
+            tokens.append(int(self.tokens[token_idx]))
+            if token_idx in self._log_probabilities_data:
+                if log_probabilities is None:
+                    log_probabilities = []
+                # We are using a pop here instead of a get, as we should not have
+                # to maintain this data once it is returned. The expectation is that
+                # this method never returns the same tokens more than once.
+                log_probability = self._log_probabilities_data.pop(token_idx)
+                log_probabilities.append(log_probability)
 
         self._completion_start_idx = self._completion_end_idx
-        self.status = GenerationStatus.ACTIVE
 
-        return res
+        return TextGenerationOutput(
+            request_id=self.request_id,
+            tokens=tokens,
+            log_probabilities=log_probabilities,
+            final_status=self.status,
+        )
 
     def compute_num_available_steps(
         self,
@@ -475,16 +488,15 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return max_seq_len - (self.current_length - self.active_length)
 
     @property
-    def is_ce(self) -> bool:
-        """Returns whether this context is in context encoding (CE) mode.
+    def needs_ce(self) -> bool:
+        """Returns whether this context needs context encoding (CE).
 
-        CE mode indicates that the context has more than one active token to process,
-        typically during the initial encoding of a prompt or after a rollback.
+        CE mode indicates that the context has additional prompt tokens to encode.
 
         Returns:
-            bool: True if in CE mode (active_length > 1), False otherwise.
+            bool: True if the context needs CE, False otherwise.
         """
-        return self.active_length > 1
+        return self._start_idx < self._prompt_len
 
     @property
     def is_initial_prompt(self) -> bool:
@@ -497,8 +509,10 @@ class TextAndVisionContext(
 ):
     """A base class for model context, specifically for Vision model variants."""
 
-    pixel_values: tuple[np.ndarray, ...] = msgspec.field(default_factory=tuple)
-    extra_model_args: dict[str, np.ndarray] = msgspec.field(
+    pixel_values: tuple[npt.NDArray[np.floating[Any]], ...] = msgspec.field(
+        default_factory=tuple
+    )
+    extra_model_args: dict[str, npt.NDArray[Any]] = msgspec.field(
         default_factory=dict
     )
 
@@ -563,14 +577,18 @@ class TTSContext(TextContext):
         _block_counter: Counter tracking number of speech token blocks generated
     """
 
-    audio_prompt_tokens: np.ndarray = msgspec.field(
+    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.int32)
     )
 
-    buffer_speech_tokens: np.ndarray | None = msgspec.field(default=None)
+    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = msgspec.field(
+        default=None
+    )
 
     # For silence detection.
-    audio_buffer: np.ndarray | None = msgspec.field(default=None)
+    audio_buffer: npt.NDArray[np.floating[Any]] | None = msgspec.field(
+        default=None
+    )
     prev_samples_beyond_offset: int = msgspec.field(default=0)
 
     streaming: bool = msgspec.field(default=False)
@@ -580,7 +598,7 @@ class TTSContext(TextContext):
         default=SPEECH_TOKEN_audio_chunk_size
     )
     _speech_token_end_idx: int = msgspec.field(default=0)
-    _speech_tokens: np.ndarray = msgspec.field(
+    _speech_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
         default_factory=lambda: np.zeros(
             SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
         )
@@ -598,14 +616,16 @@ class TTSContext(TextContext):
         return self.audio_generation_status.is_done
 
     @property
-    def speech_tokens(self) -> np.ndarray:
+    def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
         return self._speech_tokens[: self._speech_token_end_idx]
 
     @property
     def block_counter(self) -> int:
         return self._block_counter
 
-    def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
+    def update_speech_tokens(
+        self, new_tokens: npt.NDArray[np.integer[Any]]
+    ) -> None:
         """Updates the next_tokens"""
         self._upsize_speech_tokens(len(new_tokens))
         self._speech_tokens[
@@ -626,7 +646,7 @@ class TTSContext(TextContext):
 
     def next_speech_tokens(
         self, audio_chunk_size: int | None = None, buffer: int | None = None
-    ) -> tuple[np.ndarray, int]:
+    ) -> tuple[npt.NDArray[np.integer[Any]], int]:
         """Returns a chunk of the next unseen speech tokens.
 
         Calling this function will *not* update the index of the last seen

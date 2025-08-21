@@ -43,7 +43,7 @@ fn test_atomic() raises:
 
 
 fn test_atomic_floating_point() raises:
-    var atom: Atomic[DType.float32] = Float32(3.0)
+    var atom = Atomic(Float32(3.0))
 
     assert_equal(atom.value, 3.0)
 

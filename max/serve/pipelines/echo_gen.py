@@ -13,9 +13,10 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Union, cast
+from typing import Any, Union, cast
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
@@ -31,7 +32,9 @@ from max.pipelines.core import TextContext
 
 @dataclass
 class EchoPipelineTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
+    PipelineTokenizer[
+        TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]
 ):
     """Echo tokenizer that creates TextContext instances.
 
@@ -53,7 +56,7 @@ class EchoPipelineTokenizer(
         self,
         prompt: Union[str, Sequence[int]],
         add_special_tokens: bool = False,
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         """Encode the prompt into token IDs.
 
         For simplicity, we convert string characters to their ASCII values as token IDs.
@@ -66,7 +69,9 @@ class EchoPipelineTokenizer(
             # Already a sequence of integers
             return np.array(list(prompt), dtype=np.int32)
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.

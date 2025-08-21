@@ -28,6 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.attention import MHAMaskVariant
+from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -39,7 +40,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import KVCacheParams, PagedKVCacheCollection
 from max.nn.layer import Module, Shardable
-from max.nn.linear import Float8Config, Linear
+from max.nn.linear import Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
@@ -295,7 +296,10 @@ class Gemma3Attention(Module, Shardable):
                 x_scales = self.qkv_input_scale
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
-                    x, scales_type=weight_scale.dtype
+                    x,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    scales_type=weight_scale.dtype,
                 )
 
             xq = fused_qkv_ragged_matmul_scaled_float8(

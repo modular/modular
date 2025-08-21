@@ -169,7 +169,6 @@ fn _check_dim[
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
-    @implicit
     fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
@@ -186,7 +185,7 @@ struct StreamPriorityRange(Copyable, Movable, Stringable, Writable):
     var least: Int
     var greatest: Int
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -2228,16 +2227,29 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_sizes = UnsafePointer[UInt]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+            dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer
+            ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt
             ]()
 
         @parameter
         for i in range(num_args):
             dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+
+        @parameter
+        fn _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = sizeof[Ts[i]]()
+
+        @parameter
+        for i in range(num_args):
+            _populate_arg_sizes[i]()
 
         if cluster_dim:
             attributes.append(
@@ -2252,7 +2264,7 @@ struct DeviceFunction[
         #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #     void **args)
+        #     void **args, const size_t *argSizes)
 
         if num_captures > 0:
             # Call the populate function to initialize the captured values in the arguments array.
@@ -2282,6 +2294,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2295,6 +2308,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
         else:
@@ -2314,6 +2328,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2327,11 +2342,13 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+            dense_args_sizes.free()
 
     # Enqueue function on a stream
     @always_inline
@@ -2559,15 +2576,21 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_sizes = UnsafePointer[UInt]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(
+                num_captures + num_passed_args
+            )
+            dense_args_sizes = dense_args_sizes.alloc(
                 num_captures + num_passed_args
             )
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
-
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_passed_args, UInt
+            ]()
         # Since we skip over zero sized declared dtypes when passing arguments
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
@@ -2631,6 +2654,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2644,6 +2668,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
         else:
@@ -2663,6 +2688,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2676,11 +2702,13 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+            dense_args_sizes.free()
 
     @always_inline
     fn get_attribute(self, attr: Attribute) raises -> Int:
@@ -3135,7 +3163,6 @@ struct DeviceContext(Copyable, Movable):
         ](self._handle)
 
     @doc_private
-    @implicit
     fn __init__(out self, handle: OpaquePointer):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -3143,7 +3170,6 @@ struct DeviceContext(Copyable, Movable):
         self._retain()
 
     @doc_private
-    @implicit
     fn __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """

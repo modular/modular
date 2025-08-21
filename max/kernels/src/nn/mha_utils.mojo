@@ -74,13 +74,16 @@ struct FlashAttentionAlgorithm(
     fn __init__(out self):
         self._value = 3
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
+
+    @always_inline
+    fn __eq__(self, version: Int) -> Bool:
+        return self._value == version
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
